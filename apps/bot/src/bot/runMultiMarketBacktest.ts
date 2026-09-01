@@ -51,7 +51,7 @@ import type { InstrumentInfo } from '@polymarket/ports';
 import { SimplePosition } from '@polymarket/portfolio';
 
 import type { BotConfig } from '../config/BotConfig.js';
-import { buildCanonicalMarket, parseGammaMarketStartMs } from './buildCanonicalMarket.js';
+import { buildCanonicalMarket } from './buildCanonicalMarket.js';
 import { buildCoreInfra } from './buildCoreInfra.js';
 import { subscribeToOrderEvents } from './buildEventLogger.js';
 import { buildRepositories } from './buildRepositories.js';
@@ -365,7 +365,6 @@ async function runSingleMarketBacktest(
     complementaryInstrumentId,
     outcomeIndex,
     expiresAtMs: expirationMs,
-    startsAtMs: parseGammaMarketStartMs(rawMarket),
     eventStartMs,
     crypto: cryptoMeta
       ? {

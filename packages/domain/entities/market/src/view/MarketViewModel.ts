@@ -107,6 +107,9 @@ export class MarketViewModel {
    * чтобы формат совпадал со всеми остальными временными полями проекта.
    * Результат разбирается обратно `MarketParser.from()`.
    *
+   * `MarketJSON` — union по семейству, поэтому вариант выбирается явной ветвью:
+   * собрать «BINARY_OUTCOME со спецификацией» здесь уже невозможно.
+   *
    * @example
    * ```typescript
    * const json = MarketViewModel.toJSON(market);
@@ -125,7 +128,7 @@ export class MarketViewModel {
       instrumentId: market.outcomes[index].instrumentId,
     });
 
-    return {
+    const common = {
       id: market.id,
       venueId: market.venueId,
       ...(market.slug !== undefined ? { slug: market.slug } : {}),
@@ -133,12 +136,26 @@ export class MarketViewModel {
       startsAt: TimestampSerializer.toJSON(market.startsAt),
       expiresAt: TimestampSerializer.toJSON(market.expiresAt),
       state,
-      outcomes: [toOutcomeJSON(0), toOutcomeJSON(1)],
-      family: market.family,
-      ...(market.crypto !== undefined
-        ? { crypto: { asset: market.crypto.asset, duration: market.crypto.duration } }
-        : {}),
+      outcomes: [toOutcomeJSON(0), toOutcomeJSON(1)] as const,
     };
+
+    // Ветка на семейство, а не условный spread: `MarketJSON` — union, и вариант
+    // выбирается здесь же. Так рассогласование «семейство ↔ спецификация»
+    // становится ошибкой компиляции в точке сериализации.
+    if (market.family === 'CRYPTO_UP_DOWN') {
+      const crypto = market.crypto;
+      /* c8 ignore next 3 -- недостижимо: Market.create() требует spec для этого семейства */
+      if (crypto === undefined) {
+        throw new Error('Market of family CRYPTO_UP_DOWN has no crypto spec');
+      }
+      return {
+        ...common,
+        family: 'CRYPTO_UP_DOWN',
+        crypto: { asset: crypto.asset, duration: crypto.duration },
+      };
+    }
+
+    return { ...common, family: market.family };
   }
 
   /**

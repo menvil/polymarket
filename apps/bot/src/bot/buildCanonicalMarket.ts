@@ -69,8 +69,8 @@ const OUTCOME_LABELS = ['Up', 'Down'] as const;
  * Значение выбрано не произвольно: часовая серия («Bitcoin Up or Down — 6PM ET»)
  * — доминирующее семейство крипто-рынков Polymarket, на котором работает бот.
  *
- * Fallback включается ТОЛЬКО когда неизвестны оба источника начала расписания
- * (`startsAtMs` и `eventStartMs`) и влияет ровно на одно поле — `startsAt`.
+ * Fallback включается ТОЛЬКО когда неизвестно начало торгового окна
+ * (`eventStartMs`) и влияет ровно на одно поле — `startsAt`.
  * Номинальную `crypto.duration` он НЕ задаёт: она считается по окну крипто-серии
  * и от расписания рынка не зависит (см. {@link buildCanonicalMarket}).
  * Торговый контур `startsAt` не читает — стратегии берут `market.expiresAt`
@@ -134,14 +134,30 @@ export interface CanonicalMarketInput {
   /** Плановое окончание торгов (epoch ms) */
   readonly expiresAtMs: number;
   /**
-   * Начало расписания САМОГО РЫНКА (epoch ms) — `DiscoveredMarket.startsAt`,
-   * то есть `events[0].startDate` у Gamma. Основной источник `Market.startsAt`.
-   */
-  readonly startsAtMs: number | undefined;
-  /**
-   * Начало СОБЫТИЯ (epoch ms) — Gamma `eventStartTime`. Запасной источник
-   * `Market.startsAt`: это начало события, к которому привязан рынок, а не
-   * расписание самого рынка.
+   * Начало торгового окна рынка (epoch ms) — Gamma `eventStartTime`,
+   * он же `events[0].startTime`. Источник `Market.startsAt`.
+   *
+   * @remarks
+   * Отдельного «начала расписания рынка» в payload'е Gamma нет, хотя доменное
+   * различие между расписанием рынка и началом события реально. Проверено на
+   * записанном снапшоте 5-минутного рынка Solana Up/Down (окно 09:50–09:55):
+   *
+   * ```text
+   * events[0].startDate  = 2026-03-25T10:02:25Z  ← сутками раньше: дата создания записи
+   * events[0].startTime  = 2026-03-26T09:50:00Z  ← фактическое начало окна
+   * market.eventStartTime = 2026-03-26T09:50:00Z  ← то же значение
+   * ```
+   *
+   * `startDate` — момент публикации записи события, а не торгов, и брать его
+   * как `Market.startsAt` значило бы уехать примерно на сутки: `duration()`
+   * дал бы ~24 часа вместо пяти минут, а `getPhase()` вернул бы `OPEN` задолго
+   * до старта. `startTime` совпадает с `eventStartTime`, который уже здесь, —
+   * поэтому отдельного входа для расписания рынка нет: у него нет источника,
+   * отличного от этого поля.
+   *
+   * Для семейства `CRYPTO_UP_DOWN` это и есть расписание рынка: окно
+   * `startTime..endDate` — то самое, на границах которого площадка снимает
+   * TWAP-наблюдения `priceToBeat`/`finalPrice`.
    */
   readonly eventStartMs: number | undefined;
   /** Метаданные crypto-серии; отсутствуют → семейство `BINARY_OUTCOME` */
@@ -162,16 +178,13 @@ type MarketFamilyProps =
   | { readonly family: 'CRYPTO_UP_DOWN'; readonly crypto: CryptoUpDownSpec };
 
 /**
- * Выбирает начало расписания рынка по цепочке источников.
+ * Выбирает начало расписания рынка.
  *
  * Приоритет:
- * 1. `startsAtMs` — начало расписания САМОГО рынка. `Market.startsAt` по
- *    определению именно оно, поэтому оно и первое.
- * 2. `eventStartMs` — начало события, к которому привязан рынок. Площадка
- *    открывает рынок вместе с его событием, расхождение — секунды публикации,
- *    поэтому как приближение это честно; выдумкой было бы взять его при
- *    известном собственном начале рынка, чего шаг 1 и не даёт сделать.
- * 3. `expiresAtMs - FALLBACK_MARKET_DURATION_MS` — оба источника молчат.
+ * 1. `eventStartMs` — начало торгового окна (`eventStartTime` / `startTime`).
+ *    Единственный источник в payload'е Gamma, который действительно означает
+ *    начало торгов, — см. {@link CanonicalMarketInput.eventStartMs}.
+ * 2. `expiresAtMs - FALLBACK_MARKET_DURATION_MS` — источник молчит.
  *    Обоснование значения — в TSDoc {@link FALLBACK_MARKET_DURATION_MS}.
  *
  * @param input - Метаданные рынка
@@ -186,38 +199,32 @@ type MarketFamilyProps =
  *
  * @example
  * ```typescript
- * const startsAt = _resolveStartsAtMs({ ...input, startsAtMs: undefined });
- * if (startsAt.ok) console.log(new Date(startsAt.value).toISOString());
+ * const startsAt = _resolveStartsAtMs({ ...input, eventStartMs: undefined });
+ * if (startsAt.ok) console.log(new Date(startsAt.value).toISOString()); // expiresAt - 1h
  * ```
  */
 function _resolveStartsAtMs(input: CanonicalMarketInput): Result<number, MarketValidationError> {
-  const marketStart = _finiteOrUndefined(input.startsAtMs);
   const eventStart = _finiteOrUndefined(input.eventStartMs);
-  const source = marketStart !== undefined
-    ? ({ field: 'startsAt', value: marketStart } as const)
-    : eventStart !== undefined
-      ? ({ field: 'eventStartMs', value: eventStart } as const)
-      : undefined;
 
-  if (source === undefined) {
+  if (eventStart === undefined) {
     return Ok(input.expiresAtMs - FALLBACK_MARKET_DURATION_MS);
   }
 
-  if (source.value >= input.expiresAtMs) {
+  if (eventStart >= input.expiresAtMs) {
     return Err(
       new MarketValidationError('Market schedule start must be strictly before expiration', {
         context: {
           field: 'startsAt',
-          source: source.field,
+          source: 'eventStartMs',
           marketId: String(input.marketId),
-          startsAtMs: source.value,
+          startsAtMs: eventStart,
           expiresAtMs: input.expiresAtMs,
         },
       }),
     );
   }
 
-  return Ok(source.value);
+  return Ok(eventStart);
 }
 
 /**
@@ -304,7 +311,7 @@ function _finiteOrUndefined(value: number | undefined): number | undefined {
  * Алгоритм:
  * 1. Проверяем наличие комплементарного инструмента — без него двух исходов нет.
  * 2. Проверяем `expiresAt` и выбираем `startsAt` по цепочке
- *    `startsAtMs` → `eventStartMs` → `expiresAtMs - FALLBACK_MARKET_DURATION_MS`
+ *    `eventStartMs` → `expiresAtMs - FALLBACK_MARKET_DURATION_MS`
  *    (см. {@link _resolveStartsAtMs}).
  * 3. Определяем семейство: крипто-метаданные есть → `CRYPTO_UP_DOWN`
  *    со спецификацией, нет → `BINARY_OUTCOME` (см. {@link _resolveFamily}).
@@ -355,7 +362,6 @@ function _finiteOrUndefined(value: number | undefined): number | undefined {
  *   complementaryInstrumentId: slot.complementaryInstrumentId,
  *   outcomeIndex: slot.outcomeIndex,
  *   expiresAtMs: slot.expiresAtMs,
- *   startsAtMs: slot.candidate?.startsAt?.toNumber(),
  *   eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
  *   crypto: slot.cryptoMeta
  *     ? {
@@ -451,42 +457,4 @@ export function buildCanonicalMarket(
     outcomes,
     ...familyResult.value,
   });
-}
-
-/**
- * Достаёт начало расписания рынка из Gamma `rawMarket` (`events[0].startDate`).
- *
- * @param rawMarket - Сырой объект рынка из Gamma API (поле `m` meta-строки снапшота)
- * @returns Начало расписания в epoch ms либо `undefined`, если поля нет или оно
- *          не разбирается в дату
- * @throws Ничего не бросает — непригодные данные дают `undefined`
- *
- * @remarks
- * Бэктест-раннеры получают рынок не от discovery, а из meta-строки снапшота,
- * где `DiscoveredMarket.startsAt` уже не сохранён — но исходный `rawMarket`
- * записан целиком, и `events[0].startDate` в нём тот же самый, из которого
- * discovery строит `startsAt`. Хелпер живёт рядом с конструктором, потому что
- * обе бэктест-точки вызова читают это поле для одного и того же входа
- * {@link CanonicalMarketInput.startsAtMs}.
- *
- * `undefined` здесь — штатный случай: цепочка приоритетов
- * {@link buildCanonicalMarket} перейдёт к следующему источнику.
- *
- * @example
- * ```typescript
- * const startsAtMs = parseGammaMarketStartMs(rawMarket); // → 1756713600000 | undefined
- * ```
- */
-export function parseGammaMarketStartMs(
-  rawMarket: Record<string, unknown> | undefined,
-): number | undefined {
-  const events = rawMarket?.['events'];
-  if (!Array.isArray(events) || events.length === 0) return undefined;
-
-  const first = events[0] as Record<string, unknown> | undefined;
-  const startDate = first?.['startDate'];
-  if (typeof startDate !== 'string') return undefined;
-
-  const startMs = new Date(startDate).getTime();
-  return Number.isFinite(startMs) ? startMs : undefined;
 }

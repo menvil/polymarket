@@ -68,7 +68,7 @@ import { SimpleBookRegistry } from './SimpleBookRegistry.js';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { parseConfig } from './config/parseConfig.js';
 import type { BotConfig } from './config/BotConfig.js';
-import { buildCanonicalMarket, parseGammaMarketStartMs } from './bot/buildCanonicalMarket.js';
+import { buildCanonicalMarket } from './bot/buildCanonicalMarket.js';
 import { buildCoreInfra } from './bot/buildCoreInfra.js';
 import { subscribeToOrderEvents } from './bot/buildEventLogger.js';
 import { buildRepositories } from './bot/buildRepositories.js';
@@ -3026,7 +3026,6 @@ async function runBacktest(): Promise<void> {
     complementaryInstrumentId,
     outcomeIndex,
     expiresAtMs: expirationMs,
-    startsAtMs: parseGammaMarketStartMs(snapshotRawMarket),
     eventStartMs: snapshotEventStartMs !== undefined && !Number.isNaN(snapshotEventStartMs)
       ? snapshotEventStartMs
       : undefined,

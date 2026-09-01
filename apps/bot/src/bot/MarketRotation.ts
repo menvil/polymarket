@@ -391,7 +391,6 @@ export class MarketRotation {
       complementaryInstrumentId: compId,
       outcomeIndex: slot.outcomeIndex,
       expiresAtMs: slot.expiresAtMs,
-      startsAtMs: slot.candidate?.startsAt?.toNumber(),
       eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
       crypto: slot.cryptoMeta
         ? {

@@ -62,7 +62,6 @@ export function buildTestMarket(options: TestMarketOptions): Market {
     complementaryInstrumentId: options.complementaryInstrumentId,
     outcomeIndex: options.outcomeIndex,
     expiresAtMs,
-    startsAtMs: nowMs,
     eventStartMs: nowMs,
     crypto: { symbol: 'btc/usd', eventStartMs: nowMs, eventEndMs: expiresAtMs },
   });

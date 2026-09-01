@@ -95,14 +95,15 @@ export interface MarketCryptoSpecJSON {
 }
 
 /**
- * MarketJSON — сериализованный канонический рынок
+ * MarketJSONCommon — поля сериализованного рынка, общие для всех семейств
  *
+ * @internal
  * @remarks
- * Временные метки — epoch milliseconds (number), как и в
- * `TimestampSerializer.toJSON()`. ISO-строки намеренно не используются:
- * один формат времени на весь проект дешевле, чем два.
+ * Вынесены отдельно только чтобы не дублировать их в каждом варианте
+ * {@link MarketJSON}. Самостоятельного смысла тип не имеет — сериализованный
+ * рынок всегда принадлежит какому-то семейству.
  */
-export interface MarketJSON {
+interface MarketJSONCommon {
   /** Идентификатор рынка в пространстве имён площадки */
   readonly id: string;
   /** Площадка, на которой наблюдается рынок */
@@ -119,8 +120,43 @@ export interface MarketJSON {
   readonly state: MarketStateJSON;
   /** Исходы рынка: ровно два */
   readonly outcomes: readonly [MarketOutcomeJSON, MarketOutcomeJSON];
-  /** Семейство рынка */
-  readonly family: MarketFamilyJSON;
-  /** Спецификация семейства `CRYPTO_UP_DOWN` */
-  readonly crypto?: MarketCryptoSpecJSON;
 }
+
+/**
+ * MarketJSON — сериализованный канонический рынок
+ *
+ * @remarks
+ * Discriminated union по `family`, а не «`family` + независимое необязательное
+ * `crypto`». Плоская форма позволяла бы типизированному коду собрать
+ * `{ family: 'BINARY_OUTCOME', crypto: {...} }` — данные, которые `MarketParser`
+ * и `Market.create()` отвергают. Wire-тип, разрешающий записать то, что нельзя
+ * прочитать, бесполезен: несоответствие должно ловиться компилятором в точке
+ * сериализации, а не парсером при следующем чтении.
+ *
+ * Та же причина, по которой {@link MarketStateJSON} — union: `resolvedOutcomeIndex`
+ * существует только у RESOLVED, а `crypto` — только у `CRYPTO_UP_DOWN`.
+ *
+ * Временные метки — epoch milliseconds (number), как и в
+ * `TimestampSerializer.toJSON()`. ISO-строки намеренно не используются:
+ * один формат времени на весь проект дешевле, чем два.
+ */
+export type MarketJSON =
+  | (MarketJSONCommon & {
+    /** Семейство рынка */
+    readonly family: 'CRYPTO_UP_DOWN';
+    /** Спецификация семейства — обязательна */
+    readonly crypto: MarketCryptoSpecJSON;
+  })
+  | (MarketJSONCommon & {
+    /** Семейство рынка */
+    readonly family: 'BINARY_OUTCOME';
+    /**
+     * Спецификации у этого семейства нет.
+     *
+     * @remarks
+     * Объявлено как `?: undefined`, а не опущено: иначе excess property check
+     * на union пропустил бы `crypto` из-за другого варианта, и запрет остался бы
+     * только на словах.
+     */
+    readonly crypto?: undefined;
+  });

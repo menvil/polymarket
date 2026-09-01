@@ -103,6 +103,26 @@ describe('MarketViewModel.toJSON()', () => {
     expect('slug' in MarketViewModel.toJSON(unwrap(Market.fromSnapshot(withoutSlug)))).toBe(false);
   });
 
+  it('BINARY_OUTCOME сериализуется без ключа crypto', () => {
+    const props = MarketViewModel.toSnapshot(makeMarket());
+    const binary = unwrap(Market.create({
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: 'BINARY_OUTCOME',
+    }));
+
+    const json = MarketViewModel.toJSON(binary);
+
+    expect(json.family).toBe('BINARY_OUTCOME');
+    expect('crypto' in json).toBe(false);
+    expect(unwrap(MarketParser.from(json)).family).toBe('BINARY_OUTCOME');
+  });
+
   it('добавляет resolvedOutcomeIndex только для RESOLVED', () => {
     expect(MarketViewModel.toJSON(makeMarket()).state).toEqual({ status: 'ACTIVE' });
     expect(MarketViewModel.toJSON(makeMarket({ state: MarketState.resolved(1) })).state).toEqual({
