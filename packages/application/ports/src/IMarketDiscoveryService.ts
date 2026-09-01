@@ -1,132 +1,232 @@
 /**
- * Порт: сервис обнаружения рынков.
+ * Порт обнаружения рынков + canonical contract его результата.
  *
  * @remarks
- * `IMarketDiscoveryService` — application-layer порт (Dependency Inversion).
- * Инфраструктурная реализация `PolymarketMarketDiscoveryAdapter` обращается
- * к Gamma REST API, фильтрует и скорит рынки, затем возвращает готовых кандидатов.
+ * ### Граница
  *
- * Используется:
- * - `MarketDiscoveryPublisher._discover()` — получить список кандидатов и наполнить каталог
+ * ```text
+ * Infrastructure (vendor client/bindings)
+ *         ↓ vendor normalization
+ *   canonical Market  (@polymarket/market)
+ *         ↓
+ *   MarketDiscoverySnapshot   ← этот файл
+ *         ↓
+ *   MarketUniverse (@polymarket/market-discovery)
+ *         ↓
+ *   Application
+ * ```
  *
- * ### Жизненный цикл:
- * ```
- * MarketDiscoveryPublisher._discover()
- *   → discoveryService.findCandidates()
- *   → (внутри: TTL cache check → при необходимости refresh())
- *   → возвращает DiscoveredMarket[]
- *   → publisher регистрирует каждого кандидата через catalog.register(candidate)
- * ```
+ * За границей порта НЕТ ни одного vendor-объекта: ни SDK/bindings-моделей,
+ * ни Gamma DTO, ни `Record<string, unknown>` payload'ов. Единственное
+ * представление рынка — доменная сущность `Market`.
+ *
+ * ### Почему метрики живут РЯДОМ с Market, а не внутри него
+ *
+ * `Market` — identity, структура и расписание рынка: то, что не меняется
+ * от наблюдения к наблюдению. `liquidity`/`spread` — наоборот, быстро
+ * меняющиеся наблюдения площадки. Класть их внутрь entity означало бы
+ * «рынок изменился», когда изменился всего лишь стакан. Поэтому наблюдения
+ * едут отдельным полем записи snapshot'а
+ * ({@link MarketDiscoveryMetrics}) — их использует Policy следующего этапа
+ * (`MarketFilter`/`MarketScorer`), а `Market` остаётся чистым.
+ *
+ * ### Почему discovery НИЧЕГО не ранжирует
+ *
+ * Discovery отвечает на технический вопрос «какие рынки этого venue наш
+ * контур вообще способен вести прямо сейчас?». Вопрос «какие из них нам
+ * интересны» (ключевые слова, минимальная ликвидность, предпочтения по
+ * активу/длительности, top-N) принадлежит owner policy НАД портом.
  */
-import type Decimal from 'decimal.js';
-import type { InstrumentInfo } from './IMarketCatalog.js';
-import type { Money, Ratio } from '@polymarket/value-objects';
+import type { Market } from '@polymarket/market';
+import type { MarketId, VenueId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/timestamp';
+import type { Money, Ratio } from '@polymarket/value-objects';
 
 /**
- * Обнаруженный рынок — кандидат для торговли.
+ * Быстро меняющиеся наблюдения площадки по обнаруженному рынку.
  *
  * @remarks
- * Расширяет `InstrumentInfo` — содержит все данные, необходимые для прямой
- * регистрации в каталоге через `catalog.register(candidate)`. Поля `spread`,
- * `liquidity` и `score` используются для фильтрации и приоритизации рынков
- * в `MarketFilter` и `MarketScorer`.
- *
- * `active: true` — литеральный тип: кандидат всегда активен по определению
- * (неактивные рынки отфильтровываются в адаптере ещё до создания DiscoveredMarket).
- */
-export interface DiscoveredMarket extends InstrumentInfo {
-  /** Кандидат всегда активен (narrowed from boolean → true) */
-  readonly active: true;
-  /** Вопрос рынка (человекочитаемое описание) */
-  readonly question: string;
-  /**
-   * Текущий спред (bid-ask), доля от 1 (0.02 = 2%, та же конвенция, что
-   * `IMarketFilterConfig.minSpread`). `undefined` если недоступен (нет данных от API).
-   */
-  readonly spread?: Ratio;
-  /** Ликвидность (объём торгов, USDC notional). `Money.of(0, 'USDC')` если недоступна. */
-  readonly liquidity: Money;
-  /**
-   * Скор рынка — устанавливается `MarketScorer`.
-   * До скоринга = Decimal('0'). После = hoursToExpiry как Decimal.
-   *
-   * @remarks
-   * Остаётся `Decimal` (не VO) — внутренний sort-key без чистого VO-отображения,
-   * см. Этап 10c плана миграции.
-   */
-  readonly score: Decimal;
-  /**
-   * Все token ID рынка (UP + DOWN) из `clobTokenIds`.
-   * Используется для подписки и маршрутизации событий обоих исходов.
-   * Если не задан — только `instrumentId` (UP token).
-   */
-  readonly allTokenIds?: readonly string[];
-  /**
-   * Полные сырые данные рынка из REST API (опционально).
-   * Устанавливается адаптером и передаётся в `MarketMeta.rawMarket`
-   * для записи в meta-строку снапшота.
-   */
-  readonly rawMarket?: Record<string, unknown>;
-  /**
-   * Время начала СОБЫТИЯ (не рынка/записи — см. `startsAt` ниже, другое поле).
-   * Парсится из `eventStartTime` в API. Используется вместе с `expiresAt`
-   * для вычисления длительности рынка.
-   */
-  readonly eventStartMs?: Timestamp;
-  /**
-   * Время начала ЗАПИСИ/торговли ботом (не начало самого события — см.
-   * `eventStartMs` выше, другое поле). Timestamp из `events[0].startDate`.
-   * Используется для выравнивания по границе начала рынка (аналог CEX window alignment).
-   */
-  readonly startsAt?: Timestamp;
-}
-
-// TODO(discovery): prefer catalog.registerMarket() when all outcome tokens for
-// a market are available, to avoid temporarily exposing partial markets.
-/**
- * Порт: сервис обнаружения рынков.
+ * Сознательно ВНЕ `Market` (см. TSDoc модуля). Набор полей минимален: сюда
+ * попадает только то, что реально нужно owner policy для отбора рынков.
  *
  * @example
  * ```typescript
- * const candidates = await discoveryService.findCandidates();
- * for (const candidate of candidates) {
- *   // DiscoveredMarket extends InstrumentInfo — регистрируем напрямую
- *   catalog.register(candidate);
+ * if (entry.metrics.liquidity.value().greaterThanOrEqualTo(1000)) {
+ *   // рынок достаточно ликвиден для нашей политики
  * }
+ * ```
+ */
+export interface MarketDiscoveryMetrics {
+  /**
+   * Ликвидность рынка (USDC notional).
+   *
+   * @remarks
+   * Отсутствующее значение площадки трактуется как `Money.of(0, 'USDC')` —
+   * существующая семантика V2 («ликвидность не объявлена» = «нулевая для
+   * целей отбора»). Выводить ликвидность из других полей запрещено.
+   */
+  readonly liquidity: Money;
+  /**
+   * Текущий спред (bid-ask) как доля от 1 (`0.02` = 2%).
+   *
+   * @remarks
+   * `undefined`, если площадка спред не отдала — подставлять ноль нельзя:
+   * «спред неизвестен» и «спред нулевой» — противоположные утверждения.
+   */
+  readonly spread?: Ratio;
+}
+
+/**
+ * Одна запись universe: canonical рынок + наблюдения по нему.
+ *
+ * @example
+ * ```typescript
+ * for (const entry of snapshot.entries) {
+ *   console.log(entry.market.question, entry.metrics.liquidity.toString());
+ * }
+ * ```
+ */
+export interface MarketDiscoveryEntry {
+  /** Canonical доменная сущность рынка — единственное его представление. */
+  readonly market: Market;
+  /** Наблюдения площадки на момент `snapshot.observedAt`. */
+  readonly metrics: MarketDiscoveryMetrics;
+}
+
+/**
+ * Детерминированная диагностика одного обхода discovery.
+ *
+ * @remarks
+ * Счётчики нужны, чтобы после live-запуска ответить «почему в universe
+ * ровно столько рынков» без чтения логов построчно. Инвариант, который
+ * проверяется тестами:
+ *
+ * ```text
+ * tradeableMarkets
+ *   === supportedCryptoUpDown
+ *     + unsupportedMarkets
+ *     + invalidMarkets
+ *     + duplicateMarkets
+ * ```
+ *
+ * `marketsScanned - tradeableMarkets` — записи, отсечённые окном
+ * `endDate` и техническим gate торгуемости.
+ */
+export interface MarketDiscoveryDiagnostics {
+  /** Сколько страниц каталога реально прочитано. */
+  readonly pagesFetched: number;
+  /** Сколько vendor-записей просмотрено пагинацией (до окна и gate). */
+  readonly marketsScanned: number;
+  /** Сколько записей прошли окно `endDate` и технический gate торгуемости. */
+  readonly tradeableMarkets: number;
+  /** Сколько торгуемых записей относятся к неподдержанному семейству. */
+  readonly unsupportedMarkets: number;
+  /** Сколько canonical рынков попало в snapshot. */
+  readonly supportedCryptoUpDown: number;
+  /** Сколько записей отброшено как непригодные (нет обязательных данных). */
+  readonly invalidMarkets: number;
+  /** Сколько записей отброшено дедупликацией `venueId + marketId`. */
+  readonly duplicateMarkets: number;
+  /** Сколько точечных запросов события реально выполнено. */
+  readonly eventFetches: number;
+  /** Сколько запросов события обслужил кэш. */
+  readonly eventCacheHits: number;
+}
+
+/**
+ * Снимок технически поддержанного universe площадки.
+ *
+ * @remarks
+ * Порядок `entries` детерминирован и ТЕХНИЧЕСКИЙ (`startsAt` ASC,
+ * `expiresAt` ASC, `id` ASC) — это стабильность вывода, а не ранжирование
+ * по интересности. Дубликатов по `venueId + marketId` в снимке нет.
+ *
+ * @example
+ * ```typescript
+ * await discovery.refresh();
+ * universe.replace(discovery.getSnapshot());
+ * ```
+ */
+export interface MarketDiscoverySnapshot {
+  /** Момент завершения обхода, породившего снимок. */
+  readonly observedAt: Timestamp;
+  /** Canonical рынки universe в техническом порядке. */
+  readonly entries: readonly MarketDiscoveryEntry[];
+  /** Диагностика обхода (см. {@link MarketDiscoveryDiagnostics}). */
+  readonly diagnostics: MarketDiscoveryDiagnostics;
+}
+
+/**
+ * Параметры одного вызова {@link IMarketDiscoveryService.refresh}.
+ */
+export interface MarketDiscoveryRefreshOptions {
+  /**
+   * Игнорировать TTL снимка и паузу после неудачи.
+   *
+   * @remarks
+   * По умолчанию `refresh()` — это «поддерживай universe свежим»: он не
+   * ходит в сеть, пока текущий снимок не устарел, и выдерживает паузу
+   * после неудачного обхода. `force: true` означает «обнови сейчас,
+   * cadence мой» — так вызывают ручные/стартовые обновления.
+   */
+  readonly force?: boolean;
+}
+
+/**
+ * Порт: обнаружение технически поддержанного universe рынков площадки.
+ *
+ * @remarks
+ * Разделение `refresh()` / `getSnapshot()` сохраняет last-good семантику:
+ * временная недоступность площадки НЕ обязана лишать Application последнего
+ * успешного universe.
+ *
+ * @example
+ * ```typescript
+ * const refreshed = await discovery.refresh();
+ * if (!refreshed) {
+ *   logger.warn('Discovery refresh failed, serving previous universe');
+ * }
+ * universe.replace(discovery.getSnapshot());
  * ```
  */
 export interface IMarketDiscoveryService {
   /**
-   * Возвращает список отфильтрованных и проскоренных кандидатов.
+   * Обновляет снимок universe.
    *
-   * @returns Readonly массив DiscoveredMarket, отсортированных по приоритету
-   *
-   * @remarks
-   * Реализация кэширует результаты на `cacheTtlMs` миллисекунд.
-   * При устаревшем кэше автоматически вызывает `refresh()`.
-   * Количество возвращаемых рынков ограничено `IMarketFilterConfig.maxMarketsToReturn`.
-   *
-   * @example
-   * ```typescript
-   * const candidates = await discoveryService.findCandidates();
-   * console.log(`Found ${candidates.length} tradeable markets`);
-   * ```
+   * @param options - Управление TTL/паузой (см. {@link MarketDiscoveryRefreshOptions})
+   * @returns `true` — актуальный снимок доступен (обновлён либо ещё свеж по
+   *   TTL); `false` — обход не выполнен, доступен ПРЕДЫДУЩИЙ снимок
+   * @throws Ничего не бросает: отказ площадки наблюдаем через `false` и логи
    */
-  findCandidates(): Promise<readonly DiscoveredMarket[]>;
+  refresh(options?: MarketDiscoveryRefreshOptions): Promise<boolean>;
 
   /**
-   * Принудительно обновляет кэш кандидатов из источника данных.
+   * Возвращает последний успешный снимок universe.
    *
-   * @remarks
-   * Вызывается внутри `findCandidates()` при устаревшем TTL.
-   * Можно вызвать явно для немедленного обновления данных.
-   *
-   * @example
-   * ```typescript
-   * await discoveryService.refresh();
-   * const freshCandidates = await discoveryService.findCandidates();
-   * ```
+   * @returns Снимок; до первого успешного обхода — пустой снимок
    */
-  refresh(): Promise<void>;
+  getSnapshot(): MarketDiscoverySnapshot;
+}
+
+/**
+ * Ключ идентичности рынка в universe.
+ *
+ * @param venueId - Площадка рынка
+ * @param marketId - Идентификатор рынка в пространстве имён площадки
+ * @returns Строковый ключ, однозначно адресующий рынок
+ *
+ * @remarks
+ * Идентичность рынка — ПАРА `venueId + marketId`: один и тот же
+ * `marketId` на разных площадках означает разные рынки. Разделитель `\n`
+ * не встречается ни в одном canonical id, поэтому склейка однозначна.
+ * Функция живёт рядом с контрактом, чтобы discovery-дедупликация и
+ * lookup universe использовали ОДНО правило, а не два похожих.
+ *
+ * @example
+ * ```typescript
+ * marketUniverseKey(KnownVenues.POLYMARKET, marketId); // 'POLYMARKET\n0xbd31…'
+ * ```
+ */
+export function marketUniverseKey(venueId: VenueId, marketId: MarketId): string {
+  return `${venueId}\n${marketId}`;
 }

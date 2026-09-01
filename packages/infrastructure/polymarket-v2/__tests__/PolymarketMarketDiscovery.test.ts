@@ -1,39 +1,39 @@
 /**
- * Поведенческие тесты Market Discovery V2: пагинация официального SDK,
- * mapping normalized Market → кандидат, selection policy (reuse
- * MarketFilter/MarketScorer), TTL-кэш, policy отказов, prepareSelected.
+ * Поведенческие тесты Polymarket V2 Discovery: bounded-пагинация каталога,
+ * технический gate торгуемости, классификация семейства, точное расписание
+ * из события, canonical mapping, дедупликация, диагностика и last-good
+ * семантика снимка.
  *
  * @remarks
- * SDK-граница fake-ится ({@link FakeDiscoveryClient}), selection-компоненты —
- * РЕАЛЬНЫЕ `MarketFilter`/`MarketScorer` (это и есть проверяемая policy).
+ * Fake-ится ТОЛЬКО граница vendor-клиента ({@link FakeDiscoveryClient});
+ * классификатор и canonical `Market` — настоящие: именно их поведение
+ * и является предметом проверки.
  */
 import { describe, it, expect } from '@jest/globals';
-import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
-import type { IMarketFilterConfig } from '@polymarket/ports';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { PolymarketMarketDiscovery } from '../src/index.js';
 import type { PolymarketMarketDiscoveryConfig } from '../src/index.js';
 import { CapturingLogger } from './helpers/fakes.js';
 import {
   CONDITION_ID_BTC,
+  CONDITION_ID_ETH,
   FIXED_NOW_MS,
   FakeDiscoveryClient,
   FixedClock,
   TOKEN_ID_BTC_DOWN,
   TOKEN_ID_BTC_UP,
+  createCryptoThresholdMarket,
+  createCryptoUpDownMarket,
+  createFootballMarket,
+  createPoliticsMarket,
   createSdkEvent,
   createSdkMarket,
+  createWeatherMarket,
 } from './helpers/gammaFixtures.js';
 
-/** Конфиг фильтра «пропускай всё» (селекция проверяется отдельными тестами). */
-const OPEN_FILTER: IMarketFilterConfig = {
-  minTimeToExpiryHours: 0,
-  minSpread: 0,
-  minLiquidity: 0,
-  maxMarketsToReturn: 10,
-};
-
-/** Собирает discovery поверх fake SDK-клиента и фиксированных часов. */
-function createHarness(configOverrides: Partial<PolymarketMarketDiscoveryConfig> = {}): {
+/** Собирает discovery поверх fake-клиента и фиксированных часов. */
+function createHarness(configOverrides: PolymarketMarketDiscoveryConfig = {}): {
   client: FakeDiscoveryClient;
   clock: FixedClock;
   logger: CapturingLogger;
@@ -42,51 +42,106 @@ function createHarness(configOverrides: Partial<PolymarketMarketDiscoveryConfig>
   const client = new FakeDiscoveryClient();
   const clock = new FixedClock();
   const logger = new CapturingLogger();
-  const discovery = new PolymarketMarketDiscovery(
-    { client, filter: new MarketFilter(), scorer: new MarketScorer(clock), clock, logger },
-    { filter: OPEN_FILTER, ...configOverrides },
-  );
+  const discovery = new PolymarketMarketDiscovery({ client, clock, logger }, configOverrides);
   return { client, clock, logger, discovery };
 }
 
-/** ISO endDate через `minutes` минут от фиксированного «сейчас». */
-function endDateInMinutes(minutes: number): string {
+/** ISO-момент через `minutes` минут от фиксированного «сейчас». */
+function isoInMinutes(minutes: number): string {
   return new Date(FIXED_NOW_MS + minutes * 60_000).toISOString();
 }
 
-describe('mapping normalized Market → кандидат (TEST 1)', () => {
-  it('переносит identity, токены, timing и торговые поля из SDK Market', async () => {
+/** Регистрирует событие с точным началом через `minutes` минут. */
+function registerEvent(
+  client: FakeDiscoveryClient,
+  id: string,
+  startMinutes: number,
+  endMinutes = 30,
+): void {
+  client.events.set(
+    id,
+    createSdkEvent({
+      id,
+      startTime: isoInMinutes(startMinutes),
+      endDate: isoInMinutes(endMinutes),
+    }),
+  );
+}
+
+describe('canonical mapping: vendor Market → Domain Market (TEST 1)', () => {
+  it('строит canonical Market с точным расписанием и фактической длительностью', async () => {
     const { client, discovery } = createHarness();
-    const market = createSdkMarket({ endDate: endDateInMinutes(30) });
-    client.pages = [[market]];
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(35) })]];
+    registerEvent(client, '99001', 30, 35);
+
+    expect(await discovery.refresh()).toBe(true);
+    const entries = discovery.getSnapshot().entries;
+
+    expect(entries).toHaveLength(1);
+    const market = entries[0]!.market;
+    expect(String(market.venueId)).toBe('POLYMARKET');
+    expect(String(market.id)).toBe(CONDITION_ID_BTC);
+    expect(market.family).toBe('CRYPTO_UP_DOWN');
+    expect(market.crypto?.asset).toBe('btc');
+    // Длительность — ФАКТ расписания (35 - 30 минут), а не номинал серии
+    expect(market.crypto?.duration).toBe(5 * 60_000);
+    expect(market.duration().toNumber()).toBe(5 * 60_000);
+    expect(market.state.status).toBe('ACTIVE');
+    expect(market.startsAt.toNumber()).toBe(FIXED_NOW_MS + 30 * 60_000);
+    expect(market.expiresAt.toNumber()).toBe(FIXED_NOW_MS + 35 * 60_000);
+    expect(market.question).toBe('Bitcoin Up or Down - August 19, 8AM ET');
+    expect(market.slug).toBe('bitcoin-up-or-down-august-19-8am-et');
+    expect(market.outcomes).toEqual([
+      { index: 0, label: 'Up', instrumentId: TOKEN_ID_BTC_UP },
+      { index: 1, label: 'Down', instrumentId: TOKEN_ID_BTC_DOWN },
+    ]);
+  });
+
+  it('vendor-объекты НЕ являются частью публичной записи discovery', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
+    const entry = discovery.getSnapshot().entries[0]!;
 
-    expect(candidates).toHaveLength(1);
-    const candidate = candidates[0]!;
-    expect(String(candidate.marketId)).toBe(CONDITION_ID_BTC);
-    expect(String(candidate.instrumentId)).toBe(TOKEN_ID_BTC_UP);
-    expect(candidate.allTokenIds).toEqual([TOKEN_ID_BTC_UP, TOKEN_ID_BTC_DOWN]);
-    expect(candidate.question).toBe('Bitcoin Up or Down - August 19, 8AM ET');
-    expect(candidate.expiresAt.toNumber()).toBe(FIXED_NOW_MS + 30 * 60_000);
-    expect(candidate.tickSize.toNumber()).toBe(0.01);
-    expect(candidate.minOrderSize.value().toNumber()).toBe(5);
-    expect(candidate.minOrderValue.value().toNumber()).toBe(1);
-    expect(candidate.liquidity.value().toNumber()).toBe(15000);
-    expect(candidate.spread?.toDecimal().toNumber()).toBe(0.03);
-    expect(candidate.active).toBe(true);
-    // Typed SDK Market сохраняется той же ссылкой (initial Gamma state)
-    expect(candidate.sdkMarket).toBe(market);
-    // Gap N-001: у кандидатов V2 нет времени начала события
-    expect(candidate.eventStartMs).toBeUndefined();
-    // Legacy raw DTO не эмулируется
-    expect(candidate.rawMarket).toBeUndefined();
+    for (const leaked of ['sdkMarket', 'gammaMarket', 'gammaEvent', 'rawMarket']) {
+      expect(entry).not.toHaveProperty(leaked);
+      expect(entry.market).not.toHaveProperty(leaked);
+    }
+    expect(Object.keys(entry).sort()).toEqual(['market', 'metrics']);
+  });
+
+  it('liquidity/spread живут в metrics, а не внутри Market', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ liquidity: '15000', spread: '0.03' })]];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    const entry = discovery.getSnapshot().entries[0]!;
+
+    expect(entry.metrics.liquidity.value().toNumber()).toBe(15000);
+    expect(entry.metrics.spread?.toDecimal().toNumber()).toBe(0.03);
+    expect(entry.market).not.toHaveProperty('liquidity');
+    expect(entry.market).not.toHaveProperty('spread');
+  });
+
+  it('отсутствующая liquidity → ноль, отсутствующий spread → undefined', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ liquidity: null, spread: null })]];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    const metrics = discovery.getSnapshot().entries[0]!.metrics;
+
+    expect(metrics.liquidity.value().toNumber()).toBe(0);
+    expect(metrics.spread).toBeUndefined();
   });
 
   it('передаёт server-side narrowing в listMarkets (closed/order/ascending/endDateMin/pageSize)', async () => {
     const { client, discovery } = createHarness({ pageSize: 100, zombieGraceMs: 2 * 60_000 });
     client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
 
     await discovery.refresh();
 
@@ -99,7 +154,7 @@ describe('mapping normalized Market → кандидат (TEST 1)', () => {
       pageSize: 100,
       endDateMin: new Date(FIXED_NOW_MS - 2 * 60_000).toISOString(),
     });
-    // endDateMax серверу сознательно не передаётся (legacy-аудит: HTTP 500)
+    // endDateMax серверу сознательно не передаётся (аудит: HTTP 500 у Gamma)
     expect(request).not.toHaveProperty('endDateMax');
   });
 
@@ -114,113 +169,311 @@ describe('mapping normalized Market → кандидат (TEST 1)', () => {
         createSdkMarket({ conditionId: `0x${'e'.repeat(64)}` }),
       ],
     ];
+    registerEvent(client, '99001', 10);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
+    const snapshot = discovery.getSnapshot();
 
-    expect(candidates.map((c) => String(c.marketId))).toEqual([`0x${'e'.repeat(64)}`]);
-  });
-
-  it('отбрасывает рынки без обязательных полей, сохраняя остальные', async () => {
-    const { client, discovery, logger } = createHarness();
-    client.pages = [
-      [
-        createSdkMarket({ conditionId: null }),
-        createSdkMarket({ conditionId: `0x${'1'.repeat(64)}`, yesTokenId: null }),
-        createSdkMarket({ conditionId: `0x${'2'.repeat(64)}`, question: null }),
-        createSdkMarket({ conditionId: `0x${'3'.repeat(64)}`, endDate: null }),
-        createSdkMarket({ conditionId: `0x${'4'.repeat(64)}` }),
-      ],
-    ];
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-
-    expect(candidates.map((c) => String(c.marketId))).toEqual([`0x${'4'.repeat(64)}`]);
-    expect(logger.byLevel('warn').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('деградирует второстепенные поля до дефолтов, не отбрасывая рынок', async () => {
-    const { client, discovery } = createHarness();
-    client.pages = [
-      [
-        createSdkMarket({
-          liquidity: null,
-          spread: null,
-          minimumTickSize: null,
-          minimumOrderSize: null,
-        }),
-      ],
-    ];
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-
-    expect(candidates).toHaveLength(1);
-    const candidate = candidates[0]!;
-    expect(candidate.liquidity.value().toNumber()).toBe(0);
-    expect(candidate.spread).toBeUndefined();
-    expect(candidate.tickSize.toNumber()).toBe(0.01);
-    expect(candidate.minOrderSize.value().toNumber()).toBe(1);
-  });
-
-  it('рынок с одним yes-токеном получает allTokenIds из одного токена (parity fallback)', async () => {
-    const { client, discovery } = createHarness();
-    client.pages = [[createSdkMarket({ noTokenId: null })]];
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-
-    expect(candidates[0]!.allTokenIds).toEqual([TOKEN_ID_BTC_UP]);
+    expect(snapshot.entries.map((entry) => String(entry.market.id))).toEqual([
+      `0x${'e'.repeat(64)}`,
+    ]);
+    expect(snapshot.diagnostics.tradeableMarkets).toBe(1);
+    expect(snapshot.diagnostics.marketsScanned).toBe(5);
   });
 });
 
-describe('пагинация и окно endDate (TEST 2)', () => {
+describe('семейство: только Crypto Up/Down попадает в universe (TEST 2)', () => {
+  it('чужие семейства отсекаются и НЕ запрашивают событие', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [
+      [
+        createFootballMarket({ eventRef: { id: 'evt-football' } }),
+        createWeatherMarket({ eventRef: { id: 'evt-weather' } }),
+        createPoliticsMarket({ eventRef: { id: 'evt-politics' } }),
+        createCryptoThresholdMarket({ eventRef: { id: 'evt-threshold' } }),
+        createCryptoUpDownMarket('btc', { conditionId: CONDITION_ID_BTC }),
+      ],
+    ];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+
+    expect(snapshot.entries.map((entry) => String(entry.market.id))).toEqual([CONDITION_ID_BTC]);
+    // Ключевая экономия: событие запрошено ровно у поддержанного рынка
+    expect(client.fetchEventCalls).toEqual(['99001']);
+    expect(snapshot.diagnostics.unsupportedMarkets).toBe(4);
+    expect(snapshot.diagnostics.supportedCryptoUpDown).toBe(1);
+  });
+
+  it('крипто Yes/No без Up/Down-семантики не обогащается событием', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createCryptoThresholdMarket({ eventRef: { id: 'evt-threshold' } })]];
+
+    await discovery.refresh();
+
+    expect(client.fetchEventCalls).toHaveLength(0);
+    expect(discovery.getSnapshot().entries).toHaveLength(0);
+  });
+
+  it('поломанный рынок нашего семейства считается invalid, обход продолжается', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [
+      [
+        createSdkMarket({ conditionId: `0x${'1'.repeat(64)}`, noTokenId: null }),
+        createSdkMarket({ conditionId: `0x${'2'.repeat(64)}`, question: null }),
+        createSdkMarket({ conditionId: `0x${'3'.repeat(64)}` }),
+      ],
+    ];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+
+    expect(snapshot.entries.map((entry) => String(entry.market.id))).toEqual([
+      `0x${'3'.repeat(64)}`,
+    ]);
+    expect(snapshot.diagnostics.invalidMarkets).toBe(2);
+  });
+});
+
+describe('точное расписание из события (TEST 3)', () => {
+  it('startsAt берётся ИМЕННО из event.schedule.startTime', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(65) })]];
+    registerEvent(client, '99001', 5, 65);
+
+    await discovery.refresh();
+
+    expect(discovery.getSnapshot().entries[0]!.market.startsAt.toNumber()).toBe(
+      FIXED_NOW_MS + 5 * 60_000,
+    );
+  });
+
+  it('событие без startTime → рынок непригоден, НИКАКОГО угаданного расписания', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(35) })]];
+    client.events.set('99001', createSdkEvent({ id: '99001', startTime: null }));
+
+    expect(await discovery.refresh()).toBe(true);
+    const snapshot = discovery.getSnapshot();
+
+    expect(snapshot.entries).toHaveLength(0);
+    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+  });
+
+  it('startTime не парсится → рынок непригоден', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket()]];
+    client.events.set('99001', createSdkEvent({ id: '99001', startTime: 'not-a-date' }));
+
+    await discovery.refresh();
+
+    expect(discovery.getSnapshot().entries).toHaveLength(0);
+  });
+
+  it('startsAt не раньше expiresAt → рынок непригоден', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(30) })]];
+    registerEvent(client, '99001', 30);
+
+    await discovery.refresh();
+
+    expect(discovery.getSnapshot().entries).toHaveLength(0);
+  });
+
+  it('рынок без ссылки на событие непригоден и событие не запрашивается', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ eventRef: null })]];
+
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+
+    expect(client.fetchEventCalls).toHaveLength(0);
+    expect(snapshot.entries).toHaveLength(0);
+    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+  });
+
+  it('отказ fetchEvent исключает только рынки этого события', async () => {
+    const { client, discovery, logger } = createHarness();
+    client.pages = [
+      [
+        createCryptoUpDownMarket('btc', {
+          conditionId: CONDITION_ID_BTC,
+          eventRef: { id: 'evt-broken' },
+        }),
+        createCryptoUpDownMarket('eth', {
+          conditionId: CONDITION_ID_ETH,
+          eventRef: { id: 'evt-ok' },
+        }),
+      ],
+    ];
+    registerEvent(client, 'evt-ok', 10);
+    client.failFetchEventIds.add('evt-broken');
+
+    expect(await discovery.refresh()).toBe(true);
+    const snapshot = discovery.getSnapshot();
+
+    expect(snapshot.entries.map((entry) => String(entry.market.id))).toEqual([CONDITION_ID_ETH]);
+    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+    expect(snapshot.diagnostics.supportedCryptoUpDown).toBe(1);
+    expect(logger.byLevel('warn').some((e) => e.message.includes('fetchEvent failed'))).toBe(true);
+  });
+
+  it('regression: fallback «expiresAt − номинал серии» отсутствует в исходниках', () => {
+    // Расписание рынка обязано быть подтверждено площадкой. Любая арифметика
+    // вида `expiresAt - 5m/15m/1h` вернула бы выдуманное начало торгов, и
+    // отличить такой рынок от честного по данным было бы уже нельзя.
+    const sources = ['PolymarketMarketDiscovery.ts', 'PolymarketCryptoUpDownClassifier.ts'].map(
+      (file) => readFileSync(join(__dirname, '..', 'src', file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
+    );
+
+    for (const code of sources) {
+      expect(code).not.toMatch(/expiresAt[^\n]*-[^\n]*(?:5\s*\*\s*60|15\s*\*\s*60|60\s*\*\s*60)/);
+      expect(code).not.toMatch(/fallbackMarketDuration/i);
+      expect(code).not.toMatch(/DEFAULT_MARKET_DURATION/);
+    }
+  });
+});
+
+describe('кэш и дедупликация событий (TEST 4)', () => {
+  it('несколько рынков одного события → один fetchEvent', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [
+      [
+        createCryptoUpDownMarket('btc', {
+          conditionId: CONDITION_ID_BTC,
+          eventRef: { id: 'evt-shared' },
+        }),
+        createCryptoUpDownMarket('eth', {
+          conditionId: CONDITION_ID_ETH,
+          eventRef: { id: 'evt-shared' },
+        }),
+      ],
+    ];
+    registerEvent(client, 'evt-shared', 10);
+
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+
+    expect(client.fetchEventCalls).toEqual(['evt-shared']);
+    expect(snapshot.entries).toHaveLength(2);
+    expect(snapshot.diagnostics.eventFetches).toBe(1);
+  });
+
+  it('повторный обход внутри TTL кэша событий не ходит в сеть за расписанием', async () => {
+    const { client, clock, discovery } = createHarness({ cacheTtlMs: 60_000 });
+    client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    expect(discovery.getSnapshot().diagnostics.eventFetches).toBe(1);
+
+    clock.advance(61_000);
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+
+    expect(client.listCalls).toHaveLength(2);
+    expect(client.fetchEventCalls).toHaveLength(1);
+    expect(snapshot.diagnostics.eventFetches).toBe(0);
+    expect(snapshot.diagnostics.eventCacheHits).toBe(1);
+  });
+
+  it('после истечения TTL события расписание перезапрашивается', async () => {
+    const { client, clock, discovery } = createHarness({
+      cacheTtlMs: 60_000,
+      eventCacheTtlMs: 120_000,
+    });
+    client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    clock.advance(180_000);
+    await discovery.refresh();
+
+    expect(client.fetchEventCalls).toEqual(['99001', '99001']);
+  });
+
+  it('кэш событий ограничен по размеру', async () => {
+    const { client, clock, discovery } = createHarness({
+      cacheTtlMs: 0,
+      eventCacheMaxEntries: 1,
+    });
+    client.pages = [
+      [createCryptoUpDownMarket('btc', { conditionId: CONDITION_ID_BTC, eventRef: { id: 'e1' } })],
+    ];
+    registerEvent(client, 'e1', 10);
+    registerEvent(client, 'e2', 10);
+    await discovery.refresh();
+
+    // Второй обход вытесняет e1 записью e2
+    client.pages = [
+      [createCryptoUpDownMarket('eth', { conditionId: CONDITION_ID_ETH, eventRef: { id: 'e2' } })],
+    ];
+    clock.advance(1);
+    await discovery.refresh();
+
+    // Третий обход снова просит e1 — он уже вытеснен
+    client.pages = [
+      [createCryptoUpDownMarket('btc', { conditionId: CONDITION_ID_BTC, eventRef: { id: 'e1' } })],
+    ];
+    clock.advance(1);
+    await discovery.refresh();
+
+    expect(client.fetchEventCalls).toEqual(['e1', 'e2', 'e1']);
+  });
+});
+
+describe('пагинация и окно endDate (TEST 5)', () => {
   it('накапливает несколько страниц внутри окна', async () => {
     const { client, discovery } = createHarness();
     client.pages = [
-      [createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: endDateInMinutes(10) })],
-      [createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: endDateInMinutes(20) })],
-      [createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: endDateInMinutes(30) })],
+      [createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: isoInMinutes(10) })],
+      [createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: isoInMinutes(20) })],
+      [createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: isoInMinutes(30) })],
     ];
+    registerEvent(client, '99001', 5);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
+    const snapshot = discovery.getSnapshot();
 
-    expect(candidates).toHaveLength(3);
+    expect(snapshot.entries).toHaveLength(3);
+    expect(snapshot.diagnostics.pagesFetched).toBe(3);
   });
 
   it('останавливает пагинацию на первой странице за endDate cutoff', async () => {
     const { client, discovery } = createHarness({ endDateWindowMs: 60 * 60_000 });
     client.pages = [
       [
-        createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: endDateInMinutes(30) }),
+        createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: isoInMinutes(30) }),
         // За cutoff (60 мин): сам рынок отфильтрован, пагинация остановлена
-        createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: endDateInMinutes(120) }),
+        createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: isoInMinutes(120) }),
       ],
       // Эта страница НЕ должна быть прочитана
-      [createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: endDateInMinutes(240) })],
+      [createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: isoInMinutes(240) })],
     ];
-    client.failAtPage = 1; // чтение второй страницы уронило бы refresh
+    client.failAtPage = 1; // чтение второй страницы уронило бы обход
+    registerEvent(client, '99001', 5);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
 
-    expect(candidates.map((c) => String(c.marketId))).toEqual([`0x${'a'.repeat(64)}`]);
+    expect(discovery.getSnapshot().entries.map((entry) => String(entry.market.id))).toEqual([
+      `0x${'a'.repeat(64)}`,
+    ]);
   });
 
   it('уважает страховочный предел maxPages', async () => {
     const { client, discovery, logger } = createHarness({ maxPages: 2 });
     client.pages = [
-      [createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: endDateInMinutes(5) })],
-      [createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: endDateInMinutes(6) })],
-      [createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: endDateInMinutes(7) })],
+      [createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: isoInMinutes(5) })],
+      [createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: isoInMinutes(6) })],
+      [createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: isoInMinutes(7) })],
     ];
+    registerEvent(client, '99001', 1);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
 
-    expect(candidates).toHaveLength(2);
+    expect(discovery.getSnapshot().entries).toHaveLength(2);
     expect(logger.byLevel('warn').some((e) => e.message.includes('maxPages'))).toBe(true);
   });
 
@@ -228,387 +481,390 @@ describe('пагинация и окно endDate (TEST 2)', () => {
     const { client, discovery } = createHarness({ zombieGraceMs: 2 * 60_000 });
     client.pages = [
       [
-        createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: endDateInMinutes(-10) }),
-        createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: endDateInMinutes(-1) }),
-        createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: endDateInMinutes(15) }),
+        createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: isoInMinutes(-10) }),
+        createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: isoInMinutes(15) }),
       ],
     ];
+    registerEvent(client, '99001', 5);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
+    const snapshot = discovery.getSnapshot();
 
-    // -10 мин — за grace-окном (zombie: отброшен окном); -1 мин — внутри
-    // grace-окна пагинации, но затем отклонён expiry-фильтром MarketFilter
-    // (hoursToExpiry < 0) — ровно как в legacy (REST grace + adapter filter)
-    expect(candidates.map((c) => String(c.marketId))).toEqual([`0x${'c'.repeat(64)}`]);
+    expect(snapshot.entries.map((entry) => String(entry.market.id))).toEqual([
+      `0x${'b'.repeat(64)}`,
+    ]);
+    // Рынок за grace-окном не доходит даже до gate торгуемости
+    expect(snapshot.diagnostics.marketsScanned).toBe(2);
+    expect(snapshot.diagnostics.tradeableMarkets).toBe(1);
+  });
+
+  it('рынок без endDate не проходит окно', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ endDate: null })]];
+
+    await discovery.refresh();
+
+    expect(discovery.getSnapshot().entries).toHaveLength(0);
   });
 });
 
-describe('policy отказов refresh (TEST 3)', () => {
-  it('отказ первой страницы сохраняет прежний кэш', async () => {
-    const { client, discovery, logger } = createHarness();
+describe('policy отказов и last-good снимок (TEST 6)', () => {
+  it('отказ первой страницы сохраняет прежний снимок, refresh даёт false', async () => {
+    const { client, clock, discovery, logger } = createHarness({ cacheTtlMs: 0 });
     client.pages = [[createSdkMarket()]];
-    await discovery.refresh();
-    expect(await discovery.findCandidates()).toHaveLength(1);
+    registerEvent(client, '99001', 10);
+    expect(await discovery.refresh()).toBe(true);
+    expect(discovery.getSnapshot().entries).toHaveLength(1);
 
     client.failAtPage = 0;
-    await discovery.refresh();
+    clock.advance(1);
+    expect(await discovery.refresh({ force: true })).toBe(false);
 
-    expect((await discovery.findCandidates())).toHaveLength(1);
-    expect(logger.byLevel('error').some((e) => e.message.includes('keeping stale'))).toBe(true);
+    expect(discovery.getSnapshot().entries).toHaveLength(1);
+    expect(logger.byLevel('error').some((e) => e.message.includes('keeping previous'))).toBe(true);
   });
 
   it('отказ глубокой страницы использует частично собранный список', async () => {
     const { client, discovery, logger } = createHarness();
     client.pages = [
-      [createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: endDateInMinutes(5) })],
-      [createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: endDateInMinutes(6) })],
+      [createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: isoInMinutes(5) })],
+      [createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: isoInMinutes(6) })],
     ];
     client.failAtPage = 1;
+    registerEvent(client, '99001', 1);
 
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
+    expect(await discovery.refresh()).toBe(true);
 
-    expect(candidates.map((c) => String(c.marketId))).toEqual([`0x${'a'.repeat(64)}`]);
+    expect(discovery.getSnapshot().entries.map((entry) => String(entry.market.id))).toEqual([
+      `0x${'a'.repeat(64)}`,
+    ]);
     expect(logger.byLevel('warn').some((e) => e.message.includes('partial'))).toBe(true);
+  });
+
+  it('до первого успешного обхода снимок пуст, а не отсутствует', () => {
+    const { discovery } = createHarness();
+    const snapshot = discovery.getSnapshot();
+
+    expect(snapshot.entries).toEqual([]);
+    expect(snapshot.diagnostics.marketsScanned).toBe(0);
+    expect(snapshot.observedAt.toNumber()).toBe(FIXED_NOW_MS);
   });
 });
 
-describe('TTL-кэш findCandidates (TEST 4)', () => {
-  it('внутри TTL не ходит в Gamma повторно; после TTL — обновляется', async () => {
+describe('TTL, backoff и single-flight (TEST 7)', () => {
+  it('внутри TTL refresh не ходит в сеть; после TTL — обновляется', async () => {
     const { client, clock, discovery } = createHarness({ cacheTtlMs: 60_000 });
     client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
 
-    await discovery.findCandidates(); // первый вызов — refresh (кэш пуст)
-    await discovery.findCandidates(); // внутри TTL — из кэша
+    expect(await discovery.refresh()).toBe(true);
+    expect(await discovery.refresh()).toBe(true);
     expect(client.listCalls).toHaveLength(1);
 
     clock.advance(61_000);
-    await discovery.findCandidates(); // TTL истёк — refresh
+    await discovery.refresh();
+    expect(client.listCalls).toHaveLength(2);
+  });
+
+  it('force игнорирует свежий TTL', async () => {
+    const { client, discovery } = createHarness({ cacheTtlMs: 60_000 });
+    client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    await discovery.refresh({ force: true });
+
     expect(client.listCalls).toHaveLength(2);
   });
 
   it('конкурентные refresh дедуплицируются: одна пагинация на всех', async () => {
     const { client, discovery } = createHarness();
     client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
     let releaseHold!: () => void;
     client.listHold = new Promise<void>((resolve) => {
       releaseHold = resolve;
     });
 
     const first = discovery.refresh();
-    const second = discovery.refresh(); // in-flight → ждёт ту же пагинацию
-    const read = discovery.findCandidates(); // авто-refresh тоже разделяет её
+    const second = discovery.refresh();
     releaseHold();
-    await Promise.all([first, second, read]);
+    expect(await Promise.all([first, second])).toEqual([true, true]);
 
     expect(client.listCalls).toHaveLength(1);
-    expect(await discovery.findCandidates()).toHaveLength(1);
+    expect(discovery.getSnapshot().entries).toHaveLength(1);
   });
 
-  it('после неудачного refresh авто-обновление выдерживает backoff, явный refresh — нет', async () => {
+  it('после неудачи авто-обновление выдерживает backoff, force — нет', async () => {
     const { client, clock, discovery } = createHarness({
       cacheTtlMs: 60_000,
       refreshFailureBackoffMs: 15_000,
     });
     client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
     client.failAtPage = 0;
 
-    await discovery.findCandidates(); // попытка refresh — Gamma недоступен
+    expect(await discovery.refresh()).toBe(false);
     expect(client.listCalls).toHaveLength(1);
 
-    // Немедленное повторное чтение НЕ молотит Gamma (backoff)
-    await discovery.findCandidates();
+    // Немедленный повтор НЕ молотит Gamma
+    expect(await discovery.refresh()).toBe(false);
     expect(client.listCalls).toHaveLength(1);
 
-    // Явный refresh() backoff не учитывает — cadence принадлежит вызывающему
-    await discovery.refresh();
+    // force backoff не учитывает — cadence принадлежит вызывающему
+    await discovery.refresh({ force: true });
     expect(client.listCalls).toHaveLength(2);
 
-    // После истечения backoff авто-refresh пробует снова и восстанавливается
+    // После истечения backoff обход восстанавливается
     client.failAtPage = -1;
     clock.advance(15_001);
-    await discovery.findCandidates();
+    expect(await discovery.refresh()).toBe(true);
     expect(client.listCalls).toHaveLength(3);
-    expect(await discovery.findCandidates()).toHaveLength(1);
-    expect(client.listCalls).toHaveLength(3); // кэш снова свежий
+    expect(discovery.getSnapshot().entries).toHaveLength(1);
   });
 });
 
-describe('selection policy: reuse MarketFilter/MarketScorer (TEST 5)', () => {
-  it('применяет keywords/liquidity-фильтры и ranking по ближайшему истечению', async () => {
-    const { client, discovery } = createHarness({
-      filter: {
-        minTimeToExpiryHours: 0,
-        minSpread: 0.02,
-        minLiquidity: 100,
-        maxMarketsToReturn: 2,
-        anyOfKeywords: ['bitcoin', 'ethereum'],
-        excludedKeywords: ['testnet'],
-      },
-    });
+describe('детерминированный порядок и дедупликация (TEST 8)', () => {
+  it('сортирует по startsAt ASC, затем expiresAt ASC, затем id ASC', async () => {
+    const { client, discovery } = createHarness();
     client.pages = [
       [
-        createSdkMarket({
-          conditionId: `0x${'a'.repeat(64)}`,
-          question: 'Ethereum Up or Down - later hour',
-          endDate: endDateInMinutes(60),
-          liquidity: '500',
-        }),
-        createSdkMarket({
-          conditionId: `0x${'b'.repeat(64)}`,
-          question: 'Bitcoin Up or Down - nearest hour',
-          endDate: endDateInMinutes(30),
-          liquidity: '5000',
-        }),
-        createSdkMarket({
+        createCryptoUpDownMarket('btc', {
           conditionId: `0x${'c'.repeat(64)}`,
-          question: 'Bitcoin testnet market',
-          endDate: endDateInMinutes(40),
+          endDate: isoInMinutes(40),
+          eventRef: { id: 'late' },
         }),
-        createSdkMarket({
-          conditionId: `0x${'d'.repeat(64)}`,
-          question: 'Solana Up or Down',
-          endDate: endDateInMinutes(40),
+        createCryptoUpDownMarket('eth', {
+          conditionId: `0x${'b'.repeat(64)}`,
+          endDate: isoInMinutes(30),
+          eventRef: { id: 'early' },
         }),
-        createSdkMarket({
-          conditionId: `0x${'e'.repeat(64)}`,
-          question: 'Bitcoin thin market',
-          endDate: endDateInMinutes(45),
-          liquidity: '50',
+        createCryptoUpDownMarket('sol', {
+          conditionId: `0x${'a'.repeat(64)}`,
+          endDate: isoInMinutes(30),
+          eventRef: { id: 'early' },
         }),
       ],
     ];
+    registerEvent(client, 'early', 10);
+    registerEvent(client, 'late', 20);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
 
-    // b (30м) раньше a (60м); testnet/solana/thin отфильтрованы
-    expect(candidates.map((c) => String(c.marketId))).toEqual([
+    expect(discovery.getSnapshot().entries.map((entry) => String(entry.market.id))).toEqual([
+      `0x${'a'.repeat(64)}`, // startsAt 10, expiresAt 30, id 0xaaa…
+      `0x${'b'.repeat(64)}`, // startsAt 10, expiresAt 30, id 0xbbb…
+      `0x${'c'.repeat(64)}`, // startsAt 20
+    ]);
+  });
+
+  it('порядок ЛИКВИДНОСТЬЮ не определяется (это не ranking)', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [
+      [
+        createCryptoUpDownMarket('btc', {
+          conditionId: `0x${'a'.repeat(64)}`,
+          endDate: isoInMinutes(40),
+          liquidity: '1',
+          eventRef: { id: 'late' },
+        }),
+        createCryptoUpDownMarket('eth', {
+          conditionId: `0x${'b'.repeat(64)}`,
+          endDate: isoInMinutes(30),
+          liquidity: '999999',
+          eventRef: { id: 'early' },
+        }),
+      ],
+    ];
+    registerEvent(client, 'early', 10);
+    registerEvent(client, 'late', 20);
+
+    await discovery.refresh();
+
+    expect(discovery.getSnapshot().entries.map((entry) => String(entry.market.id))).toEqual([
       `0x${'b'.repeat(64)}`,
       `0x${'a'.repeat(64)}`,
     ]);
-    // score проставлен скорером (hoursToExpiry)
-    expect(candidates[0]!.score.toNumber()).toBeCloseTo(0.5, 5);
   });
 
-  it('кэш держит 3× запас относительно maxMarketsToReturn', async () => {
-    const { client, discovery } = createHarness({
-      filter: { ...OPEN_FILTER, maxMarketsToReturn: 1 },
-    });
-    client.pages = [
-      [
-        createSdkMarket({ conditionId: `0x${'a'.repeat(64)}`, endDate: endDateInMinutes(10) }),
-        createSdkMarket({ conditionId: `0x${'b'.repeat(64)}`, endDate: endDateInMinutes(20) }),
-        createSdkMarket({ conditionId: `0x${'c'.repeat(64)}`, endDate: endDateInMinutes(30) }),
-        createSdkMarket({ conditionId: `0x${'d'.repeat(64)}`, endDate: endDateInMinutes(40) }),
-      ],
-    ];
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-
-    expect(candidates).toHaveLength(3); // 1 × CACHE_MULTIPLIER(3)
-  });
-
-  it('дедуплицирует кандидатов по marketId', async () => {
+  it('дедуплицирует по venueId+marketId, побеждает первая запись', async () => {
     const { client, discovery } = createHarness();
     client.pages = [
       [
-        createSdkMarket({ gammaId: '1', endDate: endDateInMinutes(10) }),
-        createSdkMarket({ gammaId: '2', endDate: endDateInMinutes(10) }),
+        createSdkMarket({ gammaId: 'first', endDate: isoInMinutes(30) }),
+        createSdkMarket({ gammaId: 'second', endDate: isoInMinutes(30) }),
       ],
     ];
+    registerEvent(client, '99001', 10);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
+    const snapshot = discovery.getSnapshot();
 
-    expect(candidates).toHaveLength(1);
+    expect(snapshot.entries).toHaveLength(1);
+    expect(snapshot.diagnostics.duplicateMarkets).toBe(1);
+    expect(discovery.prepareMarket(snapshot.entries[0]!.market.id)?.gammaMarketId).toBe('first');
+  });
+
+  it('побеждает первая ПРИГОДНАЯ запись: дефект первой копии не теряет рынок', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [
+      [
+        // Первая копия ссылается на событие, которого получить нельзя
+        createSdkMarket({ gammaId: 'broken-copy', eventRef: { id: 'evt-broken' } }),
+        createSdkMarket({ gammaId: 'good-copy', eventRef: { id: 'evt-ok' } }),
+      ],
+    ];
+    registerEvent(client, 'evt-ok', 10);
+    client.failFetchEventIds.add('evt-broken');
+
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+
+    expect(snapshot.entries).toHaveLength(1);
+    expect(discovery.prepareMarket(snapshot.entries[0]!.market.id)?.gammaMarketId).toBe('good-copy');
+    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+    expect(snapshot.diagnostics.duplicateMarkets).toBe(0);
+  });
+
+  it('конфликтующий дубликат диагностируется, но обход не падает', async () => {
+    const { client, discovery, logger } = createHarness();
+    client.pages = [
+      [
+        createSdkMarket({ gammaId: 'first' }),
+        createSdkMarket({ gammaId: 'conflicting' }),
+      ],
+    ];
+    registerEvent(client, '99001', 10);
+
+    expect(await discovery.refresh()).toBe(true);
+
+    expect(discovery.getSnapshot().entries).toHaveLength(1);
+    expect(
+      logger.byLevel('warn').some((e) => e.message.includes('Conflicting duplicate')),
+    ).toBe(true);
   });
 });
 
-describe('prepareSelected: fetchEvent только для выбранного (TEST 6)', () => {
-  it('refresh НЕ вызывает fetchEvent ни для одного кандидата (нет N+1)', async () => {
+describe('диагностика обхода (TEST 9)', () => {
+  it('детерминированные счётчики на смешанном наборе', async () => {
     const { client, discovery } = createHarness();
     client.pages = [
       [
-        createSdkMarket({ conditionId: `0x${'a'.repeat(64)}` }),
-        createSdkMarket({ conditionId: `0x${'b'.repeat(64)}` }),
+        createFootballMarket({ eventRef: { id: 'evt-football' } }),
+        createWeatherMarket({ eventRef: { id: 'evt-weather' } }),
+        createCryptoThresholdMarket({ eventRef: { id: 'evt-threshold' } }),
+        createSdkMarket({ conditionId: `0x${'1'.repeat(64)}`, noTokenId: null }),
+        createCryptoUpDownMarket('btc', {
+          conditionId: CONDITION_ID_BTC,
+          eventRef: { id: 'evt-shared' },
+        }),
+        createCryptoUpDownMarket('eth', {
+          conditionId: CONDITION_ID_ETH,
+          eventRef: { id: 'evt-shared' },
+        }),
+        createSdkMarket({ conditionId: `0x${'9'.repeat(64)}`, closed: true }),
       ],
     ];
+    registerEvent(client, 'evt-shared', 10);
 
     await discovery.refresh();
+    const diagnostics = discovery.getSnapshot().diagnostics;
 
-    expect(client.fetchEventCalls).toHaveLength(0);
+    expect(diagnostics).toEqual({
+      pagesFetched: 1,
+      marketsScanned: 7,
+      tradeableMarkets: 6,
+      unsupportedMarkets: 3,
+      supportedCryptoUpDown: 2,
+      invalidMarkets: 1,
+      duplicateMarkets: 0,
+      eventFetches: 1,
+      eventCacheHits: 0,
+    });
   });
 
-  it('дообогащает выбранный рынок событием: identity, точное startTime, RTDS-фиды', async () => {
+  it('инвариант: tradeable = supported + unsupported + invalid + duplicates', async () => {
     const { client, discovery } = createHarness();
-    const market = createSdkMarket({
-      endDate: endDateInMinutes(70),
+    client.pages = [
+      [
+        createFootballMarket({ eventRef: { id: 'evt-football' } }),
+        createSdkMarket({ gammaId: 'dup-a' }),
+        createSdkMarket({ gammaId: 'dup-b' }),
+        createSdkMarket({ conditionId: `0x${'1'.repeat(64)}`, eventRef: null }),
+        createCryptoUpDownMarket('eth', {
+          conditionId: CONDITION_ID_ETH,
+          eventRef: { id: 'evt-eth' },
+        }),
+      ],
+    ];
+    registerEvent(client, '99001', 10);
+    registerEvent(client, 'evt-eth', 10);
+
+    await discovery.refresh();
+    const d = discovery.getSnapshot().diagnostics;
+
+    expect(d.supportedCryptoUpDown + d.unsupportedMarkets + d.invalidMarkets + d.duplicateMarkets).toBe(
+      d.tradeableMarkets,
+    );
+    expect(d.supportedCryptoUpDown).toBe(discovery.getSnapshot().entries.length);
+  });
+});
+
+describe('vendor-запись для физической подготовки подписок (TEST 10)', () => {
+  it('prepareMarket отдаёт RTDS-фиды, settlement и typed vendor-модели без сети', async () => {
+    const { client, discovery } = createHarness();
+    const vendorMarket = createCryptoUpDownMarket('eth', {
+      conditionId: CONDITION_ID_ETH,
+      endDate: isoInMinutes(35),
       eventRef: { id: '99001', slug: 'ref-slug', title: 'Ref title' },
-      resolutionSource: 'https://data.chain.link/streams/btc-usd',
     });
+    client.pages = [[vendorMarket]];
     const event = createSdkEvent({
       id: '99001',
       slug: 'evt-slug',
       title: 'Evt title',
-      startTime: endDateInMinutes(10),
-      endDate: endDateInMinutes(70),
-      metadata: { fee: 0 },
+      startTime: isoInMinutes(30),
+      endDate: isoInMinutes(35),
     });
-    client.pages = [[market]];
     client.events.set('99001', event);
 
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
+    const fetchCallsAfterRefresh = client.fetchEventCalls.length;
+    const market = discovery.getSnapshot().entries[0]!.market;
+    const vendor = discovery.prepareMarket(market.id);
 
-    expect(client.fetchEventCalls).toEqual(['99001']);
-    expect(selected.marketId).toBe(candidates[0]!.marketId);
-    // Canonical MarketId ЕСТЬ conditionId — отдельного primitive-дубликата нет
-    expect(String(selected.marketId)).toBe(CONDITION_ID_BTC);
-    expect(selected.gammaMarketId).toBe('516789');
-    expect(selected.question).toBe(candidates[0]!.question);
-    // Нейтральные outcomes[] — единственный source of truth инструментов
-    expect(selected.outcomes).toEqual([
-      { label: 'Up', instrumentId: TOKEN_ID_BTC_UP },
-      { label: 'Down', instrumentId: TOKEN_ID_BTC_DOWN },
-    ]);
-    expect(selected.expiresAt.toNumber()).toBe(FIXED_NOW_MS + 70 * 60_000);
-    expect(selected.eventStartsAt?.toNumber()).toBe(FIXED_NOW_MS + 10 * 60_000);
-    expect(selected.event).toEqual({ id: '99001', slug: 'evt-slug', title: 'Evt title' });
-    expect(selected.crypto?.source).toBe('chainlink');
-    expect(selected.crypto?.asset).toBe('btc');
-    expect(selected.crypto?.binanceSymbol).toBe('BTCUSDT');
-    expect(selected.rtdsFeeds).toEqual([
-      { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
-      { topic: 'prices.crypto.binance', symbol: 'btcusdt' },
-    ]);
-    expect(selected.gammaMarket).toBe(market);
-    expect(selected.gammaEvent).toBe(event);
-  });
-
-  it('нейтральное представление исходов: vendor yes/no несёт labels Yes/No как есть', async () => {
-    const { client, discovery } = createHarness();
-    // SDK именует свойства первого/второго исхода yes/no; для этого рынка
-    // labels действительно Yes/No — сохраняются без семантических выводов
-    client.pages = [[createSdkMarket({ yesLabel: 'Yes', noLabel: 'No' })]];
-    client.events.set('99001', createSdkEvent({ id: '99001' }));
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
-
-    expect(selected.outcomes).toEqual([
-      { label: 'Yes', instrumentId: TOKEN_ID_BTC_UP },
-      { label: 'No', instrumentId: TOKEN_ID_BTC_DOWN },
-    ]);
-  });
-
-  it('исход без CLOB-токена пропускается: outcomes несёт только подписываемые инструменты', async () => {
-    const { client, discovery } = createHarness();
-    client.pages = [[createSdkMarket({ noTokenId: null })]];
-    client.events.set('99001', createSdkEvent({ id: '99001' }));
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
-
-    expect(selected.outcomes).toEqual([{ label: 'Up', instrumentId: TOKEN_ID_BTC_UP }]);
-  });
-
-  it('отказ fetchEvent деградирует до выбора без event-данных (warn, не исключение)', async () => {
-    const { client, discovery, logger } = createHarness();
-    client.pages = [[createSdkMarket()]];
-    client.fetchEventError = new Error('gamma event 500');
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
-
-    expect(selected.eventStartsAt).toBeUndefined();
-    expect(selected.gammaEvent).toBeUndefined();
-    // Identity события сохраняется из reference рынка
-    expect(selected.event?.id).toBe('99001');
-    expect(logger.byLevel('warn').some((e) => e.message.includes('fetchEvent'))).toBe(true);
-  });
-
-  it('рынок без event-ссылки готовится без fetchEvent', async () => {
-    const { client, discovery } = createHarness();
-    client.pages = [[createSdkMarket({ eventRef: null, resolutionSource: null })]];
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
-
-    expect(client.fetchEventCalls).toHaveLength(0);
-    expect(selected.event).toBeUndefined();
-    expect(selected.eventStartsAt).toBeUndefined();
-    expect(selected.crypto).toBeUndefined();
-    expect(selected.rtdsFeeds).toEqual([]);
-  });
-
-  it('TWAP-форма Chainlink URL: spot-фиды сохраняются, settlement-поток добавляется', async () => {
-    const { client, discovery } = createHarness();
-    client.pages = [
-      [
-        createSdkMarket({
-          resolutionSource: 'https://data.chain.link/streams/eth-usd-twap-60s-streams',
-        }),
-      ],
-    ];
-    client.events.set('99001', createSdkEvent({ id: '99001' }));
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
-
-    expect(selected.crypto?.source).toBe('chainlink');
-    expect(selected.crypto?.asset).toBe('eth');
-    expect(selected.crypto?.binanceSymbol).toBe('ETHUSDT');
-    expect(selected.rtdsFeeds).toEqual([
+    expect(client.fetchEventCalls).toHaveLength(fetchCallsAfterRefresh);
+    expect(vendor).toBeDefined();
+    expect(vendor!.marketId).toBe(market.id);
+    expect(vendor!.eventStartsAt.toNumber()).toBe(FIXED_NOW_MS + 30 * 60_000);
+    expect(vendor!.event).toEqual({ id: '99001', slug: 'evt-slug', title: 'Evt title' });
+    expect(vendor!.crypto.asset).toBe('eth');
+    expect(vendor!.rtdsFeeds).toEqual([
       { topic: 'prices.crypto.chainlink', symbol: 'eth/usd' },
       { topic: 'prices.crypto.binance', symbol: 'ethusdt' },
       { topic: 'prices.crypto.chainlink.twap', symbol: 'eth/usd', windowSeconds: 60 },
     ]);
-    expect(selected.crypto?.settlement).toEqual({
+    expect(vendor!.crypto.settlement).toEqual({
       kind: 'chainlink-twap',
       symbol: 'eth/usd',
       windowSeconds: 60,
       resolutionSource: 'https://data.chain.link/streams/eth-usd-twap-60s-streams',
     });
+    expect(vendor!.gammaMarket).toBe(vendorMarket);
+    expect(vendor!.gammaEvent).toBe(event);
   });
 
-  it('неподдержанная пара TWAP-URL (нет Binance-маппинга) не даёт фидов', async () => {
-    const { client, discovery } = createHarness();
-    client.pages = [
-      [
-        createSdkMarket({
-          resolutionSource: 'https://data.chain.link/streams/hype-usd-twap-60s-streams',
-        }),
-      ],
-    ];
-    client.events.set('99001', createSdkEvent({ id: '99001' }));
-
-    await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
-
-    expect(selected.crypto).toBeUndefined();
-    expect(selected.rtdsFeeds).toEqual([]);
-  });
-
-  it('событие без startTime даёт eventStartsAt=undefined (fallback решает координатор)', async () => {
+  it('рынка нет в снимке → нет и vendor-записи', async () => {
     const { client, discovery } = createHarness();
     client.pages = [[createSdkMarket()]];
-    client.events.set('99001', createSdkEvent({ id: '99001', startTime: null }));
-
+    registerEvent(client, '99001', 10);
     await discovery.refresh();
-    const candidates = await discovery.findCandidates();
-    const selected = await discovery.prepareSelected(candidates[0]!);
+    const known = discovery.getSnapshot().entries[0]!.market.id;
 
-    expect(selected.eventStartsAt).toBeUndefined();
-    expect(selected.gammaEvent).toBeDefined();
+    // Следующий обход universe уже не содержит прежний рынок
+    client.pages = [[]];
+    await discovery.refresh({ force: true });
+
+    expect(discovery.prepareMarket(known)).toBeUndefined();
   });
 });

@@ -1,77 +1,108 @@
 /**
- * Market Discovery V2 — обнаружение рынков Polymarket через официальный SDK.
+ * Polymarket V2 Discovery — технически поддержанный universe canonical рынков.
  *
  * @remarks
- * ### Место в архитектуре (N-003, control plane)
+ * ### Место в архитектуре
  *
  * ```text
- * @polymarket/client (listMarkets / fetchEvent)   ← transport/query owner
- *         ↓ normalized Market
- * PolymarketMarketDiscovery (этот класс)
- *         ↓ кандидаты (наша selection policy: MarketFilter + MarketScorer)
- * CollectionCoordinator → prepareSelected() → SelectedPolymarketMarket
+ * @polymarket/client + @polymarket/bindings   ← transport/query owner
+ *                 ↓ normalized vendor Market
+ *        PolymarketMarketDiscovery (этот класс)
+ *                 ↓ vendor normalization
+ *          Domain Market (@polymarket/market)
+ *                 ↓
+ *          MarketDiscoverySnapshot            ← граница порта
+ *                 ↓
+ *            MarketUniverse
+ *                 ↓
+ *              Application
  * ```
  *
- * Discovery — control/query path: он НЕ публикует ничего в ExternalMessageBus
- * (bus остаётся data plane realtime-наблюдений источников).
+ * Discovery — control/query path: он НЕ публикует ничего в
+ * `ExternalMessageBus` (bus остаётся data plane realtime-наблюдений).
  *
- * ### Разделение ответственности
+ * ### Что Discovery решает и чего он НЕ решает
  *
- * - **SDK владеет транспортом**: пагинация `listMarkets`, HTTP, decode,
- *   нормализация Gamma-ответа. Никакого custom Gamma HTTP-клиента в V2 нет.
- * - **Мы владеем selection policy**: pre-filter торгуемости, окно endDate,
- *   `MarketFilter` (keywords/ликвидность/спред), `MarketScorer`
- *   (ranking) — существующие компоненты reuse-ятся без изменений.
+ * Он отвечает на ТЕХНИЧЕСКИЙ вопрос:
  *
- * ### Стратегия пагинации (parity с legacy `getActiveMarkets`)
+ * > какие ближайшие рынки площадки наш контур вообще способен вести?
  *
- * Server-side сужение + ранняя остановка, НЕ full-world scan:
+ * Он НЕ выбирает «интересные» рынки. Ключевые слова, минимальная
+ * ликвидность/спред, предпочтения по активу и длительности, top-N — это
+ * owner policy, и она живёт НАД портом, над `MarketUniverse`. Отсюда
+ * удалены `MarketFilter`, `MarketScorer`, `IMarketFilterConfig` и
+ * `maxMarketsToReturn`: инфраструктура, знающая про «BTC интереснее ETH»,
+ * — это policy, протёкшая в драйвер площадки.
  *
- * 1. `closed=false`, `order=endDate`, `ascending=true` — ближайшие к
- *    истечению рынки идут первыми;
- * 2. `endDateMin = now - zombieGraceMs` — отрезает на сервере zombie-рынки
- *    2025 года, которые Gamma продолжает отдавать как active;
- * 3. клиентский cutoff `endDate <= now + endDateWindowMs`: страницы
- *    отсортированы по endDate, поэтому первый рынок за cutoff означает, что
- *    ВСЕ следующие страницы тоже за ним — пагинация останавливается.
- *    (`endDateMax` серверу сознательно не передаётся: legacy-аудит показал
- *    HTTP 500 у Gamma на `end_date_max` во всех форматах.)
- * 4. страховочный предел `maxPages`.
+ * ### Конвейер одного обхода
  *
- * ### Gamma gaps N-001 и `fetchEvent`
+ * ```text
+ * listMarkets (bounded pagination, server-side narrowing + ранняя остановка)
+ *   ↓ окно endDate + zombie grace
+ * technical tradeability gate (active && !closed && enableOrderBook)
+ *   ↓
+ * classifyPolymarketMarket → поддержано ли семейство CRYPTO_UP_DOWN
+ *   ↓ ТОЛЬКО поддержанное подмножество
+ * fetchEvent (кэш + dedup) → ТОЧНОЕ event.schedule.startTime
+ *   ↓
+ * canonical Market + MarketDiscoveryMetrics
+ *   ↓ дедупликация venueId+marketId, технический порядок
+ * MarketDiscoverySnapshot
+ * ```
  *
- * Normalized `Market` SDK НЕ содержит `eventStartTime`/`eventMetadata`
- * сырого Gamma-ответа. Поэтому кандидаты (стадия list) живут без времени
- * начала события, а ТОЧНОЕ время начала берётся из
- * `fetchEvent(selected).schedule.startTime` ТОЛЬКО для выбранного рынка
- * ({@link PolymarketMarketDiscovery.prepareSelected}) — никакого N+1
- * `fetchEvent` по всем кандидатам.
+ * ### Почему enrichment перенесён с «выбранного» рынка на весь
+ * поддержанный universe
+ *
+ * Canonical `Market` требует `startsAt`, а каталог рынков его не несёт —
+ * точное время начала живёт только в `event.schedule.startTime`. Раньше
+ * `fetchEvent` выполнялся после owner selection (для 1 рынка). Owner
+ * selection теперь выше границы, поэтому enrichment переехал на уровень
+ * ПОДДЕРЖАННОГО ТЕХНИЧЕСКОГО universe — но остаётся ПОСЛЕ дешёвой
+ * классификации: футбол, погода, политика и произвольные crypto `Yes/No`
+ * событий не запрашивают вовсе. Если в окне 500 рынков, а Up/Down — 30,
+ * запросов будет ≤30, а не 500 (и меньше — за счёт кэша событий).
+ *
+ * ### Никаких выдуманных canonical-данных
+ *
+ * Ни одного fallback вида `startsAt = expiresAt - 1h`, `question = marketId`,
+ * подставного label/instrumentId или «по умолчанию BTC». Если обязательное
+ * поле нельзя получить честно — рынок непригоден и в universe не попадает,
+ * а обход остальных продолжается (счётчик `invalidMarkets`).
  */
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { createPublicClient } from '@polymarket/client';
-import type { Event, Market } from '@polymarket/bindings/gamma';
-import type { DiscoveredMarket, IMarketFilterConfig, IMarketDiscoveryService } from '@polymarket/ports';
-import type { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
+import type { Event, Market as VendorMarket } from '@polymarket/bindings/gamma';
+import type {
+  IMarketDiscoveryService,
+  MarketDiscoveryDiagnostics,
+  MarketDiscoveryEntry,
+  MarketDiscoveryMetrics,
+  MarketDiscoveryRefreshOptions,
+  MarketDiscoverySnapshot,
+} from '@polymarket/ports';
+import { marketUniverseKey } from '@polymarket/ports';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
-import { asInstrumentId, asMarketId } from '@polymarket/ids';
-import { Money, MoneyService, OutcomePrice, Quantity, RatioService } from '@polymarket/value-objects';
+import { KnownVenues } from '@polymarket/ids';
+import { Market, MarketState, asMarketDuration } from '@polymarket/market';
+import { Money, MoneyService, RatioService } from '@polymarket/value-objects';
 import type { Ratio } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
-import { derivePolymarketCryptoMeta } from './PolymarketRtdsFeeds.js';
+import { classifyPolymarketMarket } from './PolymarketCryptoUpDownClassifier.js';
+import type { PolymarketCryptoUpDownClassification } from './PolymarketCryptoUpDownClassifier.js';
 import type { PolymarketCryptoMeta, PolymarketRtdsFeed } from './PolymarketRtdsFeeds.js';
 
 /**
- * Query-возможности официального SDK-клиента, которые использует Discovery.
+ * Query-возможности Polymarket V2 client, которые использует Discovery.
  *
  * @remarks
- * Тип выведен из официального `PublicClient` (`Pick<..., 'listMarkets' |
- * 'fetchEvent'>`) — тот же приём, что `PolymarketSubscribeClient` у Source:
- * SDK не экспортирует request/response-типы этих методов с public root,
- * а `ReturnType<typeof createPublicClient>` — публичный API. Реальный
+ * Тип выведен из `PublicClient` (`Pick<..., 'listMarkets' | 'fetchEvent'>`) —
+ * тот же приём, что `PolymarketSubscribeClient` у Source: пакет не
+ * экспортирует request/response-типы этих методов с public root, а
+ * `ReturnType<typeof createPublicClient>` — публичный API. Реальный
  * `createPublicClient()` присваивается сюда напрямую; узкий Pick нужен,
  * чтобы тестовый fake не реализовывал все actions клиента.
  */
@@ -81,301 +112,384 @@ export type PolymarketDiscoveryClient = Pick<
 >;
 
 /**
- * Кандидат Discovery V2: существующий port-контракт `DiscoveredMarket`
- * плюс typed normalized Market официального SDK.
- *
- * @remarks
- * `DiscoveredMarket`-часть питает существующие `MarketFilter`/`MarketScorer`
- * (reuse без изменений). `sdkMarket` — typed источник данных для
- * `prepareSelected` (header, RTDS, event reference); legacy-поле `rawMarket`
- * сознательно НЕ заполняется — SDK Market не является legacy Gamma DTO,
- * и таскать его под нетипизированным `Record<string, unknown>` запрещено
- * (N-003 PART 5).
- *
- * `eventStartMs` у кандидатов V2 всегда `undefined`: normalized SDK Market
- * не несёт `eventStartTime` (gap N-001). Точное время начала события
- * добавляется на стадии {@link PolymarketMarketDiscovery.prepareSelected}.
- */
-export interface PolymarketDiscoveredMarket extends DiscoveredMarket {
-  /** Normalized Market официального SDK — typed initial Gamma state. */
-  readonly sdkMarket: Market;
-}
-
-/**
- * Один исход рынка в терминах выбранного market (для подписок/header).
+ * Один исход рынка в терминах подготовки подписок (Infrastructure-only).
  *
  * @remarks
  * Canonical-представление ПОСЛЕ vendor boundary: identity инструмента —
- * `InstrumentId` (для Polymarket это CLOB token id — см. `@polymarket/ids`),
- * а не plain string; `label` — реальная vendor-метка исхода (`Up`/`Down`,
- * `Yes`/`No`, ...) без семантических предположений о её значении.
+ * `InstrumentId` (для Polymarket это CLOB token id), а `label` — реальная
+ * vendor-метка исхода без семантических предположений.
  */
 export interface SelectedPolymarketOutcome {
-  /** Человекочитаемая метка исхода как её отдал SDK (`Up`/`Down`/`Yes`/...). */
+  /** Человекочитаемая метка исхода как её отдала площадка (`Up`/`Down`/...). */
   readonly label: string;
   /** Canonical identity инструмента исхода (Polymarket CLOB token id). */
   readonly instrumentId: InstrumentId;
 }
 
 /**
- * Итог подготовки ВЫБРАННОГО рынка к открытию collection session.
+ * Vendor-данные обнаруженного рынка для ФИЗИЧЕСКОЙ подготовки подписок.
  *
  * @remarks
- * Единственный маленький результат discovery, от которого зависит
- * Coordinator (PART 5): identity + outcomes + timing + RTDS-фиды + typed
- * Gamma-состояние для header. Никаких «десятков случайных SDK-полей» —
- * полный SDK Market/Event доступен через `gammaMarket`/`gammaEvent`
- * только как opaque-источник header-метаданных.
+ * Это Infrastructure-only запись: она НЕ пересекает границу порта и не
+ * входит в {@link MarketDiscoverySnapshot}. За границей живёт только
+ * canonical `Market`; здесь остаётся то, что нужно самой инфраструктуре —
+ * RTDS-фиды, settlement-правило и typed vendor-модели для header архива.
  *
  * Инструменты рынка живут ТОЛЬКО в `outcomes[]` (single source of truth):
- * список ids при необходимости выводится
- * `outcomes.map((outcome) => outcome.instrumentId)` — отдельной коллекции
- * ids нет, противоречивое состояние непредставимо.
+ * список ids выводится `outcomes.map((o) => o.instrumentId)`.
  */
 export interface SelectedPolymarketMarket {
   /**
    * Canonical id рынка. Для Polymarket это ЕСТЬ conditionId — routing
-   * identity SDK-событий (контракт `String(marketId) === payload.market`,
-   * зафиксирован recorder-ом N-002); отдельного primitive-дубликата нет.
+   * identity vendor-событий (контракт `String(marketId) === payload.market`).
    */
   readonly marketId: MarketId;
-  /** Vendor Gamma numeric id рынка (для re-fetch в N-004). */
+  /** Vendor Gamma numeric id рынка (для re-fetch финализатором). */
   readonly gammaMarketId: string;
-  /** Slug рынка (если есть). */
+  /** Slug рынка (если площадка его опубликовала). */
   readonly slug?: string;
   /** Вопрос рынка. */
   readonly question: string;
-  /** Исходы рынка в vendor-порядке (binary: первый/второй исход SDK). */
-  readonly outcomes: readonly SelectedPolymarketOutcome[];
+  /** Исходы рынка в РЕАЛЬНОМ vendor-порядке. */
+  readonly outcomes: readonly [SelectedPolymarketOutcome, SelectedPolymarketOutcome];
   /** Время истечения рынка. */
   readonly expiresAt: Timestamp;
   /**
-   * ТОЧНОЕ время начала события из `fetchEvent().schedule.startTime`.
-   * `undefined`, если у рынка нет event-ссылки, fetch не удался или
-   * событие не несёт startTime — тогда вызывающий применяет fallback
-   * (см. lead-time policy координатора).
+   * ТОЧНОЕ время начала события из `event.schedule.startTime`.
+   *
+   * @remarks
+   * Обязательно: рынок без подтверждённого времени начала не становится
+   * canonical `Market` и, следовательно, не имеет vendor-записи здесь.
+   * Прежнего fallback'а «expiresAt - номинальная длительность» больше нет.
    */
-  readonly eventStartsAt?: Timestamp;
-  /** Identity события Gamma (если есть). */
-  readonly event?: {
+  readonly eventStartsAt: Timestamp;
+  /** Identity события площадки. */
+  readonly event: {
     readonly id: string;
     readonly slug?: string;
     readonly title?: string;
   };
-  /** Крипто-метаданные (RTDS-фиды) или `undefined` для не-крипто рынков. */
-  readonly crypto?: PolymarketCryptoMeta;
-  /** RTDS-фиды выбранного рынка (пустой массив для не-крипто). */
+  /** Крипто-метаданные (актив, источник, settlement-правило). */
+  readonly crypto: PolymarketCryptoMeta;
+  /** RTDS-фиды рынка. */
   readonly rtdsFeeds: readonly PolymarketRtdsFeed[];
-  /** Typed normalized Market SDK — initial Gamma state для header. */
-  readonly gammaMarket: Market;
-  /** Typed normalized Event SDK (если получен) — для header/N-004. */
-  readonly gammaEvent?: Event;
+  /** Typed normalized vendor Market — initial Gamma state для header. */
+  readonly gammaMarket: VendorMarket;
+  /** Typed normalized vendor Event — для header/финализации. */
+  readonly gammaEvent: Event;
 }
 
 /**
- * Конфигурация Discovery V2.
+ * Конфигурация Polymarket V2 Discovery.
  */
 export interface PolymarketMarketDiscoveryConfig {
-  /** Существующая конфигурация selection policy (`MarketFilter`). */
-  readonly filter: IMarketFilterConfig;
   /**
    * Размер страницы `listMarkets`.
    * @defaultValue 100 — Gamma молча ограничивает страницу 100 записями
    */
   readonly pageSize?: number;
   /**
-   * Страховочный предел страниц одного refresh.
-   * @defaultValue 100 (parity c legacy `maxPages`)
+   * Страховочный предел страниц одного обхода.
+   * @defaultValue 100
    */
   readonly maxPages?: number;
   /**
-   * Клиентское окно endDate вперёд от «сейчас»: рынки, истекающие позже,
+   * Клиентское окно `endDate` вперёд от «сейчас»: рынки, истекающие позже,
    * не рассматриваются, пагинация останавливается на первом из них.
-   * @defaultValue 172_800_000 (2 суток, parity с legacy cutoff)
+   *
+   * @remarks
+   * Главный рычаг стоимости обхода, и дефолт здесь СОЗНАТЕЛЬНО меньше
+   * прежних двух суток. Раньше окно определяло только длину списка
+   * кандидатов, а точечный запрос события выполнялся для ОДНОГО выбранного
+   * рынка. Теперь точное расписание нужно каждому рынку universe, поэтому
+   * окно определяет и число запросов события. Замер live 2026-09-01:
+   *
+   * ```text
+   * 48 ч → 10 000 записей, 1926 рынков, 2040 запросов события, ~47 с
+   *  6 ч →    588 рынков,  ~600 запросов события,              ~11 с
+   *  1 ч →     96 рынков,   102 запроса события,               ~1.9 с
+   * ```
+   *
+   * Шесть часов покрывают 5m/15m/1h/4h серии с запасом на lead time и
+   * остаются на порядок дешевле прежнего окна; дальше горизонта Policy
+   * всё равно не принимает решений. Холодная стоимость платится один раз —
+   * дальше расписания отдаёт кэш событий. Кому нужен более широкий
+   * горизонт — увеличивает окно осознанно.
+   * @defaultValue 21_600_000 (6 часов)
    */
   readonly endDateWindowMs?: number;
   /**
    * Grace-окно назад для только что истёкших рынков (clock skew) —
    * уходит серверу как `endDateMin`.
-   * @defaultValue 120_000 (2 минуты, parity)
+   * @defaultValue 120_000 (2 минуты)
    */
   readonly zombieGraceMs?: number;
   /**
-   * TTL кэша кандидатов для `findCandidates()`.
-   * @defaultValue 60_000 (parity с legacy adapter)
+   * TTL снимка universe: пока он не истёк, `refresh()` без `force`
+   * в сеть не ходит.
+   * @defaultValue 60_000
    */
   readonly cacheTtlMs?: number;
   /**
-   * Минимальная пауза авто-refresh после НЕУДАЧНОГО обновления: пока она не
-   * истекла, `findCandidates()` возвращает прежний кэш, не запуская новую
-   * пагинацию (защита от молотьбы по недоступному Gamma). Явный `refresh()`
-   * backoff не учитывает — cadence явных обновлений принадлежит вызывающему.
+   * Минимальная пауза после НЕУДАЧНОГО обхода: пока она не истекла,
+   * `refresh()` без `force` возвращает `false`, не запуская новую
+   * пагинацию (защита от молотьбы по недоступному Gamma).
    * @defaultValue 15_000
    */
   readonly refreshFailureBackoffMs?: number;
+  /**
+   * TTL кэша событий.
+   *
+   * @remarks
+   * Заметно длиннее TTL каталога и это осознанно: расписание события
+   * (`schedule.startTime`) на практике неизменно после публикации, а
+   * каталог рынков меняется каждую минуту. Один TTL на оба означал бы
+   * повторный запрос одного и того же неизменного расписания на каждом
+   * обходе.
+   * @defaultValue 1_800_000 (30 минут)
+   */
+  readonly eventCacheTtlMs?: number;
+  /**
+   * Верхняя граница числа записей в кэше событий.
+   * @defaultValue 1000
+   */
+  readonly eventCacheMaxEntries?: number;
+  /**
+   * Сколько запросов события выполняется параллельно.
+   * @defaultValue 6
+   */
+  readonly eventFetchConcurrency?: number;
 }
 
 /** Дефолты конфигурации (см. поля {@link PolymarketMarketDiscoveryConfig}). */
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_PAGES = 100;
-const DEFAULT_END_DATE_WINDOW_MS = 2 * 24 * 60 * 60_000;
+const DEFAULT_END_DATE_WINDOW_MS = 6 * 60 * 60_000;
 const DEFAULT_ZOMBIE_GRACE_MS = 2 * 60_000;
 const DEFAULT_CACHE_TTL_MS = 60_000;
 const DEFAULT_REFRESH_FAILURE_BACKOFF_MS = 15_000;
-
-/**
- * Кэш кандидатов держит 3× запас относительно maxMarketsToReturn:
- * когда активные рынки истекают, координатор немедленно берёт следующих
- * лучших кандидатов без ожидания TTL-рефреша (parity с legacy adapter).
- */
-const CACHE_MULTIPLIER = 3;
+const DEFAULT_EVENT_CACHE_TTL_MS = 30 * 60_000;
+const DEFAULT_EVENT_CACHE_MAX_ENTRIES = 1000;
+const DEFAULT_EVENT_FETCH_CONCURRENCY = 6;
 
 /**
  * Зависимости {@link PolymarketMarketDiscovery}.
  */
 export interface PolymarketMarketDiscoveryDependencies {
-  /** Официальный SDK public client (обычно `createPublicClient()`). */
+  /** Polymarket V2 public client (обычно `createPublicClient()`). */
   readonly client: PolymarketDiscoveryClient;
-  /** Существующий stateless-фильтр кандидатов (reuse). */
-  readonly filter: MarketFilter;
-  /** Существующий stateless-скорер кандидатов (reuse). */
-  readonly scorer: MarketScorer;
   /** Источник времени (DI — детерминизм в тестах). */
   readonly clock: IClock;
   /** Логгер (будет обёрнут в child с component-контекстом). */
   readonly logger: ILogger;
 }
 
+/** Запись кэша событий. */
+interface CachedEvent {
+  readonly event: Event;
+  readonly fetchedAt: number;
+}
+
 /**
- * Market Discovery V2: официальный SDK Gamma → наша selection policy →
- * кандидаты и подготовленный выбранный рынок.
+ * Мутабельные счётчики одного обхода.
  *
  * @remarks
- * ### Refresh vs findCandidates vs prepareSelected
+ * Выведены из `MarketDiscoveryDiagnostics` снятием `readonly`, а не
+ * продублированы списком полей: иначе новый счётчик в контракте молча
+ * остался бы неподсчитанным здесь.
+ */
+type RefreshCounters = {
+  -readonly [K in keyof MarketDiscoveryDiagnostics]: MarketDiscoveryDiagnostics[K];
+};
+
+/** Построенная запись снимка вместе со своей Infrastructure-only vendor-записью. */
+interface BuiltEntry {
+  readonly entry: MarketDiscoveryEntry;
+  readonly vendor: SelectedPolymarketMarket;
+}
+
+/** Поддержанный кандидат вместе со своей vendor-записью. */
+interface SupportedCandidate {
+  readonly vendorMarket: VendorMarket;
+  readonly classification: PolymarketCryptoUpDownClassification;
+  /** Vendor id события — обязателен: без события нет точного начала. */
+  readonly eventId: string;
+}
+
+/**
+ * Пустой снимок до первого успешного обхода.
  *
- * - {@link PolymarketMarketDiscovery.refresh} — принудительное обновление
- *   кэша кандидатов (paginated listMarkets → pre-filter → map → filter →
- *   score → cache). Ошибка Gamma НЕ очищает прежний кэш.
- * - {@link PolymarketMarketDiscovery.findCandidates} — чтение кэша с
- *   авто-refresh по TTL (контракт `IMarketDiscoveryService`).
- * - {@link PolymarketMarketDiscovery.prepareSelected} — дообогащение ОДНОГО
- *   выбранного кандидата через `fetchEvent` (точное время начала события,
- *   identity события, header-данные). Вызывается координатором только для
- *   рынков, реально претендующих на открытие.
+ * @param observedAt - Момент, на который universe пуст
+ * @returns Замороженный снимок без записей
+ */
+function emptySnapshot(observedAt: Timestamp): MarketDiscoverySnapshot {
+  return Object.freeze({
+    observedAt,
+    entries: Object.freeze([] as readonly MarketDiscoveryEntry[]),
+    diagnostics: Object.freeze({
+      pagesFetched: 0,
+      marketsScanned: 0,
+      tradeableMarkets: 0,
+      unsupportedMarkets: 0,
+      supportedCryptoUpDown: 0,
+      invalidMarkets: 0,
+      duplicateMarkets: 0,
+      eventFetches: 0,
+      eventCacheHits: 0,
+    }),
+  });
+}
+
+/**
+ * Технический порядок записей снимка.
  *
+ * @param a - Первая запись
+ * @param b - Вторая запись
+ * @returns Отрицательное/ноль/положительное — как для `Array.prototype.sort`
+ *
+ * @remarks
+ * `startsAt` ASC → `expiresAt` ASC → `id` ASC. Это СТАБИЛЬНОСТЬ вывода
+ * (снимок, тесты, логи), а не ранжирование: ликвидность и любые «признаки
+ * интересности» здесь сознательно не участвуют — иначе `MarketScorer`
+ * вернулся бы в инфраструктуру под другим именем.
+ */
+function compareEntries(a: MarketDiscoveryEntry, b: MarketDiscoveryEntry): number {
+  if (a.market.startsAt.isBefore(b.market.startsAt)) return -1;
+  if (a.market.startsAt.isAfter(b.market.startsAt)) return 1;
+  if (a.market.expiresAt.isBefore(b.market.expiresAt)) return -1;
+  if (a.market.expiresAt.isAfter(b.market.expiresAt)) return 1;
+  if (a.market.id < b.market.id) return -1;
+  if (a.market.id > b.market.id) return 1;
+  return 0;
+}
+
+/**
+ * Polymarket V2 Discovery: vendor-каталог → canonical universe.
+ *
+ * @remarks
  * ### Policy отказов
  *
- * - отказ Gamma в refresh — лог + прежний кэш (наблюдаемо, не фатально);
- * - отказ страницы при частично собранных данных — используем частичный
- *   список (страницы отсортированы по ближайшему истечению — самое ценное
- *   уже собрано; parity с legacy);
- * - отказ `fetchEvent` в prepareSelected — деградация: выбранный рынок
- *   возвращается БЕЗ `eventStartsAt`/`gammaEvent` (warn); решение об
- *   открытии принимает координатор своим fallback-правилом.
+ * - отказ первой страницы каталога — лог + прежний снимок остаётся
+ *   доступным, `refresh()` возвращает `false`;
+ * - отказ ГЛУБОКОЙ страницы при уже собранных данных — используется
+ *   частичный список: страницы отсортированы по ближайшему истечению,
+ *   самое ценное уже собрано;
+ * - отказ `fetchEvent` — непригодны ТОЛЬКО рынки этого события, обход
+ *   остальных продолжается.
  *
  * @example
  * ```typescript
  * const discovery = new PolymarketMarketDiscovery(
- *   { client: createPublicClient(), filter: new MarketFilter(), scorer: new MarketScorer(clock), clock, logger },
- *   { filter: { minTimeToExpiryHours: 0, minSpread: 0, minLiquidity: 0, maxMarketsToReturn: 10 } },
+ *   { client: createPublicClient(), clock, logger },
+ *   { endDateWindowMs: 6 * 60 * 60_000 },
  * );
- * await discovery.refresh();
- * const candidates = await discovery.findCandidates();
- * const selected = await discovery.prepareSelected(candidates[0]!);
+ *
+ * await discovery.refresh({ force: true });
+ * universe.replace(discovery.getSnapshot());
  * ```
  */
 export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
   private readonly _client: PolymarketDiscoveryClient;
-  private readonly _filter: MarketFilter;
-  private readonly _scorer: MarketScorer;
   private readonly _clock: IClock;
   private readonly _logger: ILogger;
   private readonly _config: Required<PolymarketMarketDiscoveryConfig>;
 
-  /** Кэш кандидатов после последнего успешного refresh. */
-  private _cachedCandidates: readonly PolymarketDiscoveredMarket[] = [];
-  /** Момент последнего успешного refresh (ms). */
+  /** Последний успешный снимок universe. */
+  private _snapshot: MarketDiscoverySnapshot;
+  /**
+   * Vendor-записи последнего снимка (`String(marketId)` → запись).
+   *
+   * @remarks
+   * Infrastructure-only: питает {@link PolymarketMarketDiscovery.prepareMarket}
+   * и НЕ экспортируется через порт. Замещается атомарно вместе со снимком,
+   * поэтому расхождение «рынок в universe, а vendor-данных нет» невозможно.
+   */
+  private _vendorRecords: ReadonlyMap<string, SelectedPolymarketMarket> = new Map();
+  /** Момент последнего успешного обхода (ms). */
   private _lastFetchMs = 0;
-  /** In-flight refresh: конкурентные вызовы разделяют одну пагинацию. */
-  private _refreshInFlight: Promise<void> | null = null;
-  /** Момент последнего НЕУДАЧНОГО refresh (ms) — backoff авто-обновления. */
+  /** Был ли хотя бы один успешный обход. */
+  private _hasSnapshot = false;
+  /** In-flight обход: конкурентные вызовы разделяют одну пагинацию. */
+  private _refreshInFlight: Promise<boolean> | null = null;
+  /** Момент последнего НЕУДАЧНОГО обхода (ms) — пауза перед следующим. */
   private _lastFailedRefreshMs: number | null = null;
+  /** Кэш событий по vendor event id. */
+  private readonly _eventCache = new Map<string, CachedEvent>();
+  /** In-flight запросы событий (дедупликация одинаковых `fetchEvent`). */
+  private readonly _eventInFlight = new Map<string, Promise<Event>>();
 
   /**
-   * Создаёт Discovery поверх инъецированного официального SDK-клиента.
+   * Создаёт Discovery поверх инъецированного V2-клиента.
    *
    * @param deps - Зависимости (см. {@link PolymarketMarketDiscoveryDependencies})
-   * @param config - Конфигурация selection policy и пагинации
+   * @param config - Конфигурация пагинации и кэшей
    */
-  constructor(deps: PolymarketMarketDiscoveryDependencies, config: PolymarketMarketDiscoveryConfig) {
+  constructor(
+    deps: PolymarketMarketDiscoveryDependencies,
+    config: PolymarketMarketDiscoveryConfig = {},
+  ) {
     this._client = deps.client;
-    this._filter = deps.filter;
-    this._scorer = deps.scorer;
     this._clock = deps.clock;
     this._logger = deps.logger.child({ component: 'PolymarketMarketDiscovery' });
     this._config = {
-      filter: config.filter,
       pageSize: config.pageSize ?? DEFAULT_PAGE_SIZE,
       maxPages: config.maxPages ?? DEFAULT_MAX_PAGES,
       endDateWindowMs: config.endDateWindowMs ?? DEFAULT_END_DATE_WINDOW_MS,
       zombieGraceMs: config.zombieGraceMs ?? DEFAULT_ZOMBIE_GRACE_MS,
       cacheTtlMs: config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
-      refreshFailureBackoffMs: config.refreshFailureBackoffMs ?? DEFAULT_REFRESH_FAILURE_BACKOFF_MS,
+      refreshFailureBackoffMs:
+        config.refreshFailureBackoffMs ?? DEFAULT_REFRESH_FAILURE_BACKOFF_MS,
+      eventCacheTtlMs: config.eventCacheTtlMs ?? DEFAULT_EVENT_CACHE_TTL_MS,
+      eventCacheMaxEntries: config.eventCacheMaxEntries ?? DEFAULT_EVENT_CACHE_MAX_ENTRIES,
+      eventFetchConcurrency: config.eventFetchConcurrency ?? DEFAULT_EVENT_FETCH_CONCURRENCY,
     };
+    this._snapshot = emptySnapshot(TimestampService.now(this._clock));
   }
 
   /**
-   * Возвращает кандидатов из кэша, при устаревшем TTL — авто-refresh.
+   * Обновляет снимок universe.
    *
-   * @returns Readonly-массив кандидатов, отсортированных по приоритету
+   * @param options - `force: true` игнорирует TTL и паузу после неудачи
+   * @returns `true` — актуальный снимок доступен; `false` — обход не
+   *   выполнен либо не удался, доступен ПРЕДЫДУЩИЙ снимок
+   * @throws Ничего не бросает
    *
    * @remarks
-   * После НЕУДАЧНОГО обновления авто-refresh выдерживает паузу
-   * `refreshFailureBackoffMs` (прежний кэш возвращается без новой пагинации) —
-   * недоступный Gamma не молотится на каждом чтении.
+   * Конкурентные вызовы дедуплицируются: пока обход in-flight, повторный
+   * `refresh()` ждёт ту же пагинацию, а не открывает вторую.
    *
    * @example
    * ```typescript
-   * const candidates = await discovery.findCandidates();
+   * // Поддержание свежести (TTL + пауза после неудачи соблюдаются)
+   * await discovery.refresh();
+   * // Обновление по требованию (cadence принадлежит вызывающему)
+   * await discovery.refresh({ force: true });
    * ```
    */
-  public async findCandidates(): Promise<readonly PolymarketDiscoveredMarket[]> {
+  public async refresh(options?: MarketDiscoveryRefreshOptions): Promise<boolean> {
+    const force = options?.force === true;
     const nowMs = this._clock.now().getTime();
-    if (nowMs - this._lastFetchMs > this._config.cacheTtlMs) {
+
+    if (!force) {
+      if (this._hasSnapshot && nowMs - this._lastFetchMs <= this._config.cacheTtlMs) {
+        this._logger.debug('Universe snapshot is still fresh, skipping refresh', {
+          ageMs: nowMs - this._lastFetchMs,
+          cacheTtlMs: this._config.cacheTtlMs,
+        });
+        return true;
+      }
       if (
         this._lastFailedRefreshMs !== null &&
         nowMs - this._lastFailedRefreshMs < this._config.refreshFailureBackoffMs
       ) {
-        this._logger.debug('Auto-refresh suppressed by failure backoff, serving previous cache', {
+        this._logger.debug('Refresh suppressed by failure backoff, previous snapshot retained', {
           lastFailedRefreshMs: this._lastFailedRefreshMs,
           refreshFailureBackoffMs: this._config.refreshFailureBackoffMs,
         });
-        return this._cachedCandidates;
+        return false;
       }
-      this._logger.debug('Candidate cache is stale, refreshing', {
-        lastFetchMs: this._lastFetchMs,
-        cacheTtlMs: this._config.cacheTtlMs,
-      });
-      await this.refresh();
     }
-    return this._cachedCandidates;
-  }
 
-  /**
-   * Принудительно обновляет кэш кандидатов через официальный SDK.
-   *
-   * @remarks
-   * Шаги: paginated `listMarkets` (server-side narrowing + early stop) →
-   * pre-filter торгуемости → mapping в кандидатов → `MarketFilter` →
-   * `MarketScorer` → кэш (3× запас). Ошибка Gamma без частичных данных
-   * оставляет прежний кэш нетронутым.
-   *
-   * Конкурентные вызовы дедуплицируются: пока обновление in-flight,
-   * повторный `refresh()`/авто-refresh ждёт ту же пагинацию, а не открывает
-   * вторую. Backoff после неудачи на явный `refresh()` НЕ распространяется —
-   * cadence явных обновлений принадлежит вызывающему.
-   */
-  public async refresh(): Promise<void> {
     if (this._refreshInFlight !== null) {
       return this._refreshInFlight;
     }
@@ -386,190 +500,134 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
   }
 
   /**
-   * Тело одного обновления кэша (см. {@link PolymarketMarketDiscovery.refresh}).
+   * Возвращает последний успешный снимок universe.
+   *
+   * @returns Замороженный снимок; до первого успешного обхода — пустой
+   *
+   * @example
+   * ```typescript
+   * const { entries, diagnostics } = discovery.getSnapshot();
+   * ```
    */
-  private async _doRefresh(): Promise<void> {
-    this._logger.info('Refreshing market discovery candidates via official SDK');
-    const nowMs = this._clock.now().getTime();
+  public getSnapshot(): MarketDiscoverySnapshot {
+    return this._snapshot;
+  }
 
-    let rawMarkets: Market[];
+  /**
+   * Vendor-данные обнаруженного рынка для физической подготовки подписок.
+   *
+   * @param marketId - Canonical id рынка из `snapshot.entries[].market.id`
+   * @returns Vendor-запись или `undefined`, если рынка нет в текущем снимке
+   *
+   * @remarks
+   * Infrastructure-only вход (наследник прежнего `prepareSelected`): сеть
+   * НЕ трогает — событие уже получено на стадии обхода. Метод не входит в
+   * порт `IMarketDiscoveryService`: Application vendor-объектов не видит.
+   *
+   * @example
+   * ```typescript
+   * const vendor = discovery.prepareMarket(entry.market.id);
+   * if (vendor !== undefined) {
+   *   await source.subscribeMarket(vendor.outcomes.map((o) => o.instrumentId));
+   * }
+   * ```
+   */
+  public prepareMarket(marketId: MarketId): SelectedPolymarketMarket | undefined {
+    return this._vendorRecords.get(String(marketId));
+  }
+
+  /**
+   * Тело одного обхода (см. {@link PolymarketMarketDiscovery.refresh}).
+   *
+   * @returns `true`, если снимок заменён новым
+   */
+  private async _doRefresh(): Promise<boolean> {
+    this._logger.info('Refreshing Polymarket V2 market universe');
+    const nowMs = this._clock.now().getTime();
+    const counters: RefreshCounters = {
+      pagesFetched: 0,
+      marketsScanned: 0,
+      tradeableMarkets: 0,
+      unsupportedMarkets: 0,
+      supportedCryptoUpDown: 0,
+      invalidMarkets: 0,
+      duplicateMarkets: 0,
+      eventFetches: 0,
+      eventCacheHits: 0,
+    };
+
+    let vendorMarkets: VendorMarket[];
     try {
-      rawMarkets = await this._listMarketsWindow(nowMs);
+      vendorMarkets = await this._listMarketsWindow(nowMs, counters);
     } catch (error) {
       this._lastFailedRefreshMs = this._clock.now().getTime();
-      this._logger.error('Gamma listMarkets failed, keeping stale candidate cache', {
+      this._logger.error('Gamma listMarkets failed, keeping previous universe snapshot', {
         error: error instanceof Error ? error.message : String(error),
-        staleCacheSize: this._cachedCandidates.length,
+        previousEntries: this._snapshot.entries.length,
       });
-      return;
+      return false;
     }
 
-    // Pre-filter торгуемости (parity: active && !closed && enableOrderBook).
-    // SDK-поля nullable — торгуемость требует строгих true/false-значений.
-    const tradeable = rawMarkets.filter(
-      (market) =>
-        market.state.active === true &&
-        market.state.closed !== true &&
-        market.state.enableOrderBook === true,
-    );
+    const supported = this._classifyTradeable(vendorMarkets, counters);
+    const events = await this._resolveEvents(supported, counters);
+    const entries = this._buildEntries(supported, events, counters);
 
-    const mapped: PolymarketDiscoveredMarket[] = [];
-    let parseErrors = 0;
-    for (const market of tradeable) {
-      const candidate = this._mapToCandidate(market);
-      if (candidate !== null) {
-        mapped.push(candidate);
-      } else {
-        parseErrors++;
-      }
-    }
-    if (parseErrors > 0) {
-      this._logger.warn('Some SDK markets could not be mapped and were skipped', {
-        parseErrors,
-        successfullyMapped: mapped.length,
+    entries.sort((a, b) => compareEntries(a.entry, b.entry));
+
+    const observedAtResult = TimestampService.create(this._clock.now().getTime());
+    if (!observedAtResult.ok) {
+      // Недостижимо при исправных часах; молча подменять момент наблюдения
+      // нельзя — снимок с выдуманным временем хуже отсутствия снимка.
+      this._lastFailedRefreshMs = this._clock.now().getTime();
+      this._logger.error('Cannot create observedAt timestamp, snapshot discarded', {
+        error: observedAtResult.error.message,
       });
+      return false;
     }
 
-    // Наша selection policy: существующие MarketFilter/MarketScorer (reuse).
-    // Sort-порядок скорера детерминирован, поэтому кандидаты PolymarketDiscoveredMarket
-    // сохраняют свой подтип (map/sort не пересобирают объекты, кроме score).
-    const filtered = this._filter.filterCandidates(mapped, this._config.filter, nowMs);
-    const scored = this._scorer.scoreAndSort(filtered) as PolymarketDiscoveredMarket[];
-
-    const cacheSize = this._config.filter.maxMarketsToReturn * CACHE_MULTIPLIER;
-    this._cachedCandidates = scored.slice(0, cacheSize);
+    this._snapshot = Object.freeze({
+      observedAt: observedAtResult.value,
+      entries: Object.freeze(entries.map((entry) => entry.entry)),
+      diagnostics: Object.freeze({ ...counters }),
+    });
+    this._vendorRecords = new Map(entries.map((entry) => [String(entry.entry.market.id), entry.vendor]));
     this._lastFetchMs = this._clock.now().getTime();
     this._lastFailedRefreshMs = null;
+    this._hasSnapshot = true;
 
-    this._logger.info('Market discovery refresh complete', {
-      raw: rawMarkets.length,
-      tradeable: tradeable.length,
-      mapped: mapped.length,
-      filtered: filtered.length,
-      cached: this._cachedCandidates.length,
-      maxMarketsToReturn: this._config.filter.maxMarketsToReturn,
-    });
+    this._logger.info('Polymarket V2 market universe refreshed', { ...counters });
+    return true;
   }
 
   /**
-   * Готовит ВЫБРАННЫЙ рынок к открытию collection session.
-   *
-   * @param candidate - Кандидат из {@link PolymarketMarketDiscovery.findCandidates}
-   * @returns Полный результат выбора: identity, outcomes (instruments),
-   *   timing, RTDS, typed Gamma-состояние для header
-   *
-   * @remarks
-   * Единственное место, где выполняется `fetchEvent` — ТОЛЬКО для рынка,
-   * реально претендующего на открытие (Gamma gap N-001: normalized Market
-   * не несёт `eventStartTime`; точное время начала события живёт в
-   * `Event.schedule.startTime`). Отказ `fetchEvent` деградирует до
-   * `eventStartsAt: undefined` (warn) — не роняет подготовку.
-   */
-  public async prepareSelected(
-    candidate: PolymarketDiscoveredMarket,
-  ): Promise<SelectedPolymarketMarket> {
-    const market = candidate.sdkMarket;
-    const eventRef = market.events[0];
-
-    let gammaEvent: Event | undefined;
-    if (eventRef !== undefined) {
-      try {
-        gammaEvent = await this._client.fetchEvent({ id: String(eventRef.id) });
-      } catch (error) {
-        this._logger.warn('fetchEvent for selected market failed, proceeding without event data', {
-          marketId: String(candidate.marketId),
-          eventId: String(eventRef.id),
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    let eventStartsAt: Timestamp | undefined;
-    const startTimeIso = gammaEvent?.schedule.startTime;
-    if (startTimeIso !== null && startTimeIso !== undefined) {
-      const startMs = Date.parse(startTimeIso);
-      if (!Number.isNaN(startMs)) {
-        const startResult = TimestampService.create(startMs);
-        if (startResult.ok) {
-          eventStartsAt = startResult.value;
-        }
-      }
-    }
-
-    const crypto = derivePolymarketCryptoMeta(market);
-    // Vendor mapping boundary (binary-модель N-003): официальный SDK именует
-    // первый/второй исход binary-рынка `yes`/`no` даже когда реальные labels —
-    // `Up`/`Down`; эти vendor-имена свойств НЕ покидают данный маппинг —
-    // дальше живут только нейтральные outcomes[] с canonical InstrumentId.
-    const sdkOutcomes = [market.outcomes.yes, market.outcomes.no];
-    const outcomes: SelectedPolymarketOutcome[] = [];
-    for (const sdkOutcome of sdkOutcomes) {
-      if (sdkOutcome.tokenId === null) {
-        continue; // исход без CLOB-токена не подписываем (как legacy)
-      }
-      const instrumentId = asInstrumentId(String(sdkOutcome.tokenId));
-      if (instrumentId === undefined) {
-        this._logger.warn('Outcome token is not a valid InstrumentId, outcome skipped', {
-          marketId: String(candidate.marketId),
-          label: sdkOutcome.label,
-        });
-        continue;
-      }
-      outcomes.push({ label: sdkOutcome.label, instrumentId });
-    }
-
-    const eventIdentity =
-      gammaEvent !== undefined
-        ? {
-            id: String(gammaEvent.id),
-            ...(gammaEvent.slug !== null && gammaEvent.slug !== undefined
-              ? { slug: gammaEvent.slug }
-              : {}),
-            ...(gammaEvent.title !== null && gammaEvent.title !== undefined
-              ? { title: gammaEvent.title }
-              : {}),
-          }
-        : eventRef !== undefined
-          ? {
-              id: String(eventRef.id),
-              ...(eventRef.slug !== null ? { slug: eventRef.slug } : {}),
-              ...(eventRef.title !== null ? { title: eventRef.title } : {}),
-            }
-          : undefined;
-
-    return {
-      marketId: candidate.marketId,
-      gammaMarketId: String(market.id),
-      ...(market.slug !== null && market.slug !== undefined ? { slug: market.slug } : {}),
-      question: candidate.question,
-      outcomes,
-      expiresAt: candidate.expiresAt,
-      ...(eventStartsAt !== undefined ? { eventStartsAt } : {}),
-      ...(eventIdentity !== undefined ? { event: eventIdentity } : {}),
-      ...(crypto !== undefined ? { crypto } : {}),
-      rtdsFeeds: crypto?.feeds ?? [],
-      gammaMarket: market,
-      ...(gammaEvent !== undefined ? { gammaEvent } : {}),
-    };
-  }
-
-  /**
-   * Собирает normalized Markets внутри окна endDate через paginated SDK API.
+   * Собирает vendor-рынки внутри окна `endDate` через paginated каталог.
    *
    * @param nowMs - Текущее время (ms)
-   * @returns Markets с `endDate` в окне `[now - zombieGraceMs, now + endDateWindowMs]`
-   * @throws Ошибка SDK первой страницы (частичные данные обрабатываются мягко)
+   * @param counters - Счётчики обхода (мутируются)
+   * @returns Рынки с `endDate` в окне `[now - zombieGraceMs, now + endDateWindowMs]`
+   * @throws Ошибка первой страницы (частичные данные обрабатываются мягко)
    *
    * @remarks
-   * Ранняя остановка: результаты отсортированы по `endDate` ascending —
-   * первый рынок за cutoff завершает пагинацию. Отказ страницы при уже
-   * собранных данных логируется, частичный список используется (parity).
+   * Server-side сужение + ранняя остановка, НЕ full-world scan:
+   *
+   * 1. `closed=false`, `order=endDate`, `ascending=true` — ближайшие к
+   *    истечению рынки идут первыми;
+   * 2. `endDateMin = now - zombieGraceMs` — отрезает на сервере zombie-рынки,
+   *    которые Gamma продолжает отдавать активными;
+   * 3. клиентский cutoff `endDate <= now + endDateWindowMs`: страницы
+   *    отсортированы по `endDate`, поэтому первый рынок за cutoff означает,
+   *    что ВСЕ следующие страницы тоже за ним — пагинация останавливается.
+   *    (`endDateMax` серверу сознательно не передаётся: аудит показал HTTP
+   *    500 у Gamma на `end_date_max` во всех форматах.)
+   * 4. страховочный предел `maxPages`.
    */
-  private async _listMarketsWindow(nowMs: number): Promise<Market[]> {
+  private async _listMarketsWindow(
+    nowMs: number,
+    counters: RefreshCounters,
+  ): Promise<VendorMarket[]> {
     const endDateMinIso = new Date(nowMs - this._config.zombieGraceMs).toISOString();
     const cutoffMs = nowMs + this._config.endDateWindowMs;
-    const collected: Market[] = [];
-    let pageCount = 0;
+    const collected: VendorMarket[] = [];
 
     const paginator = this._client.listMarkets({
       closed: false,
@@ -581,30 +639,36 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
 
     try {
       for await (const page of paginator) {
-        pageCount++;
+        counters.pagesFetched++;
         const batch = page.items;
         if (batch.length === 0) {
           break;
         }
+        counters.marketsScanned += batch.length;
 
-        // Окно по endDate: рынки без endDate не проходят (не сможем ни
-        // фильтровать по истечению, ни финализировать).
+        // Окно по endDate: рынки без него не проходят (ни отфильтровать по
+        // истечению, ни финализировать такой рынок мы не сможем).
         const withinWindow = batch.filter((market) => {
           const endDate = market.state.endDate;
           if (endDate === null || endDate === undefined) {
             return false;
           }
           const endMs = Date.parse(endDate);
-          return !Number.isNaN(endMs) && endMs >= nowMs - this._config.zombieGraceMs && endMs <= cutoffMs;
+          return (
+            !Number.isNaN(endMs) &&
+            endMs >= nowMs - this._config.zombieGraceMs &&
+            endMs <= cutoffMs
+          );
         });
         collected.push(...withinWindow);
 
         // Ранняя остановка: последний рынок страницы за cutoff → дальше только позже.
         const lastEndDate = batch[batch.length - 1]!.state.endDate;
-        const lastEndMs = lastEndDate !== null && lastEndDate !== undefined ? Date.parse(lastEndDate) : Number.NaN;
+        const lastEndMs =
+          lastEndDate !== null && lastEndDate !== undefined ? Date.parse(lastEndDate) : Number.NaN;
         if (!Number.isNaN(lastEndMs) && lastEndMs > cutoffMs) {
           this._logger.debug('Reached endDate cutoff, stopping pagination early', {
-            pageCount,
+            pagesFetched: counters.pagesFetched,
             batchSize: batch.length,
             withinWindow: withinWindow.length,
             cutoffIso: new Date(cutoffMs).toISOString(),
@@ -612,7 +676,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
           break;
         }
 
-        if (pageCount >= this._config.maxPages) {
+        if (counters.pagesFetched >= this._config.maxPages) {
           this._logger.warn('Pagination stopped at maxPages safety limit', {
             maxPages: this._config.maxPages,
             collected: collected.length,
@@ -627,181 +691,423 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
         throw error;
       }
       this._logger.warn('Pagination page failed, using partial market list', {
-        pageCount,
+        pagesFetched: counters.pagesFetched,
         collected: collected.length,
         error: error instanceof Error ? error.message : String(error),
       });
     }
 
     this._logger.debug('Fetched markets window from Gamma', {
-      pages: pageCount,
-      collected: collected.length,
+      pagesFetched: counters.pagesFetched,
+      scanned: counters.marketsScanned,
+      withinWindow: collected.length,
     });
     return collected;
   }
 
   /**
-   * Маппирует normalized SDK Market в кандидата Discovery V2.
+   * Применяет технический gate торгуемости и классификатор семейства.
    *
-   * @param market - Normalized Market официального SDK
-   * @returns Кандидат или `null`, если обязательные поля непригодны
+   * @param vendorMarkets - Рынки внутри окна `endDate`
+   * @param counters - Счётчики обхода (мутируются)
+   * @returns Поддержанные кандидаты, готовые к enrichment расписания
    *
    * @remarks
-   * Два режима отказа (parity с legacy `_mapToDiscoveredMarket`):
-   * - **обязательные поля** (`conditionId`, токен первого исхода, `question`,
-   *   `state.endDate`) — рынок отбрасывается (`null`, warn);
-   * - **второстепенные** (`liquidity`, `spread`, `tickSize`, `minOrderSize`)
-   *   — деградация до дефолта/`undefined`, рынок сохраняется.
+   * Gate торгуемости — НЕ owner policy, а capability инфраструктуры:
+   * «имеет ли смысл вообще передавать этот vendor-рынок дальше в realtime
+   * contour». Значения nullable, поэтому проверки строгие: торгуемость
+   * требует явных `true`/`false`, а не «не false».
    *
-   * Соответствие полей: `conditionId` → `marketId`; токен ПЕРВОГО исхода →
-   * `instrumentId` (parity с legacy `clobTokenIds[0]`); токены обоих
-   * исходов → `allTokenIds` (существующий port-контракт `DiscoveredMarket`,
-   * plain strings — legacy boundary); `state.endDate` → `expiresAt`;
-   * `trading.minimumTickSize` → `tickSize` (дефолт 0.01);
-   * `trading.minimumOrderSize` → `minOrderSize` (дефолт 1);
-   * `metrics.liquidity ?? liquidityNum` → `liquidity` (деградация 0);
-   * `prices.spread` → `spread` (деградация `undefined`).
+   * Рынок нашего семейства БЕЗ ссылки на событие непригоден: точное время
+   * начала живёт только в событии, а выдумывать его запрещено.
    */
-  private _mapToCandidate(market: Market): PolymarketDiscoveredMarket | null {
-    const conditionId = market.conditionId;
-    if (conditionId === null) {
-      this._logger.warn('Market has no conditionId, skipping', {
-        gammaMarketId: String(market.id),
-        question: market.question ?? undefined,
-      });
-      return null;
+  private _classifyTradeable(
+    vendorMarkets: readonly VendorMarket[],
+    counters: RefreshCounters,
+  ): SupportedCandidate[] {
+    const supported: SupportedCandidate[] = [];
+    for (const vendorMarket of vendorMarkets) {
+      const tradeable =
+        vendorMarket.state.active === true &&
+        vendorMarket.state.closed !== true &&
+        vendorMarket.state.enableOrderBook === true;
+      if (!tradeable) {
+        continue;
+      }
+      counters.tradeableMarkets++;
+
+      const classification = classifyPolymarketMarket(vendorMarket);
+      if (classification.kind === 'UNSUPPORTED') {
+        counters.unsupportedMarkets++;
+        continue;
+      }
+      if (classification.kind === 'INVALID') {
+        counters.invalidMarkets++;
+        this._logger.debug('Supported-family market is unusable, excluded from universe', {
+          gammaMarketId: String(vendorMarket.id),
+          reason: classification.reason,
+        });
+        continue;
+      }
+
+      const eventRef = vendorMarket.events[0];
+      if (eventRef === undefined) {
+        counters.invalidMarkets++;
+        this._logger.debug('Crypto Up/Down market has no event reference, exact start unavailable', {
+          marketId: String(classification.marketId),
+        });
+        continue;
+      }
+      supported.push({ vendorMarket, classification, eventId: String(eventRef.id) });
     }
-    const marketId = asMarketId(String(conditionId));
-    if (marketId === undefined) {
-      this._logger.warn('Cannot parse conditionId as MarketId, skipping market', {
-        conditionId: String(conditionId),
-      });
-      return null;
+    return supported;
+  }
+
+  /**
+   * Получает события поддержанных кандидатов (кэш + дедупликация).
+   *
+   * @param supported - Поддержанные кандидаты обхода
+   * @param counters - Счётчики обхода (мутируются)
+   * @returns Карта `eventId → Event` только для успешно полученных событий
+   *
+   * @remarks
+   * Запрашиваются ТОЛЬКО уникальные id, ТОЛЬКО для поддержанного семейства
+   * и небольшими параллельными группами: N+1 по всему окну (сотни рынков)
+   * заменён на ≤ (число уникальных событий поддержанного подмножества)
+   * минус попадания в кэш. Отказ одного события не роняет обход — рынки
+   * этого события просто станут непригодными.
+   */
+  private async _resolveEvents(
+    supported: readonly SupportedCandidate[],
+    counters: RefreshCounters,
+  ): Promise<Map<string, Event>> {
+    const uniqueIds = [...new Set(supported.map((candidate) => candidate.eventId))];
+    const resolved = new Map<string, Event>();
+    const concurrency = Math.max(1, this._config.eventFetchConcurrency);
+
+    for (let offset = 0; offset < uniqueIds.length; offset += concurrency) {
+      const chunk = uniqueIds.slice(offset, offset + concurrency);
+      const settled = await Promise.allSettled(
+        chunk.map(async (eventId) => ({ eventId, event: await this._fetchEventOnce(eventId, counters) })),
+      );
+      for (const [index, result] of settled.entries()) {
+        if (result.status === 'fulfilled') {
+          resolved.set(result.value.eventId, result.value.event);
+        } else {
+          this._logger.warn('fetchEvent failed, markets of this event are excluded', {
+            eventId: chunk[index],
+            error:
+              result.reason instanceof Error ? result.reason.message : String(result.reason),
+          });
+        }
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Отдаёт событие из кэша либо запрашивает его ровно один раз.
+   *
+   * @param eventId - Vendor id события
+   * @param counters - Счётчики обхода (мутируются)
+   * @returns Typed normalized Event
+   * @throws Ошибку клиента, если запрос не удался
+   *
+   * @remarks
+   * Три уровня защиты от лишних запросов: TTL-кэш → in-flight promise
+   * (одновременные обращения к одному событию разделяют один запрос) →
+   * сам запрос. Кэш ограничен по размеру: при переполнении вытесняются
+   * самые старые записи (порядок вставки `Map`).
+   */
+  private async _fetchEventOnce(eventId: string, counters: RefreshCounters): Promise<Event> {
+    const nowMs = this._clock.now().getTime();
+    const cached = this._eventCache.get(eventId);
+    if (cached !== undefined) {
+      if (nowMs - cached.fetchedAt <= this._config.eventCacheTtlMs) {
+        counters.eventCacheHits++;
+        return cached.event;
+      }
+      this._eventCache.delete(eventId);
     }
 
-    // Vendor mapping boundary: SDK именует первый/второй исход binary-рынка
-    // `yes`/`no` (реальные labels могут быть `Up`/`Down`) — эти имена
-    // свойств не покидают данный маппинг.
-    const [firstSdkOutcome, secondSdkOutcome] = [market.outcomes.yes, market.outcomes.no];
-    const firstOutcomeTokenId = firstSdkOutcome.tokenId;
-    if (firstOutcomeTokenId === null) {
-      this._logger.warn('Market has no first-outcome token, skipping', {
-        conditionId: String(conditionId),
-      });
-      return null;
-    }
-    const instrumentId = asInstrumentId(String(firstOutcomeTokenId));
-    if (instrumentId === undefined) {
-      this._logger.warn('Cannot parse first-outcome token as InstrumentId, skipping market', {
-        conditionId: String(conditionId),
-        tokenId: String(firstOutcomeTokenId),
-      });
-      return null;
-    }
-    const secondOutcomeTokenId = secondSdkOutcome.tokenId;
-    const allTokenIds =
-      secondOutcomeTokenId !== null
-        ? [String(firstOutcomeTokenId), String(secondOutcomeTokenId)]
-        : [String(firstOutcomeTokenId)];
-
-    const question = market.question;
-    if (question === null || question === undefined || question === '') {
-      this._logger.warn('Market has no question, skipping', {
-        conditionId: String(conditionId),
-      });
-      return null;
+    const inFlight = this._eventInFlight.get(eventId);
+    if (inFlight !== undefined) {
+      counters.eventCacheHits++;
+      return inFlight;
     }
 
-    const endDate = market.state.endDate;
-    if (endDate === null || endDate === undefined) {
-      this._logger.debug('Market has no endDate, skipping', {
-        conditionId: String(conditionId),
+    counters.eventFetches++;
+    const pending = this._client
+      .fetchEvent({ id: eventId })
+      .then((event) => {
+        this._eventCache.set(eventId, { event, fetchedAt: this._clock.now().getTime() });
+        this._pruneEventCache();
+        return event;
+      })
+      .finally(() => {
+        this._eventInFlight.delete(eventId);
       });
-      return null;
+    this._eventInFlight.set(eventId, pending);
+    return pending;
+  }
+
+  /** Вытесняет самые старые записи кэша событий сверх лимита. */
+  private _pruneEventCache(): void {
+    while (this._eventCache.size > this._config.eventCacheMaxEntries) {
+      const oldest = this._eventCache.keys().next();
+      if (oldest.done === true) {
+        return;
+      }
+      this._eventCache.delete(oldest.value);
     }
-    const endDateMs = Date.parse(endDate);
-    if (Number.isNaN(endDateMs)) {
-      this._logger.debug('Cannot parse endDate, skipping market', {
-        conditionId: String(conditionId),
-        endDate,
-      });
-      return null;
+  }
+
+  /**
+   * Строит canonical записи universe из поддержанных кандидатов.
+   *
+   * @param supported - Поддержанные кандидаты обхода
+   * @param events - Полученные события (`eventId → Event`)
+   * @param counters - Счётчики обхода (мутируются)
+   * @returns Записи снимка вместе с их vendor-данными
+   *
+   * @remarks
+   * Дедупликация по `venueId + marketId`: побеждает ПЕРВАЯ ПРИГОДНАЯ
+   * запись в порядке каталога (детерминированно — каталог отсортирован
+   * площадкой). Именно «пригодная», а не «первая встреченная»: если у
+   * первой копии, скажем, не удалось получить событие, второй копии того
+   * же рынка ещё даётся шанс — иначе дефект одной записи выбрасывал бы из
+   * universe рынок, который площадка отдала корректно рядом.
+   *
+   * Расхождение vendor-данных у дубликата логируется предупреждением, но
+   * обход не роняет: один дефектный дубликат не стоит всего universe.
+   */
+  private _buildEntries(
+    supported: readonly SupportedCandidate[],
+    events: ReadonlyMap<string, Event>,
+    counters: RefreshCounters,
+  ): BuiltEntry[] {
+    const built: BuiltEntry[] = [];
+    const seen = new Map<string, SupportedCandidate>();
+
+    for (const candidate of supported) {
+      const key = marketUniverseKey(KnownVenues.POLYMARKET, candidate.classification.marketId);
+      const previous = seen.get(key);
+      if (previous !== undefined) {
+        counters.duplicateMarkets++;
+        if (String(previous.vendorMarket.id) !== String(candidate.vendorMarket.id)) {
+          this._logger.warn('Conflicting duplicate market records, keeping the first one', {
+            marketId: String(candidate.classification.marketId),
+            keptGammaMarketId: String(previous.vendorMarket.id),
+            droppedGammaMarketId: String(candidate.vendorMarket.id),
+          });
+        }
+        continue;
+      }
+
+      const event = events.get(candidate.eventId);
+      if (event === undefined) {
+        counters.invalidMarkets++;
+        continue; // отказ fetchEvent уже залогирован в _resolveEvents
+      }
+
+      const entry = this._toEntry(candidate, event);
+      if (entry === undefined) {
+        counters.invalidMarkets++;
+        continue;
+      }
+      seen.set(key, candidate);
+      counters.supportedCryptoUpDown++;
+      built.push(entry);
     }
-    const expiresAtResult = TimestampService.create(endDateMs);
-    if (!expiresAtResult.ok) {
-      this._logger.warn('Cannot create Timestamp from endDate, skipping market', {
-        conditionId: String(conditionId),
-        endDate,
-        error: expiresAtResult.error.message,
+    return built;
+  }
+
+  /**
+   * Собирает canonical `Market` + метрики + vendor-запись одного рынка.
+   *
+   * @param candidate - Поддержанный кандидат
+   * @param event - Событие рынка с точным расписанием
+   * @returns Запись снимка либо `undefined`, если рынок непригоден
+   *
+   * @remarks
+   * Единственный источник `startsAt` — `event.schedule.startTime`. Любая
+   * его недоступность (нет поля, не парсится, не раньше `expiresAt`)
+   * делает рынок непригодным: подставного расписания здесь нет и быть не
+   * может — от него зависят и торговые решения, и разметка архива.
+   *
+   * `crypto.duration` — ФАКТИЧЕСКАЯ длительность расписания
+   * (`expiresAt - startsAt` через `Timestamp.diffMs`), а не «5m/15m/1h по
+   * умолчанию»: номинал серии выведет Policy из этого значения.
+   */
+  private _toEntry(
+    candidate: SupportedCandidate,
+    event: Event,
+  ): BuiltEntry | undefined {
+    const { classification, vendorMarket } = candidate;
+    const marketIdLog = String(classification.marketId);
+
+    const startTimeIso = event.schedule.startTime;
+    if (startTimeIso === null || startTimeIso === undefined) {
+      this._logger.debug('Event has no exact startTime, market excluded from universe', {
+        marketId: marketIdLog,
+        eventId: candidate.eventId,
       });
-      return null;
+      return undefined;
+    }
+    const startMs = Date.parse(startTimeIso);
+    if (Number.isNaN(startMs)) {
+      this._logger.debug('Event startTime is not a valid timestamp, market excluded', {
+        marketId: marketIdLog,
+        startTime: startTimeIso,
+      });
+      return undefined;
+    }
+    const startsAtResult = TimestampService.create(startMs);
+    if (!startsAtResult.ok) {
+      this._logger.debug('Cannot create Timestamp from event startTime, market excluded', {
+        marketId: marketIdLog,
+        error: startsAtResult.error.message,
+      });
+      return undefined;
+    }
+    const startsAt = startsAtResult.value;
+    if (!startsAt.isBefore(classification.expiresAt)) {
+      this._logger.debug('Event start is not before market expiry, market excluded', {
+        marketId: marketIdLog,
+        startsAt: startsAt.toISO(),
+        expiresAt: classification.expiresAt.toISO(),
+      });
+      return undefined;
     }
 
-    // Второстепенные поля: деградация до дефолтов, не отбрасываем рынок.
-    let tickSize: OutcomePrice;
-    try {
-      tickSize = OutcomePrice.of(new Decimal(market.trading.minimumTickSize ?? 0.01));
-    } catch {
-      this._logger.warn('Cannot create OutcomePrice from minimumTickSize, using default 0.01', {
-        conditionId: String(conditionId),
-        minimumTickSize: market.trading.minimumTickSize,
+    // Branded MarketDuration — число миллисекунд; canonical-операция
+    // `diffMs` даёт Decimal, конверсия в number здесь и есть его граница.
+    const duration = asMarketDuration(classification.expiresAt.diffMs(startsAt).toNumber());
+    if (duration === undefined) {
+      this._logger.debug('Schedule duration is not a valid MarketDuration, market excluded', {
+        marketId: marketIdLog,
       });
-      tickSize = OutcomePrice.of(new Decimal('0.01'));
+      return undefined;
     }
 
-    let minOrderSize: Quantity;
-    try {
-      minOrderSize = Quantity.of(new Decimal(market.trading.minimumOrderSize ?? 1));
-    } catch {
-      this._logger.warn('Cannot create Quantity from minimumOrderSize, using default 1', {
-        conditionId: String(conditionId),
-        minimumOrderSize: market.trading.minimumOrderSize,
+    const created = Market.create({
+      id: classification.marketId,
+      venueId: KnownVenues.POLYMARKET,
+      ...(classification.slug !== undefined ? { slug: classification.slug } : {}),
+      question: classification.question,
+      startsAt,
+      expiresAt: classification.expiresAt,
+      state: MarketState.active(),
+      outcomes: classification.outcomes,
+      family: 'CRYPTO_UP_DOWN',
+      crypto: { asset: classification.crypto.asset, duration },
+    });
+    if (!created.ok) {
+      this._logger.warn('Canonical Market rejected the mapped vendor record', {
+        marketId: marketIdLog,
+        error: created.error.message,
+        field: created.error.context?.['field'],
       });
-      minOrderSize = Quantity.of(new Decimal('1'));
+      return undefined;
     }
 
-    const liquidityRaw = market.metrics.liquidity ?? market.metrics.liquidityNum ?? '0';
+    return {
+      entry: { market: created.value, metrics: this._toMetrics(vendorMarket, marketIdLog) },
+      vendor: this._toVendorRecord(candidate, event, startsAt),
+    };
+  }
+
+  /**
+   * Извлекает быстро меняющиеся наблюдения площадки по рынку.
+   *
+   * @param vendorMarket - Vendor-запись рынка
+   * @param marketIdLog - Id рынка для логов
+   * @returns Метрики записи universe
+   *
+   * @remarks
+   * Деградация здесь НЕ отбрасывает рынок: метрики — вход owner policy,
+   * а не часть identity. Отсутствующая ликвидность трактуется как ноль
+   * (существующая семантика V2), отсутствующий спред — как `undefined`:
+   * «неизвестен» и «нулевой» — разные утверждения, и подменять первое
+   * вторым значило бы пропускать рынок сквозь фильтр спреда.
+   */
+  private _toMetrics(vendorMarket: VendorMarket, marketIdLog: string): MarketDiscoveryMetrics {
+    const liquidityRaw = vendorMarket.metrics.liquidity ?? vendorMarket.metrics.liquidityNum ?? '0';
     const liquidityResult = MoneyService.create(liquidityRaw, 'USDC');
     if (!liquidityResult.ok) {
       this._logger.debug('Cannot parse liquidity as Money, defaulting to 0', {
-        conditionId: String(conditionId),
+        marketId: marketIdLog,
         liquidity: String(liquidityRaw),
         error: liquidityResult.error.message,
       });
     }
-    const liquidity = liquidityResult.ok ? liquidityResult.value : Money.of(new Decimal(0), 'USDC');
+    const liquidity = liquidityResult.ok
+      ? liquidityResult.value
+      : Money.of(new Decimal(0), 'USDC');
 
     let spread: Ratio | undefined;
-    if (market.prices.spread !== null && market.prices.spread !== undefined) {
-      const spreadResult = RatioService.fromDecimal(market.prices.spread);
+    if (vendorMarket.prices.spread !== null && vendorMarket.prices.spread !== undefined) {
+      const spreadResult = RatioService.fromDecimal(vendorMarket.prices.spread);
       if (spreadResult.ok) {
         spread = spreadResult.value;
       } else {
         this._logger.debug('Cannot parse spread as Ratio, treating as unavailable', {
-          conditionId: String(conditionId),
-          spread: String(market.prices.spread),
+          marketId: marketIdLog,
+          spread: String(vendorMarket.prices.spread),
           error: spreadResult.error.message,
         });
       }
     }
 
+    return { liquidity, ...(spread !== undefined ? { spread } : {}) };
+  }
+
+  /**
+   * Собирает Infrastructure-only vendor-запись рынка.
+   *
+   * @param candidate - Поддержанный кандидат
+   * @param event - Событие рынка
+   * @param eventStartsAt - Подтверждённое точное время начала
+   * @returns Запись для {@link PolymarketMarketDiscovery.prepareMarket}
+   */
+  private _toVendorRecord(
+    candidate: SupportedCandidate,
+    event: Event,
+    eventStartsAt: Timestamp,
+  ): SelectedPolymarketMarket {
+    const { classification, vendorMarket } = candidate;
+    const eventRef = vendorMarket.events[0];
+    const slug = event.slug ?? eventRef?.slug;
+    const title = event.title ?? eventRef?.title;
+
     return {
-      marketId,
-      instrumentId,
-      question,
-      expiresAt: expiresAtResult.value,
-      tickSize,
-      minOrderSize,
-      minOrderValue: Money.of(new Decimal('1'), 'USDC'), // Polymarket требует >= $1 для BUY-ордеров
-      active: true,
-      ...(spread !== undefined ? { spread } : {}),
-      liquidity,
-      score: new Decimal(0), // Будет установлен MarketScorer в scoreAndSort()
-      allTokenIds,
-      // eventStartMs НЕ задаём: normalized SDK Market не несёт eventStartTime
-      // (gap N-001); точное время начала — prepareSelected() → fetchEvent.
-      // startsAt НЕ задаём — момент начала записи выбирает координатор.
-      sdkMarket: market,
+      marketId: classification.marketId,
+      gammaMarketId: String(vendorMarket.id),
+      ...(vendorMarket.slug !== null && vendorMarket.slug !== undefined
+        ? { slug: vendorMarket.slug }
+        : {}),
+      question: classification.question,
+      outcomes: [
+        {
+          label: classification.outcomes[0].label,
+          instrumentId: classification.outcomes[0].instrumentId,
+        },
+        {
+          label: classification.outcomes[1].label,
+          instrumentId: classification.outcomes[1].instrumentId,
+        },
+      ],
+      expiresAt: classification.expiresAt,
+      eventStartsAt,
+      event: {
+        id: String(event.id),
+        ...(slug !== null && slug !== undefined ? { slug } : {}),
+        ...(title !== null && title !== undefined ? { title } : {}),
+      },
+      crypto: classification.crypto,
+      rtdsFeeds: classification.crypto.feeds,
+      gammaMarket: vendorMarket,
+      gammaEvent: event,
     };
   }
 }

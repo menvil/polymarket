@@ -1,15 +1,15 @@
 # @polymarket/polymarket-v2
 
-Polymarket V2 ingress boundary: наблюдения официального SDK
+Polymarket V2 ingress boundary: наблюдения Polymarket V2 client/bindings
 `@polymarket/client` → canonical `ExternalMessage` → общий `ExternalMessageBus`.
 
 ## 1. Назначение
 
-`PolymarketSource` превращает public-наблюдения официального SDK в canonical
+`PolymarketSource` превращает public-наблюдения Polymarket V2 client/bindings в canonical
 ExternalMessages и публикует их в общий bus внешнего контура:
 
 ```text
-@polymarket/client (официальный SDK: Gamma / CLOB WS / RTDS)
+@polymarket/client (Polymarket V2 client: Gamma / CLOB WS / RTDS)
         ↓
 PolymarketSource            ← этот пакет
         ↓
@@ -19,7 +19,7 @@ ExternalMessageBus          ← общий bus контура (инъециру�
 ```
 
 Транспортное поведение (WebSocket, reconnect, backoff, heartbeat, decode)
-целиком принадлежит официальному SDK — пакет НЕ строит второй framework
+целиком принадлежит Polymarket V2 client — пакет НЕ строит второй framework
 поверх него.
 
 ## 2. Boundary: SDK event = source-native payload
@@ -139,18 +139,34 @@ await bus.close();
 в `docs/sdk-parity.md`. Development-only smoke: `scripts/smoke.ts`
 (`npx tsx packages/infrastructure/polymarket-v2/scripts/smoke.ts`).
 
-## Market Discovery V2 (control plane, N-003)
+## Market Discovery (control plane)
 
 Помимо data-plane `PolymarketSource`, пакет содержит control-plane
-`PolymarketMarketDiscovery`: обнаружение рынков через официальные
-`listMarkets`/`fetchEvent` с reuse существующей selection policy
-(`MarketFilter`/`MarketScorer`) и выводом RTDS-фидов из `resolution.source`
-(`derivePolymarketCryptoMeta`). Discovery ничего НЕ публикует в
-`ExternalMessageBus` — Gamma остаётся query path.
+`PolymarketMarketDiscovery`: обнаружение технически поддержанного universe
+через `listMarkets`/`fetchEvent` и выдачу его наружу как **canonical
+`MarketDiscoverySnapshot`** с доменными `Market` внутри.
 
-Подробности (пагинация, маппинг полей, gaps N-001, parity с legacy) —
-в `docs/market-discovery-v2.md`. Потребитель — координатор сессий
-`@polymarket/collection-coordinator`.
+```typescript
+const refreshed = await discovery.refresh();   // true → снимок актуален
+universe.replace(discovery.getSnapshot());     // Application: только Market
+```
+
+Что он делает и чего НЕ делает:
+
+- ✅ окно ближайших рынков, технический gate торгуемости, классификация
+  семейства `CRYPTO_UP_DOWN`, ТОЧНОЕ `startsAt` из события, canonical
+  mapping, детерминированный порядок и дедупликация;
+- ❌ owner selection: ключевые слова, минимальная ликвидность/спред,
+  предпочтения по активу и длительности, top-N. Это Policy НАД портом.
+
+Vendor-объекты границу порта не пересекают. RTDS-фиды, settlement-правило и
+typed Gamma-модели остаются доступны Infrastructure через
+`prepareMarket(marketId)` — без сети, из данных обхода.
+
+Discovery ничего НЕ публикует в `ExternalMessageBus` — Gamma остаётся query
+path. Подробности (пагинация, классификатор, кэш событий, стоимость окна,
+маппинг полей) — в `docs/market-discovery-v2.md`; live-проверка —
+`scripts/discovery-smoke.ts`.
 
 ## Тесты
 

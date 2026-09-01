@@ -3,7 +3,9 @@
  *
  * @remarks
  * `IMarketFilterConfig` определяет параметры для `MarketFilter.filterCandidates()`.
- * Передаётся как зависимость в `PolymarketMarketDiscoveryAdapter` при создании.
+ * Передаётся как зависимость в LEGACY V1 `PolymarketMarketDiscoveryAdapter`
+ * при создании. Owner policy V2-контура переедет на `MarketDiscoveryEntry`
+ * в следующем Policy-MR — вместе с `MarketFilter`/`MarketScorer`.
  *
  * ### Порядок применения фильтров в MarketFilter:
  * 1. Дедупликация по marketId

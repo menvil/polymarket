@@ -235,7 +235,7 @@ const BINANCE_TO_CHAINLINK: Readonly<Record<string, string>> = Object.freeze(
  */
 const CHAINLINK_TWAP_URL = /\/([a-z0-9]+)-([a-z0-9]+)-twap-(\d{1,4})s(?:-streams)?$/i;
 
-/** Vendor-домен окон TWAP официального SDK (`CryptoPricesChainlinkTwapWindowSeconds`). */
+/** Vendor-домен окон TWAP Polymarket V2 client/bindings (`CryptoPricesChainlinkTwapWindowSeconds`). */
 const SUPPORTED_TWAP_WINDOWS: readonly number[] = [30, 60];
 
 /**
@@ -373,7 +373,7 @@ export function rtdsFeedKey(feed: PolymarketRtdsFeed): string {
 /**
  * Выводит крипто-метаданные (RTDS-фиды) из normalized SDK Market.
  *
- * @param market - Normalized Market официального SDK (или только его
+ * @param market - Normalized Market Polymarket V2 client/bindings (или только его
  *   `resolution.source` — используется единственное поле)
  * @returns Крипто-метаданные или `undefined` для не-крипто рынков
  *

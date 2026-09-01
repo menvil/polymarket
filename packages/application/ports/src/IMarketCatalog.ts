@@ -145,7 +145,7 @@ export interface IMarketCatalog {
    * @remarks
    * Если инструмент с таким instrumentId уже существует — перезаписывает его.
    * Вызывается MarketDiscoveryPublisher._discover() для наполнения каталога
-   * из результатов IMarketDiscoveryService.findCandidates().
+   * из LEGACY-кандидатов `DiscoveredMarket` V1-контура.
    *
    * @example
    * ```typescript

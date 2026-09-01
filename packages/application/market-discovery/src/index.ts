@@ -1,27 +1,34 @@
 /**
- * @polymarket/market-discovery — Фильтрация и скоринг рынков.
+ * @polymarket/market-discovery — universe рынков, фильтрация и скоринг.
  *
  * @remarks
- * Application layer пакет для обнаружения и выбора торговых рынков.
- * Содержит stateless pure-функции для фильтрации и скоринга кандидатов.
+ * Application-layer пакет обнаружения и выбора торговых рынков.
  *
- * ### Содержимое:
- * - `MarketFilter` — фильтрация кандидатов по `IMarketFilterConfig`
- * - `MarketScorer` — скоринг и сортировка по приоритету (expiresAt ASC, liquidity DESC)
+ * ### Содержимое
+ * - `MarketUniverse` — in-memory source of truth текущего canonical universe
+ *   (`MarketDiscoverySnapshot` → lookup/итерация по `Market`);
+ * - `MarketFilter` — LEGACY-фильтрация кандидатов по `IMarketFilterConfig`;
+ * - `MarketScorer` — LEGACY-скоринг и сортировка (expiresAt ASC, liquidity DESC).
  *
- * ### Использование в инфраструктуре:
+ * ### Состояние миграции
+ *
+ * `MarketUniverse` работает с canonical `Market`. `MarketFilter`/`MarketScorer`
+ * пока работают с LEGACY-контрактом `DiscoveredMarket` и НЕ участвуют в
+ * Polymarket V2 Discovery: owner selection вынесен из Infrastructure и станет
+ * Policy НАД universe в следующем MR — тогда Filter/Scorer будут мигрированы
+ * на `MarketDiscoveryEntry`, а `DiscoveredMarket` исчезнет.
+ *
+ * @example
  * ```typescript
- * import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
+ * import { MarketUniverse } from '@polymarket/market-discovery';
  *
- * const filter = new MarketFilter();
- * const scorer = new MarketScorer(clock);
- *
- * const filtered = filter.filterCandidates(rawMarkets, config, Date.now());
- * const sorted = scorer.scoreAndSort(filtered);
- * const top10 = sorted.slice(0, config.maxMarketsToReturn);
+ * const universe = new MarketUniverse(clock);
+ * await discovery.refresh();
+ * universe.replace(discovery.getSnapshot());
  * ```
  *
  * @packageDocumentation
  */
+export { MarketUniverse } from './MarketUniverse.js';
 export { MarketFilter } from './MarketFilter.js';
 export { MarketScorer } from './MarketScorer.js';

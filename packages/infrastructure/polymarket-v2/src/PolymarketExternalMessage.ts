@@ -2,14 +2,14 @@
  * Canonical ExternalMessage-контракты Polymarket V2 ingress.
  *
  * @remarks
- * ### Source-native payload = decoded event официального SDK
+ * ### Source-native payload = decoded event Polymarket V2 client/bindings
  *
- * Payload каждого сообщения — это БУКВАЛЬНО объект, который вернул официальный
- * `@polymarket/client` (декодированный и валидированный SDK), без нашего
+ * Payload каждого сообщения — это БУКВАЛЬНО объект, который вернул
+ * `@polymarket/client` (декодированный и валидированный им), без нашего
  * DTO-remapping, без VO-конверсии и без выбрасывания полей:
  *
  * ```text
- * SDK AsyncIterable event ──→ ExternalMessage.payload   (тот же объект)
+ * client AsyncIterable event ──→ ExternalMessage.payload   (тот же объект)
  * ```
  *
  * SDK сохраняет собственные discriminators (`topic`, `type`) внутри payload —
@@ -47,7 +47,7 @@ import type { ExternalMessage } from '@polymarket/external-messages';
  * Наблюдение CLOB market channel Polymarket.
  *
  * @remarks
- * Payload — {@link StandardMarketEvent} официального SDK: discriminated union
+ * Payload — {@link StandardMarketEvent} Polymarket V2 client/bindings: discriminated union
  * `type: 'book' | 'price_change' | 'last_trade_price' | 'tick_size_change'`
  * с `topic: 'market'`. Это ровно те event-типы, которые текущая система
  * получает из старого market channel (`event_type` в старом wire-формате).
@@ -75,7 +75,7 @@ export type PolymarketMarketExternalMessage = ExternalMessage<
  * Наблюдение RTDS topic `prices.crypto.binance` (крипто-цены Binance).
  *
  * @remarks
- * Payload — {@link CryptoPricesBinanceEvent} официального SDK:
+ * Payload — {@link CryptoPricesBinanceEvent} Polymarket V2 client/bindings:
  * `{ topic: 'prices.crypto.binance', type: 'update', timestamp,
  * payload: { symbol, timestamp, value } }` — SDK сохраняет нативную форму
  * RTDS-сообщения (старый `RtdsWebSocketClient` получал тот же shape).
@@ -96,7 +96,7 @@ export type PolymarketCryptoBinanceExternalMessage = ExternalMessage<
  * Наблюдение RTDS topic `prices.crypto.chainlink` (крипто-цены Chainlink oracle).
  *
  * @remarks
- * Payload — {@link CryptoPricesChainlinkEvent} официального SDK; структура
+ * Payload — {@link CryptoPricesChainlinkEvent} Polymarket V2 client/bindings; структура
  * идентична Binance-событию, отличается только `topic`-discriminator.
  * Символы Chainlink имеют slash-формат (`btc/usd`), Binance — слитный
  * (`btcusdt`) — как и в старом RTDS-клиенте.
@@ -123,7 +123,7 @@ export type PolymarketCryptoChainlinkExternalMessage = ExternalMessage<
  * не «ещё одна spot-цена», а источник РАСЧЁТА рынка, и подмешивать его в
  * spot-поток означало бы потерю различия там, где оно определяет итог.
  *
- * Payload — {@link CryptoPricesChainlinkTwapEvent} официального SDK
+ * Payload — {@link CryptoPricesChainlinkTwapEvent} Polymarket V2 client/bindings
  * (характеризовано live 2026-08-26):
  *
  * ```json

@@ -2,8 +2,10 @@
  * Адаптер обнаружения рынков Polymarket.
  *
  * @remarks
- * `PolymarketMarketDiscoveryAdapter` реализует `IMarketDiscoveryService`,
- * обращаясь к `PolymarketMarketDataRestClient` для получения данных из Gamma API.
+ * `PolymarketMarketDiscoveryAdapter` — LEGACY V1-путь обнаружения рынков:
+ * он обращается к `PolymarketMarketDataRestClient` за данными Gamma API,
+ * фильтрует и скорит рынки, затем возвращает готовых кандидатов
+ * (`DiscoveredMarket`).
  *
  * ### Алгоритм `refresh()`:
  * 1. Вызвать `_marketDataClient.getActiveMarkets()` — получить все активные рынки
@@ -45,7 +47,7 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
-import type { IMarketDiscoveryService, DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
+import type { DiscoveredMarket, IMarketFilterConfig } from '@polymarket/ports';
 import { asMarketId, asInstrumentId } from '@polymarket/ids';
 import { Money, MoneyService, OutcomePrice, Quantity, RatioService } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
@@ -60,13 +62,20 @@ import type { MarketScorer } from '@polymarket/market-discovery';
 const DEFAULT_CACHE_TTL_MS = 60_000;
 
 /**
- * Адаптер обнаружения рынков Polymarket.
+ * LEGACY V1-адаптер обнаружения рынков Polymarket.
  *
  * @remarks
- * Реализует `IMarketDiscoveryService` для Polymarket Gamma API.
- * Использует TTL-кэш для минимизации запросов к API.
+ * Работает с сырым Gamma DTO и LEGACY-контрактом `DiscoveredMarket`;
+ * TTL-кэш минимизирует запросы к API.
+ *
+ * Порт `IMarketDiscoveryService` он больше НЕ реализует: порт теперь
+ * описывает canonical universe (`MarketDiscoverySnapshot` с доменными
+ * `Market`), а этот адаптер остаётся V1-путём старого бота до его
+ * собственной миграции. Класс используется напрямую по типу
+ * (`apps/bot`), поэтому потеря `implements` ничего у потребителей не
+ * меняет — она лишь перестаёт утверждать неверное.
  */
-export class PolymarketMarketDiscoveryAdapter implements IMarketDiscoveryService {
+export class PolymarketMarketDiscoveryAdapter {
   /** Закэшированные кандидаты после последнего refresh() */
   private _cachedCandidates: readonly DiscoveredMarket[] = [];
   /** Время последнего успешного fetch в миллисекундах */

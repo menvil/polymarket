@@ -2,18 +2,99 @@
 
 ## Обзор
 
-Два stateless-класса, отбирающие и ранжирующие рынки-кандидаты для торговли.
+| Компонент | Роль | Контракт |
+|---|---|---|
+| `MarketUniverse` | In-memory source of truth текущего canonical universe | `MarketDiscoverySnapshot` / `Market` |
+| `MarketFilter` | LEGACY: фильтрует кандидатов по `IMarketFilterConfig` (спред, ликвидность, срок до экспирации, ключевые слова) | `DiscoveredMarket` |
+| `MarketScorer` | LEGACY: сортирует по часам до экспирации (ASC), ликвидности (DESC), `marketId` (ASC) | `DiscoveredMarket` |
 
-| Компонент | Роль |
-|---|---|
-| `MarketFilter` | Фильтрует `DiscoveredMarket[]` по `IMarketFilterConfig` (спред, ликвидность, срок до экспирации, ключевые слова) |
-| `MarketScorer` | Сортирует отфильтрованные рынки: по часам до экспирации (ASC), затем ликвидности (DESC), затем `marketId` (ASC, для детерминизма) |
+`MarketUniverse` работает с canonical `Market`. `MarketFilter`/`MarketScorer`
+пока живут на LEGACY-контракте `DiscoveredMarket` и **не участвуют** в
+Polymarket V2 Discovery: owner selection вынесен из Infrastructure и станет
+Policy НАД universe в следующем MR — тогда они будут мигрированы на
+`MarketDiscoveryEntry`, а `DiscoveredMarket` исчезнет.
+
+## `MarketUniverse`
+
+### Проблема
+
+Discovery отдаёт полный снимок технически поддержанного universe. Кому-то
+нужно держать «что сейчас известно Application» и отвечать на вопрос «есть
+ли такой рынок и какие у него метаданные» — не заводя при этом второй
+каталог инструментов.
+
+### Решение
+
+Простой in-memory holder снимка. Он **не** переиспользует `IMarketCatalog`:
+тот решает другую задачу (`instrumentId → InstrumentInfo` для
+strategy/risk/order path). Сталкивать две концепции в одном типе значило бы
+получить объект с двумя несовместимыми причинами меняться.
+
+Интерфейса `IMarketUniverse` нет: второй реализации не существует, а
+интерфейс без неё не даёт dependency inversion — он даёт лишний файл.
+Инверсия уже сделана там, где нужна: на порту `IMarketDiscoveryService`.
+
+### API
+
+```typescript
+class MarketUniverse {
+  constructor(clock: IClock);
+  replace(snapshot: MarketDiscoverySnapshot): void;
+  get(venueId: VenueId, marketId: MarketId): MarketDiscoveryEntry | undefined;
+  getAll(): readonly MarketDiscoveryEntry[];
+  getSnapshot(): MarketDiscoverySnapshot;
+}
+```
+
+### Почему `replace`, а не `add`/`remove`
+
+Discovery отдаёт СНИМОК: «вот полный технически поддержанный universe на
+момент `observedAt`». Инкрементальные мутации потребовали бы считать диффы
+в двух местах и допускали бы состояние, которого площадка никогда не
+наблюдала — рынок, «забытый» в universe после исчезновения из окна. Замена
+целиком делает такое состояние непредставимым.
+
+### Идентичность рынка — ПАРА `venueId + marketId`
+
+Один и тот же `marketId` на разных площадках означает разные рынки. Ключ
+строится общей функцией `marketUniverseKey()` из `@polymarket/ports` — тем
+же правилом, по которому дедуплицирует discovery, чтобы lookup и порядок
+`getAll()` не разошлись.
+
+### Иммутабельность
+
+`replace()` копирует и замораживает массив записей и диагностику: source of
+truth не должен меняться из-под потребителя, который держит ссылку на
+результат `getAll()`, и не должен зависеть от того, мутирует ли вызывающий
+переданный снимок после вызова.
+
+### Пример кода (актуальный!)
+
+```typescript
+// packages/application/market-discovery/src/MarketUniverse.ts
+import { MarketUniverse } from '@polymarket/market-discovery';
+
+const universe = new MarketUniverse(clock);
+
+await discovery.refresh();
+universe.replace(discovery.getSnapshot());
+
+const entry = universe.get(KnownVenues.POLYMARKET, marketId);
+entry?.market.crypto?.asset;      // 'btc'
+entry?.metrics.liquidity;         // наблюдение, а не часть Market
+
+for (const { market } of universe.getAll()) {
+  market.startsAt;                // подтверждено площадкой, не угадано
+}
+```
+
+## LEGACY: `MarketFilter` / `MarketScorer`
 
 ```typescript
 import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 
-const filtered = new MarketFilter(config).apply(discoveredMarkets);
-const ranked = new MarketScorer().scoreAndSort(filtered);
+const filtered = new MarketFilter().filterCandidates(candidates, config, nowMs);
+const ranked = new MarketScorer(clock).scoreAndSort(filtered);
 ```
 
 ## `IMarketFilterConfig` — пороги остаются `number` (не трогается)
@@ -24,7 +105,7 @@ const ranked = new MarketScorer().scoreAndSort(filtered);
 
 ## `DiscoveredMarket` — брендированные поля (Этап 10c)
 
-`DiscoveredMarket` (`@polymarket/ports`, `IMarketDiscoveryService.ts`) — `spread?: Ratio`,
+`DiscoveredMarket` (`@polymarket/ports`, `DiscoveredMarket.ts`) — `spread?: Ratio`,
 `liquidity: Money`, `eventStartMs?: Timestamp` (были `Decimal`/`Decimal`/`number` до Этапа
 10c плана миграции; единственная точка конструирования — `PolymarketMarketDiscoveryAdapter.
 _mapToDiscoveredMarket()`). `score: Decimal` и `startsAt?: Timestamp` не меняются (см.
@@ -63,5 +144,7 @@ allowlist из-за `score: Decimal` (сознательно не-VO, см. вы
 ## Ссылки
 
 - План миграции, Этап 10c: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
-- `@polymarket/ports` — `IMarketFilterConfig`, `IMarketDiscoveryService.DiscoveredMarket`,
-  `docs/ports.md` (полное обоснование `DiscoveredMarket`'s per-field решений)
+- `@polymarket/ports` — `IMarketDiscoveryService` (порт + `MarketDiscoverySnapshot`),
+  `DiscoveredMarket` (legacy), `IMarketFilterConfig`, `docs/ports.md`
+- `packages/infrastructure/polymarket-v2/docs/market-discovery-v2.md` — как
+  снимок строится из vendor-каталога

@@ -76,11 +76,30 @@ instrumentId: InstrumentId`, `DecisionEntry.strategyId: StrategyId`, `OrderEntry
 числовая metadata venue-отклонения по балансу (микроединицы, `Decimal`); переиспользуется
 `use-cases`'s `PlaceOrderFailureError.balance` напрямую (дедуплицировано в Этапе 10c плана
 миграции — раньше `use-cases` держал побитовую копию той же структуры).
-`IMarketCatalog` — каталог инструментов. `IMarketDiscoveryService` — обнаружение новых
-рынков (Gamma API), см. `DiscoveredMarket` ниже. `IMarketFilterConfig` — пороги фильтрации
-кандидатов (см. ниже, почему это не VO).
+`IMarketCatalog` — каталог инструментов.
 
-**`DiscoveredMarket`** (`IMarketDiscoveryService.ts`) — `spread?: Ratio`, `liquidity: Money`,
+**`IMarketDiscoveryService`** (`IMarketDiscoveryService.ts`) — обнаружение технически
+поддержанного universe рынков площадки: `refresh(options?) → boolean` +
+`getSnapshot() → MarketDiscoverySnapshot`. За границей порта нет ни одного vendor-объекта:
+единственное представление рынка — доменная сущность `Market` (`@polymarket/market`).
+Разделение refresh/getSnapshot сохраняет last-good семантику — временная недоступность
+площадки не лишает Application последнего успешного universe.
+
+Запись снимка — `MarketDiscoveryEntry = { market: Market, metrics: MarketDiscoveryMetrics }`.
+Быстро меняющиеся наблюдения (`liquidity: Money`, `spread?: Ratio`) живут РЯДОМ с `Market`,
+а не внутри него: `Market` — identity/структура/расписание, и «изменился стакан» не должно
+читаться как «изменился рынок». Отсутствующий спред остаётся `undefined` — «неизвестен» и
+«нулевой» противоположны. `marketUniverseKey(venueId, marketId)` — единое правило
+идентичности рынка для дедупликации discovery и lookup `MarketUniverse`.
+
+Порт НЕ ранжирует рынки: ключевые слова, минимальная ликвидность/спред, предпочтения по
+активу и длительности, top-N — owner policy НАД портом (Policy-MR).
+
+`IMarketFilterConfig` — пороги фильтрации LEGACY-кандидатов (см. ниже, почему это не VO).
+
+**`DiscoveredMarket`** (`DiscoveredMarket.ts`) — LEGACY-контракт, вход `MarketFilter`/
+`MarketScorer` и V1-адаптера; исчезнет вместе с их миграцией на `MarketDiscoveryEntry`.
+`spread?: Ratio`, `liquidity: Money`,
 `eventStartMs?: Timestamp` (все три — Этап 10c плана миграции). `score: Decimal` и
 `startsAt?: Timestamp` не меняются: `score` — внутренний sort-key без чистого
 VO-отображения (устанавливается `MarketScorer`), `startsAt` — семантически ДРУГОЕ поле,
