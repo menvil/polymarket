@@ -1,15 +1,15 @@
 # @polymarket/polymarket-v2
 
-Polymarket V2 ingress boundary: наблюдения официального SDK
+Polymarket V2 ingress boundary: наблюдения Polymarket V2 client/bindings
 `@polymarket/client` → canonical `ExternalMessage` → общий `ExternalMessageBus`.
 
 ## 1. Назначение
 
-`PolymarketSource` превращает public-наблюдения официального SDK в canonical
+`PolymarketSource` превращает public-наблюдения Polymarket V2 client/bindings в canonical
 ExternalMessages и публикует их в общий bus внешнего контура:
 
 ```text
-@polymarket/client (официальный SDK: Gamma / CLOB WS / RTDS)
+@polymarket/client (Polymarket V2 client: Gamma / CLOB WS / RTDS)
         ↓
 PolymarketSource            ← этот пакет
         ↓
@@ -19,7 +19,7 @@ ExternalMessageBus          ← общий bus контура (инъециру�
 ```
 
 Транспортное поведение (WebSocket, reconnect, backoff, heartbeat, decode)
-целиком принадлежит официальному SDK — пакет НЕ строит второй framework
+целиком принадлежит Polymarket V2 client — пакет НЕ строит второй framework
 поверх него.
 
 ## 2. Boundary: SDK event = source-native payload
@@ -34,12 +34,51 @@ Payload каждого сообщения — БУКВАЛЬНО объект, �
 (`POLYMARKET_MARKET`, `POLYMARKET_CRYPTO_BINANCE`,
 `POLYMARKET_CRYPTO_CHAINLINK`); он дополняет vendor-поля, а не заменяет их.
 
-## 3. Без семантики
+## 3. Без семантики в data plane
 
 Здесь НЕТ конверсии в `OrderBook`/`Trade`/VO/ApplicationEvent — это работа
-`PolymarketSemanticAdapter`, который появится ПОСЛЕ Recorder checkpoint и
-будет подписчиком того же bus. Пакет не зависит от Domain/Application
-(закреплено тестом `__tests__/contour-boundary.test.ts`).
+`PolymarketSemanticAdapter`, который является подписчиком того же bus.
+
+Границы зависимостей у двух плоскостей пакета РАЗНЫЕ, и обе закреплены
+тестом `__tests__/contour-boundary.test.ts`:
+
+**Data plane** (`PolymarketSource`, `PolymarketExternalMessage`) — ровно
+восемь разрешённых импортов, ни Domain, ни Application среди них нет:
+
+```text
+@polymarket/bindings/subscriptions   @polymarket/message-bus
+@polymarket/client                   @polymarket/messages
+@polymarket/external-message-bus     @polymarket/logger
+@polymarket/external-messages        @polymarket/result
+```
+
+**Control plane** (`PolymarketMarketDiscovery`,
+`PolymarketCryptoUpDownClassifier`, `PolymarketRtdsFeeds`,
+`PolymarketFinalization`) — те же восемь ПЛЮС ровно восемь своих:
+
+```text
+@polymarket/bindings/gamma     typed vendor-модели каталога
+@polymarket/market             canonical Domain Market — результат работы
+@polymarket/ports              контракт снимка (MarketDiscoverySnapshot)
+@polymarket/value-objects      Money/Ratio наблюдений
+@polymarket/ids                MarketId/InstrumentId/VenueId/CryptoAssetId
+@polymarket/time               IClock (детерминизм обхода в тестах)
+@polymarket/timestamp          Timestamp расписания
+decimal.js                     Decimal-арифметика внутри границы VO
+```
+
+Списки ПОЛНЫЕ и защищены от расхождения тестом
+`README перечисляет ОБЕ границы полностью`: он читает этот файл и требует,
+чтобы каждый разрешённый специфаер здесь присутствовал. Неполный список
+здесь был бы хуже отсутствующего — читатель полагался бы на него как на
+границу.
+
+Исключение для control plane — не послабление, а его прямая работа: задача
+Discovery в том и состоит, чтобы превратить vendor-запись в canonical
+`Market` ДО границы Application, и делать это, не зная доменного типа,
+невозможно. Обеим плоскостям по-прежнему запрещены trading/semantic/
+exchange-пакеты, а `@polymarket/market-discovery` (Filter/Scorer) запрещён
+control plane отдельным правилом: owner selection живёт НАД портом.
 
 ## 4. Один bus
 
@@ -139,18 +178,34 @@ await bus.close();
 в `docs/sdk-parity.md`. Development-only smoke: `scripts/smoke.ts`
 (`npx tsx packages/infrastructure/polymarket-v2/scripts/smoke.ts`).
 
-## Market Discovery V2 (control plane, N-003)
+## Market Discovery (control plane)
 
 Помимо data-plane `PolymarketSource`, пакет содержит control-plane
-`PolymarketMarketDiscovery`: обнаружение рынков через официальные
-`listMarkets`/`fetchEvent` с reuse существующей selection policy
-(`MarketFilter`/`MarketScorer`) и выводом RTDS-фидов из `resolution.source`
-(`derivePolymarketCryptoMeta`). Discovery ничего НЕ публикует в
-`ExternalMessageBus` — Gamma остаётся query path.
+`PolymarketMarketDiscovery`: обнаружение технически поддержанного universe
+через `listMarkets`/`fetchEvent` и выдачу его наружу как **canonical
+`MarketDiscoverySnapshot`** с доменными `Market` внутри.
 
-Подробности (пагинация, маппинг полей, gaps N-001, parity с legacy) —
-в `docs/market-discovery-v2.md`. Потребитель — координатор сессий
-`@polymarket/collection-coordinator`.
+```typescript
+const refreshed = await discovery.refresh();   // true → снимок актуален
+universe.replace(discovery.getSnapshot());     // Application: только Market
+```
+
+Что он делает и чего НЕ делает:
+
+- ✅ окно ближайших рынков, технический gate торгуемости, классификация
+  семейства `CRYPTO_UP_DOWN`, ТОЧНОЕ `startsAt` из события, canonical
+  mapping, детерминированный порядок и дедупликация;
+- ❌ owner selection: ключевые слова, минимальная ликвидность/спред,
+  предпочтения по активу и длительности, top-N. Это Policy НАД портом.
+
+Vendor-объекты границу порта не пересекают. RTDS-фиды, settlement-правило и
+typed Gamma-модели остаются доступны Infrastructure через
+`prepareMarket(marketId)` — без сети, из данных обхода.
+
+Discovery ничего НЕ публикует в `ExternalMessageBus` — Gamma остаётся query
+path. Подробности (пагинация, классификатор, кэш событий, стоимость окна,
+маппинг полей) — в `docs/market-discovery-v2.md`; live-проверка —
+`scripts/discovery-smoke.ts`.
 
 ## Тесты
 

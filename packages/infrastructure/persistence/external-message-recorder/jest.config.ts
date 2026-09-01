@@ -21,6 +21,10 @@ const config: Config = {
     '^@polymarket/messages$': '<rootDir>/../../../foundation/messages/src/index.ts',
     '^@polymarket/logger$': '<rootDir>/../../../foundation/logger/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../../foundation/ids/src/index.ts',
+    // ExternalMessageRecorder берёт из @polymarket/polymarket-v2 ЗНАЧЕНИЯ
+    // (CHAINLINK_TWAP_TOPIC, rtdsFeedKey), поэтому его index грузится в runtime
+    // и тянет PolymarketMarketDiscovery → canonical Market.
+    '^@polymarket/market$': '<rootDir>/../../../domain/entities/market/src/index.ts',
     '^@polymarket/errors$': '<rootDir>/../../../foundation/errors/src/index.ts',
     '^@polymarket/errors/(.*)$': '<rootDir>/../../../foundation/errors/src/$1',
     '^@polymarket/math$': '<rootDir>/../../../foundation/math/src/index.ts',

@@ -1,7 +1,7 @@
 {
   "name": "@polymarket/polymarket-v2",
   "version": "0.1.0",
-  "description": "Polymarket V2 ingress boundary - official SDK observations wrapped as canonical ExternalMessages",
+  "description": "Polymarket V2 ingress boundary - client/bindings observations wrapped as canonical ExternalMessages + canonical market discovery",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -50,7 +50,7 @@
     "@polymarket/external-messages": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
-    "@polymarket/market-discovery": "0.1.0",
+    "@polymarket/market": "0.1.0",
     "@polymarket/message-bus": "0.1.0",
     "@polymarket/messages": "0.1.0",
     "@polymarket/ports": "0.1.0",

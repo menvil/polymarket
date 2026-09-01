@@ -5,6 +5,6 @@
       "@polymarket/polymarket-v2": ["./src/index.ts"]
     }
   },
-  "include": ["src/**/*", "__tests__/**/*"],
+  "include": ["src/**/*", "__tests__/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist"]
 }

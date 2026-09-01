@@ -4,7 +4,7 @@
  * @remarks
  * ### Live-характеризация (2026-08-24, SDK 0.6.0, PART 62)
  *
- * Для завершившегося `btc-updown-5m-*` официальный SDK возвращает:
+ * Для завершившегося `btc-updown-5m-*` Polymarket V2 client возвращает:
  *
  * - `fetchEvent().metadata` (vendor `eventMetadata`):
  *   `{"finalPrice": 78325.4503724296, "priceToBeat": 78027.33965248794}` —
@@ -85,7 +85,7 @@ function toExactDecimalString(value: unknown): string | undefined {
 /**
  * Извлекает крипто-данные финализации из Gamma `Event.metadata`.
  *
- * @param metadata - `Event.metadata` официального SDK (может отсутствовать)
+ * @param metadata - `Event.metadata` Polymarket V2 client/bindings (может отсутствовать)
  * @returns Typed-результат с точными строковыми значениями; поля
  *   отсутствуют, пока Gamma их не опубликовал
  *
@@ -116,7 +116,7 @@ export function extractCryptoFinalization(
 /**
  * Маппирует исходы normalized Market в нейтральный финальный список.
  *
- * @param market - Normalized Market официального SDK (обычно СВЕЖИЙ fetch)
+ * @param market - Normalized Market Polymarket V2 client/bindings (обычно СВЕЖИЙ fetch)
  * @returns Исходы в vendor-порядке с canonical identity и точными ценами
  *
  * @remarks

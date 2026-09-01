@@ -1,5 +1,5 @@
 /**
- * Fixtures normalized Gamma-моделей официального SDK для тестов Discovery V2.
+ * Fixtures normalized Gamma-моделей Polymarket V2 bindings для тестов Discovery.
  *
  * @remarks
  * Формы объектов 1:1 повторяют typed-модели `@polymarket/bindings/gamma`
@@ -8,7 +8,7 @@
  *
  * ### Почему `as` вместо запуска реальных схем
  *
- * Та же причина, что у `sdkFixtures.ts`: branded-типы SDK (`MarketId`,
+ * Та же причина, что у `sdkFixtures.ts`: branded-типы bindings (`MarketId`,
  * `ConditionId`, `TokenId`, `DecimalString`, `IsoDateTimeString`)
  * конструируются только его zod-схемами, а `@polymarket/bindings` — чистый
  * ESM, который нельзя импортировать в runtime под CJS-jest. Fixtures
@@ -56,6 +56,8 @@ export interface SdkMarketFixtureOptions {
   readonly gammaId?: string;
   readonly conditionId?: string | null;
   readonly question?: string | null;
+  /** Заголовок группы рынка — второе текстовое поле Up/Down-семантики. */
+  readonly groupItemTitle?: string | null;
   readonly slug?: string | null;
   readonly yesTokenId?: string | null;
   readonly noTokenId?: string | null;
@@ -89,6 +91,7 @@ export function createSdkMarket(options: SdkMarketFixtureOptions = {}): Market {
     gammaId = '516789',
     conditionId = CONDITION_ID_BTC,
     question = 'Bitcoin Up or Down - August 19, 8AM ET',
+    groupItemTitle = null,
     slug = 'bitcoin-up-or-down-august-19-8am-et',
     yesTokenId = TOKEN_ID_BTC_UP,
     noTokenId = TOKEN_ID_BTC_DOWN,
@@ -112,7 +115,7 @@ export function createSdkMarket(options: SdkMarketFixtureOptions = {}): Market {
     slug,
     conditionId,
     question,
-    groupItemTitle: null,
+    groupItemTitle,
     description: 'Resolves according to the source.',
     category: 'Crypto',
     image: null,
@@ -193,6 +196,15 @@ export interface SdkEventFixtureOptions {
   readonly metadata?: Record<string, unknown> | null;
   /** Вложенные normalized markets события. */
   readonly markets?: readonly Market[];
+  /**
+   * Slug серии события — ЕДИНСТВЕННЫЙ источник номинала `crypto.duration`.
+   *
+   * @remarks
+   * `null` означает «серии у события нет» (`series: []`), а не «слаг пуст»:
+   * различать эти случаи обязательно, потому что оба ведут к отказу, но по
+   * разным ветвям кода.
+   */
+  readonly seriesSlug?: string | null;
 }
 
 /**
@@ -212,6 +224,7 @@ export function createSdkEvent(options: SdkEventFixtureOptions = {}): Event {
     endDate = new Date(FIXED_NOW_MS + 30 * 60_000).toISOString(),
     metadata = null,
     markets = [],
+    seriesSlug = 'bitcoin-up-or-down-5m',
   } = options;
 
   const event = {
@@ -263,18 +276,146 @@ export function createSdkEvent(options: SdkEventFixtureOptions = {}): Event {
     partners: [],
     metadata,
     markets: [...markets],
-    series: [],
+    series:
+      seriesSlug === null
+        ? []
+        : [{ id: '11326', slug: seriesSlug, title: 'Series title', active: true, closed: false }],
     tags: [],
     creators: [],
   };
   return event as unknown as Event;
 }
 
+/**
+ * Известные площадкой семейства рынков, встречающиеся в реальном окне
+ * `endDate` рядом с нашими crypto Up/Down сериями.
+ *
+ * @remarks
+ * Нужны ровно затем, чтобы классификатор проверялся на РЕАЛЬНОМ соседстве:
+ * технический universe обязан отсеивать их как `UNSUPPORTED`, а не падать
+ * и не тащить в canonical `Market`.
+ */
+export const CONDITION_ID_ETH = `0x${'e'.repeat(64)}`;
+export const CONDITION_ID_SOL = `0x${'50'.repeat(32)}`;
+export const CONDITION_ID_XRP = `0x${'ab'.repeat(32)}`;
+export const CONDITION_ID_FOOTBALL = `0x${'f0'.repeat(32)}`;
+export const CONDITION_ID_WEATHER = `0x${'c1'.repeat(32)}`;
+export const CONDITION_ID_POLITICS = `0x${'d2'.repeat(32)}`;
+export const CONDITION_ID_CRYPTO_THRESHOLD = `0x${'b3'.repeat(32)}`;
+
+/**
+ * Создаёт crypto Up/Down рынок заданного актива (форма текущих серий).
+ *
+ * @param asset - Базовый актив (`btc`, `eth`, `sol`, `xrp`, ...)
+ * @param options - Переопределения поверх серии (id, окно, метки, ...)
+ * @returns Vendor Market с Chainlink TWAP resolution source и метками Up/Down
+ *
+ * @example
+ * ```typescript
+ * const eth = createCryptoUpDownMarket('eth', { conditionId: CONDITION_ID_ETH });
+ * ```
+ */
+export function createCryptoUpDownMarket(
+  asset: 'btc' | 'eth' | 'sol' | 'xrp',
+  options: SdkMarketFixtureOptions = {},
+): Market {
+  const titles: Readonly<Record<string, string>> = {
+    btc: 'Bitcoin',
+    eth: 'Ethereum',
+    sol: 'Solana',
+    xrp: 'XRP',
+  };
+  return createSdkMarket({
+    question: `${titles[asset]!} Up or Down - August 19, 8AM ET`,
+    slug: `${asset}-up-or-down-august-19-8am-et`,
+    resolutionSource: `https://data.chain.link/streams/${asset}-usd-twap-60s-streams`,
+    yesLabel: 'Up',
+    noLabel: 'Down',
+    ...options,
+  });
+}
+
+/**
+ * Создаёт спортивный рынок (не крипто-семейство).
+ *
+ * @param options - Переопределения полей
+ * @returns Vendor Market без крипто-источника резолюции
+ */
+export function createFootballMarket(options: SdkMarketFixtureOptions = {}): Market {
+  return createSdkMarket({
+    conditionId: CONDITION_ID_FOOTBALL,
+    question: 'Will Arsenal beat Chelsea on August 19?',
+    slug: 'arsenal-chelsea-august-19',
+    resolutionSource: 'https://www.premierleague.com/results',
+    yesLabel: 'Yes',
+    noLabel: 'No',
+    ...options,
+  });
+}
+
+/**
+ * Создаёт погодный рынок (не крипто-семейство).
+ *
+ * @param options - Переопределения полей
+ * @returns Vendor Market без крипто-источника резолюции
+ */
+export function createWeatherMarket(options: SdkMarketFixtureOptions = {}): Market {
+  return createSdkMarket({
+    conditionId: CONDITION_ID_WEATHER,
+    question: 'Will it rain in New York City on August 19?',
+    slug: 'nyc-rain-august-19',
+    resolutionSource: 'https://www.weather.gov/nyc',
+    yesLabel: 'Yes',
+    noLabel: 'No',
+    ...options,
+  });
+}
+
+/**
+ * Создаёт политический рынок (не крипто-семейство).
+ *
+ * @param options - Переопределения полей
+ * @returns Vendor Market без крипто-источника резолюции
+ */
+export function createPoliticsMarket(options: SdkMarketFixtureOptions = {}): Market {
+  return createSdkMarket({
+    conditionId: CONDITION_ID_POLITICS,
+    question: 'Will the Senate pass the budget bill this session?',
+    slug: 'senate-budget-bill',
+    resolutionSource: 'https://www.congress.gov/',
+    yesLabel: 'Yes',
+    noLabel: 'No',
+    ...options,
+  });
+}
+
+/**
+ * Создаёт крипто-рынок общего вида (`Yes`/`No`, порог цены).
+ *
+ * @param options - Переопределения полей
+ * @returns Vendor Market с крипто-источником, но БЕЗ Up/Down-семантики
+ *
+ * @remarks
+ * Ключевой негативный кейс: источник резолюции у него настоящий крипто, и
+ * именно поэтому «крипто ⇒ наше» — неверное правило.
+ */
+export function createCryptoThresholdMarket(options: SdkMarketFixtureOptions = {}): Market {
+  return createSdkMarket({
+    conditionId: CONDITION_ID_CRYPTO_THRESHOLD,
+    question: 'Will Bitcoin be above $100,000 tomorrow?',
+    slug: 'bitcoin-above-100000-tomorrow',
+    resolutionSource: 'https://data.chain.link/streams/btc-usd',
+    yesLabel: 'Yes',
+    noLabel: 'No',
+    ...options,
+  });
+}
+
 /** Записанный вызов listMarkets (plain-форма request для ассертов). */
 export type RecordedListMarketsRequest = Record<string, unknown> | undefined;
 
 /**
- * Fake официального SDK-клиента для Discovery V2.
+ * Fake клиента Polymarket V2 для Discovery.
  *
  * @remarks
  * Реализует `PolymarketDiscoveryClient` (= `Pick<PublicClient,
@@ -300,8 +441,10 @@ export class FakeDiscoveryClient implements PolymarketDiscoveryClient {
   public readonly events = new Map<string, Event>();
   /** Записанные вызовы fetchEvent (request.id). */
   public readonly fetchEventCalls: string[] = [];
-  /** Если задано — fetchEvent бросает эту ошибку. */
+  /** Если задано — fetchEvent бросает эту ошибку для ЛЮБОГО события. */
   public fetchEventError: unknown;
+  /** Идентификаторы событий, запрос которых обязан упасть (частичный отказ). */
+  public readonly failFetchEventIds = new Set<string>();
 
   public listMarkets = ((request?: Record<string, unknown>) => {
     this.listCalls.push(request);
@@ -342,6 +485,9 @@ export class FakeDiscoveryClient implements PolymarketDiscoveryClient {
     this.fetchEventCalls.push(id);
     if (this.fetchEventError !== undefined) {
       throw this.fetchEventError;
+    }
+    if (this.failFetchEventIds.has(id)) {
+      throw new Error(`FakeDiscoveryClient was told to fail event ${id}`);
     }
     const event = this.events.get(id);
     if (event === undefined) {

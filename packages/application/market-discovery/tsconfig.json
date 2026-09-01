@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "./dist",
     "paths": {
-      "@polymarket/ports":            ["../ports/dist/index.d.ts"]
+      "@polymarket/ports":            ["../ports/dist/index.d.ts"],
+      "@polymarket/market":           ["../../domain/entities/market/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*", "__tests__/**/*"],

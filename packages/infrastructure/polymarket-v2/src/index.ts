@@ -2,19 +2,26 @@
  * @polymarket/polymarket-v2 — Polymarket V2 ingress boundary.
  *
  * @remarks
- * Пакет превращает наблюдения официального `@polymarket/client` в canonical
+ * Пакет превращает наблюдения Polymarket V2 client/bindings в canonical
  * `ExternalMessage` и публикует их в общий `ExternalMessageBus`:
  *
  * ```text
  * @polymarket/client → PolymarketSource → ExternalMessage → ExternalMessageBus
  * ```
  *
- * Никакой семантики здесь нет: payload — нетронутый SDK event; конверсия в
- * OrderBook/Trade/VO — работа будущего PolymarketSemanticAdapter ПОСЛЕ bus.
+ * Никакой семантики здесь нет: payload — нетронутый vendor event; конверсия в
+ * OrderBook/Trade/VO — работа PolymarketSemanticAdapter ПОСЛЕ bus.
  *
- * SDK-типы payload re-экспортируются отсюда сознательно: это contract surface
- * source-native payload для будущих подписчиков (Recorder/SemanticAdapter),
+ * Vendor-типы payload re-экспортируются отсюда сознательно: это contract
+ * surface source-native payload для подписчиков (Recorder/SemanticAdapter),
  * которым нельзя лезть в `@polymarket/bindings` напрямую.
+ *
+ * ### Control plane: Discovery
+ *
+ * `PolymarketMarketDiscovery` — второй, независимый контур пакета: он
+ * превращает vendor-каталог в canonical `MarketDiscoverySnapshot`
+ * (`@polymarket/ports`) с доменными `Market` внутри. Vendor-объекты
+ * границу порта не пересекают.
  */
 export type {
   PolymarketExternalMessage,
@@ -34,12 +41,25 @@ export type {
 export { PolymarketMarketDiscovery } from './PolymarketMarketDiscovery.js';
 export type {
   PolymarketDiscoveryClient,
-  PolymarketDiscoveredMarket,
   PolymarketMarketDiscoveryConfig,
   PolymarketMarketDiscoveryDependencies,
   SelectedPolymarketMarket,
   SelectedPolymarketOutcome,
 } from './PolymarketMarketDiscovery.js';
+export {
+  classifyPolymarketMarket,
+  isSupportedCryptoUpDown,
+  parseCryptoUpDownSeriesDuration,
+} from './PolymarketCryptoUpDownClassifier.js';
+export type {
+  PolymarketCryptoUpDownClassification,
+  PolymarketInvalidClassification,
+  PolymarketInvalidReason,
+  PolymarketMarketClassification,
+  PolymarketUnsupportedClassification,
+  PolymarketUnsupportedReason,
+  PolymarketUpDownSemantics,
+} from './PolymarketCryptoUpDownClassifier.js';
 export {
   CHAINLINK_TWAP_TOPIC,
   derivePolymarketCryptoMeta,
@@ -85,6 +105,6 @@ export type {
   CryptoPricesTopic,
   StandardMarketEvent,
 } from '@polymarket/bindings/subscriptions';
-// Typed normalized Gamma-модели официального SDK — contract surface discovery
-// boundary для координатора/header (лезть в bindings напрямую запрещено).
+// Typed normalized Gamma-модели Polymarket V2 bindings — contract surface
+// Infrastructure-подготовки подписок/header (лезть в bindings напрямую запрещено).
 export type { Event as PolymarketGammaEvent, Market as PolymarketGammaMarket } from '@polymarket/bindings/gamma';

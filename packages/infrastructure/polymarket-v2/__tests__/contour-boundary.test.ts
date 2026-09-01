@@ -1,6 +1,5 @@
 /**
- * Границы контура polymarket-v2 (N-001 PART 25 TEST 10 / PART 30,
- * пересмотрено в N-003 PART 44).
+ * Границы контура polymarket-v2 (пересмотрено вместе с canonical Discovery).
  *
  * @remarks
  * Пакет состоит из двух плоскостей с РАЗНЫМИ границами зависимостей:
@@ -10,13 +9,14 @@
  *   semantic-пакетов: конверсия в наши concepts — работа будущего
  *   SemanticAdapter ПОСЛЕ bus. Правило N-001 сохраняется без изменений.
  *
- * - **CONTROL PLANE** (`PolymarketMarketDiscovery`, `PolymarketRtdsFeeds`)
- *   — discovery boundary N-003. Ему ДОПОЛНИТЕЛЬНО разрешены существующие
- *   selection-контракты (`@polymarket/ports`, `@polymarket/market-discovery`)
- *   и VO кандидата (`@polymarket/value-objects`, ids/timestamp/time,
- *   decimal.js) — reuse selection policy вместо второго discovery-фреймворка
- *   (N-003 PART 3/4). Это тот же слой зависимостей, что у legacy
- *   `PolymarketMarketDiscoveryAdapter` в `@polymarket/exchange`.
+ * - **CONTROL PLANE** (`PolymarketMarketDiscovery`,
+ *   `PolymarketCryptoUpDownClassifier`, `PolymarketRtdsFeeds`) — discovery
+ *   boundary. Ему ДОПОЛНИТЕЛЬНО разрешены canonical Domain-сущность рынка
+ *   (`@polymarket/market`), контракт снимка (`@polymarket/ports`) и VO
+ *   наблюдений (`@polymarket/value-objects`, ids/timestamp/time, decimal.js).
+ *   Именно в этом и состоит его работа: превратить vendor-запись в canonical
+ *   `Market` ДО границы Application. `@polymarket/market-discovery`
+ *   (Filter/Scorer) здесь запрещён — owner selection живёт НАД портом.
  *
  * Trading/semantic/exchange-зависимости запрещены ОБЕИМ плоскостям.
  * Тест фиксирует границу по РЕАЛЬНЫМ артефактам: package.json и import-ы
@@ -39,7 +39,8 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/orderbook',
   '@polymarket/trade',
   '@polymarket/entities',
-  '@polymarket/market',
+  // owner selection policy: Discovery не ранжирует рынки по «интересности»
+  '@polymarket/market-discovery',
   '@polymarket/fill',
   '@polymarket/order',
   '@polymarket/portfolio',
@@ -69,14 +70,15 @@ const ALLOWED_SOURCE_IMPORTS = new Set([
 ]);
 
 /**
- * Дополнительно разрешённые импорты CONTROL PLANE (discovery, N-003):
- * существующая selection policy + VO-модель кандидата + typed Gamma-модели.
+ * Дополнительно разрешённые импорты CONTROL PLANE (discovery):
+ * canonical Domain Market + контракт снимка + VO наблюдений + typed
+ * Gamma-модели vendor.
  */
 const ALLOWED_DISCOVERY_IMPORTS = new Set([
   ...ALLOWED_SOURCE_IMPORTS,
   '@polymarket/bindings/gamma',
+  '@polymarket/market',
   '@polymarket/ports',
-  '@polymarket/market-discovery',
   '@polymarket/value-objects',
   '@polymarket/ids',
   '@polymarket/time',
@@ -87,6 +89,7 @@ const ALLOWED_DISCOVERY_IMPORTS = new Set([
 /** Файлы CONTROL PLANE (discovery boundary) — пути относительно `src`. */
 const DISCOVERY_FILES = new Set([
   'PolymarketMarketDiscovery.ts',
+  'PolymarketCryptoUpDownClassifier.ts',
   'PolymarketRtdsFeeds.ts',
   'PolymarketFinalization.ts',
   // index.ts re-экспортирует обе плоскости (контракт пакета)
@@ -157,7 +160,7 @@ describe('dependency graph boundary', () => {
     }
   });
 
-  it('DATA PLANE импортирует только Foundation, внешний контур и официальный SDK', () => {
+  it('DATA PLANE импортирует только Foundation, внешний контур и Polymarket V2 client', () => {
     const sourceFiles = listSourceFiles(SRC_ROOT).filter(
       (filePath) => !DISCOVERY_FILES.has(srcRelative(filePath)),
     );
@@ -177,7 +180,7 @@ describe('dependency graph boundary', () => {
     }
   });
 
-  it('CONTROL PLANE (discovery) добавляет только selection-контракты и VO', () => {
+  it('CONTROL PLANE (discovery) добавляет только canonical Market, порт и VO', () => {
     const discoveryFiles = listSourceFiles(SRC_ROOT).filter((filePath) =>
       DISCOVERY_FILES.has(srcRelative(filePath)),
     );
@@ -197,7 +200,20 @@ describe('dependency graph boundary', () => {
     }
   });
 
-  it('исходники не импортируют internal paths SDK (chunk-модули)', () => {
+  it('README перечисляет ОБЕ границы полностью (документация не расходится с тестом)', () => {
+    // README называет свои списки полными и служит первым, что читает
+    // человек про границы пакета. Неполный список там хуже отсутствующего:
+    // на него полагаются как на границу. Раз тест — источник истины,
+    // расхождение обязан ловить он, а не следующий review.
+    const readme = readFileSync(join(PACKAGE_ROOT, 'README.md'), 'utf8');
+
+    const missing = [...ALLOWED_DISCOVERY_IMPORTS].filter(
+      (specifier) => !readme.includes(specifier),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('исходники не импортируют internal paths bindings (chunk-модули)', () => {
     for (const filePath of listSourceFiles(join(PACKAGE_ROOT, 'src'))) {
       for (const specifier of collectImports(filePath)) {
         expect(specifier.includes('/dist/')).toBe(false);

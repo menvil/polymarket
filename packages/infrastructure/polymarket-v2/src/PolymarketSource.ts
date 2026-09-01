@@ -1,11 +1,11 @@
 /**
- * PolymarketSource — тонкий ingress boundary над официальным `@polymarket/client`.
+ * PolymarketSource — тонкий ingress boundary над `@polymarket/client` (Polymarket V2).
  *
  * @remarks
  * ### Поток данных
  *
  * ```text
- * официальный SDK (client.subscribe → AsyncIterable)
+ * Polymarket V2 client (client.subscribe → AsyncIterable)
  *         ↓  for await (const sdkEvent of handle)
  * ExternalMessage {
  *   type:     наш routing discriminator,
@@ -21,7 +21,7 @@
  * - **не нормализует payload** — semantic adapter появится ПОСЛЕ Recorder
  *   checkpoint (N-002+), здесь SDK event проходит как есть;
  * - **не переустанавливает соединения** — reconnect/backoff/heartbeat
- *   принадлежат официальному SDK (проверено в 0.6.0: realtime-транспорт
+ *   принадлежат Polymarket V2 client (проверено в 0.6.0: realtime-транспорт
  *   переподключается пока есть активные подписки);
  * - **не сортирует события** — публикация в порядке фактического получения
  *   из SDK-итераторов; порядок фиксирует `metadata.sequence`;
@@ -51,7 +51,7 @@ import type {
 import { CHAINLINK_TWAP_TOPIC } from './PolymarketRtdsFeeds.js';
 
 /**
- * Subscription handle официального SDK — структурное зеркало его контракта.
+ * Subscription handle Polymarket V2 client/bindings — структурное зеркало его контракта.
  *
  * @remarks
  * `@polymarket/client@0.6.0` НЕ экспортирует свои subscription-типы
@@ -69,10 +69,10 @@ export interface PolymarketSubscriptionHandle<TEvent> extends AsyncIterable<TEve
 }
 
 /**
- * Subscribe-возможность официального SDK-клиента, которую использует Source.
+ * Subscribe-возможность клиента Polymarket V2, которую использует Source.
  *
  * @remarks
- * Тип выведен НАПРЯМУЮ из официального `PublicClient`
+ * Тип выведен НАПРЯМУЮ из `PublicClient` Polymarket V2 client
  * (`Pick<..., 'subscribe'>`), а не написан руками: SDK не экспортирует типы
  * subscribe-контракта (`PublicSubscriptionSpec`, `SubscriptionHandle`, ...)
  * с public root, а рукописные узкие overload-ы не проходят structural-check
@@ -87,7 +87,7 @@ export interface PolymarketSubscriptionHandle<TEvent> extends AsyncIterable<TEve
  *
  * @example
  * ```typescript
- * const client = createPublicClient();          // официальный SDK
+ * const client = createPublicClient();          // Polymarket V2 client
  * const source = new PolymarketSource({ client, bus, metadataGenerator, logger });
  * ```
  */
@@ -123,7 +123,7 @@ export interface PolymarketExternalMessagePublisher {
  * Зависимости {@link PolymarketSource}.
  *
  * @remarks
- * Ownership: composition root создаёт ОДИН официальный public client и ОДИН
+ * Ownership: composition root создаёт ОДИН public client Polymarket V2 и ОДИН
  * общий ExternalMessageBus и передаёт их сюда. Source не создаёт ни клиента,
  * ни bus, ни metadata generator — он только владеет открытыми им
  * subscription handles.
@@ -161,13 +161,13 @@ export interface PolymarketOpenSubscription {
 }
 
 /**
- * Ingress boundary Polymarket V2: официальные SDK-события → canonical
+ * Ingress boundary Polymarket V2: события Polymarket V2 client → canonical
  * ExternalMessages → общий ExternalMessageBus.
  *
  * @remarks
  * ### Ответственность (и только она)
  *
- * 1. открыть подписки через официальный SDK;
+ * 1. открыть подписки через Polymarket V2 client;
  * 2. читать SDK AsyncIterable;
  * 3. обернуть каждый event в canonical ExternalMessage
  *    (payload === SDK event, metadata = `nextRoot()` — каждое внешнее

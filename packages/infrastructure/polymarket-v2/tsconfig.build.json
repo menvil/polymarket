@@ -57,7 +57,7 @@
       "path": "../../application/ports/tsconfig.build.json"
     },
     {
-      "path": "../../application/market-discovery/tsconfig.build.json"
+      "path": "../../domain/entities/market/tsconfig.build.json"
     }
   ]
 }

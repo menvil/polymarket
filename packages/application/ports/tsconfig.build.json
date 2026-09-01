@@ -47,6 +47,9 @@
     },
     {
       "path": "../../domain/value-objects/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/entities/market/tsconfig.build.json"
     }
   ]
 }

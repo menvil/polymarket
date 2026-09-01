@@ -43,6 +43,12 @@
     },
     {
       "path": "../ports/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/entities/market/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/timestamp/tsconfig.build.json"
     }
   ]
 }

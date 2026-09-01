@@ -23,6 +23,11 @@ const config: Config = {
     '^@polymarket/messages$': '<rootDir>/../../foundation/messages/src/index.ts',
     '^@polymarket/logger$': '<rootDir>/../../foundation/logger/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../foundation/ids/src/index.ts',
+    // MarketFinalizer/recordedTwapSettlement/recordedChainlinkWinner берут из
+    // @polymarket/polymarket-v2 ЗНАЧЕНИЯ (compareDecimalStrings, meanOfDecimalStrings,
+    // isFiniteDecimalString), поэтому его index грузится в runtime и тянет
+    // PolymarketMarketDiscovery → canonical Market.
+    '^@polymarket/market$': '<rootDir>/../../domain/entities/market/src/index.ts',
     '^@polymarket/errors$': '<rootDir>/../../foundation/errors/src/index.ts',
     '^@polymarket/errors/(.*)$': '<rootDir>/../../foundation/errors/src/$1',
     '^@polymarket/math$': '<rootDir>/../../foundation/math/src/index.ts',

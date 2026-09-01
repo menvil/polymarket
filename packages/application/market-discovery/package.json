@@ -18,6 +18,7 @@
     "@polymarket/errors": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
+    "@polymarket/market": "0.1.0",
     "@polymarket/ports": "0.1.0",
     "@polymarket/result": "0.1.0",
     "@polymarket/time": "0.1.0",

@@ -7,7 +7,7 @@ live smoke `scripts/smoke.ts` против публичных endpoints.
 ## Почему это сделано так
 
 Старый Recorder получал сырой WS frame до DTO-маппинга. В V2 source-native
-payload — это **decoded event официального SDK**: SDK уже владеет
+payload — это **decoded event Polymarket V2 client/bindings**: SDK уже владеет
 transport/decode (zod-схемы, reconnect), и повторное вскрытие сырых frames
 означало бы дублировать vendor-логику. Решение принято после проверки, что
 SDK-событие не теряет данных, нужных Recorder / SemanticAdapter /
