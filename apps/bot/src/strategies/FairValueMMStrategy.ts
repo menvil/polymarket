@@ -214,7 +214,7 @@ export class FairValueMMStrategy extends BaseStrategy<FVData, FVAction> {
    * @returns Данные для decide или undefined если нет данных
    */
   protected gather(snapshot: StrategySnapshot): FVData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Смена рынка → сброс
     if (this._currentExpirationMs !== expiresMs) {

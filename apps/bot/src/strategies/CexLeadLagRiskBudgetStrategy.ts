@@ -1181,7 +1181,7 @@ export class CexLeadLagRiskBudgetStrategy extends BaseStrategy<CexLeadLagData, C
   protected gather(snapshot: StrategySnapshot): CexLeadLagData | undefined {
     if (!snapshot.cryptoPrice || snapshot.eventStartMs === undefined) return undefined;
 
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
     if (this._currentExpirationMs !== expiresMs) {
       this._currentExpirationMs = expiresMs;
       this._marketEventStartMs = snapshot.eventStartMs.toNumber();

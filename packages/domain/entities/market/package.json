@@ -1,7 +1,7 @@
 {
   "name": "@polymarket/market",
   "version": "0.1.0",
-  "description": "Market entity for Polymarket trading system",
+  "description": "Canonical domain entity for an observed external prediction market",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -41,7 +41,8 @@
     "@polymarket/errors": "^0.1.0",
     "@polymarket/ids": "^0.1.0",
     "@polymarket/result": "^0.1.0",
-    "@polymarket/value-objects": "^0.1.0"
+    "@polymarket/timestamp": "^0.1.0",
+    "decimal.js": "^10.6.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

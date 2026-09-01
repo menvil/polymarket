@@ -14,9 +14,27 @@ import type { DumbStrategyConfig } from '../../src/strategies/DumbStrategy.js';
 import type { StrategySnapshot, TriggerReason } from '@polymarket/strategy';
 import { OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { unsafeStrategyId } from '@polymarket/ids';
+import { TimestampService, type Timestamp } from '@polymarket/timestamp';
 import Decimal from 'decimal.js';
 
 // ── Хелперы ──────────────────────────────────────────────────────────────────
+
+/**
+ * Строит Timestamp из epoch ms, падая на невалидном значении.
+ *
+ * @param ms - Epoch milliseconds
+ * @returns Timestamp
+ * @throws {Error} Если значение не проходит инварианты Timestamp
+ *
+ * @remarks
+ * Бросает, а не возвращает `undefined`: невалидное время в фикстуре — ошибка
+ * самого теста, и падать она должна на месте создания, а не позже в ассерте.
+ */
+function expectTimestamp(ms: number): Timestamp {
+  const result = TimestampService.create(ms);
+  if (!result.ok) throw new Error(`Invalid test timestamp: ${ms}`);
+  return result.value;
+}
 
 const DEFAULT_CONFIG: DumbStrategyConfig = {
   orderSize: new Decimal('5'),
@@ -69,7 +87,7 @@ function makeSnapshot(overrides: Partial<{
 
   return {
     instrumentId: 'test-instrument' as any,
-    market: { expirationMs: Date.now() + 3_600_000 } as any,
+    market: { expiresAt: expectTimestamp(Date.now() + 3_600_000) } as any,
     topOfBook: {
       bestBid: OutcomePrice.of(bestBidValue),
       bestAsk: OutcomePrice.of(bestAsk),
@@ -117,7 +135,7 @@ describe('DumbStrategy', () => {
   it('возвращает [] если нет topOfBook', () => {
     const snapshot: StrategySnapshot = {
       instrumentId: 'test' as any,
-      market: { expirationMs: Date.now() + 3_600_000 } as any,
+      market: { expiresAt: expectTimestamp(Date.now() + 3_600_000) } as any,
       topOfBook: undefined,
       bookHistory: undefined,
       tradeTape: undefined,

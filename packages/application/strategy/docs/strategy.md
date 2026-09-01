@@ -40,9 +40,14 @@ await scheduler.register({ strategy: new SimpleQuoter(), instrumentId, asset, ac
 без единого реального потребителя. Этап 9 подключил его к внутреннему состоянию
 `StrategyScheduler`:
 
-- `normalizeCryptoAsset(symbolOrAsset)` — приватная функция, нормализующая сырой
-  `cryptoSymbol` (например `'BTC/USD'`, `'BTCUSDT'`) в базовый актив (`'btc'`) —
-  возвращает `CryptoAssetId | undefined` вместо `string | undefined`.
+- `normalizeCryptoAsset(symbolOrAsset)` — нормализует сырой `cryptoSymbol`
+  (например `'BTC/USD'`, `'BTCUSDT'`) в базовый актив (`'btc'`), возвращает
+  `CryptoAssetId | undefined`. **Экспортируется из `@polymarket/strategy`**: это
+  каноническое правило вывода актива, и любой, кто собирает рынок для регистрации
+  здесь же, обязан пользоваться им, а не своей копией. Единственный внешний
+  потребитель — `apps/bot/src/bot/buildCanonicalMarket.ts`, который заполняет
+  `Market.crypto.asset`; своя копия алгоритма разошлась бы с
+  `StrategyEntry.cryptoAsset` молча, без ошибки компиляции.
 - `StrategyEntry.cryptoAsset: CryptoAssetId | undefined` — внутреннее поле реестра
   зарегистрированных стратегий.
 - `_assetToStrategies: Map<CryptoAssetId, Set<string>>` — reverse-index для маршрутизации

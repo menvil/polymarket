@@ -1,131 +1,263 @@
 /**
- * Тесты для Market entity
+ * Тесты канонического Market
  *
  * @remarks
- * Проверяет:
- * - create() с валидными/невалидными данными
- * - expirationDate иммутабельность
- * - isExpiredAt(nowMs) детерминизм
- * - lifecycle: close(), resolve() с lifecycle guards
- * - predicates: isActive, isClosed, isResolved, canTrade
- * - equals(), toString()
+ * Покрывают четыре группы контракта:
+ * - **Construction** — доменные инварианты `create()`;
+ * - **Time** — детерминированные методы расписания (без wall clock);
+ * - **Observed state transitions** — `markClosed()` / `markResolved()`;
+ * - **Snapshot** — round-trip `Market → MarketSnapshot → Market`.
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Market, type Outcome } from '../../src/Market.js';
-import { type MarketClosedNotification, type MarketResolvedNotification } from '../../src/MarketNotifications.js';
 import {
+  Market,
   MarketState,
-  type OutcomeIndex,
-  asMarketId,
+  MarketViewModel,
+  asMarketDuration,
   unsafeMarketId,
+  unsafeInstrumentId,
+  unsafeCryptoAssetId,
+  asVenueId,
   parseMarketSlug,
-  OutcomeToken,
-} from '../../src/value-objects/index.js';
-import {
-  BinaryOutcome,
-  type OnChainConditionRef,
-  asOnChainProtocolId,
-  parseChainId,
-  parseConditionId,
-} from '@polymarket/ids';
-import {
-  MarketLifecycleError,
+  KnownVenues,
   MarketValidationError,
-  MarketAlreadyClosedError,
+  MarketLifecycleError,
   MarketAlreadyResolvedError,
-  MarketInvalidTransitionError,
-} from '@polymarket/errors/market';
+  type MarketProps,
+  type OutcomeIndex,
+  type VenueId,
+  type MarketSlug,
+} from '../../src/index.js';
+import {
+  at,
+  baseProps,
+  makeMarket,
+  makeMarketResult,
+  unwrap,
+  DOWN_INSTRUMENT,
+  EXPIRES_AT,
+  FIVE_MINUTES,
+  STARTS_AT,
+  UP_INSTRUMENT,
+} from './fixtures.js';
 
-// ==================== Тестовые данные ====================
+// ==================== Construction ====================
 
-const EXPIRATION_FUTURE = Date.now() + 86_400_000;
-const EXPIRATION_PAST = Date.now() - 86_400_000;
-const NOW = 0;
+describe('Market.create() — валидный рынок', () => {
+  it('создаёт canonical Market со всеми структурными полями', () => {
+    const market = makeMarket();
 
-/** OnChainConditionRef для тестов */
-const TEST_CONDITION_REF: OnChainConditionRef = {
-  kind: 'ONCHAIN',
-  protocolId: asOnChainProtocolId('POLYMARKET_CTF')!,
-  chainId: parseChainId('137')!,
-  conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
-};
-
-const UP_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
-const DOWN_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
-
-const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
-  { token: UP_TOKEN, index: 0, name: 'Yes' },
-  { token: DOWN_TOKEN, index: 1, name: 'No' },
-];
-
-function makeMarket(overrides: Partial<Parameters<typeof Market.create>[0]> = {}) {
-  return Market.create({
-    id: unsafeMarketId('market-abc'),
-    slug: parseMarketSlug('will-trump-win')!,
-    question: 'Will Trump win?',
-    outcomes: TEST_OUTCOMES,
-    expirationMs: EXPIRATION_FUTURE,
-    state: MarketState.active(),
-    ...overrides,
+    expect(market.id).toBe('btc-up-down-1200');
+    expect(market.venueId).toBe(KnownVenues.POLYMARKET);
+    expect(market.slug).toBe('bitcoin-up-or-down-september-1-12pm-et');
+    expect(market.question).toBe('Bitcoin Up or Down — September 1, 12:00–12:05 ET?');
+    expect(market.family).toBe('CRYPTO_UP_DOWN');
+    expect(market.state.status).toBe('ACTIVE');
   });
-}
 
-// Вспомогательная функция для извлечения значения из Result в тестах
-function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
-  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
-  return result.value;
-}
+  it('переносит расписание как Timestamp, без bare number внутри', () => {
+    const market = makeMarket();
 
-// ==================== Тесты ====================
+    expect(market.startsAt.toISO()).toBe('2026-09-01T12:00:00.000Z');
+    expect(market.expiresAt.toISO()).toBe('2026-09-01T12:05:00.000Z');
+  });
 
-describe('Market.create()', () => {
-  it('создаёт Market с валидными данными', () => {
-    const result = makeMarket();
+  it('переносит crypto-спецификацию семейства CRYPTO_UP_DOWN', () => {
+    const market = makeMarket();
+
+    expect(market.crypto?.asset).toBe('btc');
+    expect(market.crypto?.duration).toBe(300_000);
+  });
+
+  it('хранит ровно два исхода с их canonical instrument identity', () => {
+    const market = makeMarket();
+
+    expect(market.outcomes).toHaveLength(2);
+    expect(market.outcomes[0]).toEqual({ index: 0, label: 'Up', instrumentId: UP_INSTRUMENT });
+    expect(market.outcomes[1]).toEqual({ index: 1, label: 'Down', instrumentId: DOWN_INSTRUMENT });
+  });
+
+  it('нормализует метки исходов и вопрос через trim', () => {
+    const market = makeMarket({
+      question: '  Bitcoin Up or Down?  ',
+      outcomes: [
+        { index: 0, label: '  Up  ', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: ' Down ', instrumentId: DOWN_INSTRUMENT },
+      ],
+    });
+
+    expect(market.question).toBe('Bitcoin Up or Down?');
+    expect(market.outcomes[0].label).toBe('Up');
+    expect(market.outcomes[1].label).toBe('Down');
+  });
+
+  it('создаёт рынок семейства BINARY_OUTCOME — без crypto-спецификации', () => {
+    const props = baseProps();
+    const result = Market.create({
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: 'BINARY_OUTCOME',
+    });
+
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.id).toBe('market-abc');
-      expect(result.value.slug).toBe('will-trump-win');
-      expect(result.value.question).toBe('Will Trump win?');
+      expect(result.value.family).toBe('BINARY_OUTCOME');
+      expect(result.value.crypto).toBeUndefined();
     }
   });
 
-  it('asMarketId возвращает undefined для невалидных строк', () => {
-    expect(asMarketId('')).toBeUndefined();
-    expect(asMarketId('  ')).toBeUndefined();
-    expect(asMarketId('valid-id')).toBeDefined();
+  it('создаёт рынок без slug — площадка может его не публиковать', () => {
+    const props = baseProps();
+    const withoutSlug: MarketProps = {
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: props.family,
+      crypto: props.crypto,
+    };
+
+    const result = Market.create(withoutSlug);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.slug).toBeUndefined();
+    }
+  });
+});
+
+describe('Market.create() — иммутабельность результата', () => {
+  it('замораживает массив исходов и каждый исход в нём', () => {
+    const market = makeMarket();
+
+    expect(Object.isFrozen(market.outcomes)).toBe(true);
+    expect(Object.isFrozen(market.outcomes[0])).toBe(true);
+    expect(Object.isFrozen(market.outcomes[1])).toBe(true);
   });
 
-  it('возвращает Err при одинаковых outcomeNames', () => {
-    const result = makeMarket({
+  it('замораживает crypto-спецификацию', () => {
+    const market = makeMarket();
+
+    expect(Object.isFrozen(market.crypto)).toBe(true);
+  });
+
+  it('нормализует state — мутация переданного объекта не меняет entity', () => {
+    const mutableState = { status: 'CLOSED' } as MarketState;
+    const market = makeMarket({ state: mutableState });
+
+    (mutableState as { status: string }).status = 'ACTIVE';
+
+    expect(market.state.status).toBe('CLOSED');
+    expect(market.state).not.toBe(mutableState);
+    expect(Object.isFrozen(market.state)).toBe(true);
+  });
+
+  it('отсутствующее необязательное поле не оставляет ключа на entity', () => {
+    // ES2022 class fields определяют объявленные поля даже без значения —
+    // отсюда `declare` в Market. Проверяем, что «нет значения» = «нет ключа»,
+    // иначе потребитель с `in` увидит crypto у семейства, которому она запрещена.
+    const props = baseProps();
+    const market = unwrap(Market.create({
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: 'BINARY_OUTCOME',
+    }));
+
+    expect('slug' in market).toBe(false);
+    expect('crypto' in market).toBe(false);
+    expect(market.slug).toBeUndefined();
+    expect(market.crypto).toBeUndefined();
+  });
+
+  it('заданное необязательное поле присутствует и заморожено', () => {
+    const market = makeMarket();
+
+    expect('slug' in market).toBe(true);
+    expect('crypto' in market).toBe(true);
+    expect(Object.isFrozen(market.crypto)).toBe(true);
+  });
+
+  it('не связан с исходным массивом props — мутация props не меняет entity', () => {
+    const outcomes: MarketProps['outcomes'] = [
+      { index: 0, label: 'Up', instrumentId: UP_INSTRUMENT },
+      { index: 1, label: 'Down', instrumentId: DOWN_INSTRUMENT },
+    ];
+    const market = makeMarket({ outcomes });
+
+    (outcomes as unknown as Array<{ label: string }>)[0].label = 'Mutated';
+
+    expect(market.outcomes[0].label).toBe('Up');
+  });
+});
+
+describe('Market.create() — отклонение невалидных данных', () => {
+  it.each([
+    ['пустой', ''],
+    ['из одних пробелов', '   '],
+    ['с необрезанными пробелами', ' btc-up-down-1200 '],
+  ])('отклоняет неканонический id (%s)', (_label, id) => {
+    const result = makeMarketResult({ id: unsafeMarketId(id) });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.context?.field).toBe('id');
+    }
+  });
+
+  it.each([
+    ['пустой', ''],
+    ['из одних пробелов', '   '],
+    ['в нижнем регистре', 'polymarket'],
+    ['с дефисом', 'POLY-MARKET'],
+  ])('отклоняет неканонический venueId (%s)', (_label, venueId) => {
+    const result = makeMarketResult({ venueId: venueId as VenueId });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('venueId');
+    }
+  });
+
+  it.each([
+    ['пустой', ''],
+    ['из одних пробелов', '   '],
+    ['в верхнем регистре', 'BTC-UP-DOWN'],
+    ['с подчёркиванием', 'btc_up_down'],
+  ])('отклоняет неканонический slug (%s)', (_label, slug) => {
+    const result = makeMarketResult({ slug: slug as MarketSlug });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('slug');
+    }
+  });
+
+  it('отклоняет неканонический instrumentId исхода', () => {
+    const result = makeMarketResult({
       outcomes: [
-        { token: UP_TOKEN, index: 0, name: 'Yes' },
-        { token: DOWN_TOKEN, index: 1, name: 'Yes' },
+        { index: 0, label: 'Up', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: 'Down', instrumentId: unsafeInstrumentId(' 2299 ') },
       ],
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketValidationError);
-      expect(result.error.context?.field).toBe('outcomes');
+      expect(result.error.context?.field).toBe('outcomes[1].instrumentId');
     }
   });
 
-  it('возвращает Err при одинаковых outcomeTokens', () => {
-    const result = makeMarket({
-      outcomes: [
-        { token: UP_TOKEN, index: 0, name: 'Yes' },
-        { token: UP_TOKEN, index: 1, name: 'No' },
-      ],
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketValidationError);
-      expect(result.error.context?.field).toBe('outcomes');
-    }
-  });
-
-  it('возвращает Err при пустом question', () => {
-    const result = makeMarket({ question: '' });
+  it('отклоняет пустой question', () => {
+    const result = makeMarketResult({ question: '' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(MarketValidationError);
@@ -133,58 +265,93 @@ describe('Market.create()', () => {
     }
   });
 
-  it('возвращает Err при пустом outcomes[0].name', () => {
-    const result = makeMarket({
+  it('отклоняет question из одних пробелов', () => {
+    const result = makeMarketResult({ question: '   ' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('question');
+    }
+  });
+
+  it('отклоняет одинаковые метки исходов', () => {
+    const result = makeMarketResult({
       outcomes: [
-        { token: UP_TOKEN, index: 0, name: '' },
-        { token: DOWN_TOKEN, index: 1, name: 'No' },
+        { index: 0, label: 'Up', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: 'Up', instrumentId: DOWN_INSTRUMENT },
       ],
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('outcomes[0].name');
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.message).toContain('labels must be distinct');
     }
   });
 
-  it('возвращает Err при пустом outcomes[1].name', () => {
-    const result = makeMarket({
+  it('отклоняет одинаковые instrument identity исходов', () => {
+    const result = makeMarketResult({
       outcomes: [
-        { token: UP_TOKEN, index: 0, name: 'Yes' },
-        { token: DOWN_TOKEN, index: 1, name: '' },
+        { index: 0, label: 'Up', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: 'Down', instrumentId: UP_INSTRUMENT },
       ],
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('outcomes[1].name');
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.message).toContain('instrument identities must be distinct');
     }
   });
 
-  it('возвращает Err при Infinity expirationMs', () => {
-    const result = makeMarket({ expirationMs: Infinity });
+  it('отклоняет пустую метку исхода', () => {
+    const result = makeMarketResult({
+      outcomes: [
+        { index: 0, label: '', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: 'Down', instrumentId: DOWN_INSTRUMENT },
+      ],
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('expirationMs');
+      expect(result.error.context?.field).toBe('outcomes[0].label');
     }
   });
 
-  it('возвращает Err при NaN expirationMs', () => {
-    const result = makeMarket({ expirationMs: NaN });
+  it('отклоняет пустой instrumentId исхода', () => {
+    const result = makeMarketResult({
+      outcomes: [
+        { index: 0, label: 'Up', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: 'Down', instrumentId: unsafeInstrumentId('') },
+      ],
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('expirationMs');
+      expect(result.error.context?.field).toBe('outcomes[1].instrumentId');
     }
   });
 
-  it('возвращает Err при невалидном state объекте', () => {
-    const result = makeMarket({ state: { status: 'INVALID' } as never });
+  it('отклоняет неканонический crypto.asset', () => {
+    const result = makeMarketResult({
+      crypto: { asset: unsafeCryptoAssetId(' btc '), duration: FIVE_MINUTES },
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('state');
+      expect(result.error.context?.field).toBe('crypto.asset');
     }
   });
 
-  it('возвращает Err (не TypeError) для пустого outcomes массива', () => {
-    const result = makeMarket({ outcomes: [] as never });
+  it('отклоняет исход, стоящий не на своей позиции', () => {
+    const result = makeMarketResult({
+      outcomes: [
+        { index: 1, label: 'Up', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: 'Down', instrumentId: DOWN_INSTRUMENT },
+      ] as unknown as MarketProps['outcomes'],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('outcomes[0].index');
+    }
+  });
+
+  it('требует ровно два исхода: пустой массив отклоняется', () => {
+    const result = makeMarketResult({ outcomes: [] as never });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(MarketValidationError);
@@ -192,506 +359,514 @@ describe('Market.create()', () => {
     }
   });
 
-  it('возвращает Err (не TypeError) для outcomes с одним элементом', () => {
-    const result = makeMarket({
-      outcomes: [{ token: UP_TOKEN, index: 0, name: 'Yes' }] as never,
+  it('требует ровно два исхода: один исход отклоняется', () => {
+    const result = makeMarketResult({
+      outcomes: [{ index: 0, label: 'Up', instrumentId: UP_INSTRUMENT }] as never,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.context?.field).toBe('outcomes');
     }
   });
 
-  it('возвращает Err (не TypeError) если outcomes не массив', () => {
-    const result = makeMarket({ outcomes: 'not an array' as never });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketValidationError);
-    }
-  });
-
-  it('возвращает Err для outcomes с 3 элементами (только 2 допустимо)', () => {
-    const result = makeMarket({
+  it('требует ровно два исхода: три исхода отклоняются', () => {
+    const result = makeMarketResult({
       outcomes: [
-        { token: UP_TOKEN, index: 0, name: 'Yes' },
-        { token: DOWN_TOKEN, index: 1, name: 'No' },
-        { token: UP_TOKEN, index: 2, name: 'Maybe' },
+        { index: 0, label: 'Up', instrumentId: UP_INSTRUMENT },
+        { index: 1, label: 'Down', instrumentId: DOWN_INSTRUMENT },
+        { index: 1, label: 'Flat', instrumentId: unsafeInstrumentId('333') },
       ] as never,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketValidationError);
       expect(result.error.context?.field).toBe('outcomes');
     }
   });
 
-  it('возвращает Err для state: null', () => {
-    const result = makeMarket({ state: null as never });
+  it('требует ровно два исхода: не-массив отклоняется без TypeError', () => {
+    const result = makeMarketResult({ outcomes: 'not an array' as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+    }
+  });
+
+  it('отклоняет расписание, где startsAt позже expiresAt', () => {
+    const result = makeMarketResult({ startsAt: EXPIRES_AT, expiresAt: STARTS_AT });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('startsAt');
+      expect(result.error.message).toContain('strictly before');
+    }
+  });
+
+  it('отклоняет расписание нулевой длительности', () => {
+    const result = makeMarketResult({ startsAt: STARTS_AT, expiresAt: STARTS_AT });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('startsAt');
+    }
+  });
+
+  it('отклоняет startsAt, который не является Timestamp', () => {
+    const result = makeMarketResult({ startsAt: 1_772_366_400_000 as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('startsAt');
+    }
+  });
+
+  it('отклоняет expiresAt, который не является Timestamp', () => {
+    const result = makeMarketResult({ expiresAt: null as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('expiresAt');
+    }
+  });
+
+  it('отклоняет невалидный state объект', () => {
+    const result = makeMarketResult({ state: { status: 'UPCOMING' } as never });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.context?.field).toBe('state');
     }
   });
 
-  it('возвращает Err для RESOLVED без resolvedOutcomeIndex (runtime защита от as-кастов)', () => {
-    // TypeScript не поймает это статически, но runtime проверка защитит
-    const result = makeMarket({ state: { status: 'RESOLVED' } as never });
+  it('отклоняет state: null', () => {
+    const result = makeMarketResult({ state: null as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('state');
+    }
+  });
+
+  it('отклоняет RESOLVED без resolvedOutcomeIndex (защита от as-кастов)', () => {
+    const result = makeMarketResult({ state: { status: 'RESOLVED' } as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
+    }
+  });
+
+  it('отклоняет RESOLVED с индексом вне набора исходов', () => {
+    const result = makeMarketResult({
+      state: { status: 'RESOLVED', resolvedOutcomeIndex: 2 } as never,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
+    }
+  });
+
+  it('отклоняет неизвестное семейство рынка', () => {
+    const result = makeMarketResult({ family: 'SPORTS' as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('family');
+    }
+  });
+
+  it('отклоняет CRYPTO_UP_DOWN без crypto-спецификации', () => {
+    const props = baseProps();
+    const result = Market.create({
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: 'CRYPTO_UP_DOWN',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('crypto');
+    }
+  });
+
+  it('отклоняет crypto-спецификацию с пустым активом', () => {
+    const result = makeMarketResult({
+      crypto: { asset: unsafeCryptoAssetId(''), duration: FIVE_MINUTES },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('crypto.asset');
+    }
+  });
+
+  it('отклоняет crypto-спецификацию на семействе BINARY_OUTCOME', () => {
+    const result = makeMarketResult({ family: 'BINARY_OUTCOME' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('crypto');
+      expect(result.error.message).toContain('must not carry a crypto spec');
+    }
+  });
+
+  it('отклоняет crypto-спецификацию с неположительной длительностью', () => {
+    const result = makeMarketResult({
+      crypto: { asset: unsafeCryptoAssetId('btc'), duration: 0 as never },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('crypto.duration');
+    }
+  });
+});
+
+// ==================== Time ====================
+
+describe('Market — расписание рынка 12:00–12:05', () => {
+  it('11:59:59 — торги ещё не начались', () => {
+    expect(makeMarket().isStartedAt(at('11:59:59'))).toBe(false);
+  });
+
+  it('12:00:00 — торги начались (граница включена)', () => {
+    expect(makeMarket().isStartedAt(at('12:00:00'))).toBe(true);
+  });
+
+  it('12:04:59 — рынок ещё не истёк', () => {
+    expect(makeMarket().isExpiredAt(at('12:04:59'))).toBe(false);
+  });
+
+  it('12:05:00 — рынок истёк (граница включена)', () => {
+    expect(makeMarket().isExpiredAt(at('12:05:00'))).toBe(true);
+  });
+
+  it('timeToStartAt положителен до старта и отрицателен после', () => {
+    const market = makeMarket();
+
+    expect(market.timeToStartAt(at('11:59:59')).toNumber()).toBe(1_000);
+    expect(market.timeToStartAt(at('12:00:30')).toNumber()).toBe(-30_000);
+  });
+
+  it('timeToExpiryAt положителен до истечения и отрицателен после', () => {
+    const market = makeMarket();
+
+    expect(market.timeToExpiryAt(at('12:04:59')).toNumber()).toBe(1_000);
+    expect(market.timeToExpiryAt(at('12:06:00')).toNumber()).toBe(-60_000);
+  });
+
+  it('duration() возвращает фактический интервал расписания', () => {
+    expect(makeMarket().duration().toNumber()).toBe(300_000);
+  });
+
+  it('duration() возвращает Decimal-арифметику, а не примитив number', () => {
+    const duration = makeMarket().duration();
+
+    expect(typeof duration).toBe('object');
+    expect(duration.dividedBy(60_000).toNumber()).toBe(5);
+  });
+
+  it('номинальная длительность серии может расходиться с расписанием', () => {
+    // Площадка сдвинула публикацию на 2 секунды, серия осталась 5-минутной
+    const market = makeMarket({ expiresAt: at('12:04:58') });
+
+    expect(market.duration().toNumber()).toBe(298_000);
+    expect(market.crypto?.duration).toBe(300_000);
+  });
+
+  it('истечение расписания не меняет state — рынок остаётся ACTIVE', () => {
+    const market = makeMarket();
+
+    expect(market.isExpiredAt(at('12:30:00'))).toBe(true);
+    expect(market.state.status).toBe('ACTIVE');
+    expect(market.isActive()).toBe(true);
+  });
+});
+
+// ==================== Predicates ====================
+
+describe('Market — предикаты состояния', () => {
+  it('isActive() истинен только для ACTIVE', () => {
+    const market = makeMarket({ state: MarketState.active() });
+
+    expect(market.isActive()).toBe(true);
+    expect(market.isClosed()).toBe(false);
+    expect(market.isResolved()).toBe(false);
+  });
+
+  it('isClosed() истинен только для CLOSED', () => {
+    const market = makeMarket({ state: MarketState.closed() });
+
+    expect(market.isClosed()).toBe(true);
+    expect(market.isActive()).toBe(false);
+    expect(market.isResolved()).toBe(false);
+  });
+
+  it('isResolved() истинен только для RESOLVED', () => {
+    const market = makeMarket({ state: MarketState.resolved(0) });
+
+    expect(market.isResolved()).toBe(true);
+    expect(market.isActive()).toBe(false);
+    expect(market.isClosed()).toBe(false);
+  });
+
+  it('resolvedOutcome разворачивает индекс победителя в сам исход', () => {
+    const market = makeMarket({ state: MarketState.resolved(1) });
+
+    expect(market.resolvedOutcome).toEqual({
+      index: 1,
+      label: 'Down',
+      instrumentId: DOWN_INSTRUMENT,
+    });
+  });
+
+  it('resolvedOutcome === undefined, пока исход не объявлен', () => {
+    expect(makeMarket({ state: MarketState.active() }).resolvedOutcome).toBeUndefined();
+    expect(makeMarket({ state: MarketState.closed() }).resolvedOutcome).toBeUndefined();
+  });
+});
+
+// ==================== State transitions ====================
+
+describe('Market.markClosed() — фиксация наблюдённого закрытия', () => {
+  it('ACTIVE → CLOSED возвращает новый Market', () => {
+    const closed = unwrap(makeMarket().markClosed());
+
+    expect(closed.isClosed()).toBe(true);
+    expect(closed.state.status).toBe('CLOSED');
+  });
+
+  it('не мутирует исходный Market', () => {
+    const market = makeMarket();
+    market.markClosed();
+
+    expect(market.isActive()).toBe(true);
+  });
+
+  it('сохраняет всю структуру рынка при переходе', () => {
+    const market = makeMarket();
+    const closed = unwrap(market.markClosed());
+
+    expect(closed.id).toBe(market.id);
+    expect(closed.venueId).toBe(market.venueId);
+    expect(closed.slug).toBe(market.slug);
+    expect(closed.question).toBe(market.question);
+    expect(closed.startsAt.equals(market.startsAt)).toBe(true);
+    expect(closed.expiresAt.equals(market.expiresAt)).toBe(true);
+    expect(closed.outcomes).toEqual(market.outcomes);
+    expect(closed.family).toBe(market.family);
+    expect(closed.crypto).toEqual(market.crypto);
+  });
+
+  it('CLOSED → markClosed() идемпотентно и возвращает тот же экземпляр', () => {
+    const closed = makeMarket({ state: MarketState.closed() });
+    const result = closed.markClosed();
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBe(closed); // no-op отличим по ссылке
+    }
+  });
+
+  it('RESOLVED → markClosed() отклоняется как MarketAlreadyResolvedError', () => {
+    const result = makeMarket({ state: MarketState.resolved(0) }).markClosed();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketAlreadyResolvedError);
+      expect(result.error).toBeInstanceOf(MarketLifecycleError);
+    }
+  });
+
+  it('ошибка конфликта содержит marketId, venueId и текущий статус', () => {
+    const result = makeMarket({ state: MarketState.resolved(0) }).markClosed();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.marketId).toBe('btc-up-down-1200');
+      expect(result.error.context?.venueId).toBe('POLYMARKET');
+      expect(result.error.context?.currentStatus).toBe('RESOLVED');
+    }
+  });
+});
+
+describe('Market.markResolved() — фиксация объявленного исхода', () => {
+  it('CLOSED → RESOLVED(0) фиксирует победу первого исхода', () => {
+    const resolved = unwrap(makeMarket({ state: MarketState.closed() }).markResolved(0));
+
+    expect(resolved.isResolved()).toBe(true);
+    expect(resolved.resolvedOutcome?.label).toBe('Up');
+  });
+
+  it('CLOSED → RESOLVED(1) фиксирует победу второго исхода', () => {
+    const resolved = unwrap(makeMarket({ state: MarketState.closed() }).markResolved(1));
+
+    expect(resolved.isResolved()).toBe(true);
+    expect(resolved.resolvedOutcome?.label).toBe('Down');
+  });
+
+  it('ACTIVE → markResolved() разрешён: CLOSED мог не попасть между опросами', () => {
+    const resolved = unwrap(makeMarket({ state: MarketState.active() }).markResolved(1));
+
+    expect(resolved.isResolved()).toBe(true);
+    expect(resolved.resolvedOutcome?.label).toBe('Down');
+  });
+
+  it('RESOLVED(i) → markResolved(i) идемпотентно и возвращает тот же экземпляр', () => {
+    const resolved = makeMarket({ state: MarketState.resolved(0) });
+    const result = resolved.markResolved(0);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBe(resolved);
+    }
+  });
+
+  it('RESOLVED(0) → markResolved(1) отклоняется как конфликт исхода', () => {
+    const result = makeMarket({ state: MarketState.resolved(0) }).markResolved(1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketAlreadyResolvedError);
+      expect(result.error).toBeInstanceOf(MarketLifecycleError);
+      expect(result.error.context?.resolvedOutcomeIndex).toBe(0);
+      expect(result.error.context?.observedOutcomeIndex).toBe(1);
+    }
+  });
+
+  it('отклоняет индекс вне набора исходов', () => {
+    const result = makeMarket({ state: MarketState.closed() }).markResolved(2 as OutcomeIndex);
+
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(MarketValidationError);
-      expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
     }
   });
 
-  it('возвращает Err для RESOLVED с resolvedOutcomeIndex=2 (runtime защита)', () => {
-    const result = makeMarket({ state: { status: 'RESOLVED', resolvedOutcomeIndex: 2 } as never });
+  it.each([
+    ['NaN', NaN],
+    ['дробный', 0.5],
+    ['null', null],
+    ['строка', '0'],
+  ])('отклоняет %s индекс исхода', (_label, index) => {
+    const result = makeMarket({ state: MarketState.closed() })
+      .markResolved(index as unknown as OutcomeIndex);
+
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
-    }
-  });
-
-  it('создаёт outcomes с правильными индексами и token', () => {
-    const result = makeMarket();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.outcomes[0].index).toBe(0);
-      expect(result.value.outcomes[1].index).toBe(1);
-      expect(result.value.outcomes[0].name).toBe('Yes');
-      expect(result.value.outcomes[1].name).toBe('No');
-      expect(result.value.outcomes[0].token.outcomeKey()).toBe(BinaryOutcome.UP);
-      expect(result.value.outcomes[1].token.outcomeKey()).toBe(BinaryOutcome.DOWN);
+      expect(result.error).toBeInstanceOf(MarketValidationError);
     }
   });
 });
 
-describe('Market.expirationDate (иммутабельность)', () => {
-  it('возвращает новый Date объект при каждом вызове', () => {
-    const result = makeMarket();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const d1 = result.value.expirationDate;
-      const d2 = result.value.expirationDate;
-      expect(d1).not.toBe(d2);
-      expect(d1.getTime()).toBe(d2.getTime());
-    }
+describe('Market — полный наблюдаемый цикл ACTIVE → CLOSED → RESOLVED', () => {
+  it('проходит все три состояния без мутации предыдущих экземпляров', () => {
+    const active = makeMarket();
+    const closed = unwrap(active.markClosed());
+    const resolved = unwrap(closed.markResolved(0));
+
+    expect(active.state.status).toBe('ACTIVE');
+    expect(closed.state.status).toBe('CLOSED');
+    expect(resolved.state.status).toBe('RESOLVED');
+    expect(resolved.resolvedOutcome?.instrumentId).toBe(UP_INSTRUMENT);
   });
 });
 
-describe('Market.isExpiredAt(nowMs)', () => {
-  it('возвращает false если nowMs < expirationMs', () => {
-    const result = makeMarket({ expirationMs: 1_000_000 });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isExpiredAt(500_000)).toBe(false);
-    }
-  });
-
-  it('возвращает true если nowMs >= expirationMs', () => {
-    const result = makeMarket({ expirationMs: 1_000_000 });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isExpiredAt(1_000_000)).toBe(true);
-      expect(result.value.isExpiredAt(2_000_000)).toBe(true);
-    }
-  });
-
-  it('не использует Date.now() (детерминизм)', () => {
-    const result = makeMarket({ expirationMs: EXPIRATION_PAST });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isExpiredAt(EXPIRATION_PAST + 1)).toBe(true);
-      expect(result.value.isExpiredAt(0)).toBe(false);
-    }
-  });
-});
-
-describe('Market.timeToExpiryAt(nowMs)', () => {
-  it('возвращает положительное число до истечения', () => {
-    const result = makeMarket({ expirationMs: 1_000_000 });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.timeToExpiryAt(0)).toBe(1_000_000);
-    }
-  });
-
-  it('возвращает отрицательное число после истечения', () => {
-    const result = makeMarket({ expirationMs: 1_000_000 });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.timeToExpiryAt(2_000_000)).toBe(-1_000_000);
-    }
-  });
-});
-
-describe('Market predicates', () => {
-  it('isActive() = true для ACTIVE', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isActive()).toBe(true);
-      expect(result.value.isClosed()).toBe(false);
-      expect(result.value.isResolved()).toBe(false);
-    }
-  });
-
-  it('isClosed() = true для CLOSED', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isClosed()).toBe(true);
-      expect(result.value.isActive()).toBe(false);
-      expect(result.value.isResolved()).toBe(false);
-    }
-  });
-
-  it('isResolved() = true для RESOLVED', () => {
-    const result = makeMarket({ state: MarketState.resolved(0) });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.isResolved()).toBe(true);
-      expect(result.value.isActive()).toBe(false);
-      expect(result.value.isClosed()).toBe(false);
-    }
-  });
-
-  it('backward-compat getter status возвращает текущий статус', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.status).toBe('ACTIVE');
-    }
-  });
-});
-
-describe('Market.close() lifecycle', () => {
-  it('ACTIVE → CLOSED: возвращает новый Market', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const closed = unwrap(result.value.close(NOW));
-      expect(closed.isClosed()).toBe(true);
-      expect(closed.state.status).toBe('CLOSED');
-    }
-  });
-
-  it('close() не мутирует исходный Market', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const original = result.value;
-      original.close(NOW);
-      expect(original.isActive()).toBe(true);
-    }
-  });
-
-  it('CLOSED → close(): возвращает Err(MarketAlreadyClosedError)', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const closeResult = result.value.close(NOW);
-      expect(closeResult.ok).toBe(false);
-      if (!closeResult.ok) {
-        expect(closeResult.error).toBeInstanceOf(MarketAlreadyClosedError);
-        expect(closeResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
-      }
-    }
-  });
-
-  it('RESOLVED → close(): возвращает Err(MarketAlreadyResolvedError)', () => {
-    const result = makeMarket({ state: MarketState.resolved(0) });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const closeResult = result.value.close(NOW);
-      expect(closeResult.ok).toBe(false);
-      if (!closeResult.ok) {
-        expect(closeResult.error).toBeInstanceOf(MarketAlreadyResolvedError);
-        expect(closeResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
-      }
-    }
-  });
-
-  it('MarketAlreadyClosedError содержит context с marketId и currentStatus', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const closeResult = result.value.close(NOW);
-      expect(closeResult.ok).toBe(false);
-      if (!closeResult.ok) {
-        expect(closeResult.error).toBeInstanceOf(MarketAlreadyClosedError);
-        expect(closeResult.error.context?.marketId).toBe('market-abc');
-        expect(closeResult.error.context?.currentStatus).toBe('CLOSED');
-      }
-    }
-  });
-});
-
-describe('Market.resolve() lifecycle', () => {
-  it('CLOSED → RESOLVED(0): возвращает новый Market с resolvedOutcomeIndex=0', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolved = unwrap(result.value.resolve(0, NOW));
-      expect(resolved.isResolved()).toBe(true);
-      const state = resolved.state;
-      if (state.status === 'RESOLVED') {
-        expect(state.resolvedOutcomeIndex).toBe(0);
-      }
-    }
-  });
-
-  it('CLOSED → RESOLVED(1): возвращает новый Market с resolvedOutcomeIndex=1', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolved = unwrap(result.value.resolve(1, NOW));
-      expect(resolved.isResolved()).toBe(true);
-      const state = resolved.state;
-      if (state.status === 'RESOLVED') {
-        expect(state.resolvedOutcomeIndex).toBe(1);
-      }
-    }
-  });
-
-  it('ACTIVE → resolve(): возвращает Err(MarketInvalidTransitionError)', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve(0, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketInvalidTransitionError);
-        expect(resolveResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
-      }
-    }
-  });
-
-  it('RESOLVED → resolve(): возвращает Err(MarketAlreadyResolvedError)', () => {
-    const result = makeMarket({ state: MarketState.resolved(0) });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve(1, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketAlreadyResolvedError);
-        expect(resolveResult.error).toBeInstanceOf(MarketLifecycleError); // подкласс
-      }
-    }
-  });
-
-  it('resolve() возвращает Err(MarketValidationError) при outcomeIndex >= outcomes.length', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve(2 as OutcomeIndex, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
-      }
-    }
-  });
-
-  it('resolve() возвращает Err(MarketValidationError) при NaN outcomeIndex', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve(NaN as OutcomeIndex, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
-      }
-    }
-  });
-
-  it('resolve() возвращает Err(MarketValidationError) при дробном outcomeIndex (0.5)', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve(0.5 as OutcomeIndex, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
-      }
-    }
-  });
-
-  it('resolve() возвращает Err(MarketValidationError) при null outcomeIndex', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve(null as unknown as OutcomeIndex, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
-      }
-    }
-  });
-
-  it('resolve() возвращает Err(MarketValidationError) при строковом outcomeIndex', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve('0' as unknown as OutcomeIndex, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketValidationError);
-      }
-    }
-  });
-
-  it('MarketInvalidTransitionError для resolve() из ACTIVE содержит "Call close() first"', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const resolveResult = result.value.resolve(0, NOW);
-      expect(resolveResult.ok).toBe(false);
-      if (!resolveResult.ok) {
-        expect(resolveResult.error).toBeInstanceOf(MarketInvalidTransitionError);
-        expect(resolveResult.error.message).toContain('Call close() first');
-      }
-    }
-  });
-});
-
-describe('Market полный lifecycle ACTIVE → CLOSED → RESOLVED', () => {
-  it('корректный цикл: create → close → resolve', () => {
-    const result = makeMarket();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const active = result.value;
-    expect(active.isActive()).toBe(true);
-
-    const closed = unwrap(active.close(NOW));
-    expect(closed.isClosed()).toBe(true);
-
-    const resolved = unwrap(closed.resolve(0, NOW));
-    expect(resolved.isResolved()).toBe(true);
-    const state = resolved.state;
-    if (state.status === 'RESOLVED') {
-      expect(state.resolvedOutcomeIndex).toBe(0);
-    }
-  });
-});
+// ==================== Identity ====================
 
 describe('Market.equals()', () => {
-  it('возвращает true для рынков с одинаковым id', () => {
-    const r1 = makeMarket();
-    const r2 = makeMarket();
-    expect(r1.ok && r2.ok).toBe(true);
-    if (r1.ok && r2.ok) {
-      expect(r1.value.equals(r2.value)).toBe(true);
-    }
+  it('истинен для одного и того же рынка в разных наблюдениях', () => {
+    const market = makeMarket();
+    const closed = unwrap(market.markClosed());
+
+    expect(market.equals(closed)).toBe(true);
   });
 
-  it('возвращает true после перехода состояния (тот же рынок, другой объект)', () => {
-    const result = makeMarket();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const market = result.value;
-      const closed = unwrap(market.close(NOW));
-      expect(market.equals(closed)).toBe(true);
-    }
+  it('ложен для разных id', () => {
+    expect(makeMarket().equals(makeMarket({ id: unsafeMarketId('other') }))).toBe(false);
   });
 
-  it('возвращает false для рынков с разными id', () => {
-    const r1 = makeMarket({ id: unsafeMarketId('market-aaa') });
-    const r2 = makeMarket({ id: unsafeMarketId('market-bbb') });
-    expect(r1.ok && r2.ok).toBe(true);
-    if (r1.ok && r2.ok) {
-      expect(r1.value.equals(r2.value)).toBe(false);
+  it('ложен для одинакового id на разных площадках', () => {
+    const kalshi = makeMarket({ venueId: asVenueId('KALSHI')! });
+
+    expect(makeMarket().equals(kalshi)).toBe(false);
+  });
+});
+
+// ==================== Snapshot round-trip ====================
+
+describe('Market ⇄ MarketSnapshot round-trip', () => {
+  it('Market → snapshot → Market даёт эквивалентный рынок', () => {
+    const market = makeMarket();
+    const restored = unwrap(Market.fromSnapshot(MarketViewModel.toSnapshot(market)));
+
+    expect(restored.id).toBe(market.id);
+    expect(restored.venueId).toBe(market.venueId);
+    expect(restored.slug).toBe(market.slug);
+    expect(restored.question).toBe(market.question);
+    expect(restored.startsAt.equals(market.startsAt)).toBe(true);
+    expect(restored.expiresAt.equals(market.expiresAt)).toBe(true);
+    expect(restored.state).toEqual(market.state);
+    expect(restored.outcomes).toEqual(market.outcomes);
+    expect(restored.family).toBe(market.family);
+    expect(restored.crypto).toEqual(market.crypto);
+  });
+
+  it('сохраняет состояние RESOLVED вместе с индексом победителя', () => {
+    const market = makeMarket({ state: MarketState.resolved(1) });
+    const restored = unwrap(Market.fromSnapshot(MarketViewModel.toSnapshot(market)));
+
+    expect(restored.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 1 });
+    expect(restored.resolvedOutcome?.label).toBe('Down');
+  });
+
+  it('не подменяет отсутствующие поля на undefined-значения', () => {
+    const props = baseProps();
+    const market = unwrap(Market.create({
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: props.family,
+      crypto: props.crypto,
+    }));
+
+    const snapshot = MarketViewModel.toSnapshot(market);
+
+    expect('slug' in snapshot).toBe(false);
+    expect(unwrap(Market.fromSnapshot(snapshot)).slug).toBeUndefined();
+  });
+
+  it('fromSnapshot проверяет те же инварианты, что и create', () => {
+    const snapshot = MarketViewModel.toSnapshot(makeMarket());
+    const broken = { ...snapshot, question: '   ' };
+
+    const result = Market.fromSnapshot(broken);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('question');
     }
   });
 });
 
-describe('Market.pullNotifications()', () => {
-  it('create() не эмитирует событий', () => {
-    const result = makeMarket();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.pullNotifications()).toEqual([]);
-    }
-  });
-
-  it('close() эмитирует MarketClosedNotification с корректными полями', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const CLOSE_NOW = 1_700_000_000_000;
-    const closed = unwrap(result.value.close(CLOSE_NOW));
-    const events = closed.pullNotifications();
-
-    expect(events).toHaveLength(1);
-    const event = events[0] as MarketClosedNotification;
-    expect(event.type).toBe('MARKET_CLOSED');
-    expect(event.marketId).toBe('market-abc');
-    expect(event.slug).toBe('will-trump-win');
-    expect(event.occurredAt).toBe(CLOSE_NOW);
-  });
-
-  it('resolve() эмитирует MarketResolvedNotification с корректными полями', () => {
-    const result = makeMarket({ state: MarketState.closed() });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const RESOLVE_NOW = 1_700_000_001_000;
-    const resolved = unwrap(result.value.resolve(1, RESOLVE_NOW));
-    const events = resolved.pullNotifications();
-
-    expect(events).toHaveLength(1);
-    const event = events[0] as MarketResolvedNotification;
-    expect(event.type).toBe('MARKET_RESOLVED');
-    expect(event.marketId).toBe('market-abc');
-    expect(event.slug).toBe('will-trump-win');
-    expect(event.resolvedOutcomeIndex).toBe(1);
-    expect(event.occurredAt).toBe(RESOLVE_NOW);
-  });
-
-  it('pullNotifications() очищает буфер — повторный вызов возвращает []', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const closed = unwrap(result.value.close(NOW));
-    expect(closed.pullNotifications()).toHaveLength(1);
-    expect(closed.pullNotifications()).toHaveLength(0); // буфер очищен
-  });
-
-  it('исходный market не накапливает события после close()', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const original = result.value;
-    original.close(NOW); // возвращает новый экземпляр, original не меняется
-    expect(original.pullNotifications()).toHaveLength(0);
-  });
-
-  it('полный цикл: close + resolve — каждый шаг имеет своё событие', () => {
-    const result = makeMarket({ state: MarketState.active() });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const closed = unwrap(result.value.close(NOW));
-    const closeEvents = closed.pullNotifications();
-    expect(closeEvents[0].type).toBe('MARKET_CLOSED');
-
-    const resolved = unwrap(closed.resolve(0, NOW));
-    const resolveEvents = resolved.pullNotifications();
-    expect(resolveEvents[0].type).toBe('MARKET_RESOLVED');
-  });
-});
+// ==================== toString ====================
 
 describe('Market.toString()', () => {
-  it('возвращает строку с id, статусом и вопросом', () => {
-    const result = makeMarket();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const str = result.value.toString();
-      expect(str).toContain('market-abc');
-      expect(str).toContain('ACTIVE');
-      expect(str).toContain('Will Trump win?');
-    }
+  it('содержит площадку, id, статус и вопрос', () => {
+    const str = makeMarket().toString();
+
+    expect(str).toContain('POLYMARKET');
+    expect(str).toContain('btc-up-down-1200');
+    expect(str).toContain('ACTIVE');
+    expect(str).toContain('Bitcoin Up or Down');
+  });
+});
+
+// ==================== Фикстуры канонических VO ====================
+
+describe('Canonical VO, используемые Market', () => {
+  it('asMarketDuration принимает положительные целые миллисекунды', () => {
+    expect(asMarketDuration(300_000)).toBe(300_000);
+  });
+
+  it('parseMarketSlug остаётся URL-safe валидатором', () => {
+    expect(parseMarketSlug('btc-up-down-1200')).toBe('btc-up-down-1200');
+    expect(parseMarketSlug('BTC_UP')).toBeUndefined();
   });
 });

@@ -204,7 +204,7 @@ export class OrderBookWallStrategy extends BaseStrategy<OBWData, OBWAction> {
     const targetPrice = cryptoPrice.targetPrice;
     if (!targetPrice || targetPrice <= 0) return undefined;
 
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
     const tauSec = Math.max(0, (expiresMs - nowMs) / 1_000);
 
     // Сбрасываем при смене рынка

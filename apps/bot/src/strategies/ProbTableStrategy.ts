@@ -166,7 +166,7 @@ export class ProbTableStrategy extends BaseStrategy<PTData, PTAction> {
   // ── gather ──────────────────────────────────────────────────────────────────
 
   protected gather(snapshot: StrategySnapshot): PTData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Смена рынка → сброс EWMA и позиции
     if (this._currentExpirationMs !== expiresMs) {

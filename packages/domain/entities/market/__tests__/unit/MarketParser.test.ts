@@ -1,347 +1,434 @@
 /**
- * Тесты для MarketParser (валидация raw данных → MarketSnapshot с доменными типами)
+ * Тесты MarketParser — разбор сериализованного канонического рынка
  *
  * @remarks
- * Проверяет:
- * - from() возвращает Ok(MarketSnapshot) с доменными типами для валидных данных
- * - from() возвращает Err для каждого класса невалидных данных
- * - from() корректно обрабатывает все три статуса (ACTIVE, CLOSED, RESOLVED)
- * - MarketParser нельзя инстанциировать
- *
- * Тесты для Market.fromSnapshot() — в Market.test.ts (там же проверяется полный pipeline)
+ * Парсер принимает `unknown` и обязан на любом мусоре возвращать `Err`,
+ * а не бросать. Доменные инварианты (различимость исходов, `startsAt < expiresAt`)
+ * здесь не проверяются — за них отвечает `Market.create()`, и это проверено
+ * отдельным тестом «граница ответственности».
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { MarketParser } from '../../src/view/MarketParser.js';
-import { Market } from '../../src/Market.js';
-import { MarketValidationError } from '@polymarket/errors/market';
+import { Market, MarketParser, MarketValidationError, MarketViewModel } from '../../src/index.js';
+import { makeMarket, unwrap } from './fixtures.js';
 
-// ==================== Тестовые данные ====================
-
-const EXPIRATION_MS = 1_700_000_000_000;
-const EXPIRATION_DATE = new Date(EXPIRATION_MS).toISOString();
-
-/** Корректный OutcomeTokenJSON для тестов */
-const UP_TOKEN_JSON = {
-  conditionRef: {
-    kind: 'ONCHAIN' as const,
-    protocolId: 'POLYMARKET_CTF',
-    chainId: 137,
-    conditionId: '0x' + 'ab'.repeat(32),
-  },
-  outcomeKey: 'UP',
-};
-
-const DOWN_TOKEN_JSON = {
-  ...UP_TOKEN_JSON,
-  outcomeKey: 'DOWN',
-};
-
-/** Минимально валидный raw объект для ACTIVE рынка */
-function validActiveSnapshot() {
-  return {
-    id: 'market-abc',
-    slug: 'will-trump-win',
-    question: 'Will Trump win?',
-    outcomes: [
-      { token: UP_TOKEN_JSON, index: 0, name: 'Yes' },
-      { token: DOWN_TOKEN_JSON, index: 1, name: 'No' },
-    ],
-    expirationDate: EXPIRATION_DATE,
-    state: { status: 'ACTIVE' },
-  };
+/** Валидная сериализованная форма модельного рынка */
+function validJSON(): Record<string, unknown> {
+  return MarketViewModel.toJSON(makeMarket()) as unknown as Record<string, unknown>;
 }
 
-// ==================== Тесты ====================
+describe('MarketParser.from() — валидные данные', () => {
+  it('разбирает сериализованный рынок в доменно-типизированный снапшот', () => {
+    const snapshot = unwrap(MarketParser.from(validJSON()));
 
-describe('MarketParser.from() — валидные данные (возвращает MarketSnapshot с доменными типами)', () => {
-  it('возвращает Ok(MarketSnapshot) для ACTIVE рынка', () => {
-    const result = MarketParser.from(validActiveSnapshot());
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(result.value.id).toBe('market-abc');
-    expect(result.value.slug).toBe('will-trump-win');
-    expect(result.value.question).toBe('Will Trump win?');
-    expect(result.value.state).toEqual({ status: 'ACTIVE' });
-    // expirationMs — число, не ISO строка
-    expect(result.value.expirationMs).toBe(EXPIRATION_MS);
-    // token — OutcomeToken объект, outcomeKey() — метод
-    expect(result.value.outcomes[0].token.outcomeKey()).toBe('UP');
-    expect(result.value.outcomes[0].index).toBe(0);
-    expect(result.value.outcomes[0].name).toBe('Yes');
-    expect(result.value.outcomes[1].token.outcomeKey()).toBe('DOWN');
+    expect(snapshot.id).toBe('btc-up-down-1200');
+    expect(snapshot.venueId).toBe('POLYMARKET');
+    expect(snapshot.slug).toBe('bitcoin-up-or-down-september-1-12pm-et');
+    expect(snapshot.family).toBe('CRYPTO_UP_DOWN');
+    expect(snapshot.startsAt.toISO()).toBe('2026-09-01T12:00:00.000Z');
+    expect(snapshot.expiresAt.toISO()).toBe('2026-09-01T12:05:00.000Z');
+    expect(snapshot.state).toEqual({ status: 'ACTIVE' });
+    expect(snapshot.crypto).toEqual({ asset: 'btc', duration: 300_000 });
   });
 
-  it('возвращает Ok(MarketSnapshot) для CLOSED рынка', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), state: { status: 'CLOSED' } });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.state).toEqual({ status: 'CLOSED' });
+  it('разбирает исходы с canonical InstrumentId', () => {
+    const snapshot = unwrap(MarketParser.from(validJSON()));
+
+    expect(snapshot.outcomes[0]).toEqual({ index: 0, label: 'Up', instrumentId: '71476031705491' });
+    expect(snapshot.outcomes[1]).toEqual({ index: 1, label: 'Down', instrumentId: '22993088410122' });
   });
 
-  it('возвращает Ok(MarketSnapshot) для RESOLVED рынка с resolvedOutcomeIndex=0', () => {
-    const result = MarketParser.from({
-      ...validActiveSnapshot(),
-      state: { status: 'RESOLVED', resolvedOutcomeIndex: 0 },
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 0 });
+  it('обрезает пробелы в question и метках исходов', () => {
+    const snapshot = unwrap(MarketParser.from({
+      ...validJSON(),
+      question: '  Bitcoin Up or Down?  ',
+      outcomes: [
+        { index: 0, label: '  Up ', instrumentId: '71476031705491' },
+        { index: 1, label: ' Down  ', instrumentId: '22993088410122' },
+      ],
+    }));
+
+    expect(snapshot.question).toBe('Bitcoin Up or Down?');
+    expect(snapshot.outcomes[0].label).toBe('Up');
+    expect(snapshot.outcomes[1].label).toBe('Down');
   });
 
-  it('возвращает Ok(MarketSnapshot) для RESOLVED рынка с resolvedOutcomeIndex=1', () => {
-    const result = MarketParser.from({
-      ...validActiveSnapshot(),
+  it('принимает рынок без slug', () => {
+    const { slug: _slug, ...withoutSlug } = validJSON();
+    const snapshot = unwrap(MarketParser.from(withoutSlug));
+
+    expect(snapshot.slug).toBeUndefined();
+    expect('slug' in snapshot).toBe(false);
+  });
+
+  it('разбирает состояние CLOSED', () => {
+    const snapshot = unwrap(MarketParser.from({ ...validJSON(), state: { status: 'CLOSED' } }));
+
+    expect(snapshot.state).toEqual({ status: 'CLOSED' });
+  });
+
+  it('разбирает состояние RESOLVED вместе с индексом победителя', () => {
+    const snapshot = unwrap(MarketParser.from({
+      ...validJSON(),
       state: { status: 'RESOLVED', resolvedOutcomeIndex: 1 },
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 1 });
+    }));
+
+    expect(snapshot.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 1 });
   });
 });
 
-describe('Market.fromSnapshot() — полный pipeline (MarketParser.from → fromSnapshot)', () => {
-  it('реконструирует ACTIVE рынок из snapshot', () => {
-    const snapshotResult = MarketParser.from(validActiveSnapshot());
-    expect(snapshotResult.ok).toBe(true);
-    if (!snapshotResult.ok) return;
+describe('MarketParser.from() — структура входа', () => {
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['строка', 'not an object'],
+    ['число', 42],
+    ['массив', []],
+  ])('отклоняет %s', (_label, raw) => {
+    const result = MarketParser.from(raw);
 
-    const marketResult = Market.fromSnapshot(snapshotResult.value);
-    expect(marketResult.ok).toBe(true);
-    if (!marketResult.ok) return;
-
-    expect(marketResult.value.id).toBe('market-abc');
-    expect(marketResult.value.slug).toBe('will-trump-win');
-    expect(marketResult.value.question).toBe('Will Trump win?');
-    expect(marketResult.value.isActive()).toBe(true);
-    expect(marketResult.value.expirationDate.toISOString()).toBe(EXPIRATION_DATE);
-  });
-
-  it('реконструирует CLOSED рынок из snapshot', () => {
-    const snapshotResult = MarketParser.from({
-      ...validActiveSnapshot(),
-      state: { status: 'CLOSED' },
-    });
-    expect(snapshotResult.ok).toBe(true);
-    if (!snapshotResult.ok) return;
-
-    const marketResult = Market.fromSnapshot(snapshotResult.value);
-    expect(marketResult.ok).toBe(true);
-    if (!marketResult.ok) return;
-    expect(marketResult.value.isClosed()).toBe(true);
-  });
-
-  it('реконструирует RESOLVED рынок с resolvedOutcomeIndex=0', () => {
-    const snapshotResult = MarketParser.from({
-      ...validActiveSnapshot(),
-      state: { status: 'RESOLVED', resolvedOutcomeIndex: 0 },
-    });
-    expect(snapshotResult.ok).toBe(true);
-    if (!snapshotResult.ok) return;
-
-    const marketResult = Market.fromSnapshot(snapshotResult.value);
-    expect(marketResult.ok).toBe(true);
-    if (!marketResult.ok) return;
-    expect(marketResult.value.isResolved()).toBe(true);
-    const state = marketResult.value.state;
-    if (state.status === 'RESOLVED') {
-      expect(state.resolvedOutcomeIndex).toBe(0);
-    }
-  });
-
-  it('реконструированный рынок не содержит уведомлений', () => {
-    const snapshotResult = MarketParser.from(validActiveSnapshot());
-    expect(snapshotResult.ok).toBe(true);
-    if (!snapshotResult.ok) return;
-
-    const marketResult = Market.fromSnapshot(snapshotResult.value);
-    expect(marketResult.ok).toBe(true);
-    if (!marketResult.ok) return;
-    expect(marketResult.value.pullNotifications()).toEqual([]);
-  });
-});
-
-describe('MarketParser.from() — невалидные данные', () => {
-  it('возвращает Err для null', () => {
-    const result = MarketParser.from(null);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(MarketValidationError);
     }
   });
+});
 
-  it('возвращает Err для массива', () => {
-    const result = MarketParser.from([]);
+describe('MarketParser.from() — identity', () => {
+  it('отклоняет нестроковый id', () => {
+    const result = MarketParser.from({ ...validJSON(), id: 123 });
+
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('id');
   });
 
-  it('возвращает Err для отсутствующего id (не строка)', () => {
-    const { id: _, ...noId } = validActiveSnapshot();
-    const result = MarketParser.from(noId);
+  it('отклоняет пустой id', () => {
+    const result = MarketParser.from({ ...validJSON(), id: '   ' });
+
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toContain('id');
-    }
+    if (!result.ok) expect(result.error.context?.field).toBe('id');
   });
 
-  it('возвращает Err для пустого id (строка, но пустая)', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), id: '' });
+  it('отклоняет нестроковый venueId', () => {
+    const result = MarketParser.from({ ...validJSON(), venueId: null });
+
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toContain('id');
-    }
+    if (!result.ok) expect(result.error.context?.field).toBe('venueId');
   });
 
-  it('возвращает Err для slug не-строки', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), slug: 42 });
+  it('отклоняет venueId в неверном формате', () => {
+    const result = MarketParser.from({ ...validJSON(), venueId: 'poly-market' });
+
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('slug');
-    }
+    if (!result.ok) expect(result.error.context?.field).toBe('venueId');
   });
 
-  it('возвращает Err для невалидного slug', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), slug: 'INVALID SLUG' });
+  it('отклоняет slug в неверном формате', () => {
+    const result = MarketParser.from({ ...validJSON(), slug: 'UPPER_CASE' });
+
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('slug');
-    }
+    if (!result.ok) expect(result.error.context?.field).toBe('slug');
   });
 
-  it('возвращает Err для пустого question', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), question: '' });
+  it('отклоняет нестроковый slug', () => {
+    const result = MarketParser.from({ ...validJSON(), slug: 42 });
+
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('question');
-    }
+    if (!result.ok) expect(result.error.context?.field).toBe('slug');
   });
 
-  it('возвращает Err для outcomes не-массива', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), outcomes: 'bad' });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes');
-    }
-  });
+  it('отклоняет пустой question', () => {
+    const result = MarketParser.from({ ...validJSON(), question: '  ' });
 
-  it('возвращает Err для outcomes неправильной длины', () => {
-    const result = MarketParser.from({
-      ...validActiveSnapshot(),
-      outcomes: [{ token: UP_TOKEN_JSON, index: 0, name: 'Yes' }],
-    });
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes');
-    }
-  });
-
-  it('возвращает Err если outcomes[0] не объект', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), outcomes: [null, { token: DOWN_TOKEN_JSON, index: 1, name: 'No' }] });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes[0]');
-    }
-  });
-
-  it('возвращает Err для невалидного outcomes[0].token', () => {
-    const snapshot = validActiveSnapshot();
-    snapshot.outcomes[0] = { token: { invalid: true } as never, index: 0, name: 'Yes' };
-    const result = MarketParser.from(snapshot);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes[0].token');
-    }
-  });
-
-  it('возвращает Err для пустого outcomes[0].name', () => {
-    const snapshot = validActiveSnapshot();
-    snapshot.outcomes[0] = { token: UP_TOKEN_JSON, index: 0, name: '' };
-    const result = MarketParser.from(snapshot);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes[0].name');
-    }
-  });
-
-  it('возвращает Err если outcomes[1] не объект', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), outcomes: [{ token: UP_TOKEN_JSON, index: 0, name: 'Yes' }, null] });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes[1]');
-    }
-  });
-
-  it('возвращает Err для невалидного outcomes[1].token', () => {
-    const snapshot = validActiveSnapshot();
-    snapshot.outcomes[1] = { token: { invalid: true } as never, index: 1, name: 'No' };
-    const result = MarketParser.from(snapshot);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes[1].token');
-    }
-  });
-
-  it('возвращает Err для пустого outcomes[1].name', () => {
-    const snapshot = validActiveSnapshot();
-    snapshot.outcomes[1] = { token: DOWN_TOKEN_JSON, index: 1, name: '' };
-    const result = MarketParser.from(snapshot);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('outcomes[1].name');
-    }
-  });
-
-  it('возвращает Err для expirationDate не-строки', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), expirationDate: 12345 });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('expirationdate');
-    }
-  });
-
-  it('возвращает Err для невалидного expirationDate', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), expirationDate: 'not-a-date' });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('expirationdate');
-    }
-  });
-
-  it('возвращает Err если state не объект', () => {
-    const result = MarketParser.from({ ...validActiveSnapshot(), state: null });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('state');
-    }
-  });
-
-  it('возвращает Err для невалидного state.status', () => {
-    const result = MarketParser.from({
-      ...validActiveSnapshot(),
-      state: { status: 'PENDING' },
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('status');
-    }
-  });
-
-  it('возвращает Err для RESOLVED без resolvedOutcomeIndex', () => {
-    const result = MarketParser.from({
-      ...validActiveSnapshot(),
-      state: { status: 'RESOLVED' },
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message.toLowerCase()).toContain('resolvedoutcomeindex');
-    }
+    if (!result.ok) expect(result.error.context?.field).toBe('question');
   });
 });
 
-describe('MarketParser — нельзя создать экземпляр', () => {
-  it('бросает Error при вызове конструктора', () => {
-    // @ts-expect-error - testing private constructor
-    expect(() => new MarketParser()).toThrow(Error);
+describe('MarketParser.from() — расписание', () => {
+  it('отклоняет startsAt не-числом', () => {
+    const result = MarketParser.from({ ...validJSON(), startsAt: '2026-09-01T12:00:00.000Z' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('startsAt');
+  });
+
+  it('отклоняет отсутствующий expiresAt', () => {
+    const { expiresAt: _expiresAt, ...withoutExpiry } = validJSON();
+    const result = MarketParser.from(withoutExpiry);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('expiresAt');
+  });
+
+  it('отклоняет отрицательный timestamp', () => {
+    const result = MarketParser.from({ ...validJSON(), startsAt: -1 });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('startsAt');
+  });
+
+  it('обрезает дробный timestamp — канонический контракт TimestampService', () => {
+    const result = MarketParser.from({ ...validJSON(), expiresAt: 1_772_366_700_000.5 });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.expiresAt.toNumber()).toBe(1_772_366_700_000);
+  });
+
+  it('отклоняет NaN timestamp', () => {
+    const result = MarketParser.from({ ...validJSON(), startsAt: NaN });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('startsAt');
+  });
+});
+
+describe('MarketParser.from() — исходы', () => {
+  it('отклоняет outcomes не-массивом', () => {
+    const result = MarketParser.from({ ...validJSON(), outcomes: {} });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('outcomes');
+  });
+
+  it('отклоняет массив не из двух исходов', () => {
+    const result = MarketParser.from({
+      ...validJSON(),
+      outcomes: [{ index: 0, label: 'Up', instrumentId: '714' }],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('outcomes');
+  });
+
+  it('отклоняет исход, не являющийся объектом', () => {
+    const result = MarketParser.from({
+      ...validJSON(),
+      outcomes: ['up', { index: 1, label: 'Down', instrumentId: '229' }],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('outcomes[0]');
+  });
+
+  it('отклоняет исход с индексом не по позиции', () => {
+    const result = MarketParser.from({
+      ...validJSON(),
+      outcomes: [
+        { index: 1, label: 'Up', instrumentId: '714' },
+        { index: 1, label: 'Down', instrumentId: '229' },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('outcomes[0].index');
+  });
+
+  it('отклоняет пустую метку исхода', () => {
+    const result = MarketParser.from({
+      ...validJSON(),
+      outcomes: [
+        { index: 0, label: 'Up', instrumentId: '714' },
+        { index: 1, label: '   ', instrumentId: '229' },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('outcomes[1].label');
+  });
+
+  it('отклоняет нестроковый instrumentId', () => {
+    const result = MarketParser.from({
+      ...validJSON(),
+      outcomes: [
+        { index: 0, label: 'Up', instrumentId: 714 },
+        { index: 1, label: 'Down', instrumentId: '229' },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('outcomes[0].instrumentId');
+  });
+
+  it('отклоняет instrumentId, не проходящий валидацию VO', () => {
+    const result = MarketParser.from({
+      ...validJSON(),
+      outcomes: [
+        { index: 0, label: 'Up', instrumentId: '714' },
+        { index: 1, label: 'Down', instrumentId: '' },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('outcomes[1].instrumentId');
+  });
+});
+
+describe('MarketParser.from() — состояние', () => {
+  it('отклоняет state не-объектом', () => {
+    const result = MarketParser.from({ ...validJSON(), state: 'ACTIVE' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('state');
+  });
+
+  it('отклоняет неизвестный статус', () => {
+    const result = MarketParser.from({ ...validJSON(), state: { status: 'UPCOMING' } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('state.status');
+  });
+
+  it('отклоняет RESOLVED без индекса победителя', () => {
+    const result = MarketParser.from({ ...validJSON(), state: { status: 'RESOLVED' } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
+  });
+
+  it('отклоняет RESOLVED с индексом вне диапазона', () => {
+    const result = MarketParser.from({
+      ...validJSON(),
+      state: { status: 'RESOLVED', resolvedOutcomeIndex: 2 },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
+  });
+});
+
+describe('MarketParser.from() — семейство и спецификация', () => {
+  it('отклоняет неизвестное семейство', () => {
+    const result = MarketParser.from({ ...validJSON(), family: 'SPORTS' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('family');
+  });
+
+  it('отклоняет CRYPTO_UP_DOWN без crypto-спецификации', () => {
+    const { crypto: _crypto, ...withoutCrypto } = validJSON();
+    const result = MarketParser.from(withoutCrypto);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('crypto');
+  });
+
+  it('отклоняет нестроковый crypto.asset', () => {
+    const result = MarketParser.from({ ...validJSON(), crypto: { asset: 1, duration: 300_000 } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('crypto.asset');
+  });
+
+  it('отклоняет пустой crypto.asset', () => {
+    const result = MarketParser.from({ ...validJSON(), crypto: { asset: '  ', duration: 300_000 } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('crypto.asset');
+  });
+
+  it('отклоняет нечисловую crypto.duration', () => {
+    const result = MarketParser.from({ ...validJSON(), crypto: { asset: 'btc', duration: '5m' } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('crypto.duration');
+  });
+
+  it('разбирает семейство BINARY_OUTCOME без crypto-спецификации', () => {
+    const { crypto: _crypto, ...json } = validJSON();
+    const snapshot = unwrap(MarketParser.from({ ...json, family: 'BINARY_OUTCOME' }));
+
+    expect(snapshot.family).toBe('BINARY_OUTCOME');
+    expect('crypto' in snapshot).toBe(false);
+  });
+
+  it('отклоняет crypto-спецификацию на семействе BINARY_OUTCOME', () => {
+    const result = MarketParser.from({ ...validJSON(), family: 'BINARY_OUTCOME' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('crypto');
+  });
+
+  it('отклоняет неположительную crypto.duration', () => {
+    const result = MarketParser.from({ ...validJSON(), crypto: { asset: 'btc', duration: -1 } });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('crypto.duration');
+  });
+});
+
+describe('MarketParser — граница ответственности с Market.create()', () => {
+  it('пропускает доменное нарушение (startsAt >= expiresAt) — его ловит create()', () => {
+    const json = validJSON();
+    const swapped = { ...json, startsAt: json.expiresAt, expiresAt: json.startsAt };
+
+    const snapshot = MarketParser.from(swapped);
+    expect(snapshot.ok).toBe(true);
+    if (!snapshot.ok) return;
+
+    const market = Market.fromSnapshot(snapshot.value);
+    expect(market.ok).toBe(false);
+    if (!market.ok) expect(market.error.context?.field).toBe('startsAt');
+  });
+
+  it('пропускает одинаковые instrument identity — их ловит create()', () => {
+    const snapshot = MarketParser.from({
+      ...validJSON(),
+      outcomes: [
+        { index: 0, label: 'Up', instrumentId: '714' },
+        { index: 1, label: 'Down', instrumentId: '714' },
+      ],
+    });
+    expect(snapshot.ok).toBe(true);
+    if (!snapshot.ok) return;
+
+    const market = Market.fromSnapshot(snapshot.value);
+    expect(market.ok).toBe(false);
+    if (!market.ok) expect(market.error.message).toContain('instrument identities must be distinct');
+  });
+
+  it('нельзя инстанцировать — это static utility класс', () => {
+    expect(() => new (MarketParser as unknown as new () => unknown)()).toThrow(
+      'MarketParser is a static utility class and cannot be instantiated'
+    );
+  });
+});
+
+describe('MarketParser — симметрия с Market.create()', () => {
+  // Роли разные и это намеренно: парсер — нормализующая граница с недоверенными
+  // данными, entity требует уже канонических значений. Единственное, что обязано
+  // выполняться: всё, что собралось в Market, читается обратно из своего же JSON.
+  it('любой Market читается обратно из собственного JSON', () => {
+    const market = makeMarket();
+    const reparsed = unwrap(MarketParser.from(MarketViewModel.toJSON(market)));
+
+    expect(unwrap(Market.fromSnapshot(reparsed)).equals(market)).toBe(true);
+  });
+
+  it.each([
+    ['id с пробелами по краям', 'id', ' btc-up-down-1200 ', 'btc-up-down-1200'],
+    ['question с пробелами по краям', 'question', '  Bitcoin Up?  ', 'Bitcoin Up?'],
+  ])('парсер нормализует %s до значения, которое принимает create()', (
+    _label, field, raw, normalized,
+  ) => {
+    const parsed = unwrap(MarketParser.from({ ...validJSON(), [field]: raw }));
+
+    expect((parsed as unknown as Record<string, unknown>)[field]).toBe(normalized);
+    expect(Market.fromSnapshot(parsed).ok).toBe(true);
+  });
+
+  it.each([
+    ['venueId в нижнем регистре', 'venueId', 'polymarket'],
+    ['slug в верхнем регистре', 'slug', 'BTC-UP-DOWN'],
+  ])('ненормализуемое значение (%s) отвергают и парсер, и create()', (_label, field, value) => {
+    expect(MarketParser.from({ ...validJSON(), [field]: value }).ok).toBe(false);
+
+    const created = Market.create({
+      ...MarketViewModel.toSnapshot(makeMarket()),
+      [field]: value,
+    } as Parameters<typeof Market.create>[0]);
+
+    expect(created.ok).toBe(false);
+    if (!created.ok) expect(created.error.context?.field).toBe(field);
   });
 });

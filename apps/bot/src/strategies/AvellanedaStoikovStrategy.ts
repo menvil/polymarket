@@ -712,7 +712,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
    * undefined = ещё не определена (первый тик).
    */
   private _calibration: CalibrationTable | null | undefined = undefined;
-  /** expirationMs рынка для которого определена калибровка (сброс при смене рынка) */
+  /** Время экспирации рынка (ms), для которого определена калибровка (сброс при смене рынка) */
   private _calibratedMarketExpirationMs = 0;
   /** eventStartMs текущего рынка (для dynamic Q и unwind timing) */
   private _marketEventStartMs = 0;
@@ -929,7 +929,7 @@ export class AvellanedaStoikovStrategy extends BaseStrategy<ASData, ASAction> {
    * Калибровочная таблица опциональна — при отсутствии используются дефолты.
    */
   protected gather(snapshot: StrategySnapshot): ASData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Автоопределение калибровки при смене рынка
     if (this._calibratedMarketExpirationMs !== expiresMs) {

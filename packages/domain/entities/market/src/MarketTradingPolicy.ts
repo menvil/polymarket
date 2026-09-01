@@ -1,140 +1,115 @@
 /**
- * MarketTradingPolicy — политика торговых операций над рынком
+ * MarketTradingPolicy — производная фаза рынка «здесь и сейчас»
  *
  * @remarks
- * Отвечает на вопрос «в каком торговом состоянии находится рынок прямо сейчас?»
+ * Отвечает на вопрос «в какой фазе находится рынок в момент `now`?».
  *
- * ### Разделение ответственности:
- * - `Market` (entity) — FSM-правила: ACTIVE→CLOSED→RESOLVED
- * - `MarketTradingPolicy` — бизнес-правила с учётом времени:
- *   когда рынок торгуется, истёк, готов к закрытию, разрешению
+ * ### Разделение ответственности
+ * - `Market` (entity) — структура рынка и **подтверждённое внешнее состояние**
+ *   (`ACTIVE`/`CLOSED`/`RESOLVED`), переходы между состояниями;
+ * - `MarketTradingPolicy` — чистая функция от `(state, startsAt, expiresAt, now)`
+ *   к производной фазе. Ничего не хранит и ничего не решает за Market.
  *
- * ### Почему expiration не в Market:
- * Market.close() выполняет FSM-переход.
- * КОГДА он допустим по бизнес-правилам — ответственность Policy.
- * Это позволяет форс-клозить рынок (admin/dispute) независимо от expiration.
+ * ### Почему фаза не хранится в Market
+ * `PRE_OPEN`/`OPEN`/`ENDED` — это временные производные состояния: они меняются
+ * от одного лишь хода часов, без какого-либо наблюдения извне. Если хранить их
+ * в entity, придётся пересоздавать Market по таймеру, и любая копия мгновенно
+ * устаревает. Поэтому в `MarketState` их нет, а фаза вычисляется по требованию.
  *
- * ### TradingState vs boolean checks:
- * `getTradingState()` возвращает одно состояние вместо 3–4 boolean-вызовов.
- * Discriminated union позволяет exhaustive switch — компилятор поймает
- * новые состояния. Четыре отдельных boolean'а этого не гарантируют.
+ * ### Ключевое различие ENDED и CLOSED
+ * `ENDED` — расписание рынка истекло, но площадка всё ещё публикует его как
+ * ACTIVE. Стратегия в этой фазе уже не торгует, однако считать рынок закрытым
+ * нельзя: подтверждения не было. `CLOSED` — площадка закрытие подтвердила.
+ *
+ * ### Как фазы используются runtime-слоем
+ * ```text
+ * PRE_OPEN → можно подписываться на маркет-данные, торгов ещё нет
+ * OPEN     → рынок идёт, стратегия торгует
+ * ENDED    → стратегия не торгует; vendor может всё ещё считать рынок ACTIVE
+ * CLOSED   → подтверждённое закрытие: отменить ордера, ждать исход
+ * RESOLVED → исход объявлен: settlement
+ * ```
  *
  * @example
  * ```typescript
- * switch (MarketTradingPolicy.getTradingState(market, Date.now())) {
- *   case 'TRADING':  return orderService.accept(order);
- *   case 'EXPIRED':  return scheduler.scheduleClose(market);
+ * switch (MarketTradingPolicy.getPhase(market, now)) {
+ *   case 'PRE_OPEN': return subscriptions.ensure(market);
+ *   case 'OPEN':     return orderService.accept(order);
+ *   case 'ENDED':    return strategyRunner.stopEntering(market);
  *   case 'CLOSED':   return resolver.awaitOutcome(market);
  *   case 'RESOLVED': return settlement.process(market);
  * }
  * ```
  */
 
+import type { Timestamp } from '@polymarket/timestamp';
 import { Market } from './Market.js';
 
 /**
- * TradingState — торговое состояние рынка с учётом времени
+ * MarketPhase — производная фаза рынка в конкретный момент времени
  *
  * @remarks
- * Объединяет MarketState (FSM) + expiration в одно представление.
- * Используется для принятия торговых решений.
+ * Объединяет подтверждённое внешнее состояние (`MarketState`) и расписание
+ * рынка в одно значение. Discriminated union из строковых литералов позволяет
+ * exhaustive switch: при добавлении фазы компилятор покажет все непокрытые места.
  *
- * | TradingState | MarketState | isExpiredAt |
- * |-------------|-------------|-------------|
- * | TRADING     | ACTIVE      | false       |
- * | EXPIRED     | ACTIVE      | true        |
- * | CLOSED      | CLOSED      | —           |
- * | RESOLVED    | RESOLVED    | —           |
+ * | MarketPhase | Market.state | Расписание           |
+ * |-------------|--------------|----------------------|
+ * | PRE_OPEN    | ACTIVE       | now < startsAt       |
+ * | OPEN        | ACTIVE       | startsAt ≤ now < expiresAt |
+ * | ENDED       | ACTIVE       | now ≥ expiresAt      |
+ * | CLOSED      | CLOSED       | не влияет            |
+ * | RESOLVED    | RESOLVED     | не влияет            |
  */
-export type TradingState = 'TRADING' | 'EXPIRED' | 'CLOSED' | 'RESOLVED';
+export type MarketPhase = 'PRE_OPEN' | 'OPEN' | 'ENDED' | 'CLOSED' | 'RESOLVED';
 
 /**
- * ForceCloseDecision — решение о допустимости досрочного закрытия рынка
+ * MarketTradingPolicy — статический класс вычисления фазы рынка
  *
  * @remarks
- * Возвращается `evaluateForceClose()` вместо `boolean`.
- * В случае отказа содержит конкретную причину — для логирования и UI.
- *
- * @example
- * ```typescript
- * const decision = MarketTradingPolicy.evaluateForceClose(market);
- * if (decision.allowed) {
- *   const closed = market.close(Date.now());
- * } else {
- *   logger.warn('Force-close rejected', { reason: decision.reason });
- * }
- * ```
- */
-export type ForceCloseDecision =
-  | { readonly allowed: true }
-  | { readonly allowed: false; readonly reason: 'MARKET_ALREADY_CLOSED' | 'MARKET_ALREADY_RESOLVED' };
-
-/**
- * MarketTradingPolicy — статический класс торговой политики
- *
- * @remarks
- * Намеренно реализован как static-only класс.
- * Все методы — чистые функции: без side effects, без мутаций.
+ * Намеренно реализован как static-only класс: все методы — чистые функции
+ * без side effects, мутаций и обращений к часам.
  */
 export class MarketTradingPolicy {
+  /**
+   * Приватный конструктор — класс не предназначен для инстанциации
+   *
+   * @throws {Error} Всегда, при любой попытке создать экземпляр
+   */
   private constructor() {
     throw new Error('MarketTradingPolicy is a static utility class and cannot be instantiated');
   }
 
   /**
-   * Возвращает торговое состояние рынка в заданный момент времени
+   * Вычисляет фазу рынка в заданный момент времени
    *
    * @param market - Market entity
-   * @param nowMs - Текущее время в миллисекундах
-   * @returns TradingState — единственная точка входа для торговых решений
+   * @param now - Момент наблюдения (из инжектированного `IClock`, не из wall-clock)
+   * @returns {@link MarketPhase} — единственная точка входа для торговых решений
    *
    * @remarks
-   * Используйте exhaustive switch для обработки всех случаев.
-   * TypeScript гарантирует покрытие при добавлении новых состояний.
+   * Алгоритм:
+   * 1. Подтверждённые терминальные состояния сильнее расписания: RESOLVED → `RESOLVED`,
+   *    CLOSED → `CLOSED`, независимо от `now`;
+   * 2. Для ACTIVE фаза определяется расписанием:
+   *    `now < startsAt` → `PRE_OPEN`; `startsAt ≤ now < expiresAt` → `OPEN`;
+   *    `now ≥ expiresAt` → `ENDED`.
+   *
+   * Границы включающие слева: ровно в `startsAt` рынок уже `OPEN`, ровно
+   * в `expiresAt` — уже `ENDED`.
    *
    * @example
    * ```typescript
-   * const now = Date.now();
-   * switch (MarketTradingPolicy.getTradingState(market, now)) {
-   *   case 'TRADING':  return orderService.accept(order);
-   *   case 'EXPIRED':  return scheduler.scheduleClose(market);
-   *   case 'CLOSED':   return resolver.awaitOutcome(market);
-   *   case 'RESOLVED': return settlement.process(market);
-   * }
+   * // Рынок 12:00–12:05 в состоянии ACTIVE
+   * MarketTradingPolicy.getPhase(market, at('11:59')); // → 'PRE_OPEN'
+   * MarketTradingPolicy.getPhase(market, at('12:02')); // → 'OPEN'
+   * MarketTradingPolicy.getPhase(market, at('12:05')); // → 'ENDED'
    * ```
    */
-  public static getTradingState(market: Market, nowMs: number): TradingState {
+  public static getPhase(market: Market, now: Timestamp): MarketPhase {
     if (market.isResolved()) return 'RESOLVED';
     if (market.isClosed()) return 'CLOSED';
-    // ACTIVE: делим на TRADING (не истёк) и EXPIRED (истёк)
-    return market.isExpiredAt(nowMs) ? 'EXPIRED' : 'TRADING';
-  }
-
-  /**
-   * Оценивает допустимость досрочного закрытия рынка (admin/dispute action)
-   *
-   * @param market - Market entity
-   * @returns ForceCloseDecision — решение с причиной отказа если недопустимо
-   *
-   * @remarks
-   * Единственный метод без `nowMs` — форс-клоз не зависит от времени.
-   * Это исключительная операция: инвалидация рынка, технические сбои.
-   * Для стандартного закрытия по expiration проверяйте `getTradingState === 'EXPIRED'`.
-   *
-   * @example
-   * ```typescript
-   * const decision = MarketTradingPolicy.evaluateForceClose(market);
-   * if (decision.allowed) {
-   *   const closed = market.close(Date.now());
-   *   await eventBus.publish(closed.pullNotifications());
-   * } else {
-   *   logger.warn('Force-close rejected', { reason: decision.reason });
-   * }
-   * ```
-   */
-  public static evaluateForceClose(market: Market): ForceCloseDecision {
-    if (market.isResolved()) return { allowed: false, reason: 'MARKET_ALREADY_RESOLVED' };
-    if (market.isClosed()) return { allowed: false, reason: 'MARKET_ALREADY_CLOSED' };
-    return { allowed: true };
+    if (!market.isStartedAt(now)) return 'PRE_OPEN';
+    return market.isExpiredAt(now) ? 'ENDED' : 'OPEN';
   }
 }

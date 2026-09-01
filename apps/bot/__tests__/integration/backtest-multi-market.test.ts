@@ -37,6 +37,8 @@ import type { InstrumentInfo } from '@polymarket/ports';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
+import { buildTestMarket } from '../helpers/markets.js';
+
 import { BacktestEngine } from '@polymarket/backtesting';
 import { SnapshotReaderFactory } from '@polymarket/snapshot-readers';
 import { buildRepositories } from '../../src/bot/buildRepositories.js';
@@ -88,6 +90,7 @@ const ACCOUNT_ID_RAW = 'venue:POLYMARKET:backtest-multi';
 interface SnapshotMeta {
   readonly marketId: MarketId;
   readonly instrumentId: InstrumentId;
+  readonly complementaryInstrumentId: InstrumentId;
 }
 
 async function readMeta(filePath: string, outcomeIndex: 0 | 1): Promise<SnapshotMeta> {
@@ -100,8 +103,11 @@ async function readMeta(filePath: string, outcomeIndex: 0 | 1): Promise<Snapshot
         const marketId = asMarketId(raw['marketId'] as string);
         const tokenIds = raw['tokenIds'] as string[];
         const instrumentId = asInstrumentId(tokenIds[outcomeIndex]!);
-        if (!marketId || !instrumentId) throw new Error(`Invalid meta in ${filePath}`);
-        return { marketId, instrumentId };
+        const complementaryInstrumentId = asInstrumentId(tokenIds[1 - outcomeIndex]!);
+        if (!marketId || !instrumentId || !complementaryInstrumentId) {
+          throw new Error(`Invalid meta in ${filePath}`);
+        }
+        return { marketId, instrumentId, complementaryInstrumentId };
       }
     }
   } finally {
@@ -266,9 +272,9 @@ describe('Backtest — два рынка одновременно', () => {
       params: DUMB_CONFIG,
     } as StrategyConfig);
 
-    const marketStub = {
-      expirationMs: Date.now() + 24 * 60 * 60 * 1000,
-    } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    // У каждого инструмента свой рынок — общая заглушка на оба была бы неправдой
+    const marketA = buildTestMarket({ ...metaA, outcomeIndex: OUTCOME_INDEX });
+    const marketB = buildTestMarket({ ...metaB, outcomeIndex: OUTCOME_INDEX });
 
     // Регистрируем обе стратегии
     const [regA, regB] = await Promise.all([
@@ -277,14 +283,14 @@ describe('Backtest — два рынка одновременно', () => {
         instrumentId: metaA.instrumentId,
         asset: assetA,
         accountId,
-        market: marketStub,
+        market: marketA,
       }),
       engine.scheduler.register({
         strategy: strategyB,
         instrumentId: metaB.instrumentId,
         asset: assetB,
         accountId,
-        market: marketStub,
+        market: marketB,
       }),
     ]);
 

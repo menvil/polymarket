@@ -1,192 +1,96 @@
 /**
- * Тесты для MarketTradingPolicy
+ * Тесты MarketTradingPolicy — производная фаза рынка
  *
  * @remarks
- * Проверяет:
- * - getTradingState(market, nowMs) — единственная точка торговых решений
- * - evaluateForceClose(market) — admin-действие без проверки времени
- * - Полный lifecycle через policy + entity
+ * Модельный рынок — 12:00–12:05. Проверяется, что фаза целиком определяется
+ * парой (подтверждённое состояние, момент наблюдения) и что подтверждённые
+ * терминальные состояния сильнее расписания.
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Market, type Outcome } from '../../src/Market.js';
-import { MarketTradingPolicy, type TradingState } from '../../src/MarketTradingPolicy.js';
-import {
-  MarketState,
-  unsafeMarketId,
-  parseMarketSlug,
-  OutcomeToken,
-} from '../../src/value-objects/index.js';
-import {
-  BinaryOutcome,
-  type OnChainConditionRef,
-  asOnChainProtocolId,
-  parseChainId,
-  parseConditionId,
-} from '@polymarket/ids';
+import { MarketState, MarketTradingPolicy, type MarketPhase } from '../../src/index.js';
+import { at, makeMarket } from './fixtures.js';
 
-// ==================== Тестовые данные ====================
-
-const EXPIRATION_MS = 1_000_000;
-
-const TEST_CONDITION_REF: OnChainConditionRef = {
-  kind: 'ONCHAIN',
-  protocolId: asOnChainProtocolId('POLYMARKET_CTF')!,
-  chainId: parseChainId('137')!,
-  conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
-};
-
-const UP_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
-const DOWN_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
-
-const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
-  { token: UP_TOKEN, index: 0, name: 'Yes' },
-  { token: DOWN_TOKEN, index: 1, name: 'No' },
-];
-
-function makeMarket(state: MarketState, expirationMs = EXPIRATION_MS) {
-  const result = Market.create({
-    id: unsafeMarketId('market-abc'),
-    slug: parseMarketSlug('will-trump-win')!,
-    question: 'Will Trump win?',
-    outcomes: TEST_OUTCOMES,
-    expirationMs,
-    state,
-  });
-  if (!result.ok) throw new Error('Failed to create test market');
-  return result.value;
-}
-
-// Вспомогательная функция для извлечения значения из Result в тестах
-function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
-  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
-  return result.value;
-}
-
-const BEFORE_EXPIRY = EXPIRATION_MS - 1; // рынок ещё не истёк
-const AT_EXPIRY = EXPIRATION_MS;          // рынок истёк (nowMs >= expirationMs)
-const AFTER_EXPIRY = EXPIRATION_MS + 1;
-
-// ==================== Тесты ====================
-
-describe('MarketTradingPolicy.getTradingState()', () => {
-  describe('ACTIVE + не истёк → TRADING', () => {
-    it('возвращает TRADING', () => {
-      const market = makeMarket(MarketState.active());
-      expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('TRADING');
-    });
-
-    it('TRADING: в момент непосредственно до истечения', () => {
-      const market = makeMarket(MarketState.active());
-      expect(MarketTradingPolicy.getTradingState(market, EXPIRATION_MS - 1)).toBe('TRADING');
-    });
+describe('MarketTradingPolicy.getPhase() — состояние ACTIVE', () => {
+  it('11:59 → PRE_OPEN', () => {
+    expect(MarketTradingPolicy.getPhase(makeMarket(), at('11:59:00'))).toBe('PRE_OPEN');
   });
 
-  describe('ACTIVE + истёк → EXPIRED', () => {
-    it('возвращает EXPIRED в момент истечения', () => {
-      const market = makeMarket(MarketState.active());
-      expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
-    });
-
-    it('возвращает EXPIRED после истечения', () => {
-      const market = makeMarket(MarketState.active());
-      expect(MarketTradingPolicy.getTradingState(market, AFTER_EXPIRY)).toBe('EXPIRED');
-    });
+  it('11:59:59.999 → PRE_OPEN (граница слева)', () => {
+    expect(MarketTradingPolicy.getPhase(makeMarket(), at('11:59:59.999'))).toBe('PRE_OPEN');
   });
 
-  describe('CLOSED → CLOSED', () => {
-    it('возвращает CLOSED (не зависит от времени)', () => {
-      const market = makeMarket(MarketState.closed());
-      expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('CLOSED');
-      expect(MarketTradingPolicy.getTradingState(market, AFTER_EXPIRY)).toBe('CLOSED');
-    });
+  it('12:00 → OPEN (startsAt включён)', () => {
+    expect(MarketTradingPolicy.getPhase(makeMarket(), at('12:00:00'))).toBe('OPEN');
   });
 
-  describe('RESOLVED → RESOLVED', () => {
-    it('возвращает RESOLVED (не зависит от времени)', () => {
-      const market = makeMarket(MarketState.resolved(0));
-      expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('RESOLVED');
-      expect(MarketTradingPolicy.getTradingState(market, AFTER_EXPIRY)).toBe('RESOLVED');
-    });
+  it('12:02 → OPEN', () => {
+    expect(MarketTradingPolicy.getPhase(makeMarket(), at('12:02:00'))).toBe('OPEN');
   });
 
-  it('переход TRADING → EXPIRED в момент истечения', () => {
-    const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('TRADING');
-    expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
+  it('12:04:59.999 → OPEN (граница справа)', () => {
+    expect(MarketTradingPolicy.getPhase(makeMarket(), at('12:04:59.999'))).toBe('OPEN');
+  });
+
+  it('12:05 → ENDED (expiresAt включён)', () => {
+    expect(MarketTradingPolicy.getPhase(makeMarket(), at('12:05:00'))).toBe('ENDED');
+  });
+
+  it('12:30 → ENDED: расписание истекло, площадка всё ещё публикует ACTIVE', () => {
+    const market = makeMarket();
+
+    expect(MarketTradingPolicy.getPhase(market, at('12:30:00'))).toBe('ENDED');
+    expect(market.state.status).toBe('ACTIVE');
   });
 });
 
-describe('MarketTradingPolicy.evaluateForceClose()', () => {
-  it('allowed: true — ACTIVE (не истёк)', () => {
-    const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.evaluateForceClose(market)).toEqual({ allowed: true });
+describe('MarketTradingPolicy.getPhase() — подтверждённые состояния', () => {
+  const anyTime = ['11:00:00', '12:00:00', '12:02:00', '12:05:00', '23:59:59'];
+
+  it.each(anyTime)('CLOSED → CLOSED независимо от часов (%s)', (time) => {
+    const market = makeMarket({ state: MarketState.closed() });
+
+    expect(MarketTradingPolicy.getPhase(market, at(time))).toBe('CLOSED');
   });
 
-  it('allowed: true — ACTIVE (уже истёк, форс-клоз всё равно возможен)', () => {
-    const expired = makeMarket(MarketState.active(), AT_EXPIRY - 100);
-    expect(MarketTradingPolicy.evaluateForceClose(expired)).toEqual({ allowed: true });
-  });
+  it.each(anyTime)('RESOLVED → RESOLVED независимо от часов (%s)', (time) => {
+    const market = makeMarket({ state: MarketState.resolved(0) });
 
-  it('allowed: false + MARKET_ALREADY_CLOSED — CLOSED', () => {
-    const market = makeMarket(MarketState.closed());
-    expect(MarketTradingPolicy.evaluateForceClose(market)).toEqual({
-      allowed: false,
-      reason: 'MARKET_ALREADY_CLOSED',
-    });
-  });
-
-  it('allowed: false + MARKET_ALREADY_RESOLVED — RESOLVED', () => {
-    const market = makeMarket(MarketState.resolved(0));
-    expect(MarketTradingPolicy.evaluateForceClose(market)).toEqual({
-      allowed: false,
-      reason: 'MARKET_ALREADY_RESOLVED',
-    });
+    expect(MarketTradingPolicy.getPhase(market, at(time))).toBe('RESOLVED');
   });
 });
 
-describe('MarketTradingPolicy — нельзя создать экземпляр', () => {
-  it('бросает Error при вызове конструктора', () => {
-    // @ts-expect-error - testing private constructor
-    expect(() => new MarketTradingPolicy()).toThrow(Error);
-  });
-});
+describe('MarketTradingPolicy — свойства политики', () => {
+  it('фаза не хранится в Market: наблюдение не меняет entity', () => {
+    const market = makeMarket();
 
-describe('Policy + Entity — полный lifecycle', () => {
-  it('TRADING → (expire) → EXPIRED → close → CLOSED → resolve → RESOLVED', () => {
-    const market = makeMarket(MarketState.active());
+    MarketTradingPolicy.getPhase(market, at('11:59:00'));
+    MarketTradingPolicy.getPhase(market, at('12:30:00'));
 
-    // До истечения: TRADING
-    expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('TRADING');
-
-    // После истечения: EXPIRED
-    expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
-
-    // close() переводит в CLOSED
-    const closed = unwrap(market.close(AT_EXPIRY));
-    expect(MarketTradingPolicy.getTradingState(closed, AT_EXPIRY)).toBe('CLOSED');
-
-    // resolve() переводит в RESOLVED
-    const resolved = unwrap(closed.resolve(0, AT_EXPIRY));
-    expect(MarketTradingPolicy.getTradingState(resolved, AT_EXPIRY)).toBe('RESOLVED');
+    expect(market.state.status).toBe('ACTIVE');
   });
 
-  it('каждое TradingState реально достижимо через getTradingState()', () => {
-    const activeMarket = makeMarket(MarketState.active());
-    const closedMarket = makeMarket(MarketState.closed());
-    const resolvedMarket = makeMarket(MarketState.resolved(0));
+  it('покрывает все значения MarketPhase на одном жизненном пути', () => {
+    const active = makeMarket();
+    const closed = active.markClosed();
+    if (!closed.ok) throw new Error('markClosed must succeed for ACTIVE market');
+    const resolved = closed.value.markResolved(0);
+    if (!resolved.ok) throw new Error('markResolved must succeed for CLOSED market');
 
-    // TRADING — ACTIVE до истечения
-    expect(MarketTradingPolicy.getTradingState(activeMarket, BEFORE_EXPIRY)).toBe('TRADING');
-    // EXPIRED — ACTIVE после истечения
-    expect(MarketTradingPolicy.getTradingState(activeMarket, AT_EXPIRY)).toBe('EXPIRED');
-    // CLOSED
-    expect(MarketTradingPolicy.getTradingState(closedMarket, AT_EXPIRY)).toBe('CLOSED');
-    // RESOLVED
-    expect(MarketTradingPolicy.getTradingState(resolvedMarket, AT_EXPIRY)).toBe('RESOLVED');
+    const observed: MarketPhase[] = [
+      MarketTradingPolicy.getPhase(active, at('11:59:00')),
+      MarketTradingPolicy.getPhase(active, at('12:02:00')),
+      MarketTradingPolicy.getPhase(active, at('12:05:00')),
+      MarketTradingPolicy.getPhase(closed.value, at('12:05:00')),
+      MarketTradingPolicy.getPhase(resolved.value, at('12:05:00')),
+    ];
 
-    // Все значения типа TradingState покрыты выше (compile-time guarantee через satisfies):
-    const _allStates = ['TRADING', 'EXPIRED', 'CLOSED', 'RESOLVED'] satisfies TradingState[];
-    void _allStates;
+    expect(observed).toEqual(['PRE_OPEN', 'OPEN', 'ENDED', 'CLOSED', 'RESOLVED']);
+  });
+
+  it('нельзя инстанцировать — это static utility класс', () => {
+    expect(() => new (MarketTradingPolicy as unknown as new () => unknown)()).toThrow(
+      'MarketTradingPolicy is a static utility class and cannot be instantiated'
+    );
   });
 });

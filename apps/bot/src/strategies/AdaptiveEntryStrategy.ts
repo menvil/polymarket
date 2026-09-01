@@ -208,7 +208,7 @@ export class AdaptiveEntryStrategy extends BaseStrategy<AEData, AEAction> {
    * @returns Данные для принятия решения или undefined если рано
    */
   protected gather(snapshot: StrategySnapshot): AEData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Смена рынка → полный сброс
     if (this._currentExpirationMs !== expiresMs) {

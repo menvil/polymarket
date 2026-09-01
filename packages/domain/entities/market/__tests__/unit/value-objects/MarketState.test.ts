@@ -5,7 +5,10 @@
  * Проверяет:
  * - Конструкторы (active, closed, resolved)
  * - Type guards (isActive, isClosed, isResolved)
- * - FSM-переходы (transitionToClosed, transitionToResolved)
+ * - Переходы-наблюдения (markClosed, markResolved), включая идемпотентность
+ * - Отклонение регрессии и конфликта исхода
+ * - normalize() — защитная копия состояния
+ * - Иммутабельность возвращаемых состояний
  */
 
 import { describe, it, expect } from '@jest/globals';
@@ -16,9 +19,7 @@ import {
   isResolved,
 } from '../../../src/value-objects/MarketState.js';
 import {
-  MarketAlreadyClosedError,
   MarketAlreadyResolvedError,
-  MarketInvalidTransitionError,
   MarketLifecycleError,
 } from '@polymarket/errors/market';
 
@@ -39,7 +40,7 @@ describe('MarketState конструкторы', () => {
     expect(state.status).toBe('CLOSED');
   });
 
-  it('resolved(0) создаёт состояние RESOLVED с индексом 0 (YES)', () => {
+  it('resolved(0) создаёт состояние RESOLVED с индексом первого исхода', () => {
     const state = MarketState.resolved(0);
     expect(state.status).toBe('RESOLVED');
     if (state.status === 'RESOLVED') {
@@ -47,7 +48,7 @@ describe('MarketState конструкторы', () => {
     }
   });
 
-  it('resolved(1) создаёт состояние RESOLVED с индексом 1 (NO)', () => {
+  it('resolved(1) создаёт состояние RESOLVED с индексом второго исхода', () => {
     const state = MarketState.resolved(1);
     expect(state.status).toBe('RESOLVED');
     if (state.status === 'RESOLVED') {
@@ -77,49 +78,45 @@ describe('MarketState type guards', () => {
   });
 });
 
-describe('MarketState.close()', () => {
+describe('MarketState.markClosed()', () => {
   it('ACTIVE → CLOSED: возвращает новое состояние CLOSED', () => {
-    const next = unwrap(MarketState.close(MarketState.active()));
+    const next = unwrap(MarketState.markClosed(MarketState.active()));
     expect(next.status).toBe('CLOSED');
   });
 
-  it('CLOSED → close: возвращает Err(MarketAlreadyClosedError)', () => {
-    const result = MarketState.close(MarketState.closed());
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketAlreadyClosedError);
+  it('CLOSED → markClosed: идемпотентно, возвращает то же состояние', () => {
+    const closed = MarketState.closed();
+    const result = MarketState.markClosed(closed);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBe(closed); // тот же объект — признак no-op
     }
   });
 
-  it('RESOLVED → close: возвращает Err(MarketAlreadyResolvedError)', () => {
-    const result = MarketState.close(MarketState.resolved(0));
+  it('RESOLVED → markClosed: возвращает Err(MarketAlreadyResolvedError) — регрессия', () => {
+    const result = MarketState.markClosed(MarketState.resolved(0));
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(MarketAlreadyResolvedError);
+      expect(result.error).toBeInstanceOf(MarketLifecycleError);
     }
   });
 
-  it('ошибки являются подклассом MarketLifecycleError', () => {
-    const r1 = MarketState.close(MarketState.closed());
-    const r2 = MarketState.close(MarketState.resolved(0));
-    expect(!r1.ok && r1.error instanceof MarketLifecycleError).toBe(true);
-    expect(!r2.ok && r2.error instanceof MarketLifecycleError).toBe(true);
-  });
-
   it('context передаётся в ошибку', () => {
-    const result = MarketState.close(MarketState.closed(), { marketId: 'test-id' });
+    const result = MarketState.markClosed(MarketState.resolved(1), { marketId: 'test-id' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketAlreadyClosedError);
       expect(result.error.context?.marketId).toBe('test-id');
-      expect(result.error.context?.currentStatus).toBe('CLOSED');
+      expect(result.error.context?.currentStatus).toBe('RESOLVED');
+      expect(result.error.context?.resolvedOutcomeIndex).toBe(1);
     }
   });
 });
 
-describe('MarketState.resolve()', () => {
+describe('MarketState.markResolved()', () => {
   it('CLOSED → RESOLVED(0): возвращает состояние RESOLVED с индексом 0', () => {
-    const next = unwrap(MarketState.resolve(MarketState.closed(), 0));
+    const next = unwrap(MarketState.markResolved(MarketState.closed(), 0));
     expect(next.status).toBe('RESOLVED');
     if (next.status === 'RESOLVED') {
       expect(next.resolvedOutcomeIndex).toBe(0);
@@ -127,43 +124,120 @@ describe('MarketState.resolve()', () => {
   });
 
   it('CLOSED → RESOLVED(1): возвращает состояние RESOLVED с индексом 1', () => {
-    const next = unwrap(MarketState.resolve(MarketState.closed(), 1));
+    const next = unwrap(MarketState.markResolved(MarketState.closed(), 1));
     expect(next.status).toBe('RESOLVED');
     if (next.status === 'RESOLVED') {
       expect(next.resolvedOutcomeIndex).toBe(1);
     }
   });
 
-  it('ACTIVE → resolve: возвращает Err(MarketInvalidTransitionError)', () => {
-    const result = MarketState.resolve(MarketState.active(), 0);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketInvalidTransitionError);
+  it('ACTIVE → RESOLVED: разрешён — промежуточный CLOSED мог не попасть в опрос', () => {
+    const next = unwrap(MarketState.markResolved(MarketState.active(), 1));
+    expect(next.status).toBe('RESOLVED');
+    if (next.status === 'RESOLVED') {
+      expect(next.resolvedOutcomeIndex).toBe(1);
     }
   });
 
-  it('RESOLVED → resolve: возвращает Err(MarketAlreadyResolvedError)', () => {
-    const result = MarketState.resolve(MarketState.resolved(0), 1);
+  it('RESOLVED(i) → markResolved(i): идемпотентно, возвращает то же состояние', () => {
+    const resolved = MarketState.resolved(0);
+    const result = MarketState.markResolved(resolved, 0);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toBe(resolved); // тот же объект — признак no-op
+    }
+  });
+
+  it('RESOLVED(0) → markResolved(1): Err — конфликт исхода', () => {
+    const result = MarketState.markResolved(MarketState.resolved(0), 1);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(MarketAlreadyResolvedError);
+      expect(result.error).toBeInstanceOf(MarketLifecycleError);
+      expect(result.error.message).toContain('different outcome');
     }
   });
 
-  it('ошибки являются подклассом MarketLifecycleError', () => {
-    const r1 = MarketState.resolve(MarketState.active(), 0);
-    const r2 = MarketState.resolve(MarketState.resolved(0), 1);
-    expect(!r1.ok && r1.error instanceof MarketLifecycleError).toBe(true);
-    expect(!r2.ok && r2.error instanceof MarketLifecycleError).toBe(true);
-  });
-
-  it('MarketInvalidTransitionError содержит сообщение про Call close() first', () => {
-    const result = MarketState.resolve(MarketState.active(), 0, { marketId: 'test-id' });
+  it('ошибка конфликта несёт и зафиксированный, и наблюдённый исход', () => {
+    const result = MarketState.markResolved(MarketState.resolved(0), 1, { marketId: 'test-id' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketInvalidTransitionError);
-      expect(result.error.message).toContain('Call close() first');
       expect(result.error.context?.marketId).toBe('test-id');
+      expect(result.error.context?.resolvedOutcomeIndex).toBe(0);
+      expect(result.error.context?.observedOutcomeIndex).toBe(1);
     }
+  });
+});
+
+describe('MarketState.normalize()', () => {
+  it.each([
+    ['ACTIVE', { status: 'ACTIVE' as const }],
+    ['CLOSED', { status: 'CLOSED' as const }],
+  ])('возвращает замороженную копию для %s', (_label, mutable) => {
+    const normalized = MarketState.normalize(mutable);
+
+    expect(normalized).toEqual(mutable);
+    expect(normalized).not.toBe(mutable);
+    expect(Object.isFrozen(normalized)).toBe(true);
+  });
+
+  it('сохраняет индекс победителя для RESOLVED', () => {
+    const mutable = { status: 'RESOLVED' as const, resolvedOutcomeIndex: 1 as const };
+    const normalized = MarketState.normalize(mutable);
+
+    expect(normalized).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 1 });
+    expect(normalized).not.toBe(mutable);
+    expect(Object.isFrozen(normalized)).toBe(true);
+  });
+});
+
+describe('MarketState — иммутабельность', () => {
+  it('конструкторы возвращают замороженные объекты', () => {
+    expect(Object.isFrozen(MarketState.active())).toBe(true);
+    expect(Object.isFrozen(MarketState.closed())).toBe(true);
+    expect(Object.isFrozen(MarketState.resolved(0))).toBe(true);
+  });
+
+  it('переход не мутирует исходное состояние', () => {
+    const active = MarketState.active();
+    unwrap(MarketState.markClosed(active));
+
+    expect(active.status).toBe('ACTIVE');
+  });
+});
+
+describe('MarketState — семантика наблюдения', () => {
+  it('нет переходов UPCOMING/OPEN/ENDED: хранимых состояний ровно три', () => {
+    const statuses = [
+      MarketState.active().status,
+      MarketState.closed().status,
+      MarketState.resolved(0).status,
+    ];
+
+    expect(new Set(statuses)).toEqual(new Set(['ACTIVE', 'CLOSED', 'RESOLVED']));
+  });
+
+  it('повторное наблюдение закрытия не ошибка — внешние снапшоты повторяются', () => {
+    const closed = unwrap(MarketState.markClosed(MarketState.active()));
+    const again = MarketState.markClosed(closed);
+
+    expect(again.ok).toBe(true);
+  });
+
+  it('вернуться в ACTIVE нельзя: обратного перехода нет в API', () => {
+    // RESOLVED → ACTIVE и CLOSED → ACTIVE — конфликты, которые невозможно даже выразить:
+    // MarketState.active() — конструктор нового состояния, а не переход из существующего.
+    const transitions = Object.keys(MarketState).filter((key) => key.startsWith('mark'));
+
+    expect(transitions.sort()).toEqual(['markClosed', 'markResolved']);
+  });
+
+  it('отклоняются только противоречия уже зафиксированному факту', () => {
+    const resolvedUp = MarketState.resolved(0);
+
+    expect(MarketState.markClosed(resolvedUp).ok).toBe(false);        // регрессия
+    expect(MarketState.markResolved(resolvedUp, 1).ok).toBe(false);   // конфликт исхода
+    expect(MarketState.markResolved(resolvedUp, 0).ok).toBe(true);    // повтор того же
   });
 });

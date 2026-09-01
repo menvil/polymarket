@@ -1,60 +1,69 @@
 /**
- * MarketSnapshot — доменно-типизированный data carrier для Market entity
+ * MarketSnapshot — доменно-типизированный data carrier канонического Market
  *
  * @remarks
- * Чистый тип данных без методов и доменной логики.
- * Использует доменные типы (MarketId, MarketSlug, OutcomeToken, MarketState) — не строки.
+ * Чистый тип данных: без методов, без доменной логики, все поля readonly.
+ * Использует canonical VO (`MarketId`, `VenueId`, `Timestamp`, `InstrumentId`,
+ * `MarketState`), а не примитивы — на границе Domain/Application типы не
+ * деградируют обратно в строки и числа.
  *
- * ### Применение:
- * - Промежуточный тип в pipeline реконструкции из внешних источников
- * - In-memory представление для round-trip (Market → snapshot → Market)
- *
- * ### Pipeline из внешних данных (JSON → Market):
- * ```
- * raw JSON → MarketParser.from() → MarketSnapshot → Market.fromSnapshot() → Market
+ * ### Два разных «представления» и зачем нужны оба
+ * ```text
+ * MarketSnapshot — доменные типы, in-memory (Market ⇄ snapshot)
+ * MarketJSON     — примитивы, wire/БД (см. MarketJSON.ts)
  * ```
  *
- * ### Round-trip из Market (in-memory):
+ * ### Pipeline из сериализованных данных
+ * ```text
+ * unknown JSON → MarketParser.from() → MarketSnapshot → Market.fromSnapshot() → Market
  * ```
+ *
+ * ### Round-trip in-memory
+ * ```text
  * Market → MarketViewModel.toSnapshot() → MarketSnapshot → Market.fromSnapshot() → Market
  * ```
  *
  * @example
  * ```typescript
- * // Market → snapshot (сериализация)
  * const snapshot = MarketViewModel.toSnapshot(market);
- *
- * // snapshot → Market (реконструкция)
- * const marketResult = Market.fromSnapshot(snapshot);
+ * const restored = Market.fromSnapshot(snapshot);
  * ```
  */
 
-import type { MarketId } from '@polymarket/ids';
-import type { OutcomeToken } from '@polymarket/value-objects/outcome-token';
+import type { Timestamp } from '@polymarket/timestamp';
+import type { MarketId, VenueId } from '@polymarket/ids';
 import type { MarketSlug } from '../value-objects/MarketSlug.js';
 import type { MarketState } from '../value-objects/MarketState.js';
+import type { MarketOutcome } from '../value-objects/MarketOutcome.js';
+import type { MarketFamily } from '../value-objects/MarketFamily.js';
+import type { CryptoUpDownSpec } from '../value-objects/MarketSpec.js';
 
 /**
- * MarketSnapshot — доменно-типизированный data carrier состояния рынка
+ * MarketSnapshot — доменно-типизированное представление состояния рынка
  *
  * @remarks
- * Структурно идентичен MarketProps — поэтому Market.fromSnapshot() = Market.create(snapshot).
- * Все поля readonly, нет методов.
+ * Структурно идентичен `MarketProps` — поэтому `Market.fromSnapshot()`
+ * сводится к `Market.create(snapshot)` без промежуточных преобразований.
  */
 export interface MarketSnapshot {
-  /** Идентификатор рынка */
+  /** Идентификатор рынка в пространстве имён площадки */
   readonly id: MarketId;
-  /** URL-safe слаг */
-  readonly slug: MarketSlug;
+  /** Площадка, на которой наблюдается рынок */
+  readonly venueId: VenueId;
+  /** URL-safe слаг рынка, если площадка его публикует */
+  readonly slug?: MarketSlug;
   /** Вопрос рынка */
   readonly question: string;
-  /** Исходы рынка */
-  readonly outcomes: readonly [
-    { readonly token: OutcomeToken; readonly index: 0; readonly name: string },
-    { readonly token: OutcomeToken; readonly index: 1; readonly name: string },
-  ];
-  /** Время истечения в миллисекундах (Unix timestamp) */
-  readonly expirationMs: number;
-  /** Состояние рынка */
+  /** Запланированное начало торгов */
+  readonly startsAt: Timestamp;
+  /** Запланированное окончание торгов */
+  readonly expiresAt: Timestamp;
+  /** Подтверждённое внешнее состояние рынка */
   readonly state: MarketState;
+  /** Исходы рынка: ровно два */
+  readonly outcomes: readonly [MarketOutcome, MarketOutcome];
+  /** Семейство рынка */
+  readonly family: MarketFamily;
+  /** Спецификация семейства `CRYPTO_UP_DOWN` */
+  readonly crypto?: CryptoUpDownSpec;
 }

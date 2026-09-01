@@ -168,7 +168,7 @@ export class SmartEntryStrategy extends BaseStrategy<SEData, SEAction> {
    * @returns Данные для принятия решения или undefined если рано
    */
   protected gather(snapshot: StrategySnapshot): SEData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Смена рынка → сброс
     if (this._currentExpirationMs !== expiresMs) {

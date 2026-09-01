@@ -31,6 +31,8 @@ import type { InstrumentInfo } from '@polymarket/ports';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
+import { buildTestMarket } from '../helpers/markets.js';
+
 import { BacktestEngine } from '@polymarket/backtesting';
 import { JsonlSnapshotReader } from '@polymarket/snapshot-readers';
 import { buildRepositories } from '../../src/bot/buildRepositories.js';
@@ -75,6 +77,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
     const metaReader = new JsonlSnapshotReader(SNAPSHOT_PATH);
     let snapshotMarketId: MarketId | undefined;
     let snapshotInstrumentId: InstrumentId | undefined;
+    let snapshotComplementaryId: InstrumentId | undefined;
 
     for await (const line of metaReader.readLines()) {
       const raw = JSON.parse(line) as Record<string, unknown>;
@@ -83,6 +86,10 @@ describe('Backtest — DumbStrategy on snapshot', () => {
         const tokenIds = raw['tokenIds'] as string[];
         const tokenId = tokenIds[OUTCOME_INDEX];
         if (tokenId) snapshotInstrumentId = asInstrumentId(tokenId) ?? undefined;
+        const complementaryTokenId = tokenIds[1 - OUTCOME_INDEX];
+        if (complementaryTokenId) {
+          snapshotComplementaryId = asInstrumentId(complementaryTokenId) ?? undefined;
+        }
         break;
       }
     }
@@ -90,6 +97,7 @@ describe('Backtest — DumbStrategy on snapshot', () => {
 
     expect(snapshotMarketId).toBeDefined();
     expect(snapshotInstrumentId).toBeDefined();
+    expect(snapshotComplementaryId).toBeDefined();
 
     const instrumentId = snapshotInstrumentId!;
     const marketId = snapshotMarketId!;
@@ -203,16 +211,19 @@ describe('Backtest — DumbStrategy on snapshot', () => {
       params: DUMB_CONFIG,
     } as StrategyConfig);
 
-    const marketStub = {
-      expirationMs: Date.now() + 24 * 60 * 60 * 1000,
-    } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    const market = buildTestMarket({
+      marketId,
+      instrumentId,
+      complementaryInstrumentId: snapshotComplementaryId!,
+      outcomeIndex: OUTCOME_INDEX,
+    });
 
     const regResult = await engine.scheduler.register({
       strategy,
       instrumentId,
       asset,
       accountId,
-      market: marketStub,
+      market,
     });
     expect(regResult.ok).toBe(true);
 

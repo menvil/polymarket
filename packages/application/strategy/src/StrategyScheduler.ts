@@ -2772,7 +2772,32 @@ export class StrategyScheduler {
   }
 }
 
-function normalizeCryptoAsset(symbolOrAsset: string | undefined): CryptoAssetId | undefined {
+/**
+ * Нормализует сырой символ крипто-серии в canonical `CryptoAssetId`
+ *
+ * @param symbolOrAsset - Сырой символ (`btc/usd`, `btc-usd`, `btcusdt`, `BTC`) либо `undefined`
+ * @returns `CryptoAssetId` (`btc`) либо `undefined`, если символ пустой или неразбираемый
+ * @throws Ничего не бросает
+ *
+ * @remarks
+ * Базовый актив — часть до разделителя (`/` или `-`); если разделителя нет —
+ * символ без хвоста `usd`/`usdt`/`usdc`.
+ *
+ * Экспортируется намеренно: тем же правилом должен пользоваться любой, кто
+ * собирает `Market.crypto.asset` для рынка, который регистрируется здесь же
+ * (`apps/bot/src/bot/buildCanonicalMarket.ts`). Своя копия алгоритма у
+ * вызывающего разошлась бы с планировщиком молча — `market.crypto.asset` и
+ * `StrategyEntry.cryptoAsset` указывали бы на разные активы без единой ошибки
+ * компиляции.
+ *
+ * @example
+ * ```typescript
+ * normalizeCryptoAsset('btc/usd'); // → 'btc'
+ * normalizeCryptoAsset('BTCUSDT'); // → 'btc'
+ * normalizeCryptoAsset(undefined); // → undefined
+ * ```
+ */
+export function normalizeCryptoAsset(symbolOrAsset: string | undefined): CryptoAssetId | undefined {
   if (!symbolOrAsset) return undefined;
   const normalized = symbolOrAsset.trim().toLowerCase();
   if (!normalized) return undefined;

@@ -1,50 +1,73 @@
 /**
- * @polymarket/market — Market entity package
+ * @polymarket/market — каноническая доменная сущность внешнего prediction market
  *
  * @remarks
- * Предоставляет доменную сущность Market для системы предсказательных рынков.
+ * Пакет владеет **единственным** каноническим представлением рынка на границе:
  *
- * ### Архитектура:
- * - **Market** — основная entity с lifecycle management
- * - **Value Objects** — MarketId (@polymarket/ids), OutcomeToken (@polymarket/value-objects),
- *   MarketSlug, MarketStatus, MarketState
- * - **Errors** — переехали в `@polymarket/errors/market` (re-exported отсюда для удобства)
- * - **View** — MarketViewModel (URL, toSnapshot), MarketParser (реконструкция из raw данных), MarketSnapshot (тип для сериализации)
- *
- * ### Импорт ошибок:
- * ```typescript
- * // Предпочтительный вариант — прямой импорт из sub-path:
- * import { MarketLifecycleError, MarketAlreadyClosedError } from '@polymarket/errors/market';
- *
- * // Или через этот пакет (re-export):
- * import { MarketLifecycleError } from '@polymarket/market';
+ * ```text
+ * Infrastructure   (vendor → canonical mapping)
+ *   ↓
+ * Domain Market    ← этот пакет
+ *   ↓
+ * Application
  * ```
+ *
+ * Внутри Domain и Application нет ни SDK-объектов, ни Gamma DTO, ни RTDS-сообщений,
+ * ни `Record<string, unknown>` vendor-payload'ов. Пакет не зависит ни от V2
+ * (`@polymarket/client` / `@polymarket/bindings`), ни от legacy V1.
+ *
+ * ### Состав
+ * - **Market** — entity: identity, структура, расписание, подтверждённое состояние;
+ * - **MarketTradingPolicy** — производная фаза `PRE_OPEN`/`OPEN`/`ENDED`/`CLOSED`/`RESOLVED`;
+ * - **Value Objects** — `MarketState`, `MarketOutcome`, `MarketFamily`
+ *   (`CRYPTO_UP_DOWN` со спецификацией `CryptoUpDownSpec` и `BINARY_OUTCOME` без неё),
+ *   `MarketDuration`, `MarketSlug`, `MarketStatus` (+ реэкспорт ID из `@polymarket/ids`);
+ * - **View** — `MarketViewModel` (снапшот/JSON), `MarketParser` (обратно), типы
+ *   `MarketSnapshot` (доменные типы) и `MarketJSON` (примитивы);
+ * - **Errors** — живут в `@polymarket/errors/market`, реэкспортированы для удобства.
+ *
+ * ### Что в Market намеренно не входит
+ * `liquidity`, `spread`, стакан, последняя сделка, текущая и референсная цены,
+ * RTDS-подписки. Это быстро меняющиеся наблюдения, а не identity/структура рынка —
+ * подробное обоснование в TSDoc `Market`.
  *
  * @example
  * ```typescript
  * import {
  *   Market,
  *   MarketState,
- *   unsafeMarketId,
- *   parseMarketSlug,
- *   MarketViewModel,
+ *   MarketTradingPolicy,
+ *   asMarketDuration,
  * } from '@polymarket/market';
- * import { OutcomeToken, BinaryOutcome } from '@polymarket/value-objects/outcome-token';
+ * import {
+ *   KnownVenues,
+ *   unsafeMarketId,
+ *   unsafeInstrumentId,
+ *   unsafeCryptoAssetId,
+ * } from '@polymarket/ids';
+ * import { TimestampService } from '@polymarket/timestamp';
  *
- * const result = Market.create({
- *   id: unsafeMarketId('market-abc'),
- *   slug: parseMarketSlug('will-trump-win')!,
- *   question: 'Will Trump win?',
- *   outcomes: [
- *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.UP), index: 0, name: 'Yes' },
- *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.DOWN), index: 1, name: 'No' },
- *   ],
- *   expirationMs: Date.now() + 86400000,
+ * const startsAt = TimestampService.fromISO('2026-09-01T12:00:00.000Z');
+ * const expiresAt = TimestampService.fromISO('2026-09-01T12:05:00.000Z');
+ * if (!startsAt.ok || !expiresAt.ok) throw new Error('bad schedule');
+ *
+ * const created = Market.create({
+ *   id: unsafeMarketId('btc-up-down-1200'),
+ *   venueId: KnownVenues.POLYMARKET,
+ *   question: 'Bitcoin Up or Down — 12:00 to 12:05?',
+ *   startsAt: startsAt.value,
+ *   expiresAt: expiresAt.value,
  *   state: MarketState.active(),
+ *   outcomes: [
+ *     { index: 0, label: 'Up', instrumentId: unsafeInstrumentId('7147') },
+ *     { index: 1, label: 'Down', instrumentId: unsafeInstrumentId('2299') },
+ *   ],
+ *   family: 'CRYPTO_UP_DOWN',
+ *   crypto: { asset: unsafeCryptoAssetId('btc'), duration: asMarketDuration(300_000)! },
  * });
  *
- * if (result.ok) {
- *   const url = MarketViewModel.getMarketUrl(result.value);
+ * if (created.ok) {
+ *   MarketTradingPolicy.getPhase(created.value, startsAt.value); // → 'OPEN'
  * }
  * ```
  *
@@ -52,35 +75,38 @@
  */
 
 // Entity
-export { Market, type Outcome, type MarketProps } from './Market.js';
-
-// Domain Notifications (notification events — не event sourcing)
-export {
-  type MarketNotification,
-  type MarketClosedNotification,
-  type MarketResolvedNotification,
-} from './MarketNotifications.js';
+export { Market, type MarketProps } from './Market.js';
 
 // Trading Policy
-export {
-  MarketTradingPolicy,
-  type TradingState,
-  type ForceCloseDecision,
-} from './MarketTradingPolicy.js';
+export { MarketTradingPolicy, type MarketPhase } from './MarketTradingPolicy.js';
 
 // Value Objects
 export {
   type MarketId,
   asMarketId,
   unsafeMarketId,
-  OutcomeToken,
-  OutcomeTokenSerializer,
-  type OutcomeTokenJSON,
+  type VenueId,
+  asVenueId,
+  isKnownVenue,
+  KnownVenues,
+  type InstrumentId,
+  asInstrumentId,
+  unsafeInstrumentId,
+  type CryptoAssetId,
+  asCryptoAssetId,
+  unsafeCryptoAssetId,
   type MarketSlug,
   parseMarketSlug,
   type MarketStatus,
   MARKET_STATUS_VALUES,
   isValidMarketStatus,
+  type MarketFamily,
+  MARKET_FAMILY_VALUES,
+  isValidMarketFamily,
+  type MarketDuration,
+  asMarketDuration,
+  type CryptoUpDownSpec,
+  type MarketOutcome,
   type OutcomeIndex,
   MarketState,
   isActive,
@@ -92,12 +118,18 @@ export {
 export {
   MarketValidationError,
   MarketLifecycleError,
-  MarketAlreadyClosedError,
   MarketAlreadyResolvedError,
-  MarketInvalidTransitionError,
 } from '@polymarket/errors/market';
 
 // View
 export { MarketViewModel } from './view/MarketViewModel.js';
-export { type MarketSnapshot } from './view/MarketSnapshot.js';
 export { MarketParser } from './view/MarketParser.js';
+export { type MarketSnapshot } from './view/MarketSnapshot.js';
+export {
+  type MarketJSON,
+  type MarketOutcomeJSON,
+  type MarketOutcomeIndexJSON,
+  type MarketStateJSON,
+  type MarketFamilyJSON,
+  type MarketCryptoSpecJSON,
+} from './view/MarketJSON.js';

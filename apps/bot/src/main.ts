@@ -68,6 +68,7 @@ import { SimpleBookRegistry } from './SimpleBookRegistry.js';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { parseConfig } from './config/parseConfig.js';
 import type { BotConfig } from './config/BotConfig.js';
+import { buildCanonicalMarket } from './bot/buildCanonicalMarket.js';
 import { buildCoreInfra } from './bot/buildCoreInfra.js';
 import { subscribeToOrderEvents } from './bot/buildEventLogger.js';
 import { buildRepositories } from './bot/buildRepositories.js';
@@ -2771,7 +2772,7 @@ async function runBacktest(): Promise<void> {
     process.exit(1);
   }
 
-  const { marketId, instrumentId, asset, rawMarket: snapshotRawMarket } = metaResult;
+  const { marketId, instrumentId, asset, rawMarket: snapshotRawMarket, complementaryInstrumentId } = metaResult;
 
   const replayClock = new ReplayClock(new Date(0));
   const infra = buildCoreInfra({ clock: replayClock, logLevel: LogLevel.INFO });
@@ -3007,15 +3008,45 @@ async function runBacktest(): Promise<void> {
   const expirationMs = snapshotEndDateMs && !Number.isNaN(snapshotEndDateMs)
     ? snapshotEndDateMs
     : Date.now() + 24 * 60 * 60 * 1000;
-  const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
 
   const eventStartMsResult = snapshotEventStartMs && !Number.isNaN(snapshotEventStartMs)
     ? TimestampService.create(snapshotEventStartMs)
     : undefined;
   const eventStartMs = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
 
+  // Канонический Market из meta снапшота: оба outcome-токена, расписание и
+  // (для крипто-рынков) спецификация серии. Стратегии читают
+  // `snapshot.market.outcomes`, поэтому заглушка здесь молча ломала определение
+  // стороны токена. Снапшот без крипто-метаданных даёт `BINARY_OUTCOME`,
+  // а не отказ: такой рынок торговался и обязан реплеиться.
+  const canonicalMarketResult = buildCanonicalMarket({
+    marketId,
+    question: typeof snapshotRawMarket?.['question'] === 'string' ? snapshotRawMarket['question'] : undefined,
+    instrumentId,
+    complementaryInstrumentId,
+    outcomeIndex,
+    expiresAtMs: expirationMs,
+    eventStartMs: snapshotEventStartMs !== undefined && !Number.isNaN(snapshotEventStartMs)
+      ? snapshotEventStartMs
+      : undefined,
+    crypto: backtestCryptoMeta
+      ? {
+        symbol: backtestCryptoMeta.rtdsFilter,
+        eventStartMs: backtestCryptoMeta.eventStartTimeMs,
+        eventEndMs: backtestCryptoMeta.endDateMs,
+      }
+      : undefined,
+  });
+  if (!canonicalMarketResult.ok) {
+    logger.fatal('Failed to build canonical market', {
+      marketId: String(marketId),
+      error: canonicalMarketResult.error.message,
+    });
+    process.exit(1);
+  }
+
   const regResult = await engine.scheduler.register({
-    strategy, instrumentId, asset, accountId, market: marketStub,
+    strategy, instrumentId, asset, accountId, market: canonicalMarketResult.value,
     cryptoSymbol: backtestCryptoMeta?.rtdsFilter,
     eventStartMs,
   });

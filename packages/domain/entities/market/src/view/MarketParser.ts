@@ -1,77 +1,122 @@
 /**
- * MarketParser — валидация raw данных и конвертация в доменно-типизированный MarketSnapshot
+ * MarketParser — валидация сериализованного канонического рынка и конвертация в MarketSnapshot
  *
  * @remarks
- * Первый шаг двухэтапного pipeline реконструкции:
- * `raw JSON → MarketParser.from() → MarketSnapshot → Market.fromSnapshot() → Market`
+ * Первый шаг двухэтапной реконструкции:
+ * ```text
+ * unknown serialized canonical market
+ *   ↓  MarketParser.from()      — структура, типы, конвертация примитивов в canonical VO
+ * MarketSnapshot
+ *   ↓  Market.fromSnapshot()    — доменные инварианты
+ * Market
+ * ```
  *
- * MarketParser отвечает за:
- * - Проверку структуры и типов полей
- * - Конвертацию примитивов в доменные типы (MarketId, MarketSlug, OutcomeToken, MarketState)
- * - НЕ знает доменных инвариантов (distinct tokens, valid names — это Market.create())
+ * ### Чего MarketParser НЕ знает
+ * ```text
+ * @polymarket/client   @polymarket/bindings   Gamma DTO   RTDS
+ * ```
+ * Он разбирает **нашу собственную** сериализацию canonical Market
+ * ({@link MarketJSON}) — из БД, кэша, файла снапшота. Маппинг vendor → Domain
+ * живёт в Infrastructure и в Domain не просачивается.
  *
- * ### Алгоритм валидации в from():
- * 1. Проверяем что raw — объект (не null, не массив)
- * 2. Валидируем id (строка, непустая) → конвертируем в MarketId
- * 3. Валидируем slug (URL-safe формат) → конвертируем в MarketSlug
- * 4. Валидируем question (непустая строка)
- * 5. Валидируем outcomes (массив из 2 элементов, каждый с валидным токеном) → OutcomeToken
- * 6. Проверяем expirationDate (ISO строка, парсируемая в Date) → expirationMs: number
- * 7. Парсим state (discriminated union) → MarketState
- * 8. Возвращаем Ok(MarketSnapshot) с доменными типами
+ * ### Разделение с Market.create()
+ * Парсер отвечает за «данные вообще пригодны к типизации»: строка ли `id`,
+ * число ли `startsAt`, известен ли `status`. Доменные инварианты (различимость
+ * исходов, `startsAt < expiresAt`) проверяет `Market.create()` — в одном месте
+ * и одинаково для парсинга и для первичного создания.
+ *
+ * ### Одно исключение: связка «семейство ↔ спецификация» проверяется дважды
+ * `Market.create()` — потому что это доменный инвариант и он обязан выполняться
+ * для любого способа создания. Парсер — потому что иначе `crypto` на
+ * `BINARY_OUTCOME` пришлось бы **молча отбросить**: снапшот дошёл бы до
+ * `Market.create()` уже без поля, и повреждение данных исчезло бы без следа.
+ * Дубль здесь намеренный и стоит своей цены: он превращает «тихую потерю» в
+ * `Err` с указанием поля.
  *
  * @example
  * ```typescript
  * import { MarketParser, Market } from '@polymarket/market';
  *
- * // Двухэтапный pipeline:
- * const snapshotResult = MarketParser.from(await db.findMarket(id));
+ * const snapshotResult = MarketParser.from(JSON.parse(stored));
  * if (!snapshotResult.ok) {
  *   logger.error('Corrupt market data', { error: snapshotResult.error.message });
  *   return;
  * }
  * const marketResult = Market.fromSnapshot(snapshotResult.value);
- * if (marketResult.ok) {
- *   console.log(marketResult.value.state.status);
- * }
  * ```
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { OutcomeTokenSerializer } from '@polymarket/value-objects/outcome-token';
-import { asMarketId, isValidMarketStatus, parseMarketSlug, MarketState } from '../value-objects/index.js';
+import { TimestampService } from '@polymarket/timestamp';
+import type { Timestamp } from '@polymarket/timestamp';
 import { MarketValidationError } from '@polymarket/errors/market';
+import {
+  asMarketId,
+  asVenueId,
+  asInstrumentId,
+  asCryptoAssetId,
+  asMarketDuration,
+  isValidMarketStatus,
+  isValidMarketFamily,
+  parseMarketSlug,
+  MarketState,
+  type MarketFamily,
+  type MarketOutcome,
+  type CryptoUpDownSpec,
+  type OutcomeIndex,
+} from '../value-objects/index.js';
 import { type MarketSnapshot } from './MarketSnapshot.js';
 
 /**
- * MarketParser — статический класс для реконструкции Market из raw данных
+ * MarketParser — статический класс реконструкции Market из сериализованных данных
  *
  * @remarks
- * Намеренно реализован как static-only класс.
+ * Намеренно реализован как static-only класс: чистые функции без состояния.
  */
 export class MarketParser {
+  /**
+   * Приватный конструктор — класс не предназначен для инстанциации
+   *
+   * @throws {Error} Всегда, при любой попытке создать экземпляр
+   */
   private constructor() {
     throw new Error('MarketParser is a static utility class and cannot be instantiated');
   }
 
   /**
-   * Валидирует raw данные и возвращает доменно-типизированный MarketSnapshot
+   * Валидирует сериализованный рынок и возвращает доменно-типизированный снапшот
    *
-   * @param raw - Неизвестный объект для парсинга (из БД, API, JSON.parse)
-   * @returns Result<MarketSnapshot, MarketValidationError>
+   * @param raw - Неизвестные данные (из БД, файла, `JSON.parse`)
+   * @returns `Result` с {@link MarketSnapshot} либо `MarketValidationError`
+   * @throws Ничего не бросает — все нарушения возвращаются как `Err`
    *
    * @remarks
-   * Выполняет всю конвертацию: примитивы → доменные типы.
-   * Для получения Market вызовите `Market.fromSnapshot(result.value)` следующим шагом.
+   * Алгоритм:
+   * 1. `raw` — не-null объект, не массив;
+   * 2. `id` → `MarketId`, `venueId` → `VenueId`, `slug` (если задан) → `MarketSlug`;
+   * 3. `question` — непустая строка (с `trim`);
+   * 4. `startsAt`/`expiresAt` — epoch milliseconds → `Timestamp`;
+   * 5. `outcomes` — ровно два элемента → `MarketOutcome` с `InstrumentId`;
+   * 6. `state` → `MarketState`;
+   * 7. `family` → `MarketFamily`; для `CRYPTO_UP_DOWN` обязателен `crypto` →
+   *    `CryptoUpDownSpec`, для остальных семейств `crypto` должен отсутствовать.
    *
    * @example
    * ```typescript
-   * const snapshotResult = MarketParser.from(JSON.parse(storedJson));
-   * if (!snapshotResult.ok) {
-   *   console.error(snapshotResult.error.message);
-   *   return;
-   * }
-   * const market = Market.fromSnapshot(snapshotResult.value);
+   * const result = MarketParser.from({
+   *   id: 'btc-up-down-1200',
+   *   venueId: 'POLYMARKET',
+   *   question: 'Bitcoin Up or Down?',
+   *   startsAt: 1_772_366_400_000,
+   *   expiresAt: 1_772_366_700_000,
+   *   state: { status: 'ACTIVE' },
+   *   outcomes: [
+   *     { index: 0, label: 'Up', instrumentId: '7147' },
+   *     { index: 1, label: 'Down', instrumentId: '2299' },
+   *   ],
+   *   family: 'CRYPTO_UP_DOWN',
+   *   crypto: { asset: 'btc', duration: 300_000 },
+   * });
    * ```
    */
   public static from(raw: unknown): Result<MarketSnapshot, MarketValidationError> {
@@ -85,185 +130,293 @@ export class MarketParser {
 
     const data = raw as Record<string, unknown>;
 
-    // id
+    // ── identity ────────────────────────────────────────────
     if (typeof data.id !== 'string') {
-      return Err(
-        new MarketValidationError('Market data: id must be a string', {
-          context: { field: 'id', type: typeof data.id },
-        })
-      );
+      return Err(new MarketValidationError('Market data: id must be a string', {
+        context: { field: 'id', type: typeof data.id },
+      }));
     }
     const marketId = asMarketId(data.id);
     if (!marketId) {
-      return Err(
-        new MarketValidationError('Market data: id must be a non-empty string', {
-          context: { field: 'id', value: data.id },
-        })
-      );
+      return Err(new MarketValidationError('Market data: id must be a non-empty string', {
+        context: { field: 'id', value: data.id },
+      }));
     }
 
-    // slug — делегируем parseMarketSlug для проверки формата
-    if (typeof data.slug !== 'string') {
-      return Err(
-        new MarketValidationError('Market data: slug must be a string', {
-          context: { field: 'slug', type: typeof data.slug },
-        })
-      );
+    if (typeof data.venueId !== 'string') {
+      return Err(new MarketValidationError('Market data: venueId must be a string', {
+        context: { field: 'venueId', type: typeof data.venueId },
+      }));
     }
-    const marketSlug = parseMarketSlug(data.slug);
-    if (!marketSlug) {
-      return Err(
-        new MarketValidationError(
+    const venueId = asVenueId(data.venueId);
+    if (!venueId) {
+      return Err(new MarketValidationError(
+        'Market data: venueId must contain only uppercase letters, digits and underscores',
+        { context: { field: 'venueId', value: data.venueId } }
+      ));
+    }
+
+    // slug необязателен: площадка может его не публиковать
+    let slug: MarketSnapshot['slug'];
+    if (data.slug !== undefined) {
+      if (typeof data.slug !== 'string') {
+        return Err(new MarketValidationError('Market data: slug must be a string when present', {
+          context: { field: 'slug', type: typeof data.slug },
+        }));
+      }
+      const parsed = parseMarketSlug(data.slug);
+      if (!parsed) {
+        return Err(new MarketValidationError(
           'Market data: slug must contain only lowercase letters, digits and hyphens',
           { context: { field: 'slug', value: data.slug } }
-        )
-      );
+        ));
+      }
+      slug = parsed;
     }
 
-    // question — trim перед валидацией и хранением для консистентности
     const question = typeof data.question === 'string' ? data.question.trim() : '';
     if (!question) {
-      return Err(
-        new MarketValidationError('Market data: question must be a non-empty string', {
-          context: { field: 'question', value: data.question },
-        })
-      );
+      return Err(new MarketValidationError('Market data: question must be a non-empty string', {
+        context: { field: 'question', value: data.question },
+      }));
     }
 
-    // outcomes
+    // ── schedule ────────────────────────────────────────────
+    const startsAtResult = MarketParser._parseTimestamp(data.startsAt, 'startsAt');
+    if (!startsAtResult.ok) return Err(startsAtResult.error);
+
+    const expiresAtResult = MarketParser._parseTimestamp(data.expiresAt, 'expiresAt');
+    if (!expiresAtResult.ok) return Err(expiresAtResult.error);
+
+    // ── outcomes ────────────────────────────────────────────
     if (!Array.isArray(data.outcomes) || data.outcomes.length !== 2) {
-      return Err(
-        new MarketValidationError('Market data: outcomes must be an array of exactly 2 elements', {
+      return Err(new MarketValidationError(
+        'Market data: outcomes must be an array of exactly 2 elements',
+        {
           context: {
             field: 'outcomes',
             length: Array.isArray(data.outcomes) ? data.outcomes.length : 'not array',
           },
-        })
-      );
+        }
+      ));
     }
 
-    const o0 = data.outcomes[0] as Record<string, unknown>;
-    if (!o0 || typeof o0 !== 'object' || Array.isArray(o0)) {
-      return Err(
-        new MarketValidationError('Market data: outcomes[0] must be an object', {
-          context: { field: 'outcomes[0]' },
-        })
-      );
-    }
-    const token0Result = OutcomeTokenSerializer.fromJSON(o0.token);
-    if (!token0Result.ok) {
-      return Err(
-        new MarketValidationError('Market data: outcomes[0].token is invalid', {
-          context: { field: 'outcomes[0].token', cause: token0Result.error.message },
-        })
-      );
-    }
-    if (typeof o0.name !== 'string' || o0.name.trim().length === 0) {
-      return Err(
-        new MarketValidationError('Market data: outcomes[0].name must be a non-empty string', {
-          context: { field: 'outcomes[0].name', value: o0.name },
-        })
-      );
-    }
+    const outcome0Result = MarketParser._parseOutcome(data.outcomes[0], 0);
+    if (!outcome0Result.ok) return Err(outcome0Result.error);
 
-    const o1 = data.outcomes[1] as Record<string, unknown>;
-    if (!o1 || typeof o1 !== 'object' || Array.isArray(o1)) {
-      return Err(
-        new MarketValidationError('Market data: outcomes[1] must be an object', {
-          context: { field: 'outcomes[1]' },
-        })
-      );
-    }
-    const token1Result = OutcomeTokenSerializer.fromJSON(o1.token);
-    if (!token1Result.ok) {
-      return Err(
-        new MarketValidationError('Market data: outcomes[1].token is invalid', {
-          context: { field: 'outcomes[1].token', cause: token1Result.error.message },
-        })
-      );
-    }
-    if (typeof o1.name !== 'string' || o1.name.trim().length === 0) {
-      return Err(
-        new MarketValidationError('Market data: outcomes[1].name must be a non-empty string', {
-          context: { field: 'outcomes[1].name', value: o1.name },
-        })
-      );
-    }
+    const outcome1Result = MarketParser._parseOutcome(data.outcomes[1], 1);
+    if (!outcome1Result.ok) return Err(outcome1Result.error);
 
-    // expirationDate → expirationMs
-    if (typeof data.expirationDate !== 'string') {
-      return Err(
-        new MarketValidationError('Market data: expirationDate must be an ISO date string', {
-          context: { field: 'expirationDate', type: typeof data.expirationDate },
-        })
-      );
-    }
-    const expirationMs = Date.parse(data.expirationDate);
-    if (isNaN(expirationMs)) {
-      return Err(
-        new MarketValidationError('Market data: expirationDate is not a valid ISO date string', {
-          context: { field: 'expirationDate', value: data.expirationDate },
-        })
-      );
-    }
-
-    // state
+    // ── state ───────────────────────────────────────────────
     const stateResult = MarketParser._parseState(data.state);
-    if (!stateResult.ok) {
-      return stateResult as Result<never, MarketValidationError>;
+    if (!stateResult.ok) return Err(stateResult.error);
+
+    // ── family + spec ───────────────────────────────────────
+    if (!isValidMarketFamily(data.family)) {
+      return Err(new MarketValidationError('Market data: family must be a known MarketFamily', {
+        context: { field: 'family', value: data.family },
+      }));
+    }
+    const family: MarketFamily = data.family;
+
+    let crypto: CryptoUpDownSpec | undefined;
+    if (family === 'CRYPTO_UP_DOWN') {
+      const cryptoResult = MarketParser._parseCryptoSpec(data.crypto);
+      if (!cryptoResult.ok) return Err(cryptoResult.error);
+      crypto = cryptoResult.value;
+    } else if (data.crypto !== undefined) {
+      // Не отбрасываем молча: crypto-спека на не-crypto семействе — это
+      // повреждённые данные, и `Market.create()` их тоже отвергнет.
+      return Err(new MarketValidationError(
+        `Market data: family ${family} must not carry a crypto spec`,
+        { context: { field: 'crypto', family } }
+      ));
     }
 
     return Ok({
       id: marketId,
-      slug: marketSlug,
+      venueId,
+      ...(slug !== undefined ? { slug } : {}),
       question,
-      outcomes: [
-        { token: token0Result.value, index: 0 as const, name: (o0.name as string).trim() },
-        { token: token1Result.value, index: 1 as const, name: (o1.name as string).trim() },
-      ] as const,
-      expirationMs,
+      startsAt: startsAtResult.value,
+      expiresAt: expiresAtResult.value,
       state: stateResult.value,
+      outcomes: [outcome0Result.value, outcome1Result.value] as const,
+      family,
+      ...(crypto !== undefined ? { crypto } : {}),
     });
   }
 
   /**
-   * Парсит state из raw объекта в MarketState
+   * Парсит epoch milliseconds в Timestamp
    *
-   * @param raw - Сырые данные для парсинга
-   * @returns Result<MarketState, MarketValidationError>
+   * @param raw - Сырое значение поля
+   * @param field - Имя поля для контекста ошибки
+   * @returns `Result` с `Timestamp` либо `MarketValidationError`
+   *
+   * @remarks
+   * Инварианты самого времени (конечность, знак, диапазон) проверяет
+   * `TimestampService.create()` — дублировать их здесь незачем. Оттуда же
+   * наследуется его канонический контракт: дробные миллисекунды обрезаются
+   * до целых, а не отклоняются. Свою сериализацию (`MarketViewModel.toJSON()`)
+   * это не затрагивает — `TimestampSerializer` всегда пишет целые.
+   */
+  private static _parseTimestamp(
+    raw: unknown,
+    field: string,
+  ): Result<Timestamp, MarketValidationError> {
+    if (typeof raw !== 'number') {
+      return Err(new MarketValidationError(
+        `Market data: ${field} must be epoch milliseconds as number`,
+        { context: { field, type: typeof raw } }
+      ));
+    }
+    const result = TimestampService.create(raw);
+    if (!result.ok) {
+      return Err(new MarketValidationError(
+        `Market data: ${field} is not a valid timestamp`,
+        { context: { field, value: raw, cause: result.error.message } }
+      ));
+    }
+    return Ok(result.value);
+  }
+
+  /**
+   * Парсит один исход рынка
+   *
+   * @param raw - Сырой элемент массива outcomes
+   * @param position - Ожидаемая позиция исхода (0 или 1)
+   * @returns `Result` с {@link MarketOutcome} либо `MarketValidationError`
+   *
+   * @remarks
+   * Позиция задаётся вызывающим и подставляется в `index`: порядок в массиве —
+   * и есть источник истины для индекса. Если сериализованный `index` ему
+   * противоречит, это повреждённые данные, и парсер сообщает об этом.
+   */
+  private static _parseOutcome(
+    raw: unknown,
+    position: OutcomeIndex,
+  ): Result<MarketOutcome, MarketValidationError> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return Err(new MarketValidationError(
+        `Market data: outcomes[${position}] must be an object`,
+        { context: { field: `outcomes[${position}]` } }
+      ));
+    }
+
+    const outcome = raw as Record<string, unknown>;
+
+    if (outcome.index !== position) {
+      return Err(new MarketValidationError(
+        `Market data: outcomes[${position}].index must be ${position}`,
+        { context: { field: `outcomes[${position}].index`, value: outcome.index } }
+      ));
+    }
+
+    if (typeof outcome.label !== 'string' || outcome.label.trim().length === 0) {
+      return Err(new MarketValidationError(
+        `Market data: outcomes[${position}].label must be a non-empty string`,
+        { context: { field: `outcomes[${position}].label`, value: outcome.label } }
+      ));
+    }
+
+    if (typeof outcome.instrumentId !== 'string') {
+      return Err(new MarketValidationError(
+        `Market data: outcomes[${position}].instrumentId must be a string`,
+        { context: { field: `outcomes[${position}].instrumentId`, type: typeof outcome.instrumentId } }
+      ));
+    }
+    const instrumentId = asInstrumentId(outcome.instrumentId);
+    if (!instrumentId) {
+      return Err(new MarketValidationError(
+        `Market data: outcomes[${position}].instrumentId is not a valid InstrumentId`,
+        { context: { field: `outcomes[${position}].instrumentId`, value: outcome.instrumentId } }
+      ));
+    }
+
+    return Ok({ index: position, label: outcome.label.trim(), instrumentId });
+  }
+
+  /**
+   * Парсит состояние рынка
+   *
+   * @param raw - Сырой объект state
+   * @returns `Result` с `MarketState` либо `MarketValidationError`
    */
   private static _parseState(raw: unknown): Result<MarketState, MarketValidationError> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return Err(
-        new MarketValidationError('Market data: state must be a non-null object', {
-          context: { field: 'state', type: typeof raw },
-        })
-      );
+      return Err(new MarketValidationError('Market data: state must be a non-null object', {
+        context: { field: 'state', type: typeof raw },
+      }));
     }
 
-    const s = raw as Record<string, unknown>;
+    const state = raw as Record<string, unknown>;
 
-    if (!isValidMarketStatus(s.status)) {
-      return Err(
-        new MarketValidationError(
-          'Market data: state.status must be one of ACTIVE, CLOSED, RESOLVED',
-          { context: { field: 'state.status', value: s.status } }
-        )
-      );
+    if (!isValidMarketStatus(state.status)) {
+      return Err(new MarketValidationError(
+        'Market data: state.status must be one of ACTIVE, CLOSED, RESOLVED',
+        { context: { field: 'state.status', value: state.status } }
+      ));
     }
 
-    if (s.status === 'ACTIVE') return Ok(MarketState.active());
-    if (s.status === 'CLOSED') return Ok(MarketState.closed());
+    if (state.status === 'ACTIVE') return Ok(MarketState.active());
+    if (state.status === 'CLOSED') return Ok(MarketState.closed());
 
-    if (s.resolvedOutcomeIndex !== 0 && s.resolvedOutcomeIndex !== 1) {
-      return Err(
-        new MarketValidationError(
-          'Market data: state.resolvedOutcomeIndex must be 0 or 1 for RESOLVED state',
-          { context: { field: 'state.resolvedOutcomeIndex', value: s.resolvedOutcomeIndex } }
-        )
-      );
+    if (state.resolvedOutcomeIndex !== 0 && state.resolvedOutcomeIndex !== 1) {
+      return Err(new MarketValidationError(
+        'Market data: state.resolvedOutcomeIndex must be 0 or 1 for RESOLVED state',
+        { context: { field: 'state.resolvedOutcomeIndex', value: state.resolvedOutcomeIndex } }
+      ));
     }
 
-    return Ok(MarketState.resolved(s.resolvedOutcomeIndex as 0 | 1));
+    return Ok(MarketState.resolved(state.resolvedOutcomeIndex));
+  }
+
+  /**
+   * Парсит спецификацию семейства `CRYPTO_UP_DOWN`
+   *
+   * @param raw - Сырой объект crypto
+   * @returns `Result` с {@link CryptoUpDownSpec} либо `MarketValidationError`
+   */
+  private static _parseCryptoSpec(
+    raw: unknown,
+  ): Result<CryptoUpDownSpec, MarketValidationError> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return Err(new MarketValidationError(
+        'Market data: crypto spec is required for family CRYPTO_UP_DOWN',
+        { context: { field: 'crypto', type: typeof raw } }
+      ));
+    }
+
+    const spec = raw as Record<string, unknown>;
+
+    if (typeof spec.asset !== 'string') {
+      return Err(new MarketValidationError('Market data: crypto.asset must be a string', {
+        context: { field: 'crypto.asset', type: typeof spec.asset },
+      }));
+    }
+    const asset = asCryptoAssetId(spec.asset);
+    if (!asset) {
+      return Err(new MarketValidationError(
+        'Market data: crypto.asset is not a valid CryptoAssetId',
+        { context: { field: 'crypto.asset', value: spec.asset } }
+      ));
+    }
+
+    if (typeof spec.duration !== 'number') {
+      return Err(new MarketValidationError(
+        'Market data: crypto.duration must be a number of milliseconds',
+        { context: { field: 'crypto.duration', type: typeof spec.duration } }
+      ));
+    }
+    const duration = asMarketDuration(spec.duration);
+    if (duration === undefined) {
+      return Err(new MarketValidationError(
+        'Market data: crypto.duration must be a positive integer number of milliseconds',
+        { context: { field: 'crypto.duration', value: spec.duration } }
+      ));
+    }
+
+    return Ok({ asset, duration });
   }
 }
