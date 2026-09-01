@@ -1,390 +1,396 @@
-# Market Entity
+# Canonical Market Entity
 
 ## Обзор
 
-Market — неизменяемая доменная сущность, представляющая бинарный рынок предсказаний в системе Polymarket.
+`Market` — единственное каноническое доменное представление **наблюдаемого внешнего
+prediction market**. Это граница между инфраструктурой и приложением:
+
+```text
+Polymarket V2 client/bindings   (@polymarket/client, @polymarket/bindings)
+  ↓
+Infrastructure mapping           (vendor → canonical)
+  ↓
+Domain Market                    ← этот пакет
+  ↓
+Application
+```
+
+Ниже границы живут vendor-типы (V2 client/bindings, Gamma DTO, RTDS-сообщения). Выше —
+только canonical value objects. Domain Market не зависит ни от V2, ни от legacy V1.
+
+> **V1/V2.** `@polymarket/client` и `@polymarket/bindings` — это V2 client/bindings нового
+> контура, а не «official SDK». Domain Market не зависит ни от одного из них.
 
 ## Структура пакета
 
-```
+```text
 packages/domain/entities/market/
 └── src/
-    ├── Market.ts                    # Entity (FSM + lifecycle)
-    ├── MarketNotifications.ts       # Notification events (не event sourcing)
-    ├── MarketTradingPolicy.ts       # TradingState + бизнес-правила операций
+    ├── Market.ts                    # Entity: identity, структура, расписание, состояние
+    ├── MarketTradingPolicy.ts       # Производная фаза рынка (не хранится)
     ├── value-objects/
-    │   ├── MarketSlug.ts            # URL-safe branded type (a-z0-9-)
+    │   ├── MarketState.ts           # ACTIVE | CLOSED | RESOLVED + переходы-наблюдения
     │   ├── MarketStatus.ts          # 'ACTIVE' | 'CLOSED' | 'RESOLVED'
-    │   ├── MarketState.ts           # Discriminated union + FSM-переходы + type guards
+    │   ├── MarketOutcome.ts         # index + label + InstrumentId
+    │   ├── MarketFamily.ts          # 'CRYPTO_UP_DOWN'
+    │   ├── MarketSpec.ts            # CryptoUpDownSpec (asset + duration)
+    │   ├── MarketDuration.ts        # Номинальная длительность серии (branded ms)
+    │   ├── MarketSlug.ts            # URL-safe branded type (a-z0-9-)
     │   └── index.ts
     ├── view/
-    │   ├── MarketSnapshot.ts        # Plain-object тип для сериализации
-    │   ├── MarketParser.ts          # Реконструкция Market из raw данных
-    │   └── MarketViewModel.ts       # Presentation: URL, toSnapshot
+    │   ├── MarketSnapshot.ts        # Доменно-типизированный data carrier
+    │   ├── MarketJSON.ts            # Сериализованная форма (примитивы)
+    │   ├── MarketParser.ts          # unknown JSON → MarketSnapshot
+    │   └── MarketViewModel.ts       # Market → snapshot / JSON
     └── index.ts
 ```
 
-> **Branded types из других пакетов:**
->
-> - `MarketId` — из `@polymarket/ids`
-> - `OutcomeToken` — из `@polymarket/value-objects/outcome-token`
-> - Ошибки — из `@polymarket/errors/market` (re-exported)
+> **Идентификаторы из `@polymarket/ids`:** `MarketId`, `VenueId`, `InstrumentId`,
+> `CryptoAssetId`. Ошибки — из `@polymarket/errors/market` (реэкспортированы пакетом).
+
+---
+
+## Контракт Market
+
+```typescript
+class Market {
+  readonly id: MarketId;
+  readonly venueId: VenueId;
+  readonly slug?: MarketSlug;
+  readonly question: string;
+
+  readonly startsAt: Timestamp;
+  readonly expiresAt: Timestamp;
+
+  readonly state: MarketState;                              // ACTIVE | CLOSED | RESOLVED
+  readonly outcomes: readonly [MarketOutcome, MarketOutcome];
+  readonly family: MarketFamily;                            // 'CRYPTO_UP_DOWN'
+  readonly crypto?: CryptoUpDownSpec;                       // { asset, duration }
+
+  get resolvedOutcome(): MarketOutcome | undefined;
+
+  // Расписание — детерминированно, без wall clock
+  isStartedAt(now: Timestamp): boolean;
+  isExpiredAt(now: Timestamp): boolean;
+  timeToStartAt(now: Timestamp): Decimal;
+  timeToExpiryAt(now: Timestamp): Decimal;
+  duration(): Decimal;
+
+  // Предикаты состояния
+  isActive(): boolean;
+  isClosed(): boolean;
+  isResolved(): boolean;
+
+  // Фиксация внешних наблюдений
+  markClosed(): Result<Market, MarketAlreadyClosedError | MarketAlreadyResolvedError>;
+  markResolved(index: OutcomeIndex): Result<Market, MarketValidationError | ...>;
+
+  equals(other: Market): boolean;   // venueId + id
+  toString(): string;
+}
+```
 
 ---
 
 ## Почему так сделано?
 
-### 1. Immutability через `expirationMs: number`
+### 1. Market — наблюдение, а не команда
 
-**Проблема**: `expirationDate: Date` — мутабельный объект. Внешний код мог изменить дату через ссылку.
+`Market` представляет то, что мы **видим у площадки**. Мы не открываем и не закрываем
+внешний рынок. Отсюда:
 
-**Решение**: хранить `_expirationMs: number`, getter `expirationDate` возвращает `new Date(...)` — копию каждый раз.
+- методы переходов называются `markClosed()` / `markResolved()`, а не `close()` / `resolve()`;
+- `MarketState` — «подтверждённое внешнее состояние», а не «состояние, которым мы управляем»;
+- никакого `forceClose`: административного сценария «закрыть чужой рынок» не существует.
 
-### 2. `MarketState` discriminated union
+### 2. Что в Market НЕ входит
 
-**Проблема**: `status: string` + `resolvedOutcomeIndex: number | null` допускали невозможные состояния.
+```text
+liquidity   spread   orderbook   last trade   current price   reference price
+RTDS-подписки   Gamma Market/Event   SDK-объекты   Record<string, unknown> payloads
+```
 
-**Решение**: Discriminated union — `resolvedOutcomeIndex` существует ТОЛЬКО в `RESOLVED`:
+**Причина:** это быстро меняющиеся наблюдаемые метрики и состояние рынка, а не его
+identity/структура. Хранить их в entity значит либо пересоздавать `Market` на каждый тик
+стакана, либо держать в нём устаревшие значения. Стакан живёт в `@polymarket/orderbook`,
+лента — в `@polymarket/trade-tape`, топ книги — в `StrategySnapshot.topOfBook`,
+`spread`/`liquidity` кандидатов — в `DiscoveredMarket` (application-порт discovery).
+
+Отдельный runtime `MarketMetrics` в этом MR **не заводится**: ни одному существующему
+контракту он не нужен, а тип без потребителя — это dead code.
+
+### 3. Один outcome → одна canonical instrument identity
 
 ```typescript
-type MarketState =
-  | { status: 'ACTIVE' }
-  | { status: 'CLOSED' }
-  | { status: 'RESOLVED'; resolvedOutcomeIndex: 0 | 1 }; // только здесь!
+interface MarketOutcome {
+  readonly index: OutcomeIndex;      // 0 | 1
+  readonly label: string;            // 'Up' / 'Down'
+  readonly instrumentId: InstrumentId;
+}
 ```
 
-### 3. FSM в `MarketState` namespace, не в Entity
+Раньше исход нёс `OutcomeToken` — on-chain identity (`conditionRef` + `outcomeKey` →
+`AssetId`). Это делало Domain Market пригодным только для on-chain площадок: `OutcomeToken`
+по своему контракту существует лишь для tokenized positions, а у Kalshi и любой off-chain
+площадки таких токенов нет.
 
-**Проблема**: Entity знала правила FSM-переходов — нарушение SRP.
+Весь новый market-data контур (`Orderbook`, `TradeTape`, semantic-адаптеры,
+`StrategySnapshot`, `Portfolio.getPosition`) адресует исход по `InstrumentId`. Держать
+рядом обязательные `token` и `instrumentId` означало бы две параллельные canonical identity
+одной сущности. Поэтому canonical owner identity исхода — `InstrumentId`.
 
-**Решение**: `MarketState.close(state)` и `MarketState.resolve(state, index)` содержат всю логику переходов. Entity делегирует:
+`OutcomeToken` остаётся тем, чем он и является: on-chain-специфичным VO расчётного контура
+(`@polymarket/value-objects/outcome-token`, потребитель — `TokenBalance`). Из `Market` он
+удалён, из репозитория — нет.
+
+### 4. Расписание через `Timestamp`, без wall clock
+
+`startsAt` и `expiresAt` — `Timestamp`, а не bare `number`. Все временные методы принимают
+момент наблюдения параметром: внутри `Market` нет ни одного `Date.now()`. «Сейчас»
+вызывающий берёт из инжектированного `IClock`, поэтому live и backtest используют
+**одну и ту же** entity.
+
+Разницы возвращаются как `Decimal` через `Timestamp.diffMs` — по
+`docs/architecture/boundary-contract.md`, Решение 3 («длительность = разница двух Timestamp
+→ `Timestamp.diffMs`, не ручное `a.toNumber() - b.toNumber()`»).
+
+Инвариант: `startsAt < expiresAt` строго.
+
+### 5. Истечение срока не меняет состояние
+
+Один и тот же `ACTIVE`-рынок может быть:
+
+```text
+до startsAt                              — опубликован, торги не начались
+между startsAt и expiresAt               — идёт
+после expiresAt, площадка молчит         — расписание истекло, vendor всё ещё ACTIVE
+```
+
+Поэтому `ACTIVE → CLOSED` происходит **только** после подтверждения площадкой. Автоматической
+мутации по таймеру нет — иначе наше состояние расходилось бы с источником.
+
+### 6. Фаза вычисляется, а не хранится
 
 ```typescript
-// В Market.close():
-const nextStateResult = MarketState.close(this.state, { marketId: this.id });
-// ↑ MarketState знает что можно, что нельзя — Market не знает,
-//   только пробрасывает Result наверх (см. п.5)
+type MarketPhase = 'PRE_OPEN' | 'OPEN' | 'ENDED' | 'CLOSED' | 'RESOLVED';
+
+MarketTradingPolicy.getPhase(market, now);
 ```
 
-### 4. Expiration — ответственность `MarketTradingPolicy`
+| Фаза | `market.state` | Расписание | Что делает runtime |
+|---|---|---|---|
+| `PRE_OPEN` | ACTIVE | `now < startsAt` | можно подписываться на маркет-данные |
+| `OPEN` | ACTIVE | `startsAt ≤ now < expiresAt` | рынок идёт, стратегия торгует |
+| `ENDED` | ACTIVE | `now ≥ expiresAt` | стратегия не торгует; vendor ещё ACTIVE |
+| `CLOSED` | CLOSED | не влияет | подтверждено: отменить ордера, ждать исход |
+| `RESOLVED` | RESOLVED | не влияет | исход объявлен: settlement |
 
-**Проблема**: Архитектурная неопределённость — где проверяется истечение срока? В entity или снаружи?
+`PRE_OPEN`/`OPEN`/`ENDED` не попадают в хранимый `MarketState`: они меняются от одного лишь
+хода часов, без внешнего наблюдения. Храни мы их в entity — пришлось бы пересоздавать
+`Market` по таймеру, и любая копия мгновенно устаревала бы.
 
-**Решение**: `Market` — только FSM. Бизнес-правила (когда именно допустим переход по времени) — в `MarketTradingPolicy`:
+### 7. FSM живёт в `MarketState`, не в entity
 
-| Вопрос | Ответственный |
-|--------|--------------|
-| `ACTIVE → CLOSED` допустим? (FSM) | `MarketState.close()` |
-| Рынок уже истёк? (query) | `market.isExpiredAt(nowMs)` |
-| В каком торговом состоянии рынок? (policy) | `MarketTradingPolicy.getTradingState(market, nowMs)` |
-| Можно ли досрочно закрыть? (policy) | `MarketTradingPolicy.evaluateForceClose(market)` |
-
-### 5. Lifecycle методы возвращают Result (пересмотрено в Этапе 3 миграции)
-
-**Было** (до Этапа 3 плана миграции `docs/architecture/boundary-contract.md`): `close()` и
-`resolve()` бросали конкретные подклассы `MarketLifecycleError` — обоснование было в том,
-что это сигнализирует "ты вызвал метод в неверном состоянии — это баг в коде" (различение
-programmer error vs expected failure).
-
-**Стало**: throw заменён на `Result` — по ADR (`docs/architecture/boundary-contract.md`,
-Решение 2) throw легитимен только внутри `packages/domain/value-objects`; ADR имеет
-приоритет над локальным pre-ADR обоснованием пакета. Конверсия была полностью inert для
-прода — на момент миграции ни один реальный вызывающий код нигде в репозитории не вызывал
-`Market.close()`/`Market.resolve()` (только `type`-импорт `Market` как поля данных в
-`StrategyScheduler`/`StrategySnapshot`).
-
+```typescript
+// В Market.markClosed():
+const next = MarketState.markClosed(this.state, { marketId: this.id, venueId: this.venueId });
+// ↑ MarketState знает правила; Market только пробрасывает Result наверх
 ```
+
+Переходы возвращают `Result`, а не бросают — по
+`docs/architecture/boundary-contract.md`, Решение 2 (throw легитимен только внутри
+`packages/domain/value-objects`).
+
+```text
 MarketLifecycleError
-├── MarketAlreadyClosedError     (close() на CLOSED/RESOLVED)
-├── MarketAlreadyResolvedError   (resolve() на RESOLVED, close() на RESOLVED)
-└── MarketInvalidTransitionError (resolve() на ACTIVE — нужно сначала close())
+├── MarketAlreadyClosedError     markClosed() на CLOSED
+├── MarketAlreadyResolvedError   любой переход из RESOLVED
+└── MarketInvalidTransitionError markResolved() на ACTIVE — сначала фиксируется закрытие
 ```
 
-`MarketState.close()`/`MarketState.resolve()` (FSM-уровень) и `Market.close()`/
-`Market.resolve()` (entity-уровень) оба возвращают `Result` — `Market` не разворачивает
-Result от `MarketState` обратно в throw, а пробрасывает его наверх без изменений.
+Повторное наблюдение закрытия — это `Err`, а не no-op: «закрыт» второй раз означает
+рассинхрон источника, и вызывающий должен это увидеть.
 
-### 6. Notification Events (Outbox pattern)
-
-`close(nowMs)` и `resolve(index, nowMs)` эмитируют уведомления в буфер. Application-слой вызывает `pullNotifications()` и публикует в event bus.
+### 8. Семейство рынка и его спецификация
 
 ```typescript
-const closeResult = market.close(Date.now());
-if (closeResult.ok) {
-  const notifications = closeResult.value.pullNotifications(); // [MarketClosedNotification]
-  await eventBus.publish(notifications);
+type MarketFamily = 'CRYPTO_UP_DOWN';
+
+interface CryptoUpDownSpec {
+  readonly asset: CryptoAssetId;     // 'btc'
+  readonly duration: MarketDuration; // 300_000 — номинал 5-минутной серии
 }
 ```
 
-Типы именуются с суффиксом `Notification` — явное разграничение с event-sourcing events.
-Общий тип: `MarketNotification` (discriminated union).
+`MarketFamily` — закрытый union, а не branded string: каждое семейство требует своей
+доменной спецификации и своей ветки в маппинге Infrastructure, и неизвестное семейство
+интерпретировать невозможно. Добавление второго семейства — новый литерал здесь, новый
+интерфейс спецификации и новое поле рядом с `crypto`; компилятор покажет все непокрытые
+места.
 
-### 7. TradingState — решения вместо boolean-проверок
+`crypto.duration` (номинал серии) и `market.duration()` (фактический интервал расписания) —
+разные величины. Обычно совпадают, но площадка может сдвинуть окно конкретного рынка на
+секунды, оставив его в той же 5-минутной серии. `Market.create()` их на равенство **не**
+проверяет — иначе реальный рынок со сдвинутым окном стало бы невозможно описать.
 
-`MarketTradingPolicy.getTradingState(market, nowMs)` возвращает одно из четырёх состояний вместо 3–4 отдельных boolean-вызовов:
+### 9. Notifications удалены
 
-```typescript
-type TradingState = 'TRADING' | 'EXPIRED' | 'CLOSED' | 'RESOLVED'
-```
+Старый пакет держал notification outbox: `close()`/`resolve()` складывали
+`MarketClosedNotification`/`MarketResolvedNotification` в буфер, а `pullNotifications()`
+его забирал. В новой модели механизм удалён по трём причинам сразу:
 
-Exhaustive switch гарантирует покрытие всех состояний на уровне компилятора.
+1. **Нет потребителей.** Repo-wide поиск `pullNotifications` за пределами самого пакета не
+   находит ничего: никто не забирал буфер и никто эти уведомления не публиковал.
+2. **Дублирование существующего application-контура.** `MARKET_CLOSED` уже существует как
+   `MarketClosedEvent` в `@polymarket/application-events` — canonical envelope M-003
+   (`{ type, payload, metadata }`) с causal chain, runtime identity и ordering. Доменный
+   plain-объект этих гарантий дать не может, а два параллельных «события закрытия рынка» —
+   это ровно тот третий шинный контур, которого архитектура избегает.
+3. **Мутация иммутабельной entity.** Буфер требовал изменяемого массива внутри полностью
+   readonly-объекта, а `pullNotifications()` был мутирующим методом на «неизменяемой»
+   сущности. После перехода к наблюдательной семантике это стало и содержательно неверным:
+   `occurredAt` уведомления — время **нашего наблюдения**, а не время закрытия рынка на
+   площадке; публиковать его как доменный факт было бы неточно.
 
-### 8. Parser → Snapshot → Aggregate pipeline
+Публикация событий жизненного цикла рынка — ответственность application-слоя, который
+знает и причину (`MarketCloseReason`), и реализованный PnL, и корректную metadata.
 
-**Проблема**: Если `MarketParser.from(raw)` сразу возвращает `Market`, он знает доменные инварианты (distinct tokens и т.д.) — нарушение SRP. Parser должен только валидировать форму данных.
+### 10. Presentation: почему больше нет `getMarketUrl()`
 
-**Решение**: `MarketSnapshot` — доменно-типизированный data carrier (`MarketId`, `OutcomeToken`, `MarketState`, `expirationMs: number`). Parser делает всю конвертацию, `fromSnapshot()` = `Market.create(snapshot)`.
-
-| Шаг | Метод | Ответственность |
-|-----|-------|-----------------|
-| 1 | `MarketParser.from(raw)` | `unknown → Result<MarketSnapshot>` — валидация + конвертация в доменные типы |
-| 2 | `Market.fromSnapshot(snapshot)` | `MarketSnapshot → Result<Market>` — доменные инварианты через create() |
-| — | `MarketViewModel.toSnapshot(market)` | `Market → MarketSnapshot` — тривиальное копирование полей |
-
-```
-raw JSON
-  ↓ MarketParser.from()          ← валидация структуры + конвертация в доменные типы
-MarketSnapshot (доменные типы)
-  ↓ Market.fromSnapshot()        ← применение доменных инвариантов (= create())
-Market
-
-// Round-trip (in-memory, без MarketParser):
-Market
-  ↓ MarketViewModel.toSnapshot() ← тривиальное копирование полей
-MarketSnapshot (доменные типы)
-  ↓ Market.fromSnapshot()        ← применение доменных инвариантов (= create())
-Market
-```
-
----
-
-## Жизненный цикл
-
-```
-ACTIVE → CLOSED → RESOLVED
-```
-
-| Переход | Entity метод | `Err(...)` при нарушении FSM |
-|---------|-------------|------------|
-| ACTIVE → CLOSED | `market.close(nowMs)` | `MarketAlreadyClosedError`, `MarketAlreadyResolvedError` |
-| CLOSED → RESOLVED | `market.resolve(index, nowMs)` | `MarketAlreadyResolvedError`, `MarketInvalidTransitionError` |
+Метод собирал `https://polymarket.com/event/{slug}` — зашивал в generic domain entity знание
+о конкретной площадке и о том, что слаг вообще есть. После перевода `Market` на `venueId` +
+необязательный `slug` это стало прямым противоречием модели: у Kalshi-рынка такого URL не
+существует. Построение ссылок — задача presentation-слоя конкретной площадки. Потребителей
+у метода не было, поэтому он удалён, а не перенесён.
 
 ---
 
-## Примеры использования
+## Сериализация
 
-### Создание рынка
+Два разных представления, оба нужны:
+
+```text
+MarketSnapshot — доменные типы (Timestamp, InstrumentId, MarketState), in-memory
+MarketJSON     — примитивы (number, string), БД / кэш / сеть
+```
+
+```text
+Market ──MarketViewModel.toSnapshot()──▶ MarketSnapshot ──Market.fromSnapshot()──▶ Market
+Market ──MarketViewModel.toJSON()─────▶ MarketJSON ──MarketParser.from()──▶ MarketSnapshot
+```
+
+`MarketParser` принимает `unknown` и не знает ни `@polymarket/client`, ни
+`@polymarket/bindings`, ни Gamma DTO, ни RTDS. Он разбирает **нашу собственную**
+сериализацию canonical Market. Vendor → Domain маппинг живёт в Infrastructure.
+
+**Граница ответственности:** парсер отвечает за «данные пригодны к типизации» (строка ли
+`id`, число ли `startsAt`, известен ли `status`). Доменные инварианты (различимость исходов,
+`startsAt < expiresAt`, обязательность crypto-спецификации) проверяет `Market.create()` — в
+одном месте и одинаково для парсинга и первичного создания.
+
+---
+
+## Примеры
+
+### Создание canonical рынка
 
 ```typescript
-import { Market, MarketState, unsafeMarketId, parseMarketSlug } from '@polymarket/market';
-import { OutcomeToken, BinaryOutcome } from '@polymarket/value-objects/outcome-token';
+import { Market, MarketState, MarketTradingPolicy, asMarketDuration } from '@polymarket/market';
+import { KnownVenues, unsafeMarketId, unsafeInstrumentId, unsafeCryptoAssetId } from '@polymarket/ids';
+import { TimestampService } from '@polymarket/timestamp';
 
-const conditionRef = {
-  kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
-  chainId: 137,
-  conditionId: '0xabc...',
-};
+const startsAt = TimestampService.fromISO('2026-09-01T12:00:00.000Z');
+const expiresAt = TimestampService.fromISO('2026-09-01T12:05:00.000Z');
+if (!startsAt.ok || !expiresAt.ok) throw new Error('bad schedule');
 
-const result = Market.create({
-  id: unsafeMarketId('market-abc'),
-  slug: parseMarketSlug('will-trump-win-2024')!,
-  question: 'Will Trump win the 2024 election?',
-  outcomes: [
-    { token: OutcomeToken.of(conditionRef, BinaryOutcome.UP), index: 0, name: 'Yes' },
-    { token: OutcomeToken.of(conditionRef, BinaryOutcome.DOWN), index: 1, name: 'No' },
-  ],
-  expirationMs: Date.parse('2024-11-05T00:00:00Z'),
+const created = Market.create({
+  id: unsafeMarketId('btc-up-down-1200'),
+  venueId: KnownVenues.POLYMARKET,
+  question: 'Bitcoin Up or Down — 12:00 to 12:05?',
+  startsAt: startsAt.value,
+  expiresAt: expiresAt.value,
   state: MarketState.active(),
+  outcomes: [
+    { index: 0, label: 'Up', instrumentId: unsafeInstrumentId('71476031705491') },
+    { index: 1, label: 'Down', instrumentId: unsafeInstrumentId('22993088410122') },
+  ],
+  family: 'CRYPTO_UP_DOWN',
+  crypto: { asset: unsafeCryptoAssetId('btc'), duration: asMarketDuration(5 * 60_000)! },
 });
-
-if (result.ok) {
-  const market = result.value;
-  console.log(market.id, market.state.status); // 'market-abc', 'ACTIVE'
-}
 ```
 
-### Policy: торговые решения через TradingState
+### Фаза без мутации Market
 
 ```typescript
-import { MarketTradingPolicy } from '@polymarket/market';
+const market = created.value;
 
-const now = Date.now();
+MarketTradingPolicy.getPhase(market, at('11:59')); // → 'PRE_OPEN'
+MarketTradingPolicy.getPhase(market, at('12:02')); // → 'OPEN'
+MarketTradingPolicy.getPhase(market, at('12:05')); // → 'ENDED'
 
-// Единственная точка входа для торговых решений:
-switch (MarketTradingPolicy.getTradingState(market, now)) {
-  case 'TRADING':
-    await orderService.accept(order);
-    break;
-  case 'EXPIRED':
-    // рынок активен, но истёк — пора закрывать
-    const closeResult = market.close(now);
-    if (closeResult.ok) {
-      await eventBus.publish(closeResult.value.pullNotifications());
-    }
-    break;
-  case 'CLOSED':
-    // ждём результата от оракула
-    break;
-  case 'RESOLVED':
-    await settlement.process(market);
-    break;
-}
-
-// Досрочное закрытие (admin/dispute — без проверки expiration)
-const decision = MarketTradingPolicy.evaluateForceClose(market);
-if (decision.allowed) {
-  const closeResult = market.close(now);
-  if (closeResult.ok) {
-    await eventBus.publish(closeResult.value.pullNotifications());
-  }
-} else {
-  logger.warn('Force-close rejected', { reason: decision.reason });
-}
+market.state.status; // всё ещё 'ACTIVE' — фаза нигде не сохранена
 ```
 
-### Lifecycle переходы
+### Фиксация внешних наблюдений
 
 ```typescript
-import {
-  MarketAlreadyClosedError,
-  MarketInvalidTransitionError,
-} from '@polymarket/errors/market';
-
-const now = Date.now();
-const closeResult = market.close(now); // ACTIVE → CLOSED
-if (!closeResult.ok) {
-  throw closeResult.error; // или обработать явно
-}
-const closed = closeResult.value;
-
-const resolveResult = closed.resolve(0, now); // CLOSED → RESOLVED
-if (resolveResult.ok) {
-  const resolved = resolveResult.value;
-}
-
-// FSM guard:
-const invalidResult = market.resolve(0, now); // Err: нельзя resolve из ACTIVE
-if (!invalidResult.ok && invalidResult.error instanceof MarketInvalidTransitionError) {
-  console.log(invalidResult.error.message); // 'Cannot resolve an active market. Call close() first.'
-  console.log(invalidResult.error.context?.currentStatus); // 'ACTIVE'
-}
-```
-
-### Notifications (Outbox pattern)
-
-```typescript
-const now = Date.now();
-
-// close() эмитирует MarketClosedNotification (при успехе — Ok)
-const closeResult = market.close(now);
-if (!closeResult.ok) throw closeResult.error;
-const closed = closeResult.value;
-const closeNotifications = closed.pullNotifications();
-// [{ type: 'MARKET_CLOSED', marketId, slug, occurredAt: now }]
-
-// resolve() эмитирует MarketResolvedNotification (при успехе — Ok)
-const resolveResult = closed.resolve(0, now);
-if (!resolveResult.ok) throw resolveResult.error;
-const resolved = resolveResult.value;
-const resolveNotifications = resolved.pullNotifications();
-// [{ type: 'MARKET_RESOLVED', marketId, slug, resolvedOutcomeIndex: 0, occurredAt: now }]
-
-// pullNotifications() очищает буфер
-resolved.pullNotifications(); // []
-
-// create() и Market.fromSnapshot() НЕ эмитируют уведомлений (восстановление ≠ бизнес-событие)
-```
-
-### Сериализация и реконструкция
-
-```typescript
-import { Market, MarketViewModel, MarketParser } from '@polymarket/market';
-
-// Market → snapshot (для БД / API / Redis)
-const snapshot = MarketViewModel.toSnapshot(market);
-await db.save(snapshot);
-
-// snapshot → Market (двухэтапный pipeline)
-const raw = await db.load(id);
-
-// Шаг 1: валидация структуры
-const snapshotResult = MarketParser.from(raw);
-if (!snapshotResult.ok) {
-  logger.error('Corrupt market data', { error: snapshotResult.error.message });
+const closed = market.markClosed();          // площадка подтвердила закрытие
+if (!closed.ok) {
+  logger.warn('Close observation rejected', { code: closed.error.name });
   return;
 }
 
-// Шаг 2: реконструкция domain entity
-const marketResult = Market.fromSnapshot(snapshotResult.value);
-if (marketResult.ok) {
-  console.log(marketResult.value.state.status); // 'ACTIVE'
+const resolved = closed.value.markResolved(0); // объявлен победивший исход
+if (resolved.ok) {
+  settlement.payout(resolved.value.resolvedOutcome!.instrumentId);
 }
-
-// URL
-const url = MarketViewModel.getMarketUrl(market);
-// → 'https://polymarket.com/event/will-trump-win-2024'
 ```
 
-### Тестируемость без `Date.now()`
+### Round-trip через сериализацию
 
 ```typescript
-// Всё детерминировано — nowMs всегда явный параметр
-const EXPIRY = 1_000_000;
-const market = Market.create({ ..., expirationMs: EXPIRY }).value!;
+const wire = JSON.parse(JSON.stringify(MarketViewModel.toJSON(market)));
 
-// Queries:
-expect(market.isExpiredAt(500_000)).toBe(false);
-expect(market.isExpiredAt(1_000_000)).toBe(true);
-expect(market.timeToExpiryAt(800_000)).toBe(200_000);
+const snapshot = MarketParser.from(wire);
+if (!snapshot.ok) return;
 
-// Policy (nowMs явно):
-expect(MarketTradingPolicy.getTradingState(market, 500_000)).toBe('TRADING');
-expect(MarketTradingPolicy.getTradingState(market, 1_000_000)).toBe('EXPIRED');
-
-// Notifications (nowMs явно):
-const closeResult = market.close(1_000_000);
-if (closeResult.ok) {
-  expect(closeResult.value.pullNotifications()[0].occurredAt).toBe(1_000_000);
-}
+const restored = Market.fromSnapshot(snapshot.value);
 ```
 
 ---
 
-## MarketState — FSM namespace
+## Тесты
 
-```typescript
-import { MarketState, isActive, isClosed, isResolved } from '@polymarket/market';
+```text
+__tests__/unit/
+├── fixtures.ts                        # Модельный рынок BTC Up/Down 12:00–12:05
+├── Market.test.ts                     # Construction, Time, Transitions, Snapshot
+├── MarketTradingPolicy.test.ts        # Фазы, включая границы 12:00 и 12:05
+├── MarketParser.test.ts               # Разбор сериализованных данных + граница с create()
+├── MarketViewModel.test.ts            # toSnapshot / toJSON / полный round-trip
+└── value-objects/
+    ├── MarketId.test.ts
+    ├── MarketSlug.test.ts
+    ├── MarketState.test.ts            # Переходы-наблюдения, иммутабельность
+    ├── MarketFamily.test.ts
+    └── MarketDuration.test.ts
+```
 
-// Конструкторы
-const active   = MarketState.active();
-const closed   = MarketState.closed();
-const resolved = MarketState.resolved(0); // 0 = YES, 1 = NO
+Ключевые границы, зафиксированные тестами (рынок 12:00–12:05):
 
-// FSM-переходы (Result — Err при нарушении)
-const nextResult = MarketState.close(active, { marketId: 'market-abc' });
-if (nextResult.ok) {
-  const finalResult = MarketState.resolve(nextResult.value, 0, { marketId: 'market-abc' });
-}
+```text
+11:59:59 → не начался      12:00:00 → начался
+12:04:59 → не истёк        12:05:00 → истёк
 
-// Type guards с сужением типов
-if (isResolved(market.state)) {
-  // TypeScript знает: market.state.resolvedOutcomeIndex: 0 | 1
-  console.log(market.state.resolvedOutcomeIndex);
-}
+ACTIVE + 11:59 → PRE_OPEN   ACTIVE + 12:00 → OPEN   ACTIVE + 12:05 → ENDED
+CLOSED   → CLOSED   независимо от часов
+RESOLVED → RESOLVED независимо от часов
 ```
 
 ---
 
-## Тестовое покрытие
+## Вне scope этого пакета
 
-| Файл | Statements | Branches | Functions | Lines |
-|------|-----------|----------|-----------|-------|
-| Market.ts | 100% | 100% | 100% | 100% |
-| MarketTradingPolicy.ts | 100% | 100% | 100% | 100% |
-| MarketNotifications.ts | — (types only) | — | — | — |
-| MarketState.ts | 100% | 100% | 100% | 100% |
-| MarketParser.ts | 100% | 100% | 100% | 100% |
-| MarketViewModel.ts | 100% | 100% | 100% | 100% |
-
-7 тестовых наборов, 137 тестов.
+`PolymarketMarketDiscovery`, `MarketFilter`, `MarketScorer`, `CollectionCoordinator`,
+subscription control, CEX, semantic-адаптеры и backtest runtime продолжают работать на
+своих текущих контрактах. Перевод V2 Discovery на canonical `Market` — следующий MR.

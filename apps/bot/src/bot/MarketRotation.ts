@@ -409,7 +409,9 @@ export class MarketRotation {
       }, mode);
     }
 
-    const marketStub = { expirationMs: slot.expiresAtMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+    // Заглушка Market: бэктест/ротация знают только расписание рынка. Полный
+    // canonical Market собирается в Discovery — см. MR Canonical Market Entity.
+    const marketStub = { expiresAt: expiresAtResult.value } as Parameters<typeof engine.scheduler.register>[0]['market'];
     const compId = slot.complementaryInstrumentId;
     const eventStartMsResult = slot.cryptoMeta?.eventStartTimeMs !== undefined
       ? TimestampService.create(slot.cryptoMeta.eventStartTimeMs)

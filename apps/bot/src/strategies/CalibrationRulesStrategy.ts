@@ -156,7 +156,7 @@ export class CalibrationRulesStrategy extends BaseStrategy<RuleData, RuleAction>
   }
 
   protected gather(snapshot: StrategySnapshot): RuleData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
     if (this._currentExpirationMs !== expiresMs) {
       this._currentExpirationMs = expiresMs;
       this._hasFilledEntryThisMarket = false;

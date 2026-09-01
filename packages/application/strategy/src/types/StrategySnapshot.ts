@@ -12,7 +12,7 @@
  *
  * ### Что стратегия может узнать из snapshot:
  * - Рыночные данные: topOfBook, bookHistory, tradeTape
- * - Рынок: market.expiresAt, market.question, market.state
+ * - Рынок: market.startsAt/expiresAt, market.question, market.state, market.outcomes
  * - Ордера: openOrders этой стратегии на этом инструменте
  * - Баланс: portfolio.balance.available(), portfolio.balance.reserved()
  * - Позиция: portfolio.getPosition(instrumentId)
@@ -27,6 +27,7 @@
  * const position = portfolio.getPosition(snapshot.instrumentId);
  * const availableUSDC = portfolio.balance.available();
  * const timeToExpiry = market.expiresAt.toNumber() - nowMs;
+ * const phase = MarketTradingPolicy.getPhase(market, TimestampService.create(nowMs).value);
  * ```
  */
 import type { InstrumentId, AssetId } from '@polymarket/ids';
@@ -122,8 +123,13 @@ export interface StrategySnapshot {
    * Рынок целиком: экспирация, вопрос, outcomes, state.
    *
    * @remarks
-   * Иммутабельный domain entity.
+   * Иммутабельный canonical domain entity (`@polymarket/market`): identity,
+   * структура, расписание и подтверждённое внешнее состояние. Быстро
+   * меняющихся наблюдений (стакан, спред, ликвидность, цены) в нём нет —
+   * они приходят отдельными полями снапшота.
+   *
    * Стратегия сама считает timeToExpiry: `market.expiresAt.toNumber() - nowMs`.
+   * Производную фазу рынка даёт `MarketTradingPolicy.getPhase(market, now)`.
    */
   readonly market: Market;
 
@@ -295,10 +301,12 @@ export interface StrategySnapshot {
    * Из Gamma API поле `eventStartTime` для крипто-рынков.
    * undefined если неизвестно.
    *
-   * Стратегия использует для вычисления длительности рынка (`market.expirationMs`
-   * остаётся `number` — hot-path/соседнее поле, см. `docs/architecture/
-   * boundary-contract.md`, Решение 10):
-   * `durationMs = market.expirationMs - eventStartMs.toNumber()`
+   * Отличается от `market.startsAt` (расписание самого рынка): это начало
+   * СОБЫТИЯ, к которому рынок привязан.
+   *
+   * Для длительности самого рынка ничего считать не нужно — её отдаёт
+   * `market.duration()` (`expiresAt - startsAt` через `Timestamp.diffMs`,
+   * см. `docs/architecture/boundary-contract.md`, Решение 3).
    *
    * Важно: `Timestamp` (даже оборачивающий 0) — всегда truthy. Проверка
    * "значение задано" должна быть явной (`!== undefined`), не полагаться
@@ -306,8 +314,9 @@ export interface StrategySnapshot {
    *
    * @example
    * ```typescript
-   * const durationMs = snapshot.eventStartMs !== undefined
-   *   ? snapshot.market.expirationMs - snapshot.eventStartMs.toNumber()
+   * const marketDurationMs = snapshot.market.duration().toNumber();
+   * const sinceEventStartMs = snapshot.eventStartMs !== undefined
+   *   ? snapshot.market.expiresAt.diffMs(snapshot.eventStartMs).toNumber()
    *   : undefined;
    * ```
    */

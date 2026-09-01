@@ -33,10 +33,7 @@
       "path": "../../../foundation/result/tsconfig.build.json"
     },
     {
-      "path": "../../../foundation/time/tsconfig.build.json"
-    },
-    {
-      "path": "../../value-objects/tsconfig.build.json"
+      "path": "../../../foundation/timestamp/tsconfig.build.json"
     }
   ]
 }

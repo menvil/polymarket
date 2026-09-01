@@ -212,7 +212,7 @@ export class OscillationMMStrategy extends BaseStrategy<OMMData, OMMAction> {
   // ── gather ──────────────────────────────────────────────────────────────────
 
   protected gather(snapshot: StrategySnapshot): OMMData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Смена рынка → сброс
     if (this._currentExpirationMs !== expiresMs) {

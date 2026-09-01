@@ -1,512 +1,636 @@
 /**
- * Market — доменная сущность рынка предсказаний
+ * Market — каноническое доменное представление наблюдаемого внешнего рынка
  *
  * @remarks
- * Представляет бинарный рынок предсказаний в системе Polymarket.
- * Market является неизменяемой (immutable) доменной сущностью.
+ * `Market` — это **то, что мы наблюдаем у площадки**, а не объект, которым наша
+ * программа административно управляет. Мы не открываем и не закрываем внешний
+ * рынок; мы фиксируем его подтверждённое состояние и структуру.
  *
- * ### Архитектура:
- * - Все свойства readonly — мутации возвращают новый экземпляр
- * - MarketState (discriminated union) вместо разрозненных полей status + resolvedOutcomeIndex
- * - Typed IDs (MarketId, MarketSlug) вместо bare string
- * - expirationDate хранится как number (ms) для иммутабельности
- * - FSM-переходы делегированы в MarketState namespace
+ * Market — граница между инфраструктурой и приложением:
  *
- * ### Жизненный цикл рынка:
+ * ```text
+ * Polymarket V2 client/bindings
+ *   ↓
+ * Infrastructure mapping
+ *   ↓
+ * Domain Market          ← этот файл
+ *   ↓
+ * Application
  * ```
+ *
+ * Ниже этой границы живут vendor-типы (V2 `@polymarket/client` / `@polymarket/bindings`,
+ * Gamma DTO, RTDS-сообщения). Выше — только canonical VO. Domain Market не зависит
+ * ни от V2, ни от legacy V1 и не содержит vendor-payload'ов.
+ *
+ * ### Что входит в Market: identity и структура
+ * ```text
+ * id, venueId, slug?, question
+ * startsAt, expiresAt        — расписание рынка
+ * state                      — подтверждённое внешнее состояние
+ * outcomes                   — ровно два исхода с canonical InstrumentId
+ * family (+ спецификация)    — как устроен рынок и о чём он
+ * ```
+ *
+ * ### Что в Market НЕ входит
+ * ```text
+ * liquidity, spread, orderbook, last trade, current price, reference price,
+ * RTDS-подписки, Gamma Market/Event, SDK-объекты, Record<string, unknown> payloads
+ * ```
+ * Причина: это быстро меняющиеся **наблюдаемые метрики и состояние рынка**, а не
+ * его identity/структура. Хранить их в entity значит либо пересоздавать Market
+ * на каждый тик стакана, либо держать в нём устаревшие значения. Стакан живёт
+ * в `@polymarket/orderbook`, лента — в `@polymarket/trade-tape`, топ книги —
+ * в `StrategySnapshot.topOfBook`.
+ *
+ * ### Иммутабельность и часы
+ * Все поля readonly, переходы возвращают новый экземпляр. Внутри Market нет
+ * ни одного обращения к `Date.now()`: «сейчас» всегда приходит параметром как
+ * {@link Timestamp}. Благодаря этому live и backtest используют одну и ту же
+ * entity, а разницу задаёт инжектированный `IClock` снаружи.
+ *
+ * ### Жизненный цикл
+ * ```text
  * ACTIVE → CLOSED → RESOLVED
  * ```
- *
- * ### Бизнес-правила:
- * 1. Рынок должен иметь непустой id, slug и вопрос
- * 2. Должно быть ровно 2 исхода (UP/DOWN)
- * 3. close() допустим только из ACTIVE состояния
- * 4. resolve() допустим только из CLOSED состояния
- * 5. Дата истечения хранится как number для иммутабельности
+ * Истечение `expiresAt` **не** переводит рынок в CLOSED: площадка может продолжать
+ * публиковать его как ACTIVE ещё какое-то время. Производную фазу
+ * (`PRE_OPEN`/`OPEN`/`ENDED`/`CLOSED`/`RESOLVED`) вычисляет
+ * `MarketTradingPolicy.getPhase()`; в Market она не хранится.
  *
  * @example
  * ```typescript
- * import { Market } from './Market';
- * import { MarketState, asMarketId, parseMarketSlug } from './value-objects';
- * import { OutcomeToken, BinaryOutcome } from '@polymarket/value-objects/outcome-token';
+ * import { Market, MarketState, asMarketDuration } from '@polymarket/market';
+ * import { unsafeMarketId, unsafeInstrumentId, unsafeCryptoAssetId, KnownVenues } from '@polymarket/ids';
+ * import { TimestampService } from '@polymarket/timestamp';
  *
- * const conditionRef = { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: 137, conditionId: '0x...' };
+ * const startsAt = TimestampService.fromISO('2026-09-01T12:00:00.000Z');
+ * const expiresAt = TimestampService.fromISO('2026-09-01T12:05:00.000Z');
+ * if (!startsAt.ok || !expiresAt.ok) throw new Error('bad schedule');
+ *
  * const result = Market.create({
- *   id: asMarketId('market-abc')!,
- *   slug: parseMarketSlug('will-trump-win-2024')!,
- *   question: 'Will Trump win the 2024 election?',
- *   outcomes: [
- *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.UP), index: 0, name: 'Yes' },
- *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.DOWN), index: 1, name: 'No' },
- *   ],
- *   expirationMs: Date.parse('2024-11-05T00:00:00Z'),
+ *   id: unsafeMarketId('btc-up-down-1200'),
+ *   venueId: KnownVenues.POLYMARKET,
+ *   question: 'Bitcoin Up or Down — 12:00 to 12:05?',
+ *   startsAt: startsAt.value,
+ *   expiresAt: expiresAt.value,
  *   state: MarketState.active(),
+ *   outcomes: [
+ *     { index: 0, label: 'Up', instrumentId: unsafeInstrumentId('7147...') },
+ *     { index: 1, label: 'Down', instrumentId: unsafeInstrumentId('2299...') },
+ *   ],
+ *   family: 'CRYPTO_UP_DOWN',
+ *   crypto: { asset: unsafeCryptoAssetId('btc'), duration: asMarketDuration(5 * 60_000)! },
  * });
  *
  * if (result.ok) {
  *   const market = result.value;
- *   const closedResult = market.close(Date.now());
- *   if (closedResult.ok) {
- *     const resolvedResult = closedResult.value.resolve(0, Date.now()); // YES победил
+ *   const closed = market.markClosed();          // площадка подтвердила закрытие
+ *   if (closed.ok) {
+ *     const resolved = closed.value.markResolved(0); // победил Up
  *   }
  * }
  * ```
  */
 
+import type Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
 import type {
   MarketAlreadyClosedError,
   MarketAlreadyResolvedError,
   MarketInvalidTransitionError,
 } from '@polymarket/errors/market';
-import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
+import { MarketValidationError } from '@polymarket/errors/market';
+import { Timestamp } from '@polymarket/timestamp';
 import {
   type MarketId,
+  type VenueId,
   type MarketSlug,
+  type MarketOutcome,
+  type MarketFamily,
+  type CryptoUpDownSpec,
   type OutcomeIndex,
   MarketState,
   isActive,
   isClosed,
   isResolved,
+  isValidMarketFamily,
+  asMarketDuration,
 } from './value-objects/index.js';
-import { MarketValidationError } from '@polymarket/errors/market';
-import { type MarketNotification } from './MarketNotifications.js';
 import { type MarketSnapshot } from './view/MarketSnapshot.js';
-
-/**
- * Outcome — value object исхода рынка
- *
- * @remarks
- * Инкапсулирует всю информацию об одном исходе бинарного рынка.
- * Использует `OutcomeToken` из `@polymarket/value-objects` для представления
- * on-chain токена с полной семантикой (conditionRef, outcomeKey, equals).
- *
- * @example
- * ```typescript
- * import { OutcomeToken, BinaryOutcome } from '@polymarket/value-objects/outcome-token';
- *
- * const outcome: Outcome = {
- *   token: OutcomeToken.of(conditionRef, BinaryOutcome.UP),
- *   index: 0,
- *   name: 'Yes',
- * };
- * ```
- */
-export interface Outcome {
-  /** On-chain токен исхода с conditionRef и outcomeKey */
-  readonly token: OutcomeToken;
-  /** Позиция в массиве исходов (0 = YES/UP, 1 = NO/DOWN) */
-  readonly index: OutcomeIndex;
-  /** Человекочитаемое название исхода */
-  readonly name: string;
-}
 
 /**
  * MarketProps — параметры создания Market
  *
  * @remarks
- * Используется в Market.create() factory method.
- * Все поля immutable (readonly).
+ * Используется в {@link Market.create}. Структурно совпадает с
+ * {@link MarketSnapshot} — поэтому `Market.fromSnapshot()` делегирует в `create()`.
+ * Все поля readonly.
  */
 export interface MarketProps {
-  /** Уникальный идентификатор рынка */
+  /** Идентификатор рынка в пространстве имён площадки */
   readonly id: MarketId;
-  /** URL-safe слаг для построения ссылок */
-  readonly slug: MarketSlug;
-  /** Вопрос рынка */
+  /** Площадка, на которой наблюдается рынок */
+  readonly venueId: VenueId;
+  /**
+   * URL-safe слаг рынка, если площадка его публикует.
+   *
+   * @remarks
+   * Необязателен: слаг есть не у каждой площадки, и Domain не строит по нему
+   * ссылок (это делает presentation-слой конкретной площадки).
+   */
+  readonly slug?: MarketSlug;
+  /** Вопрос рынка (человекочитаемое описание) */
   readonly question: string;
-  /** Исходы рынка: пара [YES/UP, NO/DOWN] */
-  readonly outcomes: readonly [Outcome, Outcome];
-  /** Время истечения рынка в миллисекундах (Unix timestamp) */
-  readonly expirationMs: number;
-  /** Текущее состояние рынка */
+  /** Запланированное начало торгов */
+  readonly startsAt: Timestamp;
+  /** Запланированное окончание торгов */
+  readonly expiresAt: Timestamp;
+  /** Подтверждённое внешнее состояние рынка */
   readonly state: MarketState;
+  /** Исходы рынка: ровно два, с различными canonical instrument identity */
+  readonly outcomes: readonly [MarketOutcome, MarketOutcome];
+  /** Семейство рынка — как он устроен структурно */
+  readonly family: MarketFamily;
+  /**
+   * Спецификация семейства `CRYPTO_UP_DOWN`.
+   *
+   * @remarks
+   * Обязательна, когда `family === 'CRYPTO_UP_DOWN'` — это проверяет `create()`.
+   */
+  readonly crypto?: CryptoUpDownSpec;
 }
 
 /**
- * Market — неизменяемая доменная сущность рынка предсказаний
+ * Market — неизменяемая доменная сущность наблюдаемого внешнего рынка
  *
  * @remarks
- * Все свойства readonly. Методы изменения состояния возвращают новый экземпляр.
- *
- * ### Typed IDs:
- * - **id** — MarketId (branded string, непустая)
- * - **slug** — MarketSlug (branded string, URL-safe: a-z0-9-)
- *
- * ### Иммутабельность:
- * - expirationDate getter возвращает `new Date(expirationMs)` каждый раз (копию)
- * - Внутреннее хранение через `_expirationMs: number`
- *
- * ### Lifecycle:
- * - close() — только из ACTIVE, иначе `Result` с `MarketLifecycleError`-подклассом
- * - resolve() — только из CLOSED, иначе `Result` с `MarketLifecycleError`-подклассом
- *
- * ### Уведомления (Outbox pattern):
- * - close(nowMs) эмитирует MarketClosedNotification в буфер
- * - resolve(index, nowMs) эмитирует MarketResolvedNotification в буфер
- * - pullNotifications() возвращает и очищает буфер
+ * Полное описание модели, границ и того, что намеренно не входит в Market —
+ * в TSDoc модуля в начале файла.
  */
 export class Market {
+  /** Идентификатор рынка в пространстве имён площадки */
   public readonly id: MarketId;
-  public readonly slug: MarketSlug;
+  /** Площадка, на которой наблюдается рынок */
+  public readonly venueId: VenueId;
+  /** URL-safe слаг рынка, если площадка его публикует */
+  public readonly slug?: MarketSlug;
+  /** Вопрос рынка */
   public readonly question: string;
-  public readonly outcomes: readonly [Outcome, Outcome];
+  /** Запланированное начало торгов */
+  public readonly startsAt: Timestamp;
+  /** Запланированное окончание торгов */
+  public readonly expiresAt: Timestamp;
+  /** Подтверждённое внешнее состояние рынка */
   public readonly state: MarketState;
+  /** Исходы рынка: ровно два */
+  public readonly outcomes: readonly [MarketOutcome, MarketOutcome];
+  /** Семейство рынка */
+  public readonly family: MarketFamily;
+  /** Спецификация семейства `CRYPTO_UP_DOWN` (для других семейств — undefined) */
+  public readonly crypto?: CryptoUpDownSpec;
 
   /**
-   * Время истечения в миллисекундах (внутреннее хранение)
+   * Приватный конструктор — используйте {@link Market.create}
+   *
+   * @param props - Уже провалидированные параметры рынка
    *
    * @remarks
-   * Хранится как number для гарантии иммутабельности.
-   * Используйте getter `expirationDate` для получения Date объекта.
+   * Нормализует метки исходов (`trim`) — так хранимое значение совпадает с тем,
+   * которое сравнивалось на различимость в `create()`.
    */
-  private readonly _expirationMs: number;
-
-  /**
-   * Буфер уведомлений (Notification Outbox)
-   *
-   * @remarks
-   * Контролируемая мутация: единственная изменяемая часть immutable entity.
-   * splice(0) в pullNotifications() атомарно возвращает и очищает буфер.
-   */
-  private readonly _pendingNotifications: MarketNotification[];
-
-  /**
-   * Приватный конструктор — используйте Market.create()
-   */
-  private constructor(
-    props: MarketProps,
-    pendingNotifications: MarketNotification[] = [],
-  ) {
+  private constructor(props: MarketProps) {
     this.id = props.id;
-    this.slug = props.slug;
-    this.question = props.question;
-    this._expirationMs = props.expirationMs;
+    this.venueId = props.venueId;
+    this.question = props.question.trim();
+    this.startsAt = props.startsAt;
+    this.expiresAt = props.expiresAt;
     this.state = props.state;
-    // Нормализуем имена исходов (trim) при хранении — для консистентности со сравнением в create()
-    this.outcomes = [
-      Object.freeze({ ...props.outcomes[0], name: props.outcomes[0].name.trim() }),
-      Object.freeze({ ...props.outcomes[1], name: props.outcomes[1].name.trim() }),
-    ];
-    this._pendingNotifications = [...pendingNotifications];
-  }
-
-  // ==================== Getters ====================
-
-  /**
-   * Дата истечения рынка
-   *
-   * @returns Новый Date объект каждый раз (иммутабельность)
-   *
-   * @remarks
-   * Возвращает копию, чтобы внешний код не мог мутировать внутреннее состояние.
-   *
-   * @example
-   * ```typescript
-   * const d1 = market.expirationDate;
-   * const d2 = market.expirationDate;
-   * console.log(d1 === d2); // false (разные объекты)
-   * console.log(d1.getTime() === d2.getTime()); // true (одинаковое время)
-   * ```
-   */
-  public get expirationDate(): Date {
-    return new Date(this._expirationMs);
-  }
-
-  /**
-   * Время истечения рынка в миллисекундах (Unix timestamp)
-   *
-   * @returns Число миллисекунд с Unix epoch
-   *
-   * @example
-   * ```typescript
-   * console.log(market.expirationMs); // 1_700_000_000_000
-   * ```
-   */
-  public get expirationMs(): number {
-    return this._expirationMs;
-  }
-
-  /**
-   * Backward-compatible getter для текущего статуса
-   *
-   * @returns Текущий статус рынка как строка
-   *
-   * @example
-   * ```typescript
-   * console.log(market.status); // 'ACTIVE' | 'CLOSED' | 'RESOLVED'
-   * ```
-   */
-  public get status(): MarketState['status'] {
-    return this.state.status;
-  }
-
-  // ==================== Domain Events ====================
-
-  /**
-   * Возвращает и очищает буфер уведомлений (Outbox pattern)
-   *
-   * @returns Список уведомлений, накопленных с момента последнего вызова
-   *
-   * @remarks
-   * Application-слой вызывает pullNotifications() после каждой успешной команды
-   * и публикует результат в event bus.
-   *
-   * Вызов опустошает буфер — следующий вызов вернёт [].
-   * Market.create() и Market.fromSnapshot() не эмитируют уведомлений
-   * (восстановление состояния ≠ новое бизнес-событие).
-   *
-   * @example
-   * ```typescript
-   * const closed = market.close(Date.now());
-   * const notifications = closed.pullNotifications(); // [MarketClosedNotification]
-   * await eventBus.publish(notifications);
-   *
-   * closed.pullNotifications(); // [] — буфер очищен
-   * ```
-   */
-  public pullNotifications(): readonly MarketNotification[] {
-    return this._pendingNotifications.splice(0);
+    this.family = props.family;
+    this.outcomes = Object.freeze([
+      Object.freeze({ ...props.outcomes[0], label: props.outcomes[0].label.trim() }),
+      Object.freeze({ ...props.outcomes[1], label: props.outcomes[1].label.trim() }),
+    ]) as readonly [MarketOutcome, MarketOutcome];
+    if (props.slug !== undefined) {
+      this.slug = props.slug;
+    }
+    if (props.crypto !== undefined) {
+      this.crypto = Object.freeze({ ...props.crypto });
+    }
   }
 
   // ==================== Factory ====================
 
   /**
-   * Создаёт Market с валидацией входных данных
+   * Создаёт Market с валидацией доменных инвариантов
    *
    * @param props - Параметры создания рынка
-   * @returns Result<Market, MarketValidationError>
+   * @returns `Result` с Market либо `MarketValidationError`
+   * @throws Ничего не бросает — все нарушения возвращаются как `Err`
    *
    * @remarks
-   * Factory method с Result pattern.
-   * Валидирует все обязательные поля и бизнес-инварианты.
+   * Проверяемые инварианты:
+   * 1. `id` и `venueId` — непустые строки (branded-конструкторы `unsafe*` валидацию обходят);
+   * 2. `question` — непустая строка;
+   * 3. ровно два исхода, позиции 0 и 1 на своих местах;
+   * 4. метки исходов непустые и различные;
+   * 5. instrument identity исходов различны (один outcome → одна identity);
+   * 6. расписание: оба конца — `Timestamp`, `startsAt < expiresAt`;
+   * 7. `state` — валидный `MarketState`; для RESOLVED индекс победителя указывает на существующий исход;
+   * 8. `family` — известное семейство; для `CRYPTO_UP_DOWN` обязательна валидная `crypto`-спецификация.
    *
-   * ### Алгоритм валидации:
-   * 1. Проверка question (непустой) — id/slug/OutcomeToken уже валидированы на уровне VO
-   * 2. Проверка outcomes[i].name — два непустых и различных названия
-   * 3. Проверка outcomes[i].token — два различных токена (через OutcomeToken.equals)
-   * 4. Проверка expirationMs (конечное число)
-   * 5. Проверка state (допустимый MarketState, runtime-защита)
+   * Часть проверок дублирует то, что уже гарантирует система типов — это
+   * runtime-защита на границе с внешними данными (JSON, БД, `as`-касты).
    *
    * @example
    * ```typescript
-   * const result = Market.create({
-   *   id: asMarketId('market-abc')!,
-   *   slug: parseMarketSlug('will-trump-win')!,
-   *   question: 'Will Trump win?',
-   *   outcomes: [
-   *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.UP), index: 0, name: 'Yes' },
-   *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.DOWN), index: 1, name: 'No' },
-   *   ],
-   *   expirationMs: Date.now() + 86400000,
-   *   state: MarketState.active(),
-   * });
-   *
-   * if (result.ok) {
-   *   console.log(result.value.id); // 'market-abc'
+   * const result = Market.create(props);
+   * if (!result.ok) {
+   *   logger.error('Invalid market', { field: result.error.context?.field });
    * }
    * ```
    */
   public static create(props: MarketProps): Result<Market, MarketValidationError> {
-    // Валидация question — не может быть гарантирована типом string
-    if (typeof props.question !== 'string' || props.question.trim().length === 0) {
-      return Err(
-        new MarketValidationError('Market question must be a non-empty string', {
-          context: { field: 'question', value: props.question },
-        })
-      );
-    }
+    const identity = Market._validateIdentity(props);
+    if (identity !== undefined) return Err(identity);
 
-    // Runtime guard: outcomes должен быть массивом из 2 объектов
-    // (TypeScript гарантирует это статически, но защищаем от JS/as-кастов)
-    if (
-      !Array.isArray(props.outcomes) ||
-      props.outcomes.length !== 2 ||
-      !props.outcomes[0] ||
-      !props.outcomes[1]
-    ) {
-      return Err(
-        new MarketValidationError('Market outcomes must have exactly 2 elements', {
-          context: {
-            field: 'outcomes',
-            length: Array.isArray(props.outcomes) ? props.outcomes.length : 'not array',
-          },
-        })
-      );
-    }
+    const outcomes = Market._validateOutcomes(props);
+    if (outcomes !== undefined) return Err(outcomes);
 
-    // Валидация outcomes[0].name
-    if (
-      typeof props.outcomes[0].name !== 'string' ||
-      props.outcomes[0].name.trim().length === 0
-    ) {
-      return Err(
-        new MarketValidationError('Outcome name at index 0 must be a non-empty string', {
-          context: { field: 'outcomes[0].name', value: props.outcomes[0].name },
-        })
-      );
-    }
+    const schedule = Market._validateSchedule(props);
+    if (schedule !== undefined) return Err(schedule);
 
-    // Валидация outcomes[1].name
-    if (
-      typeof props.outcomes[1].name !== 'string' ||
-      props.outcomes[1].name.trim().length === 0
-    ) {
-      return Err(
-        new MarketValidationError('Outcome name at index 1 must be a non-empty string', {
-          context: { field: 'outcomes[1].name', value: props.outcomes[1].name },
-        })
-      );
-    }
+    const state = Market._validateState(props);
+    if (state !== undefined) return Err(state);
 
-    // Инвариант: названия исходов должны отличаться
-    if (props.outcomes[0].name.trim() === props.outcomes[1].name.trim()) {
-      return Err(
-        new MarketValidationError('Outcome names must be distinct', {
-          context: {
-            field: 'outcomes',
-            value: [props.outcomes[0].name.trim(), props.outcomes[1].name.trim()],
-          },
-        })
-      );
-    }
+    const family = Market._validateFamily(props);
+    if (family !== undefined) return Err(family);
 
-    // Инвариант: токены исходов должны отличаться (OutcomeToken.equals сравнивает по AssetId)
-    if (props.outcomes[0].token.equals(props.outcomes[1].token)) {
-      return Err(
-        new MarketValidationError('Outcome tokens must be distinct', {
-          context: { field: 'outcomes', value: 'tokens are equal' },
-        })
-      );
-    }
-
-    // Валидация expirationMs — number в JS может быть NaN или Infinity
-    if (typeof props.expirationMs !== 'number' || !Number.isFinite(props.expirationMs)) {
-      return Err(
-        new MarketValidationError('Market expirationMs must be a finite number', {
-          context: { field: 'expirationMs', value: props.expirationMs },
-        })
-      );
-    }
-
-    // Валидация state — runtime-защита от невалидных объектов (JS, JSON, as-касты)
-    if (
-      !props.state ||
-      typeof props.state !== 'object' ||
-      !['ACTIVE', 'CLOSED', 'RESOLVED'].includes(props.state.status)
-    ) {
-      return Err(
-        new MarketValidationError('Market state must be a valid MarketState object', {
-          context: {
-            field: 'state',
-            value: props.state ? props.state.status : props.state,
-          },
-        })
-      );
-    }
-
-    // Дополнительная проверка для RESOLVED: resolvedOutcomeIndex обязателен и должен быть 0 или 1
-    // TypeScript гарантирует это статически, но at runtime as-касты могут обойти типизацию.
-    if (props.state.status === 'RESOLVED') {
-      const ri = (props.state as Record<string, unknown>).resolvedOutcomeIndex;
-      if (ri !== 0 && ri !== 1) {
-        return Err(
-          new MarketValidationError(
-            'Market state RESOLVED requires resolvedOutcomeIndex of 0 or 1',
-            { context: { field: 'state.resolvedOutcomeIndex', value: ri } }
-          )
-        );
-      }
-    }
-
-    return Ok(new Market(props, []));
+    return Ok(new Market(props));
   }
 
   /**
-   * Реконструирует Market из доменно-типизированного снапшота (второй шаг pipeline)
+   * Реконструирует Market из доменно-типизированного снапшота
    *
-   * @param snapshot - MarketSnapshot с доменными типами (из MarketParser.from() или MarketViewModel.toSnapshot())
-   * @returns Result<Market, MarketValidationError>
+   * @param snapshot - {@link MarketSnapshot} из `MarketParser.from()` или `MarketViewModel.toSnapshot()`
+   * @returns `Result` с Market либо `MarketValidationError`
+   * @throws Ничего не бросает — все нарушения возвращаются как `Err`
    *
    * @remarks
-   * Поскольку MarketSnapshot структурно идентичен MarketProps, этот метод
-   * делегирует Market.create(snapshot) — доменные инварианты проверяются там.
-   * Не эмитирует уведомлений — восстановление состояния ≠ новое бизнес-событие.
+   * `MarketSnapshot` структурно идентичен {@link MarketProps}, поэтому метод
+   * делегирует в `Market.create()` — доменные инварианты проверяются там же,
+   * что и при первичном создании. Реконструкция состояния не является новым
+   * наблюдением и никаких побочных эффектов не порождает.
    *
    * @example
    * ```typescript
-   * // Из внешних данных:
    * const snapshotResult = MarketParser.from(await db.load(id));
    * if (!snapshotResult.ok) return;
    * const marketResult = Market.fromSnapshot(snapshotResult.value);
-   *
-   * // Round-trip (in-memory):
-   * const snapshot = MarketViewModel.toSnapshot(market);
-   * const restored = Market.fromSnapshot(snapshot);
    * ```
    */
   public static fromSnapshot(snapshot: MarketSnapshot): Result<Market, MarketValidationError> {
     return Market.create(snapshot);
   }
 
-  // ==================== Time Methods ====================
+  // ==================== Validation helpers ====================
 
   /**
-   * Проверяет, истёк ли рынок в заданный момент времени
+   * Проверяет identity-поля рынка (id, venueId, slug, question)
    *
-   * @param nowMs - Текущее время в миллисекундах (Unix timestamp)
-   * @returns true если текущее время >= времени истечения
-   *
-   * @remarks
-   * Принимает nowMs явно — Market не обращается к часам сам. «Сейчас» вызывающий
-   * берёт из инжектированного IClock (LiveClock в live/paper, ReplayClock в
-   * backtest) — так expiry-сравнения детерминированы и ведут себя одинаково во
-   * всех режимах. Удобных no-arg обёрток (isExpired()/timeToExpiry()) нет
-   * намеренно: они тихо падали бы обратно на wall-clock.
-   *
-   * @example
-   * ```typescript
-   * const past = Date.parse('2020-01-01T00:00:00Z');
-   * market.isExpiredAt(past);                        // → false (если market.expirationMs > past)
-   * market.isExpiredAt(clock.now().getTime());       // → зависит от expirationMs
-   * ```
+   * @param props - Параметры создания рынка
+   * @returns `MarketValidationError` при нарушении, иначе `undefined`
    */
-  public isExpiredAt(nowMs: number): boolean {
-    return nowMs >= this._expirationMs;
+  private static _validateIdentity(props: MarketProps): MarketValidationError | undefined {
+    if (typeof props.id !== 'string' || props.id.trim().length === 0) {
+      return new MarketValidationError('Market id must be a non-empty string', {
+        context: { field: 'id', value: props.id },
+      });
+    }
+    if (typeof props.venueId !== 'string' || props.venueId.trim().length === 0) {
+      return new MarketValidationError('Market venueId must be a non-empty string', {
+        context: { field: 'venueId', value: props.venueId },
+      });
+    }
+    if (props.slug !== undefined && (typeof props.slug !== 'string' || props.slug.length === 0)) {
+      return new MarketValidationError('Market slug must be a non-empty string when present', {
+        context: { field: 'slug', value: props.slug },
+      });
+    }
+    if (typeof props.question !== 'string' || props.question.trim().length === 0) {
+      return new MarketValidationError('Market question must be a non-empty string', {
+        context: { field: 'question', value: props.question },
+      });
+    }
+    return undefined;
   }
 
   /**
-   * Возвращает время до истечения рынка в заданный момент
+   * Проверяет набор исходов рынка
    *
-   * @param nowMs - Текущее время в миллисекундах
-   * @returns Миллисекунды до истечения (отрицательное если уже истёк)
+   * @param props - Параметры создания рынка
+   * @returns `MarketValidationError` при нарушении, иначе `undefined`
    *
    * @remarks
-   * Принимает nowMs вместо вызова Date.now() для тестируемости.
+   * Ключевой инвариант — различные `instrumentId`: один outcome обязан иметь
+   * ровно одну canonical instrument identity, и две разные позиции рынка не
+   * могут указывать на один и тот же инструмент.
+   */
+  private static _validateOutcomes(props: MarketProps): MarketValidationError | undefined {
+    if (
+      !Array.isArray(props.outcomes) ||
+      props.outcomes.length !== 2 ||
+      !props.outcomes[0] ||
+      !props.outcomes[1]
+    ) {
+      return new MarketValidationError('Market outcomes must have exactly 2 elements', {
+        context: {
+          field: 'outcomes',
+          length: Array.isArray(props.outcomes) ? props.outcomes.length : 'not array',
+        },
+      });
+    }
+
+    for (const position of [0, 1] as const) {
+      const outcome = props.outcomes[position];
+      if (outcome.index !== position) {
+        return new MarketValidationError(
+          `Outcome at position ${position} must have index ${position}`,
+          { context: { field: `outcomes[${position}].index`, value: outcome.index } }
+        );
+      }
+      if (typeof outcome.label !== 'string' || outcome.label.trim().length === 0) {
+        return new MarketValidationError(
+          `Outcome label at index ${position} must be a non-empty string`,
+          { context: { field: `outcomes[${position}].label`, value: outcome.label } }
+        );
+      }
+      if (typeof outcome.instrumentId !== 'string' || outcome.instrumentId.trim().length === 0) {
+        return new MarketValidationError(
+          `Outcome instrumentId at index ${position} must be a non-empty string`,
+          { context: { field: `outcomes[${position}].instrumentId`, value: outcome.instrumentId } }
+        );
+      }
+    }
+
+    if (props.outcomes[0].label.trim() === props.outcomes[1].label.trim()) {
+      return new MarketValidationError('Outcome labels must be distinct', {
+        context: {
+          field: 'outcomes',
+          value: [props.outcomes[0].label.trim(), props.outcomes[1].label.trim()],
+        },
+      });
+    }
+
+    if (props.outcomes[0].instrumentId === props.outcomes[1].instrumentId) {
+      return new MarketValidationError('Outcome instrument identities must be distinct', {
+        context: { field: 'outcomes', value: props.outcomes[0].instrumentId },
+      });
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Проверяет расписание рынка
+   *
+   * @param props - Параметры создания рынка
+   * @returns `MarketValidationError` при нарушении, иначе `undefined`
+   *
+   * @remarks
+   * Инвариант `startsAt < expiresAt` строгий: рынок нулевой длительности
+   * не наблюдаем и ломает вычисление фазы.
+   */
+  private static _validateSchedule(props: MarketProps): MarketValidationError | undefined {
+    if (!(props.startsAt instanceof Timestamp)) {
+      return new MarketValidationError('Market startsAt must be a Timestamp', {
+        context: { field: 'startsAt', type: typeof props.startsAt },
+      });
+    }
+    if (!(props.expiresAt instanceof Timestamp)) {
+      return new MarketValidationError('Market expiresAt must be a Timestamp', {
+        context: { field: 'expiresAt', type: typeof props.expiresAt },
+      });
+    }
+    if (!props.startsAt.isBefore(props.expiresAt)) {
+      return new MarketValidationError('Market startsAt must be strictly before expiresAt', {
+        context: {
+          field: 'startsAt',
+          startsAt: props.startsAt.toISO(),
+          expiresAt: props.expiresAt.toISO(),
+        },
+      });
+    }
+    return undefined;
+  }
+
+  /**
+   * Проверяет подтверждённое внешнее состояние рынка
+   *
+   * @param props - Параметры создания рынка
+   * @returns `MarketValidationError` при нарушении, иначе `undefined`
+   */
+  private static _validateState(props: MarketProps): MarketValidationError | undefined {
+    if (
+      !props.state ||
+      typeof props.state !== 'object' ||
+      !['ACTIVE', 'CLOSED', 'RESOLVED'].includes(props.state.status)
+    ) {
+      return new MarketValidationError('Market state must be a valid MarketState object', {
+        context: {
+          field: 'state',
+          value: props.state ? props.state.status : props.state,
+        },
+      });
+    }
+
+    // RESOLVED без валидного индекса победителя — невозможное состояние,
+    // которое TypeScript исключает статически, но `as`-касты и JSON могут обойти.
+    if (props.state.status === 'RESOLVED') {
+      const index = props.state.resolvedOutcomeIndex;
+      if (index !== 0 && index !== 1) {
+        return new MarketValidationError(
+          'Market state RESOLVED requires resolvedOutcomeIndex of 0 or 1',
+          { context: { field: 'state.resolvedOutcomeIndex', value: index } }
+        );
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Проверяет семейство рынка и его спецификацию
+   *
+   * @param props - Параметры создания рынка
+   * @returns `MarketValidationError` при нарушении, иначе `undefined`
+   *
+   * @remarks
+   * Связка «семейство → спецификация» проверяется здесь, а не типом:
+   * это единственное место, где нарушение может прийти из внешних данных.
+   */
+  private static _validateFamily(props: MarketProps): MarketValidationError | undefined {
+    if (!isValidMarketFamily(props.family)) {
+      return new MarketValidationError('Market family must be a known MarketFamily', {
+        context: { field: 'family', value: props.family },
+      });
+    }
+
+    if (props.family === 'CRYPTO_UP_DOWN') {
+      const crypto = props.crypto;
+      if (!crypto || typeof crypto !== 'object') {
+        return new MarketValidationError(
+          'Market family CRYPTO_UP_DOWN requires a crypto spec',
+          { context: { field: 'crypto', value: crypto } }
+        );
+      }
+      if (typeof crypto.asset !== 'string' || crypto.asset.trim().length === 0) {
+        return new MarketValidationError('Crypto spec asset must be a non-empty string', {
+          context: { field: 'crypto.asset', value: crypto.asset },
+        });
+      }
+      if (asMarketDuration(crypto.duration) === undefined) {
+        return new MarketValidationError(
+          'Crypto spec duration must be a positive integer number of milliseconds',
+          { context: { field: 'crypto.duration', value: crypto.duration } }
+        );
+      }
+    }
+
+    return undefined;
+  }
+
+  // ==================== Getters ====================
+
+  /**
+   * Победивший исход, если рынок разрешён
+   *
+   * @returns {@link MarketOutcome} победителя либо `undefined`, если состояние не RESOLVED
+   *
+   * @remarks
+   * `MarketState` хранит только индекс победителя — единственную ссылку,
+   * которая не может разойтись с массивом `outcomes`. Этот getter разворачивает
+   * индекс в сам исход, чтобы вызывающему не приходилось индексировать вручную.
    *
    * @example
    * ```typescript
-   * const remaining = market.timeToExpiryAt(Date.now());
-   * if (remaining > 0) {
-   *   console.log(`Expires in ${remaining}ms`);
+   * const winner = resolvedMarket.resolvedOutcome;
+   * if (winner) {
+   *   settlement.payout(winner.instrumentId);
    * }
    * ```
    */
-  public timeToExpiryAt(nowMs: number): number {
-    return this._expirationMs - nowMs;
+  public get resolvedOutcome(): MarketOutcome | undefined {
+    return isResolved(this.state) ? this.outcomes[this.state.resolvedOutcomeIndex] : undefined;
+  }
+
+  // ==================== Time ====================
+
+  /**
+   * Начались ли торги к заданному моменту
+   *
+   * @param now - Момент наблюдения
+   * @returns true если `now >= startsAt`
+   *
+   * @remarks
+   * Момент передаётся явно: Market не обращается к часам сам. «Сейчас»
+   * вызывающий берёт из инжектированного `IClock` (live/paper/replay), поэтому
+   * сравнения детерминированы и одинаковы во всех режимах. No-arg перегрузок
+   * нет намеренно — они тихо падали бы обратно на wall-clock.
+   *
+   * @example
+   * ```typescript
+   * market.isStartedAt(Timestamp.now(clock)); // → true после startsAt
+   * ```
+   */
+  public isStartedAt(now: Timestamp): boolean {
+    return now.isAfterOrEqual(this.startsAt);
+  }
+
+  /**
+   * Истекло ли расписание рынка к заданному моменту
+   *
+   * @param now - Момент наблюдения
+   * @returns true если `now >= expiresAt`
+   *
+   * @remarks
+   * Истечение расписания **не** означает, что рынок закрыт: `state` меняется
+   * только по подтверждению площадки (см. `markClosed()`).
+   *
+   * @example
+   * ```typescript
+   * market.isExpiredAt(Timestamp.now(clock)); // → true после expiresAt
+   * ```
+   */
+  public isExpiredAt(now: Timestamp): boolean {
+    return now.isAfterOrEqual(this.expiresAt);
+  }
+
+  /**
+   * Время до начала торгов
+   *
+   * @param now - Момент наблюдения
+   * @returns Миллисекунды до `startsAt` как `Decimal` (отрицательное, если торги уже начались)
+   *
+   * @example
+   * ```typescript
+   * const waitMs = market.timeToStartAt(now);
+   * if (waitMs.greaterThan(0)) scheduler.subscribeIn(waitMs);
+   * ```
+   */
+  public timeToStartAt(now: Timestamp): Decimal {
+    return this.startsAt.diffMs(now);
+  }
+
+  /**
+   * Время до окончания торгов
+   *
+   * @param now - Момент наблюдения
+   * @returns Миллисекунды до `expiresAt` как `Decimal` (отрицательное, если срок истёк)
+   *
+   * @example
+   * ```typescript
+   * const remaining = market.timeToExpiryAt(now);
+   * if (remaining.lessThan(30_000)) strategy.stopEntering();
+   * ```
+   */
+  public timeToExpiryAt(now: Timestamp): Decimal {
+    return this.expiresAt.diffMs(now);
+  }
+
+  /**
+   * Фактическая запланированная длительность рынка
+   *
+   * @returns `expiresAt - startsAt` в миллисекундах как `Decimal` (всегда > 0)
+   *
+   * @remarks
+   * Это измеренный интервал расписания. Номинальную длительность серии
+   * (5 минут, час) для crypto-рынков даёт `crypto.duration` — значения обычно
+   * совпадают, но совпадение не гарантируется, см. TSDoc `MarketDuration`.
+   *
+   * @example
+   * ```typescript
+   * const durationMs = market.duration().toNumber(); // 300000 для 5-минутного рынка
+   * ```
+   */
+  public duration(): Decimal {
+    return this.expiresAt.diffMs(this.startsAt);
   }
 
   // ==================== Predicates ====================
 
   /**
-   * Проверяет, активен ли рынок
+   * Публикует ли площадка рынок как активный
    *
-   * @returns true если state.status === 'ACTIVE'
+   * @returns true если `state.status === 'ACTIVE'`
+   *
+   * @remarks
+   * ACTIVE ничего не говорит о времени: рынок может быть ещё не начат или уже
+   * истёк. Для торговых решений используйте `MarketTradingPolicy.getPhase()`.
    *
    * @example
    * ```typescript
    * if (market.isActive()) {
-   *   // Рынок открыт для торговли
+   *   // площадка считает рынок активным
    * }
    * ```
    */
@@ -515,14 +639,14 @@ export class Market {
   }
 
   /**
-   * Проверяет, закрыт ли рынок
+   * Подтвердила ли площадка закрытие торгов
    *
-   * @returns true если state.status === 'CLOSED'
+   * @returns true если `state.status === 'CLOSED'`
    *
    * @example
    * ```typescript
    * if (market.isClosed()) {
-   *   // Торговля остановлена, ожидание разрешения
+   *   // торги остановлены, ждём объявления исхода
    * }
    * ```
    */
@@ -531,14 +655,14 @@ export class Market {
   }
 
   /**
-   * Проверяет, разрешён ли рынок
+   * Объявила ли площадка победивший исход
    *
-   * @returns true если state.status === 'RESOLVED'
+   * @returns true если `state.status === 'RESOLVED'`
    *
    * @example
    * ```typescript
    * if (market.isResolved()) {
-   *   // Рынок разрешён с конкретным исходом
+   *   // исход объявлен — можно считать settlement
    * }
    * ```
    */
@@ -549,110 +673,102 @@ export class Market {
   // ==================== Identity ====================
 
   /**
-   * Сравнивает две сущности Market по идентичности
+   * Сравнивает два Market по идентичности сущности
    *
-   * @param other - Другой Market для сравнения
-   * @returns true если оба рынка имеют одинаковый id
+   * @param other - Другой Market
+   * @returns true если это один и тот же рынок одной и той же площадки
    *
    * @remarks
-   * Entity определяется идентичностью (id), а не ссылкой.
-   * Два объекта с разным state но одинаковым id — это одна и та же сущность.
+   * Entity определяется идентичностью, а не ссылкой: два объекта с разным
+   * `state`, но одинаковыми `venueId` + `id` — это одна сущность в разных
+   * наблюдениях. `venueId` входит в сравнение, потому что `MarketId` уникален
+   * только внутри пространства имён своей площадки.
    *
    * @example
    * ```typescript
-   * const closed = market.close(Date.now());
-   * market.equals(closed); // true — тот же рынок, другое состояние
+   * const closed = market.markClosed();
+   * closed.ok && market.equals(closed.value); // → true
    * ```
    */
   public equals(other: Market): boolean {
-    return this.id === other.id;
+    return this.venueId === other.venueId && this.id === other.id;
   }
 
-  // ==================== Lifecycle Transitions ====================
+  // ==================== Observed state transitions ====================
 
   /**
-   * Создаёт копию рынка с новым состоянием и событиями
+   * Создаёт копию рынка с новым подтверждённым состоянием
    *
    * @param state - Новое состояние
-   * @param events - Доменные события этого перехода
-   * @returns Новый Market с тем же id/slug/question/outcomes/expiry, другим state и буфером событий
+   * @returns Новый Market с той же структурой и другим `state`
    *
    * @remarks
    * Централизует копирование props — изменение структуры затрагивает одно место.
    */
-  private copy(state: MarketState, notifications: MarketNotification[]): Market {
-    return new Market(
-      {
-        id: this.id,
-        slug: this.slug,
-        question: this.question,
-        outcomes: this.outcomes,
-        expirationMs: this._expirationMs,
-        state,
-      },
-      notifications,
-    );
+  private _withState(state: MarketState): Market {
+    return new Market({
+      id: this.id,
+      venueId: this.venueId,
+      ...(this.slug !== undefined ? { slug: this.slug } : {}),
+      question: this.question,
+      startsAt: this.startsAt,
+      expiresAt: this.expiresAt,
+      state,
+      outcomes: this.outcomes,
+      family: this.family,
+      ...(this.crypto !== undefined ? { crypto: this.crypto } : {}),
+    });
   }
 
   /**
-   * Закрывает рынок (ACTIVE → CLOSED)
+   * Фиксирует наблюдённое закрытие торгов (ACTIVE → CLOSED)
    *
-   * @param nowMs - Текущее время в мс для метки уведомления (Unix timestamp)
    * @returns `Result` с новым Market в состоянии CLOSED либо ошибкой нарушения FSM
+   * @throws Ничего не бросает — нарушение FSM возвращается как `Err`
    *
    * @remarks
-   * Переход: ACTIVE → CLOSED.
-   * FSM-логика делегируется в MarketState.close() — entity не знает правил, только
-   * пробрасывает Result наверх (по ADR `docs/architecture/boundary-contract.md`,
-   * Решение 2 — throw легитимен только внутри `value-objects`).
-   * Параметр nowMs обеспечивает детерминизм в тестах.
+   * Название отражает семантику: мы **отмечаем** подтверждённое площадкой
+   * закрытие, а не приказываем внешнему рынку закрыться. Вызывать только после
+   * подтверждения от источника; истечение `expiresAt` подтверждением не является.
+   *
+   * Правила перехода живут в `MarketState.markClosed()` — entity их не знает
+   * и только пробрасывает `Result` наверх (по ADR `docs/architecture/
+   * boundary-contract.md`, Решение 2 — throw легитимен только внутри `value-objects`).
    *
    * @example
    * ```typescript
-   * const result = activeMarket.close(Date.now());
-   * if (result.ok) {
-   *   const [notification] = result.value.pullNotifications();
-   *   // notification.occurredAt === nowMs
-   * }
+   * const result = market.markClosed();
+   * if (!result.ok) logger.warn('Close observation rejected', { code: result.error.name });
    * ```
    */
-  public close(nowMs: number): Result<Market, MarketAlreadyClosedError | MarketAlreadyResolvedError> {
-    const nextStateResult = MarketState.close(this.state, { marketId: this.id });
-    if (!nextStateResult.ok) {
-      return Err(nextStateResult.error);
-    }
-    return Ok(this.copy(nextStateResult.value, [
-      { type: 'MARKET_CLOSED' as const, marketId: this.id, slug: this.slug, occurredAt: nowMs },
-    ]));
+  public markClosed(): Result<Market, MarketAlreadyClosedError | MarketAlreadyResolvedError> {
+    const next = MarketState.markClosed(this.state, { marketId: this.id, venueId: this.venueId });
+    if (!next.ok) return Err(next.error);
+    return Ok(this._withState(next.value));
   }
 
   /**
-   * Разрешает рынок с конкретным исходом (CLOSED → RESOLVED)
+   * Фиксирует объявленный площадкой исход (CLOSED → RESOLVED)
    *
-   * @param outcomeIndex - Индекс победившего исхода (0 = YES, 1 = NO); должен быть целым числом
-   * @param nowMs - Текущее время в мс для метки уведомления (Unix timestamp)
-   * @returns `Result` с новым Market в состоянии RESOLVED либо ошибкой валидации/нарушения FSM
+   * @param outcomeIndex - Индекс победившего исхода в `outcomes`
+   * @returns `Result` с новым Market в состоянии RESOLVED либо ошибкой валидации/FSM
+   * @throws Ничего не бросает — все нарушения возвращаются как `Err`
    *
    * @remarks
-   * Переход: CLOSED → RESOLVED.
-   * FSM-логика делегируется в MarketState.resolve() — entity не знает правил, только
-   * пробрасывает Result наверх (см. `close()`). Параметр nowMs обеспечивает
-   * детерминизм в тестах.
+   * Как и `markClosed()`, это фиксация внешнего наблюдения. Индекс проверяется
+   * против фактического набора исходов: резолюция по несуществующему исходу —
+   * это ошибка данных источника, а не нарушение FSM.
    *
    * @example
    * ```typescript
-   * const result = closedMarket.resolve(0, Date.now()); // YES победил
+   * const result = closedMarket.markResolved(0);
    * if (result.ok) {
-   *   const state = result.value.state;
-   *   if (state.status === 'RESOLVED') {
-   *     console.log(state.resolvedOutcomeIndex); // 0
-   *   }
+   *   console.log(result.value.resolvedOutcome?.label); // 'Up'
    * }
    * ```
    */
-  public resolve(
+  public markResolved(
     outcomeIndex: OutcomeIndex,
-    nowMs: number,
   ): Result<Market, MarketValidationError | MarketAlreadyResolvedError | MarketInvalidTransitionError> {
     if (
       typeof outcomeIndex !== 'number' ||
@@ -668,19 +784,13 @@ export class Market {
         },
       }));
     }
-    const nextStateResult = MarketState.resolve(this.state, outcomeIndex, { marketId: this.id });
-    if (!nextStateResult.ok) {
-      return Err(nextStateResult.error);
-    }
-    return Ok(this.copy(nextStateResult.value, [
-      {
-        type: 'MARKET_RESOLVED' as const,
-        marketId: this.id,
-        slug: this.slug,
-        resolvedOutcomeIndex: outcomeIndex,
-        occurredAt: nowMs,
-      },
-    ]));
+
+    const next = MarketState.markResolved(this.state, outcomeIndex, {
+      marketId: this.id,
+      venueId: this.venueId,
+    });
+    if (!next.ok) return Err(next.error);
+    return Ok(this._withState(next.value));
   }
 
   // ==================== String Representation ====================
@@ -688,15 +798,15 @@ export class Market {
   /**
    * Строковое представление рынка
    *
-   * @returns Краткое описание рынка
+   * @returns Строка вида `Market[VENUE:id](STATUS): question`
    *
    * @example
    * ```typescript
    * console.log(market.toString());
-   * // 'Market[market-abc](ACTIVE): Will Trump win the 2024 election?'
+   * // 'Market[POLYMARKET:btc-up-down-1200](ACTIVE): Bitcoin Up or Down — 12:00 to 12:05?'
    * ```
    */
   public toString(): string {
-    return `Market[${this.id}](${this.state.status}): ${this.question}`;
+    return `Market[${this.venueId}:${this.id}](${this.state.status}): ${this.question}`;
   }
 }

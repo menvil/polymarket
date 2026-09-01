@@ -478,7 +478,13 @@ async function runSingleMarketBacktest(
   const parsedEndDateMs = rawEndDate ? new Date(rawEndDate).getTime() : NaN;
 
   const expirationMs = !Number.isNaN(parsedEndDateMs) ? parsedEndDateMs : Date.now() + 24 * 60 * 60 * 1000;
-  const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+  const marketExpiresAtResult = TimestampService.create(expirationMs);
+  if (!marketExpiresAtResult.ok) {
+    throw new Error(`Invalid market expiration: ${expirationMs}`);
+  }
+  // Заглушка Market: бэктест знает только расписание рынка. Полный canonical
+  // Market собирается в Discovery — см. MR Canonical Market Entity.
+  const marketStub = { expiresAt: marketExpiresAtResult.value } as Parameters<typeof engine.scheduler.register>[0]['market'];
   const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
   // eventStartMs (raw number) остаётся для journal.startSession() ниже — IDecisionJournal
   // хранит его как персистентное NDJSON-поле, не типизируется этим этапом миграции.

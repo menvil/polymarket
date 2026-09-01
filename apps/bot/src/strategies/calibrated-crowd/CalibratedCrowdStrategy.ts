@@ -467,7 +467,7 @@ export class CalibratedCrowdStrategy extends BaseStrategy<CCData, CCAction> {
   // ── gather ──────────────────────────────────────────────────────────────────
 
   protected gather(snapshot: StrategySnapshot): CCData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Смена рынка → сброс состояния.
     if (this._currentExpirationMs !== expiresMs) {

@@ -3007,7 +3007,13 @@ async function runBacktest(): Promise<void> {
   const expirationMs = snapshotEndDateMs && !Number.isNaN(snapshotEndDateMs)
     ? snapshotEndDateMs
     : Date.now() + 24 * 60 * 60 * 1000;
-  const marketStub = { expirationMs } as Parameters<typeof engine.scheduler.register>[0]['market'];
+  const marketExpiresAtResult = TimestampService.create(expirationMs);
+  if (!marketExpiresAtResult.ok) {
+    throw new Error(`Invalid market expiration: ${expirationMs}`);
+  }
+  // Заглушка Market: бэктест знает только расписание рынка. Полный canonical
+  // Market собирается в Discovery — см. MR Canonical Market Entity.
+  const marketStub = { expiresAt: marketExpiresAtResult.value } as Parameters<typeof engine.scheduler.register>[0]['market'];
 
   const eventStartMsResult = snapshotEventStartMs && !Number.isNaN(snapshotEventStartMs)
     ? TimestampService.create(snapshotEventStartMs)

@@ -1,174 +1,131 @@
 /**
- * Тесты для MarketViewModel (toSnapshot, getMarketUrl)
+ * Тесты MarketViewModel — представление канонического Market наружу
  *
  * @remarks
- * Проверяет:
- * - getMarketUrl() строит корректный URL
- * - toSnapshot() сериализует Market в доменно-типизированный MarketSnapshot
- * - round-trip: Market → toSnapshot() → Market.fromSnapshot() → Market
+ * Проверяет обе формы представления и их согласованность с обратным
+ * направлением (`MarketParser` / `Market.fromSnapshot`):
+ * - `toSnapshot()` — доменные типы, in-memory;
+ * - `toJSON()` — примитивы, БД/сеть.
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Market, type Outcome } from '../../src/Market.js';
-import {
-  MarketState,
-  parseMarketSlug,
-  unsafeMarketId,
-  OutcomeToken,
-} from '../../src/value-objects/index.js';
-import {
-  BinaryOutcome,
-  type OnChainConditionRef,
-  asOnChainProtocolId,
-  parseChainId,
-  parseConditionId,
-} from '@polymarket/ids';
-import { MarketViewModel } from '../../src/view/MarketViewModel.js';
-
-// ==================== Тестовые данные ====================
-
-const EXPIRATION_MS = 1_700_000_000_000;
-const NOW = 0;
-
-const TEST_CONDITION_REF: OnChainConditionRef = {
-  kind: 'ONCHAIN',
-  protocolId: asOnChainProtocolId('POLYMARKET_CTF')!,
-  chainId: parseChainId('137')!,
-  conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
-};
-
-const UP_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
-const DOWN_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
-
-const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
-  { token: UP_TOKEN, index: 0, name: 'Yes' },
-  { token: DOWN_TOKEN, index: 1, name: 'No' },
-];
-
-function makeActiveMarket() {
-  return Market.create({
-    id: unsafeMarketId('market-abc'),
-    slug: parseMarketSlug('will-trump-win')!,
-    question: 'Will Trump win?',
-    outcomes: TEST_OUTCOMES,
-    expirationMs: EXPIRATION_MS,
-    state: MarketState.active(),
-  });
-}
-
-// Вспомогательная функция для извлечения значения из Result в тестах
-function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
-  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
-  return result.value;
-}
-
-// ==================== Тесты ====================
-
-describe('MarketViewModel.getMarketUrl()', () => {
-  it('возвращает URL вида https://polymarket.com/event/{slug}', () => {
-    const result = makeActiveMarket();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const url = MarketViewModel.getMarketUrl(result.value);
-      expect(url).toBe('https://polymarket.com/event/will-trump-win');
-    }
-  });
-});
+import { Market, MarketParser, MarketState, MarketViewModel } from '../../src/index.js';
+import { makeMarket, unwrap, DOWN_INSTRUMENT, UP_INSTRUMENT } from './fixtures.js';
 
 describe('MarketViewModel.toSnapshot()', () => {
-  it('сериализует ACTIVE рынок корректно', () => {
-    const result = makeActiveMarket();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+  it('переносит структуру рынка без деградации типов', () => {
+    const market = makeMarket();
+    const snapshot = MarketViewModel.toSnapshot(market);
 
-    const snapshot = MarketViewModel.toSnapshot(result.value);
-    expect(snapshot.id).toBe('market-abc');
-    expect(snapshot.slug).toBe('will-trump-win');
-    expect(snapshot.question).toBe('Will Trump win?');
-    // token — OutcomeToken объект, outcomeKey() — метод
-    expect(snapshot.outcomes[0].token.outcomeKey()).toBe('UP');
-    expect(snapshot.outcomes[0].index).toBe(0);
-    expect(snapshot.outcomes[0].name).toBe('Yes');
-    expect(snapshot.outcomes[1].token.outcomeKey()).toBe('DOWN');
-    expect(snapshot.outcomes[1].index).toBe(1);
-    expect(snapshot.outcomes[1].name).toBe('No');
-    // expirationMs — число
-    expect(snapshot.expirationMs).toBe(EXPIRATION_MS);
-    expect(snapshot.state).toEqual({ status: 'ACTIVE' });
+    expect(snapshot.id).toBe('btc-up-down-1200');
+    expect(snapshot.venueId).toBe('POLYMARKET');
+    expect(snapshot.slug).toBe('bitcoin-up-or-down-september-1-12pm-et');
+    expect(snapshot.family).toBe('CRYPTO_UP_DOWN');
+    expect(snapshot.startsAt.equals(market.startsAt)).toBe(true);
+    expect(snapshot.expiresAt.equals(market.expiresAt)).toBe(true);
+    expect(snapshot.outcomes[0]).toEqual({ index: 0, label: 'Up', instrumentId: UP_INSTRUMENT });
+    expect(snapshot.outcomes[1]).toEqual({ index: 1, label: 'Down', instrumentId: DOWN_INSTRUMENT });
+    expect(snapshot.crypto).toEqual({ asset: 'btc', duration: 300_000 });
   });
 
-  it('сериализует CLOSED рынок корректно', () => {
-    const result = makeActiveMarket();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const snapshot = MarketViewModel.toSnapshot(unwrap(result.value.close(NOW)));
-    expect(snapshot.state).toEqual({ status: 'CLOSED' });
+  it('сериализует ACTIVE состояние', () => {
+    expect(MarketViewModel.toSnapshot(makeMarket()).state).toEqual({ status: 'ACTIVE' });
   });
 
-  it('сериализует RESOLVED рынок с resolvedOutcomeIndex', () => {
-    const result = makeActiveMarket();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+  it('сериализует CLOSED состояние', () => {
+    const closed = unwrap(makeMarket().markClosed());
 
-    const closed = unwrap(result.value.close(NOW));
-    const snapshot = MarketViewModel.toSnapshot(unwrap(closed.resolve(1, NOW)));
-    expect(snapshot.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 1 });
-  });
-});
-
-describe('MarketViewModel.toSnapshot() — round-trip через Market.fromSnapshot()', () => {
-  it('round-trip для ACTIVE рынка', () => {
-    const result = makeActiveMarket();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    // Market → snapshot → Market (без MarketParser — snapshot уже доменно-типизирован)
-    const snapshot = MarketViewModel.toSnapshot(result.value);
-    const restoredResult = Market.fromSnapshot(snapshot);
-    expect(restoredResult.ok).toBe(true);
-    if (!restoredResult.ok) return;
-
-    expect(restoredResult.value.id).toBe(result.value.id);
-    expect(restoredResult.value.slug).toBe(result.value.slug);
-    expect(restoredResult.value.question).toBe(result.value.question);
-    expect(restoredResult.value.isActive()).toBe(true);
-    expect(restoredResult.value.expirationMs).toBe(EXPIRATION_MS);
+    expect(MarketViewModel.toSnapshot(closed).state).toEqual({ status: 'CLOSED' });
   });
 
-  it('round-trip для RESOLVED рынка', () => {
-    const result = makeActiveMarket();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+  it('сериализует RESOLVED состояние вместе с индексом победителя', () => {
+    const resolved = unwrap(unwrap(makeMarket().markClosed()).markResolved(1));
 
-    const resolved = unwrap(unwrap(result.value.close(NOW)).resolve(0, NOW));
-    const snapshot = MarketViewModel.toSnapshot(resolved);
-    const restoredResult = Market.fromSnapshot(snapshot);
-    expect(restoredResult.ok).toBe(true);
-    if (!restoredResult.ok) return;
+    expect(MarketViewModel.toSnapshot(resolved).state).toEqual({
+      status: 'RESOLVED',
+      resolvedOutcomeIndex: 1,
+    });
+  });
 
-    expect(restoredResult.value.isResolved()).toBe(true);
-    const state = restoredResult.value.state;
-    if (state.status === 'RESOLVED') {
-      expect(state.resolvedOutcomeIndex).toBe(0);
-    }
+  it('копирует исходы — мутация снапшота не задевает entity', () => {
+    const market = makeMarket();
+    const snapshot = MarketViewModel.toSnapshot(market);
+
+    (snapshot.outcomes[0] as { label: string }).label = 'Mutated';
+
+    expect(market.outcomes[0].label).toBe('Up');
   });
 });
 
-describe('MarketViewModel.toString()', () => {
-  it('возвращает строковое представление рынка', () => {
-    const result = makeActiveMarket();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const str = MarketViewModel.toString(result.value);
-    expect(str).toContain('market-abc');
-    expect(str).toContain('ACTIVE');
+describe('MarketViewModel.toJSON()', () => {
+  it('сериализует рынок в JSON-примитивы', () => {
+    const json = MarketViewModel.toJSON(makeMarket());
+
+    expect(json).toEqual({
+      id: 'btc-up-down-1200',
+      venueId: 'POLYMARKET',
+      slug: 'bitcoin-up-or-down-september-1-12pm-et',
+      question: 'Bitcoin Up or Down — September 1, 12:00–12:05 ET?',
+      startsAt: Date.parse('2026-09-01T12:00:00.000Z'),
+      expiresAt: Date.parse('2026-09-01T12:05:00.000Z'),
+      state: { status: 'ACTIVE' },
+      outcomes: [
+        { index: 0, label: 'Up', instrumentId: '71476031705491' },
+        { index: 1, label: 'Down', instrumentId: '22993088410122' },
+      ],
+      family: 'CRYPTO_UP_DOWN',
+      crypto: { asset: 'btc', duration: 300_000 },
+    });
+  });
+
+  it('переживает JSON.stringify/parse без потерь', () => {
+    const json = MarketViewModel.toJSON(makeMarket({ state: MarketState.resolved(0) }));
+
+    expect(JSON.parse(JSON.stringify(json))).toEqual(json);
+  });
+
+  it('не добавляет slug, когда площадка его не публикует', () => {
+    const market = makeMarket();
+    const withoutSlug = unwrap(MarketParser.from({
+      ...MarketViewModel.toJSON(market),
+      slug: undefined,
+    }));
+
+    expect('slug' in MarketViewModel.toJSON(unwrap(Market.fromSnapshot(withoutSlug)))).toBe(false);
+  });
+
+  it('добавляет resolvedOutcomeIndex только для RESOLVED', () => {
+    expect(MarketViewModel.toJSON(makeMarket()).state).toEqual({ status: 'ACTIVE' });
+    expect(MarketViewModel.toJSON(makeMarket({ state: MarketState.resolved(1) })).state).toEqual({
+      status: 'RESOLVED',
+      resolvedOutcomeIndex: 1,
+    });
   });
 });
 
-describe('MarketViewModel — нельзя создать экземпляр', () => {
-  it('бросает Error при вызове конструктора', () => {
-    // @ts-expect-error - testing private constructor
-    expect(() => new MarketViewModel()).toThrow(Error);
+describe('MarketViewModel — полный round-trip через сериализацию', () => {
+  it('Market → toJSON → MarketParser → fromSnapshot даёт эквивалентный рынок', () => {
+    const market = makeMarket({ state: MarketState.resolved(1) });
+
+    const wire = JSON.parse(JSON.stringify(MarketViewModel.toJSON(market))) as unknown;
+    const snapshot = unwrap(MarketParser.from(wire));
+    const restored = unwrap(Market.fromSnapshot(snapshot));
+
+    expect(MarketViewModel.toJSON(restored)).toEqual(MarketViewModel.toJSON(market));
+    expect(restored.equals(market)).toBe(true);
+  });
+});
+
+describe('MarketViewModel — прочее', () => {
+  it('toString() делегирует в Market.toString()', () => {
+    const market = makeMarket();
+
+    expect(MarketViewModel.toString(market)).toBe(market.toString());
+  });
+
+  it('нельзя инстанцировать — это static utility класс', () => {
+    expect(() => new (MarketViewModel as unknown as new () => unknown)()).toThrow(
+      'MarketViewModel is a static utility class and cannot be instantiated'
+    );
   });
 });

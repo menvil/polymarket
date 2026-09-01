@@ -466,7 +466,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
     }
 
     const marketId = String(snapshot.market.id ?? '');
-    const marketKey = `${marketId}:${snapshot.market.expirationMs}:${snapshot.eventStartMs.toNumber()}`;
+    const marketKey = `${marketId}:${snapshot.market.expiresAt.toNumber()}:${snapshot.eventStartMs.toNumber()}`;
     if (this._currentMarketKey !== marketKey) {
       this._resetForNewMarket(snapshot, marketKey);
       this._startModelBuild(snapshot, marketKey);
@@ -503,7 +503,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
       return undefined;
     }
 
-    const tauSec = Math.max(0, (snapshot.market.expirationMs - snapshot.nowMs) / 1000);
+    const tauSec = Math.max(0, (snapshot.market.expiresAt.toNumber() - snapshot.nowMs) / 1000);
     const horizonMinutes = Math.max(1, Math.min(this._maxHorizonMinutes, Math.ceil(tauSec / 60)));
 
     let fairValueCents: number | null = null;
@@ -775,7 +775,7 @@ export class BinanceProbMMStrategy extends BaseStrategy<BPMMData, BPMMAction> {
       instrumentId: String(snapshot.instrumentId),
       outcomeSide: this._isUpToken ? 'UP' : 'DOWN',
       eventStart: this._marketEventStartMs > 0 ? new Date(this._marketEventStartMs).toISOString() : 'unknown',
-      expiry: new Date(snapshot.market.expirationMs).toISOString(),
+      expiry: new Date(snapshot.market.expiresAt.toNumber()).toISOString(),
       marketKey,
     });
   }

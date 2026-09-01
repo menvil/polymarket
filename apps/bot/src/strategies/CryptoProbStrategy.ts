@@ -222,7 +222,7 @@ export class CryptoProbStrategy extends BaseStrategy<CPData, CPAction> {
   // ── gather ──────────────────────────────────────────────────────────────────
 
   protected gather(snapshot: StrategySnapshot): CPData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     // Смена рынка → сброс
     if (this._currentExpirationMs !== expiresMs) {

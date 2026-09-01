@@ -1,30 +1,46 @@
 /**
- * MarketState — discriminated union состояния рынка с FSM-переходами
+ * MarketState — подтверждённое внешнее состояние рынка + допустимые переходы
  *
  * @remarks
  * Решает две задачи:
- * 1. «Невозможные состояния» (impossible states) — компилятор TypeScript гарантирует
- *    что `resolvedOutcomeIndex` существует ТОЛЬКО в состоянии RESOLVED
- * 2. Инкапсуляция FSM — правила переходов живут здесь, а не в entity
+ * 1. «Невозможные состояния» (impossible states) — компилятор TypeScript гарантирует,
+ *    что `resolvedOutcomeIndex` существует ТОЛЬКО в состоянии RESOLVED;
+ * 2. Инкапсуляция FSM — правила переходов живут здесь, а не в entity.
  *
- * ### Допустимые переходы:
- * ```
+ * ### Наблюдение, а не команда
+ * `MarketState` отражает то, что нам **сообщила площадка**, а не то, что мы
+ * ей приказали. Соответственно и переходы называются `markClosed`/`markResolved`:
+ * «зафиксировать наблюдённое состояние», а не `close`/`resolve` («закрыть рынок»).
+ * Мы не управляем внешним рынком и не можем его закрыть.
+ *
+ * ### Что это значит для ACTIVE
+ * `ACTIVE` — внешне наблюдаемое состояние. Один и тот же ACTIVE-рынок может быть:
+ * - до `startsAt` (опубликован, торги ещё не начались);
+ * - между `startsAt` и `expiresAt` (идёт);
+ * - после `expiresAt` — площадка ещё не сообщила CLOSED/RESOLVED.
+ *
+ * Поэтому **истечение срока не меняет состояние**: `ACTIVE → CLOSED` происходит
+ * только после подтверждения от площадки. Производную фазу («истёк, но ещё ACTIVE»)
+ * вычисляет `MarketTradingPolicy.getPhase()`, и она нигде не хранится.
+ *
+ * ### Допустимые переходы
+ * ```text
  * ACTIVE → CLOSED → RESOLVED
  * ```
- *
- * Прямой переход ACTIVE → RESOLVED запрещён на уровне бизнес-логики.
+ * Прямой переход ACTIVE → RESOLVED запрещён: рынок, о резолюции которого мы
+ * узнали раньше, чем о закрытии, сначала фиксируется как CLOSED.
  *
  * @example
  * ```typescript
  * // Создание состояний
  * const active = MarketState.active();
  * const closed = MarketState.closed();
- * const resolved = MarketState.resolved(0); // YES победил
+ * const resolved = MarketState.resolved(0); // победил исход с индексом 0
  *
- * // FSM-переходы (Result — нарушение FSM не throw, см. Этап 3 плана миграции)
- * const nextResult = MarketState.close(active);
+ * // Переходы (Result — нарушение FSM не throw, см. Этап 3 плана миграции)
+ * const nextResult = MarketState.markClosed(active);
  * if (nextResult.ok) {
- *   const finalResult = MarketState.resolve(nextResult.value, 1);
+ *   const finalResult = MarketState.markResolved(nextResult.value, 1);
  * }
  *
  * // Type guards
@@ -46,22 +62,22 @@ import {
 } from '@polymarket/errors/market';
 
 /**
- * OutcomeIndex — индекс исхода рынка (YES = 0, NO = 1)
+ * OutcomeIndex — позиция исхода в наборе исходов рынка
  *
  * @remarks
- * Только два значения допустимы в бинарных рынках Polymarket.
+ * Только два значения допустимы в бинарной модели рынка.
  * Использование этого типа предотвращает передачу невалидного индекса.
  */
 export type OutcomeIndex = 0 | 1;
 
 /**
- * MarketState — discriminated union состояния рынка
+ * MarketState — discriminated union подтверждённого внешнего состояния рынка
  *
  * @remarks
  * Три взаимоисключающих состояния:
- * - ACTIVE: рынок открыт для торговли
- * - CLOSED: торговля остановлена, ожидание разрешения
- * - RESOLVED: рынок разрешён с конкретным исходом
+ * - ACTIVE: площадка публикует рынок как активный;
+ * - CLOSED: площадка подтвердила остановку торгов, исход ещё не объявлен;
+ * - RESOLVED: площадка объявила победивший исход.
  */
 export type MarketState =
   | { readonly status: 'ACTIVE' }
@@ -73,17 +89,16 @@ export type MarketState =
  *
  * @remarks
  * Объединяет:
- * - Конструкторы состояний (active, closed, resolved)
- * - FSM-переходы (close, resolve)
+ * - конструкторы состояний (`active`, `closed`, `resolved`);
+ * - переходы-наблюдения (`markClosed`, `markResolved`).
  *
- * Переходы бросают конкретные ошибки при нарушении инварианта,
+ * Переходы возвращают `Result` с конкретной ошибкой при нарушении инварианта,
  * освобождая entity от знания о правилах FSM.
  *
  * @example
  * ```typescript
  * const active = MarketState.active();
- * const closed = MarketState.close(active, { marketId: 'market-abc' });
- * const resolved = MarketState.resolve(closed, 0, { marketId: 'market-abc' });
+ * const closed = MarketState.markClosed(active, { marketId: 'market-abc' });
  * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -92,6 +107,11 @@ export const MarketState = {
    * Создаёт состояние ACTIVE
    *
    * @returns MarketState со status === 'ACTIVE'
+   *
+   * @example
+   * ```typescript
+   * const state = MarketState.active();
+   * ```
    */
   active(): MarketState {
     return Object.freeze({ status: 'ACTIVE' as const });
@@ -101,6 +121,11 @@ export const MarketState = {
    * Создаёт состояние CLOSED
    *
    * @returns MarketState со status === 'CLOSED'
+   *
+   * @example
+   * ```typescript
+   * const state = MarketState.closed();
+   * ```
    */
   closed(): MarketState {
     return Object.freeze({ status: 'CLOSED' as const });
@@ -109,8 +134,13 @@ export const MarketState = {
   /**
    * Создаёт состояние RESOLVED
    *
-   * @param index - Индекс победившего исхода (0 = YES, 1 = NO)
+   * @param index - Индекс победившего исхода
    * @returns MarketState со status === 'RESOLVED' и resolvedOutcomeIndex
+   *
+   * @example
+   * ```typescript
+   * const state = MarketState.resolved(0);
+   * ```
    */
   resolved(index: OutcomeIndex): MarketState {
     return Object.freeze({
@@ -120,25 +150,31 @@ export const MarketState = {
   },
 
   /**
-   * Выполняет переход ACTIVE → CLOSED
+   * Фиксирует наблюдённое закрытие рынка (ACTIVE → CLOSED)
    *
    * @param state - Текущее состояние
    * @param context - Контекст для ошибки (например, marketId)
    * @returns `Result` с новым состоянием CLOSED либо ошибкой нарушения FSM
+   * @throws Ничего не бросает — нарушение FSM возвращается как `Err`
    *
    * @remarks
    * Единственный разрешённый источник нового CLOSED состояния.
-   * Вся логика проверки переходов сконцентрирована здесь.
+   * Вызывается только тогда, когда площадка подтвердила закрытие: истечение
+   * `expiresAt` само по себе основанием для перехода не является.
+   *
+   * Повторный вызов на уже закрытом рынке — это `Err(MarketAlreadyClosedError)`,
+   * а не no-op: наблюдение «закрыт» второй раз означает рассинхрон источника,
+   * и вызывающий должен это увидеть.
    *
    * @example
    * ```typescript
-   * const result = MarketState.close(MarketState.active(), { marketId: 'market-abc' });
+   * const result = MarketState.markClosed(MarketState.active(), { marketId: 'market-abc' });
    * if (result.ok) {
    *   const closed = result.value;
    * }
    * ```
    */
-  close(
+  markClosed(
     state: MarketState,
     context?: Record<string, unknown>,
   ): Result<MarketState, MarketAlreadyClosedError | MarketAlreadyResolvedError> {
@@ -156,25 +192,28 @@ export const MarketState = {
   },
 
   /**
-   * Выполняет переход CLOSED → RESOLVED
+   * Фиксирует наблюдённую резолюцию рынка (CLOSED → RESOLVED)
    *
    * @param state - Текущее состояние
    * @param index - Индекс победившего исхода
    * @param context - Контекст для ошибки (например, marketId)
    * @returns `Result` с новым состоянием RESOLVED либо ошибкой нарушения FSM
+   * @throws Ничего не бросает — нарушение FSM возвращается как `Err`
    *
    * @remarks
    * Единственный разрешённый источник нового RESOLVED состояния.
+   * Из ACTIVE напрямую перейти нельзя: сначала фиксируется факт закрытия
+   * торгов, затем — объявленный исход.
    *
    * @example
    * ```typescript
-   * const result = MarketState.resolve(MarketState.closed(), 0, { marketId: 'market-abc' });
+   * const result = MarketState.markResolved(MarketState.closed(), 0, { marketId: 'market-abc' });
    * if (result.ok) {
    *   const resolved = result.value;
    * }
    * ```
    */
-  resolve(
+  markResolved(
     state: MarketState,
     index: OutcomeIndex,
     context?: Record<string, unknown>,
@@ -184,13 +223,13 @@ export const MarketState = {
         context: {
           ...context,
           currentStatus: state.status,
-          resolvedOutcomeIndex: (state as { resolvedOutcomeIndex: OutcomeIndex }).resolvedOutcomeIndex,
+          resolvedOutcomeIndex: state.resolvedOutcomeIndex,
         },
       }));
     }
     if (state.status === 'ACTIVE') {
       return Err(new MarketInvalidTransitionError(
-        'Cannot resolve an active market. Call close() first.',
+        'Cannot resolve an active market. Observe the close first.',
         { context: { ...context, currentStatus: state.status } }
       ));
     }
@@ -207,7 +246,7 @@ export const MarketState = {
  * @example
  * ```typescript
  * if (isActive(market.state)) {
- *   // Рынок открыт для торговли
+ *   // Площадка публикует рынок как активный
  * }
  * ```
  */
@@ -224,7 +263,7 @@ export function isActive(state: MarketState): state is { readonly status: 'ACTIV
  * @example
  * ```typescript
  * if (isClosed(market.state)) {
- *   // Торговля остановлена
+ *   // Площадка подтвердила остановку торгов
  * }
  * ```
  */

@@ -261,7 +261,7 @@ export class CrowdDeviationTPSLStrategy extends BaseStrategy<CDData, CDAction> {
   // ── gather ──────────────────────────────────────────────────────────────────
 
   protected gather(snapshot: StrategySnapshot): CDData | undefined {
-    const expiresMs = snapshot.market.expirationMs;
+    const expiresMs = snapshot.market.expiresAt.toNumber();
 
     if (this._currentExpirationMs !== expiresMs) {
       this._currentExpirationMs  = expiresMs;

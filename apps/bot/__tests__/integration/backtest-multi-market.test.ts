@@ -36,7 +36,8 @@ import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { InstrumentInfo } from '@polymarket/ports';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import { Balance, Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
-import { TimestampService } from '@polymarket/timestamp';
+import { TimestampService, type Timestamp } from '@polymarket/timestamp';
+
 import { BacktestEngine } from '@polymarket/backtesting';
 import { SnapshotReaderFactory } from '@polymarket/snapshot-readers';
 import { buildRepositories } from '../../src/bot/buildRepositories.js';
@@ -49,6 +50,19 @@ import type { StrategyConfig } from '../../src/strategyFactory.js';
 import { InMemoryMarketCatalog } from '../../src/InMemoryMarketCatalog.js';
 import type { RiskParams } from '@polymarket/risk';
 import type { DumbStrategyConfig } from '../../src/strategies/DumbStrategy.js';
+
+/**
+ * Строит Timestamp из epoch ms, падая на невалидном значении.
+ *
+ * @param ms - Epoch milliseconds
+ * @returns Timestamp
+ * @throws {Error} Если значение не проходит инварианты Timestamp
+ */
+function expectTimestamp(ms: number): Timestamp {
+  const result = TimestampService.create(ms);
+  if (!result.ok) throw new Error(`Invalid test timestamp: ${ms}`);
+  return result.value;
+}
 
 jest.setTimeout(120_000);
 
@@ -267,7 +281,7 @@ describe('Backtest — два рынка одновременно', () => {
     } as StrategyConfig);
 
     const marketStub = {
-      expirationMs: Date.now() + 24 * 60 * 60 * 1000,
+      expiresAt: expectTimestamp(Date.now() + 24 * 60 * 60 * 1000),
     } as Parameters<typeof engine.scheduler.register>[0]['market'];
 
     // Регистрируем обе стратегии
