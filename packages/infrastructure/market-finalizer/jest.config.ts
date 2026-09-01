@@ -23,12 +23,11 @@ const config: Config = {
     '^@polymarket/messages$': '<rootDir>/../../foundation/messages/src/index.ts',
     '^@polymarket/logger$': '<rootDir>/../../foundation/logger/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../foundation/ids/src/index.ts',
-    // Discovery отдаёт canonical Market за границей порта — маппим
-    // доменные/портовые пакеты, которых требует его дерево импортов.
+    // MarketFinalizer/recordedTwapSettlement/recordedChainlinkWinner берут из
+    // @polymarket/polymarket-v2 ЗНАЧЕНИЯ (compareDecimalStrings, meanOfDecimalStrings,
+    // isFiniteDecimalString), поэтому его index грузится в runtime и тянет
+    // PolymarketMarketDiscovery → canonical Market.
     '^@polymarket/market$': '<rootDir>/../../domain/entities/market/src/index.ts',
-    '^@polymarket/order$': '<rootDir>/../../domain/entities/order/src/index.ts',
-    '^@polymarket/fill$': '<rootDir>/../../domain/entities/fill/src/index.ts',
-    '^@polymarket/portfolio$': '<rootDir>/../../domain/entities/portfolio/src/index.ts',
     '^@polymarket/errors$': '<rootDir>/../../foundation/errors/src/index.ts',
     '^@polymarket/errors/(.*)$': '<rootDir>/../../foundation/errors/src/$1',
     '^@polymarket/math$': '<rootDir>/../../foundation/math/src/index.ts',

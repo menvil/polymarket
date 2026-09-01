@@ -63,10 +63,66 @@ Discovery отдаёт СНИМОК: «вот полный технически 
 
 ### Иммутабельность
 
-`replace()` копирует и замораживает массив записей и диагностику: source of
-truth не должен меняться из-под потребителя, который держит ссылку на
-результат `getAll()`, и не должен зависеть от того, мутирует ли вызывающий
-переданный снимок после вызова.
+Universe — source of truth Application, поэтому он неизменяем по **двум**
+независимым осям:
+
+1. он не меняется из-под потребителя, который держит ссылку на результат
+   `getAll()`/`get()`/`getSnapshot()`;
+2. он не зависит от того, мутирует ли вызывающий переданный снимок **после**
+   `replace()`.
+
+Одной заморозки массива для этого мало: записи и их `metrics` остались бы
+общими объектами с вызывающим, и `snapshot.entries[0].metrics.liquidity = x`
+тихо менял бы source of truth. Поэтому `replace()` строит **свои** объекты и
+замораживает именно их.
+
+#### Что копируется и что замораживается
+
+| Объект | Копируется | Замораживается | Почему |
+|---|---|---|---|
+| снимок `{ observedAt, entries, diagnostics }` | да (новый литерал) | да | universe владеет им целиком |
+| `entries` | да (новый массив) | да | `push`/`pop` вызывающего не должны менять universe |
+| запись `{ market, metrics }` | да (новый объект) | да | иначе universe делит объект с вызывающим |
+| `metrics` | да (shallow copy) | да | мутабелен сам контейнер — обычный литерал адаптера |
+| `diagnostics` | да (shallow copy) | да | счётчики — обычный мутабельный объект |
+| `market` | **нет** — по ссылке | не трогается | иммутабельная доменная entity, см. ниже |
+
+`Money`/`Ratio` внутри `metrics` не копируются: это value objects, их
+неизменяемость — контракт `@polymarket/value-objects`. Копируется именно
+контейнер `metrics`, а не его значения.
+
+#### Почему `Market` остаётся по ссылке
+
+`Market` — иммутабельная доменная сущность `@polymarket/market`, её
+неизменяемость обеспечивает пакет-владелец. Клонировать её в universe значило
+бы дублировать чужой инвариант и сломать identity-сравнение по ссылке, на
+которое опираются потребители и тесты:
+
+```typescript
+universe.get(KnownVenues.POLYMARKET, market.id)?.market === market; // true
+```
+
+#### Почему копия входа, а не заморозка входа
+
+Заморозить `snapshot.entries[i]` и `snapshot.entries[i].metrics` было бы
+проще, но это побочный эффект на **чужих** данных: снимок принадлежит
+discovery, а не universe. Universe замораживает только то, чем владеет сам.
+
+```typescript
+const snapshot = discovery.getSnapshot();
+universe.replace(snapshot);
+
+Object.isFrozen(snapshot.entries[0]);           // false — данные вызывающего не тронуты
+Object.isFrozen(universe.getAll()[0]);          // true
+Object.isFrozen(universe.getAll()[0].metrics);  // true
+
+// мутация снимка после replace на universe не влияет
+(snapshot.entries[0].metrics as { liquidity: Money }).liquidity = other;
+universe.getAll()[0].metrics.liquidity;         // прежнее значение
+
+// мутация того, что отдал universe (обход readonly), бросает TypeError
+(universe.getAll()[0].metrics as { liquidity: Money }).liquidity = other;
+```
 
 ### Пример кода (актуальный!)
 

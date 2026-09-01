@@ -112,6 +112,24 @@ describe('canonical mapping: vendor Market → Domain Market (TEST 1)', () => {
     expect(Object.keys(entry).sort()).toEqual(['market', 'metrics']);
   });
 
+  it('запись снимка и её metrics заморожены: порт не даёт менять состояние Discovery', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket()]];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+    const entry = snapshot.entries[0]!;
+
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.entries)).toBe(true);
+    expect(Object.isFrozen(entry)).toBe(true);
+    expect(Object.isFrozen(entry.metrics)).toBe(true);
+    expect(() => {
+      (entry.metrics as { liquidity: unknown }).liquidity = null;
+    }).toThrow(TypeError);
+  });
+
   it('liquidity/spread живут в metrics, а не внутри Market', async () => {
     const { client, discovery } = createHarness();
     client.pages = [[createSdkMarket({ liquidity: '15000', spread: '0.03' })]];

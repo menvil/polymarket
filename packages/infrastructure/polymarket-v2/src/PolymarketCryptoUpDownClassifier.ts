@@ -134,13 +134,19 @@ export type PolymarketMarketClassification =
  *
  * @internal
  * @remarks
- * Границы слов заданы явными lookbehind/lookahead по буквенно-цифровым
- * символам (тот же приём, что в keyword-поиске `MarketFilter`): иначе
+ * Границы слова заданы явными lookbehind/lookahead: иначе
  * `Group or Downtown` дал бы ложное срабатывание. `includes('up')` и любой
  * fuzzy-матчинг здесь запрещены — цена ошибки — чужой рынок, поехавший в
  * realtime-контур под видом нашего.
+ *
+ * Границы проверяются по ЮНИКОДНЫМ классам букв и цифр (`\p{L}`/`\p{N}`), а
+ * не по ASCII-диапазону `[a-zA-Z0-9]`. Разница не теоретическая: с
+ * ASCII-границей любая нелатинская буква считается «не буквой», то есть
+ * пунктуацией, и заголовок вида `Биткоинup or down?` проходил бы как наша
+ * серия. Vendor не обязан публиковать только латиницу, а односторонняя
+ * ошибка здесь — чужой рынок в realtime-контуре.
  */
-const UP_OR_DOWN_PHRASE = /(?<![a-zA-Z0-9])up\s+or\s+down(?![a-zA-Z0-9])/i;
+const UP_OR_DOWN_PHRASE = /(?<![\p{L}\p{N}])up\s+or\s+down(?![\p{L}\p{N}])/iu;
 
 /** Канонические метки исходов Up/Down-рынка (lowercase). */
 const UP_DOWN_LABELS: readonly string[] = ['up', 'down'];

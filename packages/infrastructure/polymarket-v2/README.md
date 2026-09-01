@@ -34,12 +34,25 @@ Payload каждого сообщения — БУКВАЛЬНО объект, �
 (`POLYMARKET_MARKET`, `POLYMARKET_CRYPTO_BINANCE`,
 `POLYMARKET_CRYPTO_CHAINLINK`); он дополняет vendor-поля, а не заменяет их.
 
-## 3. Без семантики
+## 3. Без семантики в data plane
 
 Здесь НЕТ конверсии в `OrderBook`/`Trade`/VO/ApplicationEvent — это работа
-`PolymarketSemanticAdapter`, который появится ПОСЛЕ Recorder checkpoint и
-будет подписчиком того же bus. Пакет не зависит от Domain/Application
-(закреплено тестом `__tests__/contour-boundary.test.ts`).
+`PolymarketSemanticAdapter`, который является подписчиком того же bus.
+
+Границы зависимостей у двух плоскостей пакета РАЗНЫЕ, и обе закреплены
+тестом `__tests__/contour-boundary.test.ts`:
+
+| Плоскость | Файлы | Что разрешено сверх Foundation |
+| --- | --- | --- |
+| **data plane** | `PolymarketSource`, `PolymarketExternalMessage` | ничего: ни Domain, ни Application |
+| **control plane** | `PolymarketMarketDiscovery`, `PolymarketCryptoUpDownClassifier`, `PolymarketRtdsFeeds`, `PolymarketFinalization` | `@polymarket/market` (canonical Domain Market), `@polymarket/ports` (контракт снимка), `@polymarket/value-objects` |
+
+Исключение для control plane — не послабление, а его прямая работа: задача
+Discovery в том и состоит, чтобы превратить vendor-запись в canonical
+`Market` ДО границы Application, и делать это, не зная доменного типа,
+невозможно. Обеим плоскостям по-прежнему запрещены trading/semantic/
+exchange-пакеты, а `@polymarket/market-discovery` (Filter/Scorer) запрещён
+control plane отдельным правилом: owner selection живёт НАД портом.
 
 ## 4. Один bus
 

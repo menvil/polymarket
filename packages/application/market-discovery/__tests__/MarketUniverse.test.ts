@@ -220,4 +220,70 @@ describe('иммутабельность source of truth', () => {
 
     expect(universe.getSnapshot().diagnostics.supportedCryptoUpDown).toBe(1);
   });
+
+  it('мутация metrics исходной записи ПОСЛЕ replace не меняет universe', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const snapshot = createSnapshot([createMarket('btc-1200')]);
+    universe.replace(snapshot);
+
+    (snapshot.entries[0]!.metrics as { liquidity: Money }).liquidity = Money.of(
+      new Decimal(999),
+      'USDC',
+    );
+
+    expect(universe.getAll()[0]!.metrics.liquidity.value().toNumber()).toBe(1000);
+  });
+
+  it('replace не замораживает данные вызывающего — снимок остаётся его собственностью', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const snapshot = createSnapshot([createMarket('btc-1200')]);
+    const callerEntry = snapshot.entries[0]!;
+
+    universe.replace(snapshot);
+
+    expect(Object.isFrozen(callerEntry)).toBe(false);
+    expect(Object.isFrozen(callerEntry.metrics)).toBe(false);
+    expect(Object.isFrozen(snapshot.entries)).toBe(false);
+  });
+
+  it('запись из getAll заморожена вместе с metrics — мутация бросает TypeError', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    universe.replace(createSnapshot([createMarket('btc-1200')]));
+
+    const entry = universe.getAll()[0]!;
+
+    expect(Object.isFrozen(entry)).toBe(true);
+    expect(Object.isFrozen(entry.metrics)).toBe(true);
+    expect(() => {
+      (entry.metrics as { liquidity: Money }).liquidity = Money.of(new Decimal(0), 'USDC');
+    }).toThrow(TypeError);
+    expect(universe.getAll()[0]!.metrics.liquidity.value().toNumber()).toBe(1000);
+  });
+
+  it('запись из get заморожена вместе с metrics — мутация бросает TypeError', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const market = createMarket('btc-1200');
+    universe.replace(createSnapshot([market]));
+
+    const entry = universe.get(KnownVenues.POLYMARKET, market.id)!;
+
+    expect(Object.isFrozen(entry)).toBe(true);
+    expect(Object.isFrozen(entry.metrics)).toBe(true);
+    expect(() => {
+      (entry as { market: Market }).market = createMarket('other', 30);
+    }).toThrow(TypeError);
+    expect(universe.get(KnownVenues.POLYMARKET, market.id)?.market).toBe(market);
+  });
+
+  it('Market остаётся той же ссылкой — копируется запись, не доменная сущность', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const market = createMarket('btc-1200');
+    const snapshot = createSnapshot([market]);
+
+    universe.replace(snapshot);
+
+    expect(universe.getAll()[0]!.market).toBe(market);
+    expect(universe.getAll()[0]).not.toBe(snapshot.entries[0]);
+    expect(universe.getAll()[0]!.metrics).not.toBe(snapshot.entries[0]!.metrics);
+  });
 });

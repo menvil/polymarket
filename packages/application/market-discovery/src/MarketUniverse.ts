@@ -72,7 +72,13 @@ const EMPTY_DIAGNOSTICS: MarketDiscoveryDiagnostics = Object.freeze({
  * In-memory source of truth текущего universe canonical рынков.
  */
 export class MarketUniverse {
-  /** Текущий снимок (заморожен вместе с массивом записей). */
+  /**
+   * Текущий снимок.
+   *
+   * @remarks
+   * Заморожен целиком: сам снимок, массив `entries`, каждая запись в нём
+   * и `metrics` каждой записи (см. {@link MarketUniverse.replace}).
+   */
   private _snapshot: MarketDiscoverySnapshot;
   /** Индекс `venueId + marketId → запись` для O(1) lookup. */
   private _index: ReadonlyMap<string, MarketDiscoveryEntry> = new Map();
@@ -109,9 +115,31 @@ export class MarketUniverse {
    *
    * @remarks
    * Записи, которых нет в новом снимке, из universe исчезают — снимок
-   * полон по контракту порта. Массив записей копируется и замораживается:
-   * source of truth не должен меняться из-под потребителя, который держит
-   * ссылку на результат `getAll()`.
+   * полон по контракту порта.
+   *
+   * ### Почему копия, а не заморозка входа
+   *
+   * Universe обязан быть неизменяем по ДВУМ независимым осям: он не должен
+   * меняться из-под потребителя, который держит ссылку на результат
+   * `getAll()`, и не должен зависеть от того, мутирует ли вызывающий
+   * переданный снимок ПОСЛЕ вызова. Заморозки одного лишь массива для
+   * этого мало: сами записи и их `metrics` остались бы общими объектами с
+   * вызывающим, и `snapshot.entries[0].metrics.liquidity = x` тихо менял
+   * бы source of truth Application.
+   *
+   * Поэтому `replace()` строит СВОИ объекты — новый массив, новую запись
+   * `{ market, metrics }` и новый `metrics` — и замораживает именно их.
+   * Заморозить объекты вызывающего было бы проще, но это побочный эффект
+   * на чужих данных: снимок принадлежит discovery, а не universe.
+   *
+   * ### Почему `Market` остаётся по ссылке
+   *
+   * `Market` — иммутабельная доменная сущность `@polymarket/market`, её
+   * неизменяемость обеспечивает сам пакет-владелец. Клонировать её здесь
+   * значило бы дублировать чужой инвариант и ломать identity-сравнение по
+   * ссылке (`universe.get(...)?.market === market`). `metrics` копируются
+   * не потому, что их поля мутабельны (`Money`/`Ratio` — VO), а потому что
+   * мутабелен сам контейнер: это обычный литерал, собранный адаптером.
    *
    * Дубликаты `venueId + marketId` в снимке невозможны (их снимает
    * discovery); если они всё же придут, индекс сохранит ПЕРВУЮ запись —
@@ -120,11 +148,25 @@ export class MarketUniverse {
    *
    * @example
    * ```typescript
-   * universe.replace(discovery.getSnapshot());
+   * const snapshot = discovery.getSnapshot();
+   * universe.replace(snapshot);
+   *
+   * // Ни один из этих путей на universe не влияет:
+   * (snapshot.entries as MarketDiscoveryEntry[]).pop();
+   * // а мутация того, что отдал universe, в strict mode бросает TypeError:
+   * // universe.getAll()[0].metrics.liquidity = other;
    * ```
    */
   public replace(snapshot: MarketDiscoverySnapshot): void {
-    const entries = Object.freeze([...snapshot.entries]);
+    // Свои объекты на каждом уровне: массив → запись → metrics.
+    const entries: readonly MarketDiscoveryEntry[] = Object.freeze(
+      snapshot.entries.map((entry) =>
+        Object.freeze({
+          market: entry.market,
+          metrics: Object.freeze({ ...entry.metrics }),
+        }),
+      ),
+    );
     const index = new Map<string, MarketDiscoveryEntry>();
     for (const entry of entries) {
       const key = marketUniverseKey(entry.market.venueId, entry.market.id);
@@ -145,11 +187,16 @@ export class MarketUniverse {
    *
    * @param venueId - Площадка рынка
    * @param marketId - Идентификатор рынка в пространстве имён площадки
-   * @returns Запись или `undefined`, если такого рынка в universe нет
+   * @returns Замороженная запись universe (вместе с её `metrics`) или
+   *   `undefined`, если такого рынка в universe нет
    *
    * @remarks
    * Идентичность — ПАРА `venueId + marketId`: одинаковый `marketId` на
    * разных площадках означает разные рынки.
+   *
+   * Отдаётся та же запись, что лежит в `getAll()`: индекс и массив ссылаются
+   * на одни и те же замороженные объекты, поэтому lookup и обход не могут
+   * разойтись содержимым.
    *
    * @example
    * ```typescript
@@ -163,7 +210,9 @@ export class MarketUniverse {
   /**
    * Все записи universe в техническом порядке снимка.
    *
-   * @returns Замороженный readonly-массив записей
+   * @returns Замороженный readonly-массив замороженных записей: ни массив,
+   *   ни запись, ни её `metrics` мутировать нельзя (в strict mode попытка
+   *   бросает `TypeError`)
    *
    * @example
    * ```typescript
@@ -179,7 +228,8 @@ export class MarketUniverse {
   /**
    * Текущий снимок целиком (записи + диагностика + момент наблюдения).
    *
-   * @returns Замороженный снимок
+   * @returns Замороженный снимок: сам объект, `diagnostics`, массив
+   *   `entries`, каждая запись и её `metrics`
    *
    * @example
    * ```typescript

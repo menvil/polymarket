@@ -151,6 +151,20 @@ describe('неподдержанные семейства (TEST 2)', () => {
     expect(result).toEqual({ kind: 'UNSUPPORTED', reason: 'not-up-down' });
   });
 
+  it('нелатинская буква вплотную к фразе — тоже граница слова, а не пунктуация', () => {
+    // ASCII-границы `[a-zA-Z0-9]` считали бы «Биткоинup» разрывом слова и
+    // пропускали чужой рынок в realtime-контур
+    const result = classifyPolymarketMarket(
+      createSdkMarket({
+        yesLabel: 'Yes',
+        noLabel: 'No',
+        question: 'Биткоинup or down?',
+      }),
+    );
+
+    expect(result).toEqual({ kind: 'UNSUPPORTED', reason: 'not-up-down' });
+  });
+
   it('нет fuzzy-матчинга: «Groupon or Downtown» не считается Up/Down', () => {
     const result = classifyPolymarketMarket(
       createSdkMarket({

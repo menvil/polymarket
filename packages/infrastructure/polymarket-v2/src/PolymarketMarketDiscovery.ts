@@ -185,7 +185,24 @@ export interface SelectedPolymarketMarket {
 export interface PolymarketMarketDiscoveryConfig {
   /**
    * Размер страницы `listMarkets`.
-   * @defaultValue 100 — Gamma молча ограничивает страницу 100 записями
+   *
+   * @remarks
+   * Поднимать выше 100 бессмысленно: Gamma МОЛЧА обрезает страницу сотней
+   * записей — не ошибкой, а укороченным ответом, поэтому опечатка вида
+   * `pageSize: 1000` выглядела бы работающей и просто давала бы вдесятеро
+   * больше round-trip'ов, чем ожидает читатель. Замер live 2026-09-01
+   * (`listMarkets(...).firstPage()`, одни и те же прочие параметры):
+   *
+   * ```text
+   * pageSize=100  → items=100  hasMore=true
+   * pageSize=250  → items=100  hasMore=true
+   * pageSize=500  → items=100  hasMore=true
+   * pageSize=1000 → items=100  hasMore=true
+   * ```
+   *
+   * Число страниц обхода задаётся не этим полем, а окном
+   * {@link PolymarketMarketDiscoveryConfig.endDateWindowMs}.
+   * @defaultValue 100 (потолок страницы Gamma)
    */
   readonly pageSize?: number;
   /**
@@ -202,19 +219,29 @@ export interface PolymarketMarketDiscoveryConfig {
    * прежних двух суток. Раньше окно определяло только длину списка
    * кандидатов, а точечный запрос события выполнялся для ОДНОГО выбранного
    * рынка. Теперь точное расписание нужно каждому рынку universe, поэтому
-   * окно определяет и число запросов события. Замер live 2026-09-01:
+   * окно определяет и число запросов события. Замер live 2026-09-01
+   * (`scripts/discovery-smoke.ts`, холодный обход):
    *
    * ```text
-   * 48 ч → 10 000 записей, 1926 рынков, 2040 запросов события, ~47 с
-   *  6 ч →    588 рынков,  ~600 запросов события,              ~11 с
-   *  1 ч →     96 рынков,   102 запроса события,               ~1.9 с
+   * окно   записей   рынков   fetchEvent   холодный обход
+   *  48 ч   10 000†     1926         2040           ~47 с
+   *   6 ч    6 100       588          624           ~14 с
+   *   1 ч    1 700       102          108            ~3 с
+   * † упор в maxPages: реальных записей в окне больше
    * ```
+   *
+   * Цифры — ОДИН замер, а не воспроизводимый бенчмарк: число записей
+   * зависит от того, сколько серий площадка сейчас опубликовала (то же
+   * часовое окно в тот же день давало и 500 записей), а время — от сети.
+   * Устойчиво здесь одно, и ради него таблица и приведена: стоимость растёт
+   * вместе с окном, потому что событие нужно КАЖДОМУ рынку universe.
    *
    * Шесть часов покрывают 5m/15m/1h/4h серии с запасом на lead time и
    * остаются на порядок дешевле прежнего окна; дальше горизонта Policy
    * всё равно не принимает решений. Холодная стоимость платится один раз —
-   * дальше расписания отдаёт кэш событий. Кому нужен более широкий
-   * горизонт — увеличивает окно осознанно.
+   * дальше расписания отдаёт кэш событий (тёплый обход в том же замере:
+   * 0 запросов, 624 попадания). Кому нужен более широкий горизонт —
+   * увеличивает окно осознанно.
    * @defaultValue 21_600_000 (6 часов)
    */
   readonly endDateWindowMs?: number;
@@ -938,6 +965,30 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
    * `crypto.duration` — ФАКТИЧЕСКАЯ длительность расписания
    * (`expiresAt - startsAt` через `Timestamp.diffMs`), а не «5m/15m/1h по
    * умолчанию»: номинал серии выведет Policy из этого значения.
+   *
+   * ### Известное расхождение с семантикой `MarketDuration`
+   *
+   * VO `MarketDuration` документирован как НОМИНАЛ серии, и его TSDoc прямо
+   * говорит, что номинал может не совпадать с `expiresAt - startsAt`, если
+   * площадка сдвинула окно конкретного рынка. Здесь поле заполняется
+   * измеренным интервалом — это осознанный выбор данного этапа, а не
+   * недосмотр, и он опирается на замер, а не на предположение:
+   *
+   * ```text
+   * live 2026-09-01, 80 crypto Up/Down рынков ближайшего часа, 60 событий:
+   *   ровно 300 000 мс × 44, ровно 900 000 мс × 16
+   *   длительностей, не кратных минуте: 0
+   * ```
+   *
+   * То есть на текущих данных измеренный интервал И ЕСТЬ номинал, и Policy
+   * может сравнивать `crypto.duration` с `5m`/`15m` напрямую. Если площадка
+   * когда-нибудь начнёт сдвигать окна, номинал у неё ЕСТЬ и его не придётся
+   * угадывать: `event.series[0].slug` несёт серию явно
+   * (`bnb-up-or-down-5m`), как и slug самого рынка (`bnb-updown-5m-…`).
+   * Переход на этот источник — отдельное решение Policy-MR: он требует
+   * политики на случай пустого `series[]`, а вводить fallback ради поля,
+   * которое сегодня совпадает точно, значит добавить необязательную ветку
+   * с необязательным риском.
    */
   private _toEntry(
     candidate: SupportedCandidate,
@@ -1011,8 +1062,15 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
       return undefined;
     }
 
+    // Заморозка на обоих уровнях: снимок отдаётся наружу как есть
+    // (`getSnapshot()`), и потребитель, читающий порт напрямую — без
+    // `MarketUniverse` — не должен уметь изменить внутреннее состояние
+    // Discovery через `entry.metrics.liquidity = ...`.
     return {
-      entry: { market: created.value, metrics: this._toMetrics(vendorMarket, marketIdLog) },
+      entry: Object.freeze({
+        market: created.value,
+        metrics: this._toMetrics(vendorMarket, marketIdLog),
+      }),
       vendor: this._toVendorRecord(candidate, event, startsAt),
     };
   }
@@ -1059,7 +1117,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
       }
     }
 
-    return { liquidity, ...(spread !== undefined ? { spread } : {}) };
+    return Object.freeze({ liquidity, ...(spread !== undefined ? { spread } : {}) });
   }
 
   /**
