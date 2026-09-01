@@ -69,7 +69,7 @@ function registerEvent(
 }
 
 describe('canonical mapping: vendor Market → Domain Market (TEST 1)', () => {
-  it('строит canonical Market с точным расписанием и фактической длительностью', async () => {
+  it('строит canonical Market с точным расписанием и НОМИНАЛОМ серии', async () => {
     const { client, discovery } = createHarness();
     client.pages = [[createSdkMarket({ endDate: isoInMinutes(35) })]];
     registerEvent(client, '99001', 30, 35);
@@ -83,7 +83,7 @@ describe('canonical mapping: vendor Market → Domain Market (TEST 1)', () => {
     expect(String(market.id)).toBe(CONDITION_ID_BTC);
     expect(market.family).toBe('CRYPTO_UP_DOWN');
     expect(market.crypto?.asset).toBe('btc');
-    // Длительность — ФАКТ расписания (35 - 30 минут), а не номинал серии
+    // Номинал прочитан из слага серии (`…-5m`), фактическое окно совпадает
     expect(market.crypto?.duration).toBe(5 * 60_000);
     expect(market.duration().toNumber()).toBe(5 * 60_000);
     expect(market.state.status).toBe('ACTIVE');
@@ -95,6 +95,81 @@ describe('canonical mapping: vendor Market → Domain Market (TEST 1)', () => {
       { index: 0, label: 'Up', instrumentId: TOKEN_ID_BTC_UP },
       { index: 1, label: 'Down', instrumentId: TOKEN_ID_BTC_DOWN },
     ]);
+  });
+
+  it('crypto.duration — НОМИНАЛ серии, а не измеренное окно (они расходятся)', async () => {
+    const { client, discovery } = createHarness();
+    // Площадка сдвинула окно конкретного рынка: фактические 4 минуты
+    // против номинальных 5. Именно ради этого случая номинал и читается
+    // из серии: `crypto.duration === FIVE_MINUTES` у Policy обязан
+    // означать «рынок 5-минутной серии», а не «окно длиной 5 минут».
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(34) })]];
+    client.events.set(
+      '99001',
+      createSdkEvent({
+        id: '99001',
+        startTime: isoInMinutes(30),
+        endDate: isoInMinutes(34),
+        seriesSlug: 'bitcoin-up-or-down-5m',
+      }),
+    );
+
+    await discovery.refresh();
+    const market = discovery.getSnapshot().entries[0]!.market;
+
+    expect(market.crypto?.duration).toBe(5 * 60_000); // номинал серии
+    expect(market.duration().toNumber()).toBe(4 * 60_000); // фактическое окно
+  });
+
+  it.each([
+    ['bitcoin-up-or-down-5m', 5 * 60_000],
+    ['ethereum-up-or-down-15m', 15 * 60_000],
+    ['solana-up-or-down-4h', 4 * 60 * 60_000],
+  ])('номинал %s читается как %i мс', async (seriesSlug, expected) => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(35) })]];
+    client.events.set(
+      '99001',
+      createSdkEvent({ id: '99001', startTime: isoInMinutes(30), seriesSlug }),
+    );
+
+    await discovery.refresh();
+
+    expect(discovery.getSnapshot().entries[0]!.market.crypto?.duration).toBe(expected);
+  });
+
+  it('серия без числового номинала (hourly) исключает рынок, а не подставляет окно', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(35) })]];
+    client.events.set(
+      '99001',
+      createSdkEvent({
+        id: '99001',
+        startTime: isoInMinutes(30),
+        seriesSlug: 'bitcoin-up-or-down-hourly',
+      }),
+    );
+
+    await discovery.refresh();
+    const snapshot = discovery.getSnapshot();
+
+    expect(snapshot.entries).toHaveLength(0);
+    expect(snapshot.diagnostics.invalidMarkets.seriesDuration).toBe(1);
+    expect(snapshot.diagnostics.invalidMarkets.total).toBe(1);
+  });
+
+  it('событие без серии исключает рынок: номинал объявлять нечем', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ endDate: isoInMinutes(35) })]];
+    client.events.set(
+      '99001',
+      createSdkEvent({ id: '99001', startTime: isoInMinutes(30), seriesSlug: null }),
+    );
+
+    await discovery.refresh();
+
+    expect(discovery.getSnapshot().entries).toHaveLength(0);
+    expect(discovery.getSnapshot().diagnostics.invalidMarkets.seriesDuration).toBe(1);
   });
 
   it('vendor-объекты НЕ являются частью публичной записи discovery', async () => {
@@ -251,7 +326,7 @@ describe('семейство: только Crypto Up/Down попадает в un
     expect(snapshot.entries.map((entry) => String(entry.market.id))).toEqual([
       `0x${'3'.repeat(64)}`,
     ]);
-    expect(snapshot.diagnostics.invalidMarkets).toBe(2);
+    expect(snapshot.diagnostics.invalidMarkets.total).toBe(2);
   });
 });
 
@@ -277,7 +352,7 @@ describe('точное расписание из события (TEST 3)', () =>
     const snapshot = discovery.getSnapshot();
 
     expect(snapshot.entries).toHaveLength(0);
-    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+    expect(snapshot.diagnostics.invalidMarkets.total).toBe(1);
   });
 
   it('startTime не парсится → рынок непригоден', async () => {
@@ -309,7 +384,36 @@ describe('точное расписание из события (TEST 3)', () =>
 
     expect(client.fetchEventCalls).toHaveLength(0);
     expect(snapshot.entries).toHaveLength(0);
-    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+    expect(snapshot.diagnostics.invalidMarkets.total).toBe(1);
+  });
+
+  it('eventFetchFailures считает СОБЫТИЯ и различает полный отказ обогащения', async () => {
+    const { client, discovery } = createHarness();
+    client.pages = [
+      [
+        createCryptoUpDownMarket('btc', {
+          conditionId: CONDITION_ID_BTC,
+          eventRef: { id: 'evt-a' },
+        }),
+        createCryptoUpDownMarket('eth', {
+          conditionId: CONDITION_ID_ETH,
+          eventRef: { id: 'evt-b' },
+        }),
+      ],
+    ];
+    client.failFetchEventIds.add('evt-a');
+    client.failFetchEventIds.add('evt-b');
+
+    // Обход каталога удался, поэтому refresh честно возвращает true —
+    // именно поэтому нужен отдельный счётчик отказов обогащения
+    expect(await discovery.refresh()).toBe(true);
+    const d = discovery.getSnapshot().diagnostics;
+
+    expect(discovery.getSnapshot().entries).toHaveLength(0);
+    expect(d.eventFetches).toBe(2);
+    expect(d.eventFetchFailures).toBe(2);
+    expect(d.invalidMarkets.eventUnavailable).toBe(2);
+    expect(d.invalidMarkets.total).toBe(2);
   });
 
   it('отказ fetchEvent исключает только рынки этого события', async () => {
@@ -333,7 +437,7 @@ describe('точное расписание из события (TEST 3)', () =>
     const snapshot = discovery.getSnapshot();
 
     expect(snapshot.entries.map((entry) => String(entry.market.id))).toEqual([CONDITION_ID_ETH]);
-    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+    expect(snapshot.diagnostics.invalidMarkets.total).toBe(1);
     expect(snapshot.diagnostics.supportedCryptoUpDown).toBe(1);
     expect(logger.byLevel('warn').some((e) => e.message.includes('fetchEvent failed'))).toBe(true);
   });
@@ -740,7 +844,7 @@ describe('детерминированный порядок и дедуплик�
 
     expect(snapshot.entries).toHaveLength(1);
     expect(discovery.prepareMarket(snapshot.entries[0]!.market.id)?.gammaMarketId).toBe('good-copy');
-    expect(snapshot.diagnostics.invalidMarkets).toBe(1);
+    expect(snapshot.diagnostics.invalidMarkets.total).toBe(1);
     expect(snapshot.diagnostics.duplicateMarkets).toBe(0);
   });
 
@@ -794,9 +898,17 @@ describe('диагностика обхода (TEST 9)', () => {
       tradeableMarkets: 6,
       unsupportedMarkets: 3,
       supportedCryptoUpDown: 2,
-      invalidMarkets: 1,
+      invalidMarkets: {
+        total: 1,
+        classification: 1,
+        eventUnavailable: 0,
+        schedule: 0,
+        seriesDuration: 0,
+        canonicalMapping: 0,
+      },
       duplicateMarkets: 0,
       eventFetches: 1,
+      eventFetchFailures: 0,
       eventCacheHits: 0,
     });
   });
@@ -821,10 +933,14 @@ describe('диагностика обхода (TEST 9)', () => {
     await discovery.refresh();
     const d = discovery.getSnapshot().diagnostics;
 
-    expect(d.supportedCryptoUpDown + d.unsupportedMarkets + d.invalidMarkets + d.duplicateMarkets).toBe(
-      d.tradeableMarkets,
-    );
+    expect(
+      d.supportedCryptoUpDown + d.unsupportedMarkets + d.invalidMarkets.total + d.duplicateMarkets,
+    ).toBe(d.tradeableMarkets);
     expect(d.supportedCryptoUpDown).toBe(discovery.getSnapshot().entries.length);
+    // Разбор причин обязан сходиться со своим же total, иначе счётчик,
+    // добавленный без причины, потерялся бы молча
+    const { total, ...reasons } = d.invalidMarkets;
+    expect(Object.values(reasons).reduce((sum, n) => sum + n, 0)).toBe(total);
   });
 });
 

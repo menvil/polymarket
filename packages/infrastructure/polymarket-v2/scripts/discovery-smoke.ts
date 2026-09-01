@@ -255,6 +255,25 @@ function collectFailures(input: {
     );
   }
 
+  // Полный отказ обогащения. Ловится ОТДЕЛЬНО от пустого universe, потому
+  // что это другой диагноз: каталог прочитан, классификация отработала, но
+  // ни одно расписание получить не удалось. Порог «все до единого» выбран
+  // сознательно — единичные отказы событий на живой площадке нормальны,
+  // уже видны в отчёте, и падать на них значило бы получить вечно красный
+  // smoke, который перестают читать.
+  if (
+    snapshotIsFresh &&
+    diagnostics.eventFetches > 0 &&
+    diagnostics.eventFetchFailures === diagnostics.eventFetches
+  ) {
+    failures.push(
+      `every schedule fetch failed (${String(diagnostics.eventFetchFailures)}/` +
+        `${String(diagnostics.eventFetches)} events): the catalog was read and markets were ` +
+        'classified, but enrichment is fully down — refresh() still reports success because ' +
+        'catalog traversal itself succeeded',
+    );
+  }
+
   if (
     input.coldRefreshed &&
     input.warmRefreshed &&
@@ -359,8 +378,17 @@ async function main(): Promise<void> {
     `observedAt: ${snapshot.observedAt.toISO()}`,
     '',
   ];
+  // Разбор непригодных — вложенный объект: печатаем его с отступом, иначе
+  // `String(value)` дал бы `[object Object]` ровно там, где отчёт нужнее всего.
   for (const [name, value] of Object.entries(snapshot.diagnostics)) {
-    lines.push(`${name}: ${String(value)}`);
+    if (typeof value === 'number') {
+      lines.push(`${name}: ${String(value)}`);
+      continue;
+    }
+    lines.push(`${name}:`);
+    for (const [reason, count] of Object.entries(value)) {
+      lines.push(`  ${reason}: ${String(count)}`);
+    }
   }
   lines.push('');
 
@@ -378,13 +406,21 @@ async function main(): Promise<void> {
     lines.push('');
   }
 
-  const byDuration = groupBy(snapshot.entries, (entry) =>
-    humanDuration(entry.market.duration().toNumber()),
+  // Группируем по НОМИНАЛУ серии (`crypto.duration`), а не по измеренному
+  // окну: это и есть та классификация, по которой будет отбирать Policy.
+  // Расхождения номинала с фактическим окном показываем отдельно — они
+  // ожидаемы по контракту `MarketDuration`, но их полезно видеть.
+  const byNominal = groupBy(snapshot.entries, (entry) =>
+    humanDuration(entry.market.crypto?.duration ?? 0),
   );
-  lines.push('by duration:');
-  for (const [duration, group] of byDuration) {
+  lines.push('by nominal series duration:');
+  for (const [duration, group] of [...byNominal].sort((a, b) => a[0].localeCompare(b[0]))) {
     lines.push(`  ${duration}: ${String(group.length)}`);
   }
+  const shifted = snapshot.entries.filter(
+    (entry) => entry.market.duration().toNumber() !== (entry.market.crypto?.duration ?? 0),
+  );
+  lines.push(`  markets whose actual window differs from the nominal: ${String(shifted.length)}`);
 
   lines.push('', `canonical markets in universe: ${String(snapshot.entries.length)}`);
 

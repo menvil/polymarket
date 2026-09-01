@@ -75,9 +75,17 @@ function createSnapshot(markets: readonly Market[], observedAtMs = FIXED_NOW_MS)
       tradeableMarkets: markets.length,
       unsupportedMarkets: 0,
       supportedCryptoUpDown: markets.length,
-      invalidMarkets: 0,
+      invalidMarkets: {
+        total: 0,
+        classification: 0,
+        eventUnavailable: 0,
+        schedule: 0,
+        seriesDuration: 0,
+        canonicalMapping: 0,
+      },
       duplicateMarkets: 0,
       eventFetches: markets.length,
+      eventFetchFailures: 0,
       eventCacheHits: 0,
     },
   };
@@ -164,7 +172,7 @@ describe('идентичность рынка — ПАРА venueId + marketId', 
     expect(universe.get(asVenueId('KALSHI')!, market.id)).toBeUndefined();
   });
 
-  it('дубликат в снимке не ломает lookup: побеждает первая запись', () => {
+  it('дубликат схлопывается во ВСЕХ представлениях: побеждает первая запись', () => {
     const universe = new MarketUniverse(new FixedClock());
     const first = createMarket('btc-1200');
     const second = createMarket('btc-1200', 25);
@@ -172,6 +180,59 @@ describe('идентичность рынка — ПАРА venueId + marketId', 
     universe.replace(createSnapshot([first, second]));
 
     expect(universe.get(KnownVenues.POLYMARKET, first.id)?.market).toBe(first);
+    expect(universe.getAll()).toHaveLength(1);
+    expect(universe.getAll()[0]!.market).toBe(first);
+    expect(universe.getSnapshot().entries).toHaveLength(1);
+  });
+
+  it('lookup и getAll отдают ОДИН объект записи — представления не могут разойтись', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const first = createMarket('btc-1200');
+    const second = createMarket('btc-1200', 25);
+
+    universe.replace(createSnapshot([first, second]));
+
+    expect(universe.get(KnownVenues.POLYMARKET, first.id)).toBe(universe.getAll()[0]);
+  });
+
+  it('дедупликация сохраняет технический порядок остальных записей', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const btc = createMarket('btc-1200');
+    const eth = createMarket('eth-1200', 20);
+    const btcDuplicate = createMarket('btc-1200', 25);
+
+    universe.replace(createSnapshot([btc, eth, btcDuplicate]));
+
+    expect(universe.getAll().map((entry) => String(entry.market.id))).toEqual([
+      'btc-1200',
+      'eth-1200',
+    ]);
+  });
+
+  it('от дубликата побеждает первая запись целиком — вместе с её metrics', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const snapshot = createSnapshot([createMarket('btc-1200'), createMarket('btc-1200', 25)]);
+    (snapshot.entries[1]!.metrics as { liquidity: Money }).liquidity = Money.of(
+      new Decimal(777),
+      'USDC',
+    );
+
+    universe.replace(snapshot);
+
+    expect(universe.getAll()[0]!.metrics.liquidity.value().toNumber()).toBe(1000);
+  });
+
+  it('diagnostics НЕ пересчитываются: они описывают обход discovery, а не содержимое universe', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const first = createMarket('btc-1200');
+    const second = createMarket('btc-1200', 25);
+
+    // createSnapshot проставляет supportedCryptoUpDown = числу поданных рынков (2),
+    // хотя после дедупликации в universe остаётся одна запись.
+    universe.replace(createSnapshot([first, second]));
+
+    expect(universe.getSnapshot().diagnostics.supportedCryptoUpDown).toBe(2);
+    expect(universe.getAll()).toHaveLength(1);
   });
 });
 
@@ -209,6 +270,21 @@ describe('иммутабельность source of truth', () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.diagnostics)).toBe(true);
     expect(Object.isFrozen(snapshot.entries)).toBe(true);
+  });
+
+  it('вложенный разбор причин диагностики тоже копируется и заморожен', () => {
+    const universe = new MarketUniverse(new FixedClock());
+    const snapshot = createSnapshot([createMarket('btc-1200')]);
+    universe.replace(snapshot);
+
+    (snapshot.diagnostics.invalidMarkets as { total: number }).total = 42;
+
+    const stored = universe.getSnapshot().diagnostics.invalidMarkets;
+    expect(stored.total).toBe(0);
+    expect(Object.isFrozen(stored)).toBe(true);
+    expect(() => {
+      (stored as { total: number }).total = 7;
+    }).toThrow(TypeError);
   });
 
   it('мутация диагностики исходного снимка не отражается на universe', () => {

@@ -196,6 +196,15 @@ export interface SdkEventFixtureOptions {
   readonly metadata?: Record<string, unknown> | null;
   /** Вложенные normalized markets события. */
   readonly markets?: readonly Market[];
+  /**
+   * Slug серии события — ЕДИНСТВЕННЫЙ источник номинала `crypto.duration`.
+   *
+   * @remarks
+   * `null` означает «серии у события нет» (`series: []`), а не «слаг пуст»:
+   * различать эти случаи обязательно, потому что оба ведут к отказу, но по
+   * разным ветвям кода.
+   */
+  readonly seriesSlug?: string | null;
 }
 
 /**
@@ -215,6 +224,7 @@ export function createSdkEvent(options: SdkEventFixtureOptions = {}): Event {
     endDate = new Date(FIXED_NOW_MS + 30 * 60_000).toISOString(),
     metadata = null,
     markets = [],
+    seriesSlug = 'bitcoin-up-or-down-5m',
   } = options;
 
   const event = {
@@ -266,7 +276,10 @@ export function createSdkEvent(options: SdkEventFixtureOptions = {}): Event {
     partners: [],
     metadata,
     markets: [...markets],
-    series: [],
+    series:
+      seriesSlug === null
+        ? []
+        : [{ id: '11326', slug: seriesSlug, title: 'Series title', active: true, closed: false }],
     tags: [],
     creators: [],
   };

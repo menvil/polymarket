@@ -49,6 +49,7 @@ export type {
 export {
   classifyPolymarketMarket,
   isSupportedCryptoUpDown,
+  parseCryptoUpDownSeriesDuration,
 } from './PolymarketCryptoUpDownClassifier.js';
 export type {
   PolymarketCryptoUpDownClassification,

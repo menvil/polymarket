@@ -62,9 +62,17 @@ const EMPTY_DIAGNOSTICS: MarketDiscoveryDiagnostics = Object.freeze({
   tradeableMarkets: 0,
   unsupportedMarkets: 0,
   supportedCryptoUpDown: 0,
-  invalidMarkets: 0,
+  invalidMarkets: Object.freeze({
+    total: 0,
+    classification: 0,
+    eventUnavailable: 0,
+    schedule: 0,
+    seriesDuration: 0,
+    canonicalMapping: 0,
+  }),
   duplicateMarkets: 0,
   eventFetches: 0,
+  eventFetchFailures: 0,
   eventCacheHits: 0,
 });
 
@@ -141,10 +149,45 @@ export class MarketUniverse {
    * не потому, что их поля мутабельны (`Money`/`Ratio` — VO), а потому что
    * мутабелен сам контейнер: это обычный литерал, собранный адаптером.
    *
-   * Дубликаты `venueId + marketId` в снимке невозможны (их снимает
-   * discovery); если они всё же придут, индекс сохранит ПЕРВУЮ запись —
-   * то же правило, что у дедупликации discovery, чтобы lookup и порядок
-   * `getAll()` не расходились.
+   * ### Почему дедупликация одна на оба представления
+   *
+   * Universe отдаёт себя ДВУМЯ способами — точечным `get()` и обходом
+   * `getAll()`/`getSnapshot()`. Если дедуплицировать только индекс, а в
+   * массив складывать всё подряд, снимок с дубликатом даёт объект, два
+   * метода которого описывают РАЗНЫЙ universe: `get()` знает один рынок,
+   * `getAll()` возвращает две записи с одинаковой идентичностью. Для
+   * source of truth это худший вид расхождения — оно тихое, и каждый
+   * потребитель ловит его по-своему (двойная подписка на один рынок,
+   * двойной учёт в риске).
+   *
+   * Поэтому дедупликация происходит РОВНО ОДИН раз, и оба представления
+   * строятся из одного результата: записи кладутся в `Map` по ключу
+   * `marketUniverseKey()`, а массив — это её значения. `Map` хранит
+   * порядок вставки, поэтому технический порядок снимка сохраняется, а
+   * `get()` и `getAll()` отдают ОДИН И ТОТ ЖЕ объект записи — разойтись
+   * им больше нечем.
+   *
+   * Побеждает ПЕРВАЯ запись — то же правило, что у дедупликации discovery
+   * (`PolymarketMarketDiscovery._buildEntries`): universe не должен
+   * переворачивать выбор источника, иначе одинаковый снимок давал бы
+   * разный universe в зависимости от того, кто его дедуплицировал.
+   *
+   * ### Почему дубликат не ошибка и не пишется в лог
+   *
+   * Бросать на снимке с дубликатами нельзя: universe — простой holder,
+   * а данные, которые он умеет корректно нормализовать, не повод ронять
+   * вызывающего. Заводить ради дубликата логгер (сейчас его у класса нет)
+   * — тоже плата не по пользе: дубликат уже наблюдаем ТАМ, где он возник.
+   * Discovery считает его в `diagnostics.duplicateMarkets` и логирует
+   * конфликт vendor-записей, зная то, чего universe не знает (какая
+   * именно vendor-запись отброшена). Второй голос об одном факте не
+   * добавил бы информации, а превратил бы чистый holder без побочных
+   * эффектов в объект с зависимостью на инфраструктуру.
+   *
+   * Незамеченным дубликат при этом не остаётся: диагностика снимка НЕ
+   * пересчитывается, поэтому `diagnostics.supportedCryptoUpDown !==
+   * getAll().length` — арифметически видимый признак того, что снимок
+   * пришёл с дубликатами (см. {@link MarketUniverse.getSnapshot}).
    *
    * @example
    * ```typescript
@@ -160,29 +203,42 @@ export class MarketUniverse {
    *
    * // а то, что отдал universe, заморожено — мутация бросает TypeError:
    * // universe.getAll()[0].metrics.liquidity = other;
+   *
+   * // дубликат идентичности схлопывается во ВСЕХ представлениях сразу:
+   * universe.replace({ observedAt, entries: [first, secondSameId], diagnostics });
+   * universe.getAll().length;                       // → 1
+   * universe.get(venueId, id) === universe.getAll()[0]; // → true
    * ```
    */
   public replace(snapshot: MarketDiscoverySnapshot): void {
+    // Единственная дедупликация: индекс — и результат, и источник массива.
     // Свои объекты на каждом уровне: массив → запись → metrics.
-    const entries: readonly MarketDiscoveryEntry[] = Object.freeze(
-      snapshot.entries.map((entry) =>
+    const index = new Map<string, MarketDiscoveryEntry>();
+    for (const entry of snapshot.entries) {
+      const key = marketUniverseKey(entry.market.venueId, entry.market.id);
+      if (index.has(key)) {
+        continue; // побеждает первая запись
+      }
+      index.set(
+        key,
         Object.freeze({
           market: entry.market,
           metrics: Object.freeze({ ...entry.metrics }),
         }),
-      ),
-    );
-    const index = new Map<string, MarketDiscoveryEntry>();
-    for (const entry of entries) {
-      const key = marketUniverseKey(entry.market.venueId, entry.market.id);
-      if (!index.has(key)) {
-        index.set(key, entry);
-      }
+      );
     }
+    // Map хранит порядок вставки → технический порядок снимка сохранён.
+    const entries: readonly MarketDiscoveryEntry[] = Object.freeze([...index.values()]);
     this._snapshot = Object.freeze({
       observedAt: snapshot.observedAt,
       entries,
-      diagnostics: Object.freeze({ ...snapshot.diagnostics }),
+      diagnostics: Object.freeze({
+        ...snapshot.diagnostics,
+        // Разбор причин — вложенный объект: поверхностная копия оставила бы
+        // его общим с источником и мутабельным (та же ошибка, что чинилась
+        // у `metrics` записи).
+        invalidMarkets: Object.freeze({ ...snapshot.diagnostics.invalidMarkets }),
+      }),
     });
     this._index = index;
   }
@@ -219,6 +275,13 @@ export class MarketUniverse {
    *   ни запись, ни её `metrics` мутировать нельзя (в strict mode попытка
    *   бросает `TypeError`)
    *
+   * @remarks
+   * Записи уникальны по паре `venueId + marketId`: обход не может увидеть
+   * рынок, которого не видит `get()`, и наоборот — это одни и те же
+   * объекты (см. {@link MarketUniverse.replace}). Поэтому `getAll()`
+   * безопасно использовать как основу подписок и учёта: одна запись — один
+   * рынок.
+   *
    * @example
    * ```typescript
    * const cryptoMarkets = universe
@@ -236,10 +299,30 @@ export class MarketUniverse {
    * @returns Замороженный снимок: сам объект, `diagnostics`, массив
    *   `entries`, каждая запись и её `metrics`
    *
+   * @remarks
+   * ### `diagnostics` — не счётчик содержимого universe
+   *
+   * Диагностика копируется из снимка КАК ЕСТЬ и никогда не пересчитывается:
+   * это протокол ОБХОДА discovery («сколько страниц прочитано, сколько
+   * записей отсеяно и почему»), а не описание того, что лежит в universe.
+   * Пересчитать её здесь и нельзя, и не нужно: universe не наблюдал обход и
+   * не знает, из-за чего рынок не дошёл до снимка.
+   *
+   * Практическое следствие: `diagnostics.supportedCryptoUpDown` может быть
+   * БОЛЬШЕ, чем `entries.length`, если снимок пришёл с дубликатами — их
+   * схлопывает `replace()`, а счётчик остаётся тем, что насчитал источник.
+   * Для снимка от корректного discovery числа совпадают (он дедуплицирует
+   * сам), поэтому расхождение — полезный признак «источник отдал дубликат»,
+   * а не поломка. Размер universe читайте из `entries.length`/`getAll()`,
+   * а не из диагностики.
+   *
    * @example
    * ```typescript
-   * const { observedAt, diagnostics } = universe.getSnapshot();
+   * const { observedAt, entries, diagnostics } = universe.getSnapshot();
    * logger.info('Universe', { observedAt: observedAt.toISO(), ...diagnostics });
+   *
+   * entries.length;                     // сколько рынков в universe
+   * diagnostics.supportedCryptoUpDown;  // сколько их насчитал обход discovery
    * ```
    */
   public getSnapshot(): MarketDiscoverySnapshot {

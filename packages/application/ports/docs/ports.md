@@ -85,6 +85,14 @@ instrumentId: InstrumentId`, `DecisionEntry.strategyId: StrategyId`, `OrderEntry
 Разделение refresh/getSnapshot сохраняет last-good семантику — временная недоступность
 площадки не лишает Application последнего успешного universe.
 
+`MarketDiscoveryDiagnostics.invalidMarkets` — не число, а разбор ПО ПРИЧИНЕ
+(`classification`/`eventUnavailable`/`schedule`/`seriesDuration`/`canonicalMapping` + `total`):
+один счётчик отвечает «сколько», но не «что сломано», а недоступное событие, нераспознанный
+номинал серии и отказ canonical-отображения — операционно разные ситуации. Рядом
+`eventFetchFailures` считает СОБЫТИЯ: полный отказ обогащения не делает обход неуспешным
+(каталог прочитан, `refresh()` вернёт `true` с пустым universe), и без этого счётчика
+«площадка недоступна» неотличимо от «сегодня нет рынков».
+
 Запись снимка — `MarketDiscoveryEntry = { market: Market, metrics: MarketDiscoveryMetrics }`.
 Быстро меняющиеся наблюдения (`liquidity: Money`, `spread?: Ratio`) живут РЯДОМ с `Market`,
 а не внутри него: `Market` — identity/структура/расписание, и «изменился стакан» не должно

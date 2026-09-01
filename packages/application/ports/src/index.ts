@@ -137,6 +137,7 @@ export type {
   MarketDiscoveryEntry,
   MarketDiscoveryMetrics,
   MarketDiscoveryDiagnostics,
+  MarketDiscoveryInvalidBreakdown,
 } from './IMarketDiscoveryService.js';
 export { marketUniverseKey } from './IMarketDiscoveryService.js';
 /** Реэкспорт LEGACY-кандидата discovery (вход Filter/Scorer до Policy-MR). */

@@ -10,7 +10,11 @@
  * крипто-рынок общего вида.
  */
 import { describe, it, expect } from '@jest/globals';
-import { classifyPolymarketMarket, isSupportedCryptoUpDown } from '../src/index.js';
+import {
+  classifyPolymarketMarket,
+  isSupportedCryptoUpDown,
+  parseCryptoUpDownSeriesDuration,
+} from '../src/index.js';
 import {
   CONDITION_ID_BTC,
   CONDITION_ID_ETH,
@@ -270,5 +274,37 @@ describe('непригодные рынки НАШЕГО семейства (TES
     expect(result.kind).toBe('CRYPTO_UP_DOWN');
     if (result.kind !== 'CRYPTO_UP_DOWN') return;
     expect(result.slug).toBeUndefined();
+  });
+});
+
+describe('номинал серии из vendor-слага (TEST 4)', () => {
+  it.each([
+    ['btc-up-or-down-5m', 300_000],
+    ['ethereum-up-or-down-15m', 900_000],
+    ['solana-up-or-down-4h', 14_400_000],
+    ['XRP-Up-Or-Down-5M', 300_000],
+  ])('%s → %i мс', (slug, expected) => {
+    expect(parseCryptoUpDownSeriesDuration(slug)).toBe(expected);
+  });
+
+  it.each([
+    ['btc-up-or-down-hourly', 'нет числового номинала — «hourly» не декодируется'],
+    ['btc-up-or-down-5', 'нет единицы измерения'],
+    ['btc-up-or-down-5d', 'единица не наблюдалась в живых данных'],
+    ['btc-updown-5m-1788282900', 'номинал не на конце: это слаг РЫНКА, а не серии'],
+    ['', 'пустой слаг'],
+  ])('%s → undefined (%s)', (slug) => {
+    expect(parseCryptoUpDownSeriesDuration(slug)).toBeUndefined();
+  });
+
+  it('отсутствие слага не является нулевым номиналом', () => {
+    expect(parseCryptoUpDownSeriesDuration(null)).toBeUndefined();
+    expect(parseCryptoUpDownSeriesDuration(undefined)).toBeUndefined();
+  });
+
+  it('мусорные значения отсекаются инвариантами MarketDuration', () => {
+    expect(parseCryptoUpDownSeriesDuration('btc-up-or-down-0m')).toBeUndefined();
+    // 9999 часов — больше 365 суток, верхняя граница MarketDuration
+    expect(parseCryptoUpDownSeriesDuration('btc-up-or-down-9999h')).toBeUndefined();
   });
 });

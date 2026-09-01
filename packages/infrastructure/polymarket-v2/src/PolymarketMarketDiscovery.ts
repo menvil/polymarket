@@ -86,12 +86,15 @@ import type {
 import { marketUniverseKey } from '@polymarket/ports';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { KnownVenues } from '@polymarket/ids';
-import { Market, MarketState, asMarketDuration } from '@polymarket/market';
+import { Market, MarketState } from '@polymarket/market';
 import { Money, MoneyService, RatioService } from '@polymarket/value-objects';
 import type { Ratio } from '@polymarket/value-objects';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
-import { classifyPolymarketMarket } from './PolymarketCryptoUpDownClassifier.js';
+import {
+  classifyPolymarketMarket,
+  parseCryptoUpDownSeriesDuration,
+} from './PolymarketCryptoUpDownClassifier.js';
 import type { PolymarketCryptoUpDownClassification } from './PolymarketCryptoUpDownClassifier.js';
 import type { PolymarketCryptoMeta, PolymarketRtdsFeed } from './PolymarketRtdsFeeds.js';
 
@@ -325,9 +328,10 @@ interface CachedEvent {
  * продублированы списком полей: иначе новый счётчик в контракте молча
  * остался бы неподсчитанным здесь.
  */
-type RefreshCounters = {
-  -readonly [K in keyof MarketDiscoveryDiagnostics]: MarketDiscoveryDiagnostics[K];
+type DeepMutable<T> = {
+  -readonly [K in keyof T]: T[K] extends number ? T[K] : DeepMutable<T[K]>;
 };
+type RefreshCounters = DeepMutable<MarketDiscoveryDiagnostics>;
 
 /** Построенная запись снимка вместе со своей Infrastructure-only vendor-записью. */
 interface BuiltEntry {
@@ -359,12 +363,39 @@ function emptySnapshot(observedAt: Timestamp): MarketDiscoverySnapshot {
       tradeableMarkets: 0,
       unsupportedMarkets: 0,
       supportedCryptoUpDown: 0,
-      invalidMarkets: 0,
+      invalidMarkets: Object.freeze({
+        total: 0,
+        classification: 0,
+        eventUnavailable: 0,
+        schedule: 0,
+        seriesDuration: 0,
+        canonicalMapping: 0,
+      }),
       duplicateMarkets: 0,
       eventFetches: 0,
+      eventFetchFailures: 0,
       eventCacheHits: 0,
     }),
   });
+}
+
+/**
+ * Учитывает непригодный рынок по КОНКРЕТНОЙ причине.
+ *
+ * @param counters - Счётчики обхода (мутируются)
+ * @param reason - Причина, по которой рынок не попал в universe
+ *
+ * @remarks
+ * Единственная точка, где растёт `invalidMarkets`: total и причина всегда
+ * увеличиваются вместе, поэтому разойтись они не могут — а инвариант
+ * «сумма причин === total» проверяется тестом, а не дисциплиной автора.
+ */
+function countInvalid(
+  counters: RefreshCounters,
+  reason: Exclude<keyof RefreshCounters['invalidMarkets'], 'total'>,
+): void {
+  counters.invalidMarkets.total++;
+  counters.invalidMarkets[reason]++;
 }
 
 /**
@@ -577,9 +608,17 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
       tradeableMarkets: 0,
       unsupportedMarkets: 0,
       supportedCryptoUpDown: 0,
-      invalidMarkets: 0,
+      invalidMarkets: {
+        total: 0,
+        classification: 0,
+        eventUnavailable: 0,
+        schedule: 0,
+        seriesDuration: 0,
+        canonicalMapping: 0,
+      },
       duplicateMarkets: 0,
       eventFetches: 0,
+      eventFetchFailures: 0,
       eventCacheHits: 0,
     };
 
@@ -615,7 +654,13 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     this._snapshot = Object.freeze({
       observedAt: observedAtResult.value,
       entries: Object.freeze(entries.map((entry) => entry.entry)),
-      diagnostics: Object.freeze({ ...counters }),
+      diagnostics: Object.freeze({
+        ...counters,
+        // Вложенный объект замораживается отдельно: поверхностный freeze
+        // оставил бы разбор причин мутабельным (та же ошибка, что уже
+        // чинилась у metrics записи).
+        invalidMarkets: Object.freeze({ ...counters.invalidMarkets }),
+      }),
     });
     this._vendorRecords = new Map(entries.map((entry) => [String(entry.entry.market.id), entry.vendor]));
     this._lastFetchMs = this._clock.now().getTime();
@@ -769,7 +814,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
         continue;
       }
       if (classification.kind === 'INVALID') {
-        counters.invalidMarkets++;
+        countInvalid(counters, 'classification');
         this._logger.debug('Supported-family market is unusable, excluded from universe', {
           gammaMarketId: String(vendorMarket.id),
           reason: classification.reason,
@@ -779,7 +824,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
 
       const eventRef = vendorMarket.events[0];
       if (eventRef === undefined) {
-        counters.invalidMarkets++;
+        countInvalid(counters, 'eventUnavailable');
         this._logger.debug('Crypto Up/Down market has no event reference, exact start unavailable', {
           marketId: String(classification.marketId),
         });
@@ -821,6 +866,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
         if (result.status === 'fulfilled') {
           resolved.set(result.value.eventId, result.value.event);
         } else {
+          counters.eventFetchFailures++;
           this._logger.warn('fetchEvent failed, markets of this event are excluded', {
             eventId: chunk[index],
             error:
@@ -933,14 +979,13 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
 
       const event = events.get(candidate.eventId);
       if (event === undefined) {
-        counters.invalidMarkets++;
+        countInvalid(counters, 'eventUnavailable');
         continue; // отказ fetchEvent уже залогирован в _resolveEvents
       }
 
-      const entry = this._toEntry(candidate, event);
+      const entry = this._toEntry(candidate, event, counters);
       if (entry === undefined) {
-        counters.invalidMarkets++;
-        continue;
+        continue; // причина уже учтена внутри _toEntry
       }
       seen.set(key, candidate);
       counters.supportedCryptoUpDown++;
@@ -962,43 +1007,36 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
    * делает рынок непригодным: подставного расписания здесь нет и быть не
    * может — от него зависят и торговые решения, и разметка архива.
    *
-   * `crypto.duration` — ФАКТИЧЕСКАЯ длительность расписания
-   * (`expiresAt - startsAt` через `Timestamp.diffMs`), а не «5m/15m/1h по
-   * умолчанию»: номинал серии выведет Policy из этого значения.
+   * `crypto.duration` — НОМИНАЛ серии, прочитанный из vendor-слага
+   * (`event.series[0].slug`), а не измеренный интервал расписания.
    *
-   * ### Известное расхождение с семантикой `MarketDuration`
+   * ### Почему номинал, а не `expiresAt - startsAt`
    *
-   * VO `MarketDuration` документирован как НОМИНАЛ серии, и его TSDoc прямо
-   * говорит, что номинал может не совпадать с `expiresAt - startsAt`, если
-   * площадка сдвинула окно конкретного рынка. Здесь поле заполняется
-   * измеренным интервалом — это осознанный выбор данного этапа, а не
-   * недосмотр, и он опирается на замер, а не на предположение:
+   * Домен определяет `MarketDuration` как номинал серии и прямо
+   * предупреждает, что он может не совпасть с фактическим окном;
+   * фактическое даёт `Market.duration()` рядом. Класть измеренный интервал
+   * в поле номинала означало бы, что `crypto.duration === FIVE_MINUTES` у
+   * Policy проверяет не принадлежность к 5-минутной серии, а длину
+   * конкретного окна — и совпадало бы это ровно до первого рынка, чьё окно
+   * площадка сдвинула. Номинал объявлен площадкой явно, поэтому он
+   * читается, а не выводится.
    *
-   * ```text
-   * live 2026-09-01, 80 crypto Up/Down рынков ближайшего часа, 60 событий:
-   *   ровно 300 000 мс × 44, ровно 900 000 мс × 16
-   *   длительностей, не кратных минуте: 0
-   * ```
-   *
-   * То есть на текущих данных измеренный интервал И ЕСТЬ номинал, и Policy
-   * может сравнивать `crypto.duration` с `5m`/`15m` напрямую. Если площадка
-   * когда-нибудь начнёт сдвигать окна, номинал у неё ЕСТЬ и его не придётся
-   * угадывать: `event.series[0].slug` несёт серию явно
-   * (`bnb-up-or-down-5m`), как и slug самого рынка (`bnb-updown-5m-…`).
-   * Переход на этот источник — отдельное решение Policy-MR: он требует
-   * политики на случай пустого `series[]`, а вводить fallback ради поля,
-   * которое сегодня совпадает точно, значит добавить необязательную ветку
-   * с необязательным риском.
+   * Рынок, чью серию мы не смогли прочитать, непригоден (счётчик
+   * `invalidMarkets.seriesDuration`): подставить сюда фактический интервал
+   * значило бы вернуть ровно тот дефект, ради устранения которого номинал
+   * и переносится на vendor-данные.
    */
   private _toEntry(
     candidate: SupportedCandidate,
     event: Event,
+    counters: RefreshCounters,
   ): BuiltEntry | undefined {
     const { classification, vendorMarket } = candidate;
     const marketIdLog = String(classification.marketId);
 
     const startTimeIso = event.schedule.startTime;
     if (startTimeIso === null || startTimeIso === undefined) {
+      countInvalid(counters, 'schedule');
       this._logger.debug('Event has no exact startTime, market excluded from universe', {
         marketId: marketIdLog,
         eventId: candidate.eventId,
@@ -1007,6 +1045,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     }
     const startMs = Date.parse(startTimeIso);
     if (Number.isNaN(startMs)) {
+      countInvalid(counters, 'schedule');
       this._logger.debug('Event startTime is not a valid timestamp, market excluded', {
         marketId: marketIdLog,
         startTime: startTimeIso,
@@ -1015,6 +1054,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     }
     const startsAtResult = TimestampService.create(startMs);
     if (!startsAtResult.ok) {
+      countInvalid(counters, 'schedule');
       this._logger.debug('Cannot create Timestamp from event startTime, market excluded', {
         marketId: marketIdLog,
         error: startsAtResult.error.message,
@@ -1023,6 +1063,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     }
     const startsAt = startsAtResult.value;
     if (!startsAt.isBefore(classification.expiresAt)) {
+      countInvalid(counters, 'schedule');
       this._logger.debug('Event start is not before market expiry, market excluded', {
         marketId: marketIdLog,
         startsAt: startsAt.toISO(),
@@ -1031,12 +1072,17 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
       return undefined;
     }
 
-    // Branded MarketDuration — число миллисекунд; canonical-операция
-    // `diffMs` даёт Decimal, конверсия в number здесь и есть его граница.
-    const duration = asMarketDuration(classification.expiresAt.diffMs(startsAt).toNumber());
+    // НОМИНАЛ серии, а не измеренный интервал: `MarketDuration` по контракту
+    // домена — классификация серии, и `Market.duration()` рядом уже даёт
+    // фактическое окно. Номинал объявлен площадкой явно, поэтому он читается,
+    // а не выводится (см. `parseCryptoUpDownSeriesDuration`).
+    const duration = parseCryptoUpDownSeriesDuration(event.series[0]?.slug);
     if (duration === undefined) {
-      this._logger.debug('Schedule duration is not a valid MarketDuration, market excluded', {
+      countInvalid(counters, 'seriesDuration');
+      this._logger.debug('Series nominal duration is not declared, market excluded', {
         marketId: marketIdLog,
+        eventId: candidate.eventId,
+        seriesSlug: event.series[0]?.slug ?? null,
       });
       return undefined;
     }
@@ -1054,6 +1100,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
       crypto: { asset: classification.crypto.asset, duration },
     });
     if (!created.ok) {
+      countInvalid(counters, 'canonicalMapping');
       this._logger.warn('Canonical Market rejected the mapped vendor record', {
         marketId: marketIdLog,
         error: created.error.message,

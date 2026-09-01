@@ -47,8 +47,8 @@
 import type { Market } from '@polymarket/bindings/gamma';
 import { asInstrumentId, asMarketId } from '@polymarket/ids';
 import type { MarketId } from '@polymarket/ids';
-import { parseMarketSlug } from '@polymarket/market';
-import type { MarketOutcome, MarketSlug, OutcomeIndex } from '@polymarket/market';
+import { asMarketDuration, parseMarketSlug } from '@polymarket/market';
+import type { MarketDuration, MarketOutcome, MarketSlug, OutcomeIndex } from '@polymarket/market';
 import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import { derivePolymarketCryptoMeta } from './PolymarketRtdsFeeds.js';
@@ -350,6 +350,95 @@ export function classifyPolymarketMarket(market: Market): PolymarketMarketClassi
     crypto,
     semantics,
   };
+}
+
+/**
+ * Строгая форма номинала серии в её vendor-слаге: `…-<N><unit>` на конце.
+ *
+ * @internal
+ * @remarks
+ * Захватываются ТОЛЬКО наблюдавшиеся единицы — минуты и часы. Добавление
+ * новой (`d`, `w`) — не расширение регулярки «на всякий случай», а
+ * следствие живого наблюдения: единица, которой мы не видели, может
+ * означать не то, что кажется, а ошибка здесь молча переклассифицирует
+ * серию.
+ */
+const SERIES_NOMINAL_SUFFIX = /-(\d{1,4})(m|h)$/i;
+
+/** Множители наблюдавшихся единиц номинала (мс). */
+const SERIES_NOMINAL_UNIT_MS: Readonly<Record<string, number>> = Object.freeze({
+  m: 60_000,
+  h: 3_600_000,
+});
+
+/**
+ * Извлекает НОМИНАЛ серии Up/Down из vendor-слага её серии.
+ *
+ * @param seriesSlug - `event.series[0].slug` (например, `btc-up-or-down-5m`)
+ * @returns Номинальная длительность серии либо `undefined`, если vendor её
+ *   не объявил в поддержанной форме
+ * @throws Ничего не бросает
+ *
+ * @remarks
+ * ### Почему номинал берётся отсюда, а не из расписания
+ *
+ * `MarketDuration` по контракту домена — НОМИНАЛ серии («это 5-минутный
+ * рынок»), а не измеренная длина окна: фактический интервал даёт
+ * `Market.duration()`, и TSDoc `MarketDuration` прямо предупреждает, что
+ * они могут разойтись. Класть `expiresAt - startsAt` в поле номинала
+ * означало бы, что `market.crypto.duration === FIVE_MINUTES` у Policy
+ * проверяет не семейство серии, а длину конкретного окна — и совпадало бы
+ * это ровно до первого сдвинутого площадкой рынка.
+ *
+ * Площадка объявляет номинал явно, поэтому угадывать ничего не нужно.
+ * Замер live 2026-09-01 (834 рынка Up/Down в 6-часовом окне, у ВСЕХ ровно
+ * одна серия):
+ *
+ * ```text
+ * <asset>-up-or-down-5m       × 584
+ * <asset>-up-or-down-15m      × 192
+ * <asset>-up-or-down-hourly   ×  42
+ * <asset>-up-or-down-4h       ×  16
+ * расхождений номинала с фактическим окном: 0
+ * ```
+ *
+ * ### Почему `hourly` НЕ поддержан
+ *
+ * Слаг `…-up-or-down-hourly` числового номинала не несёт, и «hourly = 3 600
+ * 000 мс» здесь было бы предположением, а не прочтением данных. Проверить
+ * его нечем: у событий этой серии `schedule.startTime` равен `null`
+ * (замерено на 12 событиях подряд), поэтому её рынки и без того не
+ * попадают в universe — точного начала торгов у них нет. Мэппинг
+ * непроверяемого предположения на недостижимый сегодня путь — ровно тот
+ * технический долг, ради устранения которого номинал и переносится на
+ * vendor-данные. Если площадка начнёт публиковать для них `startTime`,
+ * номинал нужно СНАЧАЛА подтвердить фактическими окнами, и только потом
+ * добавлять форму сюда вместе с тестом.
+ *
+ * @example
+ * ```typescript
+ * parseCryptoUpDownSeriesDuration('btc-up-or-down-5m');     // → 300_000
+ * parseCryptoUpDownSeriesDuration('sol-up-or-down-4h');     // → 14_400_000
+ * parseCryptoUpDownSeriesDuration('btc-up-or-down-hourly'); // → undefined
+ * parseCryptoUpDownSeriesDuration(null);                    // → undefined
+ * ```
+ */
+export function parseCryptoUpDownSeriesDuration(
+  seriesSlug: string | null | undefined,
+): MarketDuration | undefined {
+  if (seriesSlug === null || seriesSlug === undefined) {
+    return undefined;
+  }
+  const match = SERIES_NOMINAL_SUFFIX.exec(seriesSlug);
+  if (match === null) {
+    return undefined;
+  }
+  const unitMs = SERIES_NOMINAL_UNIT_MS[match[2]!.toLowerCase()];
+  if (unitMs === undefined) {
+    return undefined; // недостижимо для домена регулярки; защитный guard
+  }
+  // asMarketDuration отсекает мусорные значения (ноль, не-целое, > 365 суток)
+  return asMarketDuration(Number(match[1]) * unitMs);
 }
 
 /**

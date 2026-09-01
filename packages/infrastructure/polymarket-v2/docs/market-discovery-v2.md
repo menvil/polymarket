@@ -215,15 +215,21 @@ supported candidates → уникальные event id → _fetchEventOnce(id)
 Проверено live (окно 1 ч): холодный проход — 108 запросов за 3298 мс, тёплый
 — **0 запросов, 108 попаданий в кэш** за 2414 мс.
 
+В том же прогоне `invalidMarkets` = 6, и все шесть — по причине
+`schedule`: это рынки серии `hourly`, у событий которой нет `startTime`.
+`seriesDuration` = 0 — переход на номинал серии не стоил ни одного рынка.
+
 ### Условия непригодности рынка
 
 Рынок нашего семейства НЕ попадает в universe, если:
 
-- у него нет ссылки на событие (`events[0]`);
-- `fetchEvent` не удался;
-- `event.schedule.startTime` отсутствует либо не парсится;
-- `startsAt >= expiresAt`;
-- фактическая длительность не является валидной `MarketDuration`.
+| Условие | Счётчик |
+| --- | --- |
+| нет ссылки на событие (`events[0]`) либо `fetchEvent` не удался | `eventUnavailable` |
+| `event.schedule.startTime` отсутствует / не парсится / `startsAt >= expiresAt` | `schedule` |
+| номинал серии не объявлен в поддержанной форме | `seriesDuration` |
+| `Market.create()` отверг отображение | `canonicalMapping` |
+| рынок нашего семейства без обязательных полей | `classification` |
 
 Во всех случаях — счётчик `invalidMarkets` и debug-лог с причиной. Никаких
 угаданных расписаний; regression-тест дополнительно проверяет, что в
@@ -243,11 +249,45 @@ supported candidates → уникальные event id → _fetchEventOnce(id)
 | `outcomes` | `outcomes.yes/no` в vendor-порядке | обязательные токены и метки |
 | `family` | `CRYPTO_UP_DOWN` | единственное поддержанное |
 | `crypto.asset` | `derivePolymarketCryptoMeta().asset` | обязательное |
-| `crypto.duration` | `expiresAt.diffMs(startsAt)` | `<= 0`/невалидная → исключён |
+| `crypto.duration` | `event.series[0].slug` (номинал серии) | не объявлен → исключён |
 
-`crypto.duration` — ФАКТИЧЕСКАЯ длительность расписания через canonical
-`Timestamp.diffMs()`, а не «5m/15m/1h по умолчанию». Номинал серии выведет
-Policy из этого значения.
+### `crypto.duration` — НОМИНАЛ серии, а не измеренное окно
+
+Домен определяет `MarketDuration` как номинал серии («это 5-минутный
+рынок») и прямо предупреждает, что он может не совпасть с фактическим
+окном; фактическое даёт `Market.duration()` рядом. Класть
+`expiresAt - startsAt` в поле номинала означало бы, что у Policy
+
+```typescript
+market.crypto.duration === FIVE_MINUTES
+```
+
+проверяет не принадлежность к 5-минутной серии, а длину конкретного окна —
+и совпадало бы это ровно до первого рынка, чьё окно площадка сдвинула.
+
+Угадывать не требуется: площадка объявляет номинал явно. Замер live
+2026-09-01 — 834 рынка Up/Down в 6-часовом окне, у ВСЕХ ровно одна серия:
+
+| Слаг серии | Рынков | Номинал |
+| --- | --- | --- |
+| `<asset>-up-or-down-5m` | 584 | 5 мин |
+| `<asset>-up-or-down-15m` | 192 | 15 мин |
+| `<asset>-up-or-down-hourly` | 42 | **не объявлен числом** |
+| `<asset>-up-or-down-4h` | 16 | 4 часа |
+
+Расхождений номинала с фактическим окном: 0.
+
+Форма `hourly` НЕ поддержана: «hourly = 3 600 000 мс» было бы
+предположением, а не прочтением данных, и проверить его нечем — у событий
+этой серии `schedule.startTime` равен `null` (замерено на 12 событиях
+подряд), поэтому её рынки и без того не попадают в universe. Если площадка
+начнёт публиковать для них `startTime`, номинал нужно СНАЧАЛА подтвердить
+фактическими окнами и только потом добавлять форму вместе с тестом.
+
+Слаг самого рынка источником не служит: у 5m/15m/4h он несёт номинал
+(`btc-updown-5m-<ts>`), а у hourly — нет вовсе
+(`btc-up-or-down-september-1-2026-2pm-et`). Серия — единственное поле,
+объявляющее номинал единообразно.
 
 Vendor mapping boundary: bindings именуют первый/второй исход binary-рынка
 `yes`/`no` даже когда реальные метки — `Up`/`Down`; эти имена свойств не
@@ -289,16 +329,34 @@ interface MarketDiscoveryEntry {
 ```typescript
 interface MarketDiscoveryDiagnostics {
   pagesFetched; marketsScanned; tradeableMarkets;
-  unsupportedMarkets; supportedCryptoUpDown; invalidMarkets;
-  duplicateMarkets; eventFetches; eventCacheHits;
+  unsupportedMarkets; supportedCryptoUpDown; duplicateMarkets;
+  eventFetches; eventFetchFailures; eventCacheHits;
+  invalidMarkets: {
+    total; classification; eventUnavailable;
+    schedule; seriesDuration; canonicalMapping;
+  };
 }
 ```
 
-Инвариант, проверяемый тестом:
+Непригодные рынки разбираются ПО ПРИЧИНЕ: один счётчик отвечает на вопрос
+«сколько», но не на вопрос «что сломано», а это разные операционные
+ситуации — недоступное событие (площадка/сеть), нераспознанный номинал
+серии (наш парсер разошёлся с vendor-формой), отказ canonical-отображения
+(дефект маппинга). Без разбора живой прогон не отличает «сегодня Gamma
+лежит» от «мы перестали понимать данные».
+
+`eventFetchFailures` считает СОБЫТИЯ, а не рынки, и нужен отдельно:
+полный отказ обогащения НЕ делает обход неуспешным — каталог прочитан, и
+`refresh()` вернёт `true` с пустым universe.
+
+Два инварианта, проверяемые тестами:
 
 ```text
 tradeableMarkets === supportedCryptoUpDown + unsupportedMarkets
-                   + invalidMarkets + duplicateMarkets
+                   + invalidMarkets.total + duplicateMarkets
+
+invalidMarkets.total === classification + eventUnavailable
+                      + schedule + seriesDuration + canonicalMapping
 ```
 
 `marketsScanned - tradeableMarkets` — записи, отсечённые окном `endDate` и

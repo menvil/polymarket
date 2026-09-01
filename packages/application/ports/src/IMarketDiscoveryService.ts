@@ -94,6 +94,34 @@ export interface MarketDiscoveryEntry {
 }
 
 /**
+ * Разбор непригодных рынков по ПРИЧИНЕ отказа.
+ *
+ * @remarks
+ * Один счётчик «invalid» отвечает на вопрос «сколько», но не на вопрос
+ * «что сломано», а это разные операционные ситуации: недоступное событие —
+ * проблема площадки или сети, нераспознанный номинал серии — расхождение
+ * нашего парсера с vendor-формой, отказ canonical-отображения — дефект
+ * маппинга. Без разбора все три выглядят одинаково и живой прогон не
+ * отличает «сегодня Gamma лежит» от «мы перестали понимать данные».
+ *
+ * Инвариант: сумма всех причин равна {@link MarketDiscoveryInvalidBreakdown.total}.
+ */
+export interface MarketDiscoveryInvalidBreakdown {
+  /** Всего непригодных рынков (сумма причин ниже). */
+  readonly total: number;
+  /** Рынок нашего семейства без обязательных полей (нет id/вопроса/исходов). */
+  readonly classification: number;
+  /** Нет ссылки на событие либо событие не удалось получить. */
+  readonly eventUnavailable: number;
+  /** Событие получено, но точного начала торгов нет либо окно вывернуто. */
+  readonly schedule: number;
+  /** Площадка не объявила номинал серии в поддержанной форме. */
+  readonly seriesDuration: number;
+  /** Canonical `Market.create()` отверг отображение vendor-записи. */
+  readonly canonicalMapping: number;
+}
+
+/**
  * Детерминированная диагностика одного обхода discovery.
  *
  * @remarks
@@ -105,7 +133,7 @@ export interface MarketDiscoveryEntry {
  * tradeableMarkets
  *   === supportedCryptoUpDown
  *     + unsupportedMarkets
- *     + invalidMarkets
+ *     + invalidMarkets.total
  *     + duplicateMarkets
  * ```
  *
@@ -123,12 +151,24 @@ export interface MarketDiscoveryDiagnostics {
   readonly unsupportedMarkets: number;
   /** Сколько canonical рынков попало в snapshot. */
   readonly supportedCryptoUpDown: number;
-  /** Сколько записей отброшено как непригодные (нет обязательных данных). */
-  readonly invalidMarkets: number;
+  /** Непригодные записи с разбором по причине отказа. */
+  readonly invalidMarkets: MarketDiscoveryInvalidBreakdown;
   /** Сколько записей отброшено дедупликацией `venueId + marketId`. */
   readonly duplicateMarkets: number;
   /** Сколько точечных запросов события реально выполнено. */
   readonly eventFetches: number;
+  /**
+   * Сколько из них ЗАВЕРШИЛОСЬ ОТКАЗОМ.
+   *
+   * @remarks
+   * Считает СОБЫТИЯ, а не рынки: одно недоступное событие делает
+   * непригодными все свои рынки сразу. Отдельный счётчик нужен потому, что
+   * полный отказ обогащения (`eventFetches > 0` и `eventFetchFailures ===
+   * eventFetches`) НЕ делает обход неуспешным: каталог-то прочитан, и
+   * `refresh()` вернёт `true` с пустым universe. Без этого счётчика
+   * «площадка недоступна» неотличимо от «сегодня нет рынков».
+   */
+  readonly eventFetchFailures: number;
   /** Сколько запросов события обслужил кэш. */
   readonly eventCacheHits: number;
 }
