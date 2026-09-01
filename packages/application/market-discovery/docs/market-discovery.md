@@ -2,17 +2,25 @@
 
 ## Обзор
 
+Пакет владеет ОДНОЙ вещью: `MarketUniverse` — in-memory source of truth
+текущего canonical universe.
+
 | Компонент | Роль | Контракт |
 |---|---|---|
-| `MarketUniverse` | In-memory source of truth текущего canonical universe | `MarketDiscoverySnapshot` / `Market` |
-| `MarketFilter` | LEGACY: фильтрует кандидатов по `IMarketFilterConfig` (спред, ликвидность, срок до экспирации, ключевые слова) | `DiscoveredMarket` |
-| `MarketScorer` | LEGACY: сортирует по часам до экспирации (ASC), ликвидности (DESC), `marketId` (ASC) | `DiscoveredMarket` |
+| `MarketUniverse` | Текущий известный Application universe | `MarketDiscoverySnapshot` / `Market` |
 
-`MarketUniverse` работает с canonical `Market`. `MarketFilter`/`MarketScorer`
-пока живут на LEGACY-контракте `DiscoveredMarket` и **не участвуют** в
-Polymarket V2 Discovery: owner selection вынесен из Infrastructure и станет
-Policy НАД universe в следующем MR — тогда они будут мигрированы на
-`MarketDiscoveryEntry`, а `DiscoveredMarket` исчезнет.
+### Что отсюда ушло
+
+`MarketFilter` и `MarketScorer` жили здесь на LEGACY-контракте
+`DiscoveredMarket` и отвечали на вопрос ВКУСА — какие рынки интересны
+потребителю. Это owner policy, а не часть обнаружения: обнаружение и отбор
+меняются по разным причинам, и в одном пакете смена предпочтений
+потребителя трогала бы пакет про universe.
+
+Оба переехали в **`@polymarket/policy`** и работают там с canonical
+`MarketDiscoveryEntry` и `Policy`. Здесь их больше нет — ни как реализации,
+ни как deprecated-обёрток: два рабочих отбора одновременно означали бы два
+ответа на один вопрос.
 
 ## `MarketUniverse`
 
@@ -203,63 +211,11 @@ for (const { market } of universe.getAll()) {
 }
 ```
 
-## LEGACY: `MarketFilter` / `MarketScorer`
-
-```typescript
-import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
-
-const filtered = new MarketFilter().filterCandidates(candidates, config, nowMs);
-const ranked = new MarketScorer(clock).scoreAndSort(filtered);
-```
-
-## `IMarketFilterConfig` — пороги остаются `number` (не трогается)
-
-Все 8 полей (`minSpread`, `minLiquidity`, `minTimeToExpiryHours`, ...) — пороги фильтрации,
-не единичные измеренные величины. Этап 5 явно оставил их `number` целиком ("не трогается
-вообще") — тот же прецедент, что `DetectorConfig.minSpreadAfterFees` (Этап 4).
-
-## `DiscoveredMarket` — брендированные поля (Этап 10c)
-
-`DiscoveredMarket` (`@polymarket/ports`, `DiscoveredMarket.ts`) — `spread?: Ratio`,
-`liquidity: Money`, `eventStartMs?: Timestamp` (были `Decimal`/`Decimal`/`number` до Этапа
-10c плана миграции; единственная точка конструирования — `PolymarketMarketDiscoveryAdapter.
-_mapToDiscoveredMarket()`). `score: Decimal` и `startsAt?: Timestamp` не меняются (см.
-`@polymarket/ports`'s `docs/ports.md` за полным обоснованием).
-
-Раз `Ratio`/`Money` не имеют методов сравнения на core-уровне, `MarketFilter`'s
-`_passesSpreadFilter()`/`_passesLiquidityFilter()`/`_passesDurationFilter()` и
-`MarketScorer`'s liquidity-компаратор используют VO-aware unwrap вместо прямых
-`Decimal`-методов:
-
-```typescript
-// MarketFilter.ts
-market.spread.toDecimal().greaterThanOrEqualTo(new Decimal(minSpread));  // Ratio
-market.liquidity.value().greaterThanOrEqualTo(new Decimal(minLiquidity)); // Money
-market.expiresAt.toNumber() - market.eventStartMs.toNumber();             // Timestamp
-
-// MarketScorer.ts
-b.liquidity.value().comparedTo(a.liquidity.value());                      // Money
-```
-
-`.toDecimal()`/`.value()` — точный unwrap без потери точности (не `.toNumber()`), тот же
-принцип, что уже применялся в `OrderRiskChecker`/`TradeFlowCalculator` (Этапы 2, 7):
-VO на публичной границе, `Decimal`-арифметика внутри реализации.
-
-`MarketFilter.test.ts`/`MarketScorer.test.ts`'s `makeMarket()`-фикстуры используют
-`Ratio.of(...)`/`Money.of(...)` напрямую (тот же паттерн, что уже применялся к `OutcomePrice`/
-`Quantity` в этих же фикстурах) — не `RatioService`/`MoneyService`, поскольку значения
-компайл-тайм известны и валидны. `_passesDurationFilter()` получил недостающее тестовое
-покрытие (Этап 10c) — до этого не тестировался вообще.
-
-`MarketFilter.ts`/`MarketScorer.ts` больше не нуждаются в Этап-0 allowlist для правила
-"`decimal.js` вне `value-objects`/`math`" ради `DiscoveredMarket`'s полей — но остаются в
-allowlist из-за `score: Decimal` (сознательно не-VO, см. выше) и собственной внутренней
-`Decimal`-арифметики (`MarketScorer.scoreAndSort()`'s `hoursToExpiry`-вычисление).
-
 ## Ссылки
 
-- План миграции, Этап 10c: `/Users/menvil/.claude/plans/synthetic-swimming-heron.md`
-- `@polymarket/ports` — `IMarketDiscoveryService` (порт + `MarketDiscoverySnapshot`),
-  `DiscoveredMarket` (legacy), `IMarketFilterConfig`, `docs/ports.md`
+- `@polymarket/policy` — `Policy`, `MarketFilter`, `MarketScorer` (отбор и
+  ранжирование по canonical-записям)
+- `@polymarket/ports` — `IMarketDiscoveryService`, `MarketDiscoverySnapshot`,
+  `MarketDiscoveryEntry`
 - `packages/infrastructure/polymarket-v2/docs/market-discovery-v2.md` — как
   снимок строится из vendor-каталога

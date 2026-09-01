@@ -19,8 +19,7 @@
  * - `IMarketDataRecorder` / `MarketMeta` — запись сырых WS-событий на диск
  * - `IMarketDiscoveryService` / `MarketDiscoverySnapshot` / `MarketDiscoveryEntry` —
  *   обнаружение технически поддержанного universe рынков (canonical `Market`)
- * - `DiscoveredMarket` — LEGACY-кандидат discovery (вход Filter/Scorer до Policy-MR)
- * - `IMarketFilterConfig` — конфигурация фильтрации рынков
+ * - `DiscoveredMarket` — LEGACY-кандидат discovery (вход V1-адаптера)
  * - `ICurrentBalanceProvider` — получение текущего USDC-баланса от venue
  * - `IFillReverter` — откат применённого fill из Portfolio (для FILL_FAILED handler)
  * - `IFillProcessor` — обработка fill (для FillOrchestrator, реализует ProcessFillUseCase)
@@ -142,8 +141,6 @@ export type {
 export { marketUniverseKey } from './IMarketDiscoveryService.js';
 /** Реэкспорт LEGACY-кандидата discovery (вход Filter/Scorer до Policy-MR). */
 export type { DiscoveredMarket } from './DiscoveredMarket.js';
-/** Реэкспорт конфигурации фильтрации рынков (см. `IMarketFilterConfig.ts`). */
-export type { IMarketFilterConfig } from './IMarketFilterConfig.js';
 /** Реэкспорт порта синхронного чтения ордеров (см. `IOrderStateStore.ts`). */
 export type {
   IOrderStateStore,

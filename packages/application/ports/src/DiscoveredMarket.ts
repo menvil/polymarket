@@ -8,14 +8,15 @@
  *
  * ### Почему он ещё здесь
  *
- * Контракт остаётся ИСКЛЮЧИТЕЛЬНО как вход `MarketFilter`/`MarketScorer`
- * (`@polymarket/market-discovery`) и legacy V1-адаптера. Новый Polymarket V2
- * Discovery его больше не производит: за vendor-границей живёт canonical
- * `Market` плюс отдельные {@link MarketDiscoveryMetrics}
- * (см. `IMarketDiscoveryService.ts`).
+ * Контракт остаётся ИСКЛЮЧИТЕЛЬНО как вход LEGACY V1-адаптера
+ * (`PolymarketMarketDiscoveryAdapter`). Новый Polymarket V2 Discovery его
+ * больше не производит: за vendor-границей живёт canonical `Market` плюс
+ * отдельные {@link MarketDiscoveryMetrics} (см. `IMarketDiscoveryService.ts`),
+ * а отбор по ним делает `@polymarket/policy`.
  *
- * Filter/Scorer мигрируют на `MarketDiscoveryEntry` в следующем Policy-MR —
- * тогда этот файл исчезнет вместе с ними.
+ * Файл исчезнет вместе с V1-путём. Он НЕ удалён «за компанию» с
+ * `IMarketFilterConfig` только потому, что V1-адаптер ещё существует, и его
+ * вырезание относится к отдельной задаче, а не к этой.
  *
  * @deprecated Используйте `MarketDiscoveryEntry` из `IMarketDiscoveryService.ts`.
  */
@@ -31,7 +32,7 @@ import type { Timestamp } from '@polymarket/timestamp';
  * Расширяет `InstrumentInfo` — содержит все данные, необходимые для прямой
  * регистрации в каталоге через `catalog.register(candidate)`. Поля `spread`,
  * `liquidity` и `score` используются для фильтрации и приоритизации рынков
- * в `MarketFilter` и `MarketScorer`.
+ * V1-адаптером при отборе кандидатов.
  *
  * `active: true` — литеральный тип: кандидат всегда активен по определению
  * (неактивные рынки отфильтровываются в адаптере ещё до создания DiscoveredMarket).
@@ -44,8 +45,8 @@ export interface DiscoveredMarket extends InstrumentInfo {
   /** Вопрос рынка (человекочитаемое описание) */
   readonly question: string;
   /**
-   * Текущий спред (bid-ask), доля от 1 (0.02 = 2%, та же конвенция, что
-   * `IMarketFilterConfig.minSpread`). `undefined` если недоступен (нет данных от API).
+   * Текущий спред (bid-ask), доля от 1 (0.02 = 2%). `undefined` если
+   * недоступен (нет данных от API).
    */
   readonly spread?: Ratio;
   /** Ликвидность (объём торгов, USDC notional). `Money.of(0, 'USDC')` если недоступна. */
