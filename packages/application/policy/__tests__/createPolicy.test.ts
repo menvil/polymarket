@@ -14,11 +14,11 @@ import { unsafeCryptoAssetId } from '@polymarket/ids';
 import { asMarketDuration } from '@polymarket/market';
 import { MoneyService } from '@polymarket/value-objects';
 import {
-  CEX_POLICY_MARKET_TYPE_VALUES,
   PolicyValidationError,
   createCexPolicy,
   createPolymarketPolicy,
 } from '../src/createPolicy.js';
+import { CEX_POLICY_MARKET_TYPE_VALUES } from '../src/CexPolicy.js';
 import type { CexPolicy } from '../src/CexPolicy.js';
 
 function at(iso: string): Timestamp {
@@ -268,6 +268,69 @@ describe('createPolymarketPolicy: противоречивые текстовы�
       anyOf: ['up', 'down'],
       excluded: ['testnet'],
     });
+  });
+});
+
+describe('противоречия по ЮНИКОДНОЙ эквивалентности матчера', () => {
+  // Матчер сопоставляет слова регексом под флагами `iu`, то есть по
+  // юникодному case folding. Прежняя своя нормализация (`toLowerCase()`) его
+  // не воспроизводила: `'S'.toLowerCase() !== 'ſ'.toLowerCase()`, а
+  // `/S/iu.test('ſ')` — true. Такая policy проходила валидацию, будучи
+  // невыполнимой. Ниже — регрессия на обе стороны пары.
+  it.each([
+    ['S', 'ſ'],
+    ['ſ', 'S'],
+  ])('required %s + excluded %s отвергается', (required, excluded) => {
+    expect(() =>
+      createPolymarketPolicy({
+        kind: 'POLYMARKET',
+        family: 'CRYPTO_UP_DOWN',
+        title: { required: [required], excluded: [excluded] },
+      }),
+    ).toThrow(PolicyValidationError);
+  });
+
+  it('юникодный вариант записи запрещает и весь anyOf', () => {
+    expect(() =>
+      createPolymarketPolicy({
+        kind: 'POLYMARKET',
+        family: 'CRYPTO_UP_DOWN',
+        title: { anyOf: ['S'], excluded: ['ſ'] },
+      }),
+    ).toThrow(PolicyValidationError);
+  });
+
+  it('KELVIN SIGN (U+212A) эквивалентен латинской K', () => {
+    expect(() =>
+      createPolymarketPolicy({
+        kind: 'POLYMARKET',
+        family: 'CRYPTO_UP_DOWN',
+        title: { required: ['K'], excluded: ['\u212A'] },
+      }),
+    ).toThrow(PolicyValidationError);
+  });
+
+  it('вхождение — НЕ эквивалентность: «war» и «war war» не конфликтуют', () => {
+    // Односторонняя проверка (`regex('war').test('war war')`) дала бы здесь
+    // ложное срабатывание: текст «war» этой policy удовлетворяет —
+    // требуемое слово есть, запрещённой фразы нет
+    const policy = createPolymarketPolicy({
+      kind: 'POLYMARKET',
+      family: 'CRYPTO_UP_DOWN',
+      title: { required: ['war'], excluded: ['war war'] },
+    });
+
+    expect(policy.title?.required).toEqual(['war']);
+  });
+
+  it('разные слова с общей подстрокой не конфликтуют', () => {
+    const policy = createPolymarketPolicy({
+      kind: 'POLYMARKET',
+      family: 'CRYPTO_UP_DOWN',
+      title: { required: ['war'], excluded: ['reward'] },
+    });
+
+    expect(policy.title?.excluded).toEqual(['reward']);
   });
 });
 

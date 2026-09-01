@@ -53,7 +53,9 @@
 import { ValidationError } from '@polymarket/errors';
 import type { CryptoAssetId } from '@polymarket/ids';
 import type { MarketDuration } from '@polymarket/market';
+import { areKeywordsEquivalent } from './keywordMatching.js';
 import type { PolicyWindow } from './PolicyWindow.js';
+import { CEX_POLICY_MARKET_TYPE_VALUES, isCexPolicyMarketType } from './CexPolicy.js';
 import type { CexPolicy, CexPolicyMarketType } from './CexPolicy.js';
 import type { PolymarketPolicy, PolymarketPolicyTitleSelectors } from './PolymarketPolicy.js';
 
@@ -65,32 +67,6 @@ import type { PolymarketPolicy, PolymarketPolicyTitleSelectors } from './Polymar
  * отличает «policy собрана неверно» от любой другой ошибки запуска.
  */
 export class PolicyValidationError extends ValidationError {}
-
-/**
- * Список всех допустимых значений {@link CexPolicyMarketType}.
- *
- * @remarks
- * Union существует только на этапе компиляции, а policy приходит из
- * конфигурации: чтобы отвергнуть `'futures'` в runtime, нужно
- * МАТЕРИАЛИЗОВАННОЕ множество допустимых значений. Конвенция повторяет
- * `MARKET_FAMILY_VALUES` из `@polymarket/market` — там же, где тип, лежит
- * его runtime-словарь, и он же служит списком «допустимо вот это» в
- * сообщении об ошибке.
- *
- * Аннотация `readonly CexPolicyMarketType[]` не декоративна: она делает
- * расхождение списка с union-ом ошибкой компиляции, поэтому добавление
- * четвёртого вида рынка не может забыть про этот файл.
- *
- * @example
- * ```typescript
- * CEX_POLICY_MARKET_TYPE_VALUES.includes('spot'); // → true
- * ```
- */
-export const CEX_POLICY_MARKET_TYPE_VALUES: readonly CexPolicyMarketType[] = [
-  'spot',
-  'future',
-  'swap',
-] as const;
 
 /**
  * Проверяет согласованность окна применимости.
@@ -164,27 +140,6 @@ function normalizeKeywords(
 }
 
 /**
- * Приводит ключевое слово к форме, в которой его сравнивает матчинг.
- *
- * @param keyword - Нормализованное ключевое слово
- * @returns Слово в нижнем регистре
- *
- * @internal
- * @remarks
- * `MarketFilter` компилирует ключевые слова в регексы под флагами `iu`,
- * то есть `BTC` и `btc` для матчинга — ОДНО слово. Сравнивать селекторы
- * побайтово значило бы пропустить ровно то противоречие, которое матчинг
- * потом увидит.
- *
- * `toLowerCase()`, а не `toLocaleLowerCase()`: флаг `i` не зависит от
- * локали процесса, и локале-зависимое приведение (турецкое `I` → `ı`)
- * разошлось бы с поведением, которое проверка призвана предсказать.
- */
-function foldKeyword(keyword: string): string {
-  return keyword.toLowerCase();
-}
-
-/**
  * Отвергает текстовые селекторы, которые не совпадут ни с одним рынком.
  *
  * @param required - Нормализованные обязательные слова (либо `undefined`)
@@ -212,6 +167,14 @@ function foldKeyword(keyword: string): string {
  * Проверка идёт ПОСЛЕ нормализации: до неё `' btc '` и `'btc'` — разные
  * строки, и противоречие между ними осталось бы незамеченным.
  *
+ * Эквивалентность слов берётся у САМОГО матчера
+ * ({@link areKeywordsEquivalent}), а не считается здесь заново. Прежняя
+ * своя реализация (`toLowerCase()`) с матчером разошлась: регекс под `iu`
+ * сопоставляет `S` и `ſ` по юникодному case folding, а `toLowerCase()` их
+ * различает — и policy `required: ['S'], excluded: ['ſ']` проходила
+ * валидацию, будучи невыполнимой. Второй источник истины об одном правиле
+ * расходится с первым не «если», а «когда».
+ *
  * Ошибка называет конкретные слова: сообщение «policy невалидна» оставило
  * бы читателю ровно ту задачу поиска, ради устранения которой проверка и
  * добавлена.
@@ -224,10 +187,12 @@ function assertNonContradictorySelectors(
   if (excluded === undefined) {
     return;
   }
-  const forbidden = new Set(excluded.map(foldKeyword));
+  /** Запрещено ли слово — по правилу МАТЧЕРА, а не по своей нормализации. */
+  const isForbidden = (keyword: string): boolean =>
+    excluded.some((banned) => areKeywordsEquivalent(keyword, banned));
 
   if (required !== undefined) {
-    const conflicting = required.filter((keyword) => forbidden.has(foldKeyword(keyword)));
+    const conflicting = required.filter(isForbidden);
     if (conflicting.length > 0) {
       throw new PolicyValidationError(
         'Policy title selector both requires and excludes the same keyword',
@@ -249,7 +214,7 @@ function assertNonContradictorySelectors(
   if (
     anyOf !== undefined &&
     anyOf.length > 0 &&
-    anyOf.every((keyword) => forbidden.has(foldKeyword(keyword)))
+    anyOf.every(isForbidden)
   ) {
     throw new PolicyValidationError('Policy title selector excludes every anyOf keyword', {
       context: {
@@ -354,18 +319,45 @@ export function createPolymarketPolicy(input: PolymarketPolicy): PolymarketPolic
 }
 
 /**
+ * Вход {@link createCexPolicy}: policy, у которой `marketTypes` ещё НЕ сужены.
+ *
+ * @remarks
+ * Отличается от {@link CexPolicy} ровно одним полем: `marketTypes` объявлены
+ * `readonly string[]`, а не union-ом.
+ *
+ * Так честнее относительно того, что фабрика уже делает. Проверку
+ * принадлежности словарю выполняет {@link normalizeMarketTypes} — В RUNTIME и
+ * поэлементно, — а значит вход union-ом типизирован быть и НЕ ДОЛЖЕН:
+ * требовать от вызывающего доказательство, которое фабрика всё равно
+ * перепроверяет, значит вынуждать его написать `as readonly
+ * CexPolicyMarketType[]`. Такое приведение ничего не проверяет и лишь
+ * переносит необоснованный каст из фабрики в каждого вызывающего — то есть
+ * умножает ровно тот дефект, который из фабрики убран.
+ *
+ * Для типизированных вызывающих ничего не меняется: `CexPolicy` присваиваем
+ * этому типу, потому что `readonly CexPolicyMarketType[]` — частный случай
+ * `readonly string[]`. Возвращается по-прежнему сам `CexPolicy`, с уже
+ * доказанным union-ом.
+ */
+export type CexPolicyInput = Omit<CexPolicy, 'marketTypes'> & {
+  /** Виды рынков как они записаны в источнике; сужает {@link createCexPolicy}. */
+  readonly marketTypes: readonly string[];
+};
+
+/**
  * Собирает проверенную и нормализованную {@link CexPolicy}.
  *
  * @param input - Желаемая policy (входные массивы не мутируются)
- * @returns Замороженная policy с дедуплицированными списками
+ * @returns Замороженная policy с дедуплицированными списками и `marketTypes`,
+ *   ДОКАЗАННО принадлежащими {@link CexPolicyMarketType}
  * @throws {PolicyValidationError} При пустом обязательном списке, виде рынка
  *   вне {@link CEX_POLICY_MARKET_TYPE_VALUES}, отсутствии запрошенных данных,
  *   некорректной глубине либо противоречивом окне
  *
  * @remarks
- * `marketTypes` проверяется по значениям, а не по типу вызывающего: policy
- * приходит из конфигурации, где union ничего не гарантирует (см.
- * {@link normalizeMarketTypes}). Регистр значим — `'SPOT'` отвергается.
+ * `marketTypes` принимаются как `readonly string[]` и сужаются здесь (см.
+ * {@link CexPolicyInput}): policy приходит из конфигурации, где union ничего
+ * не гарантирует. Регистр значим — `'SPOT'` отвергается.
  *
  * В отличие от Polymarket-policy, здесь списки ОБЯЗАТЕЛЬНЫ и пустыми быть
  * не могут: `assets: []` у Polymarket означает «любой актив из технически
@@ -387,7 +379,7 @@ export function createPolymarketPolicy(input: PolymarketPolicy): PolymarketPolic
  * });
  * ```
  */
-export function createCexPolicy(input: CexPolicy): CexPolicy {
+export function createCexPolicy(input: CexPolicyInput): CexPolicy {
   assertValidWindow(input);
 
   const exchangeIds = normalizeRequiredList(input.exchangeIds, 'exchangeIds');
@@ -440,24 +432,6 @@ function normalizeRequiredList<T extends string>(values: readonly T[], field: st
     });
   }
   return Object.freeze(normalized);
-}
-
-/**
- * Type guard: допустимый ли это вид рынка CEX.
- *
- * @param value - Проверяемая строка (обычно из конфигурации)
- * @returns `true`, если значение принадлежит union-у
- * @throws Ничего не бросает
- *
- * @internal
- * @example
- * ```typescript
- * isCexPolicyMarketType('swap');    // → true
- * isCexPolicyMarketType('futures'); // → false
- * ```
- */
-function isCexPolicyMarketType(value: string): value is CexPolicyMarketType {
-  return (CEX_POLICY_MARKET_TYPE_VALUES as readonly string[]).includes(value);
 }
 
 /**

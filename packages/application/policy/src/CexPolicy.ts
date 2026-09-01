@@ -37,6 +37,70 @@ import type { PolicyWindow } from './PolicyWindow.js';
 export type CexPolicyMarketType = 'spot' | 'future' | 'swap';
 
 /**
+ * Единственный источник истины словаря {@link CexPolicyMarketType}.
+ *
+ * @internal
+ * @remarks
+ * `satisfies Record<CexPolicyMarketType, true>` — не украшение: он делает
+ * пропуск члена union-а ОШИБКОЙ КОМПИЛЯЦИИ. Прежний вариант
+ * (`const VALUES: readonly CexPolicyMarketType[] = [...]`) обещал ровно это,
+ * но не давал: массив из двух членов трёхчленного union-а — всё ещё
+ * корректный `CexPolicyMarketType[]`, поэтому добавление `'option'` молча
+ * оставило бы runtime-проверку отвергать законное значение.
+ *
+ * Ключи объекта, а не элементы массива, потому что полноту в TypeScript
+ * умеет требовать только тип-ключ (`Record`), а не длина массива.
+ */
+const CEX_POLICY_MARKET_TYPES = {
+  spot: true,
+  future: true,
+  swap: true,
+} satisfies Record<CexPolicyMarketType, true>;
+
+/**
+ * Материализованный словарь допустимых видов рынка CEX.
+ *
+ * @remarks
+ * Выведен из {@link CEX_POLICY_MARKET_TYPES}, поэтому разойтись с union-ом
+ * не может. Служит и списком «допустимо вот это» в сообщении об ошибке
+ * валидации: перечислять допустимые значения руками во втором месте значило
+ * бы завести второй словарь, который отстанет от первого.
+ *
+ * Конвенция повторяет `MARKET_FAMILY_VALUES` из `@polymarket/market`: runtime
+ * -словарь лежит там же, где тип.
+ *
+ * @example
+ * ```typescript
+ * CEX_POLICY_MARKET_TYPE_VALUES.includes('spot'); // → true
+ * ```
+ */
+export const CEX_POLICY_MARKET_TYPE_VALUES: readonly CexPolicyMarketType[] = Object.freeze(
+  Object.keys(CEX_POLICY_MARKET_TYPES) as CexPolicyMarketType[],
+);
+
+/**
+ * Является ли произвольное значение допустимым видом рынка CEX.
+ *
+ * @param value - Значение из недоверенного источника (конфиг, env, JSON)
+ * @returns `true` и сужение типа, если значение принадлежит словарю
+ *
+ * @remarks
+ * Проверка ТОЧНАЯ: `'SPOT'` и `'futures'` отвергаются. Приводить регистр
+ * здесь нельзя — обрезка пробелов ничего не теряет, а смена регистра
+ * переписывает сам токен и решила бы за автора конфига, что он имел в виду,
+ * тогда как это может быть опечатка или словарь чужого вендора.
+ *
+ * @example
+ * ```typescript
+ * isCexPolicyMarketType('swap');  // → true
+ * isCexPolicyMarketType('SPOT');  // → false
+ * ```
+ */
+export function isCexPolicyMarketType(value: unknown): value is CexPolicyMarketType {
+  return typeof value === 'string' && Object.hasOwn(CEX_POLICY_MARKET_TYPES, value);
+}
+
+/**
  * Owner policy централизованной биржи.
  *
  * @example
