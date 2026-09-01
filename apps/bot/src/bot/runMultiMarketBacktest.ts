@@ -51,7 +51,7 @@ import type { InstrumentInfo } from '@polymarket/ports';
 import { SimplePosition } from '@polymarket/portfolio';
 
 import type { BotConfig } from '../config/BotConfig.js';
-import { buildCanonicalMarket } from './buildCanonicalMarket.js';
+import { buildCanonicalMarket, parseGammaMarketStartMs } from './buildCanonicalMarket.js';
 import { buildCoreInfra } from './buildCoreInfra.js';
 import { subscribeToOrderEvents } from './buildEventLogger.js';
 import { buildRepositories } from './buildRepositories.js';
@@ -244,7 +244,14 @@ async function sortSnapshotPathsForContinuousReplay(
  *
  * Планировщику передаётся настоящий `Market` из {@link buildCanonicalMarket}:
  * стратегии читают `snapshot.market.outcomes`, поэтому у бэктеста должны быть
- * оба outcome-токена, а не только расписание.
+ * оба outcome-токена, а не только расписание. Снапшоты без крипто-метаданных
+ * (нет `rawMarket` либо `resolutionSource` не Binance/Chainlink) собираются
+ * как `BINARY_OUTCOME` и реплеятся наравне с крипто-рынками.
+ *
+ * Канонический рынок строится на шаге 5b — **до** запуска сервисов (шаг 10),
+ * потому что зависит только от метаданных снапшота. Отказ сборки тогда
+ * возвращает `null`, не оставляя за собой запущенные scheduler/simulator/
+ * подписки, которые остановил бы только шаг 14.
  */
 async function runSingleMarketBacktest(
   filePath: string,
@@ -328,6 +335,55 @@ async function runSingleMarketBacktest(
   const cryptoSignalRegistry = createDefaultCryptoSignalRegistry();
   const cryptoMeta = parseCryptoMeta(rawMarket);
 
+  // 5b. Расписание рынка и канонический Market.
+  //
+  // Собираем ДО запуска сервисов (шаг 10): сборка зависит только от метаданных
+  // снапшота, поэтому её отказ обязан быть чистым `return null`. Раньше она
+  // стояла между стартом сервисов и их остановкой (шаг 14), и пропуск снапшота
+  // оставлял за собой работающие scheduler/simulator/подписки.
+  const rawEventStart = rawMarket?.['eventStartTime'] as string | undefined;
+  const rawEndDate = rawMarket?.['endDate'] as string | undefined;
+  const parsedEventStartMs = rawEventStart ? new Date(rawEventStart).getTime() : NaN;
+  const parsedEndDateMs = rawEndDate ? new Date(rawEndDate).getTime() : NaN;
+
+  const expirationMs = !Number.isNaN(parsedEndDateMs) ? parsedEndDateMs : Date.now() + 24 * 60 * 60 * 1000;
+  const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
+  // eventStartMs (raw number) остаётся для journal.startSession() ниже — IDecisionJournal
+  // хранит его как персистентное NDJSON-поле, не типизируется этим этапом миграции.
+  const eventStartMsResult = eventStartMs !== undefined ? TimestampService.create(eventStartMs) : undefined;
+  const eventStartTimestamp = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
+
+  // Канонический Market из meta снапшота: оба outcome-токена, расписание и
+  // (для крипто-рынков) спецификация серии — стратегии читают
+  // `snapshot.market.outcomes`, поэтому заглушка здесь молча ломала определение
+  // стороны токена. Снапшот без крипто-метаданных даёт `BINARY_OUTCOME`
+  // и реплеится как раньше.
+  const canonicalMarketResult = buildCanonicalMarket({
+    marketId,
+    question: typeof rawMarket?.['question'] === 'string' ? rawMarket['question'] : undefined,
+    instrumentId,
+    complementaryInstrumentId,
+    outcomeIndex,
+    expiresAtMs: expirationMs,
+    startsAtMs: parseGammaMarketStartMs(rawMarket),
+    eventStartMs,
+    crypto: cryptoMeta
+      ? {
+        symbol: cryptoMeta.rtdsFilter,
+        eventStartMs: cryptoMeta.eventStartTimeMs,
+        eventEndMs: cryptoMeta.endDateMs,
+      }
+      : undefined,
+  });
+  if (!canonicalMarketResult.ok) {
+    logger.error('Failed to build canonical market', {
+      file: fileName,
+      marketId: String(marketId),
+      error: canonicalMarketResult.error.message,
+    });
+    return null;
+  }
+
   // 6. Strategy engine
   const engine = buildStrategyEngine({
     infra,
@@ -340,10 +396,9 @@ async function runSingleMarketBacktest(
     cryptoSignalRegistry,
   });
 
-  // 7. Регистрация инструмента в каталоге
-  const rawEndDateForInstrument = rawMarket?.['endDate'] as string | undefined;
-  const endDateMsForInstrument = rawEndDateForInstrument ? new Date(rawEndDateForInstrument).getTime() : NaN;
-  const expiresAtResult = TimestampService.create(!Number.isNaN(endDateMsForInstrument) ? endDateMsForInstrument : Date.now() + 86400_000);
+  // 7. Регистрация инструмента в каталоге — то же окончание торгов, что у
+  //    канонического рынка (шаг 5b), а не второй разбор `endDate`.
+  const expiresAtResult = TimestampService.create(expirationMs);
   if (!expiresAtResult.ok) return null;
   const instrumentInfo: InstrumentInfo = {
     instrumentId,
@@ -476,41 +531,6 @@ async function runSingleMarketBacktest(
     journal,
     config.execution,
   );
-
-  // Извлекаем eventStartTime / endDate из rawMarket (Gamma API)
-  const rawEventStart = rawMarket?.['eventStartTime'] as string | undefined;
-  const rawEndDate = rawMarket?.['endDate'] as string | undefined;
-  const parsedEventStartMs = rawEventStart ? new Date(rawEventStart).getTime() : NaN;
-  const parsedEndDateMs = rawEndDate ? new Date(rawEndDate).getTime() : NaN;
-
-  const expirationMs = !Number.isNaN(parsedEndDateMs) ? parsedEndDateMs : Date.now() + 24 * 60 * 60 * 1000;
-  const eventStartMs = !Number.isNaN(parsedEventStartMs) ? parsedEventStartMs : undefined;
-  // eventStartMs (raw number) остаётся для journal.startSession() ниже — IDecisionJournal
-  // хранит его как персистентное NDJSON-поле, не типизируется этим этапом миграции.
-  const eventStartMsResult = eventStartMs !== undefined ? TimestampService.create(eventStartMs) : undefined;
-  const eventStartTimestamp = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
-
-  // Канонический Market из meta снапшота: оба outcome-токена, расписание и
-  // crypto-спецификация — стратегии читают `snapshot.market.outcomes`, поэтому
-  // заглушка здесь молча ломала определение стороны токена.
-  const canonicalMarketResult = buildCanonicalMarket({
-    marketId,
-    question: typeof rawMarket?.['question'] === 'string' ? rawMarket['question'] : undefined,
-    instrumentId,
-    complementaryInstrumentId,
-    outcomeIndex,
-    expiresAtMs: expirationMs,
-    eventStartMs,
-    cryptoSymbol: cryptoMeta?.rtdsFilter,
-  });
-  if (!canonicalMarketResult.ok) {
-    logger.error('Failed to build canonical market', {
-      file: fileName,
-      marketId: String(marketId),
-      error: canonicalMarketResult.error.message,
-    });
-    return null;
-  }
 
   // Определяем нужен ли dual-token режим (стратегии, которые могут выбирать UP/DOWN).
   const needsComplementary = config.strategy === 'adaptive-entry'

@@ -91,7 +91,8 @@ export class MarketParser {
    * 4. `startsAt`/`expiresAt` — epoch milliseconds → `Timestamp`;
    * 5. `outcomes` — ровно два элемента → `MarketOutcome` с `InstrumentId`;
    * 6. `state` → `MarketState`;
-   * 7. `family` → `MarketFamily`, для `CRYPTO_UP_DOWN` — `crypto` → `CryptoUpDownSpec`.
+   * 7. `family` → `MarketFamily`; для `CRYPTO_UP_DOWN` обязателен `crypto` →
+   *    `CryptoUpDownSpec`, для остальных семейств `crypto` должен отсутствовать.
    *
    * @example
    * ```typescript
@@ -216,6 +217,13 @@ export class MarketParser {
       const cryptoResult = MarketParser._parseCryptoSpec(data.crypto);
       if (!cryptoResult.ok) return Err(cryptoResult.error);
       crypto = cryptoResult.value;
+    } else if (data.crypto !== undefined) {
+      // Не отбрасываем молча: crypto-спека на не-crypto семействе — это
+      // повреждённые данные, и `Market.create()` их тоже отвергнет.
+      return Err(new MarketValidationError(
+        `Market data: family ${family} must not carry a crypto spec`,
+        { context: { field: 'crypto', family } }
+      ));
     }
 
     return Ok({

@@ -74,12 +74,18 @@ export type MarketStateJSON =
  * MarketFamilyJSON — сериализованное семейство рынка
  *
  * @remarks
- * Литерал продублирован из домена сознательно — см. {@link MarketOutcomeIndexJSON}.
+ * Литералы продублированы из домена сознательно — см. {@link MarketOutcomeIndexJSON}.
+ * Дубль уже отработал: добавление `BINARY_OUTCOME` в домен упало ошибкой
+ * компиляции в `MarketViewModel.toJSON()`, а не молча изменило формат хранения.
  */
-export type MarketFamilyJSON = 'CRYPTO_UP_DOWN';
+export type MarketFamilyJSON = 'CRYPTO_UP_DOWN' | 'BINARY_OUTCOME';
 
 /**
  * MarketCryptoSpecJSON — сериализованная спецификация семейства `CRYPTO_UP_DOWN`
+ *
+ * @remarks
+ * Присутствует в `MarketJSON` только для этого семейства; у `BINARY_OUTCOME`
+ * поле отсутствует.
  */
 export interface MarketCryptoSpecJSON {
   /** Базовый криптоактив (`'btc'`, `'eth'`, ...) */

@@ -32,7 +32,7 @@ packages/domain/entities/market/
     │   ├── MarketState.ts           # ACTIVE | CLOSED | RESOLVED + переходы-наблюдения
     │   ├── MarketStatus.ts          # 'ACTIVE' | 'CLOSED' | 'RESOLVED'
     │   ├── MarketOutcome.ts         # index + label + InstrumentId
-    │   ├── MarketFamily.ts          # 'CRYPTO_UP_DOWN'
+    │   ├── MarketFamily.ts          # 'CRYPTO_UP_DOWN' | 'BINARY_OUTCOME'
     │   ├── MarketSpec.ts            # CryptoUpDownSpec (asset + duration)
     │   ├── MarketDuration.ts        # Номинальная длительность серии (branded ms)
     │   ├── MarketSlug.ts            # URL-safe branded type (a-z0-9-)
@@ -64,8 +64,8 @@ class Market {
 
   readonly state: MarketState;                              // ACTIVE | CLOSED | RESOLVED
   readonly outcomes: readonly [MarketOutcome, MarketOutcome];
-  readonly family: MarketFamily;                            // 'CRYPTO_UP_DOWN'
-  readonly crypto?: CryptoUpDownSpec;                       // { asset, duration }
+  readonly family: MarketFamily;                            // CRYPTO_UP_DOWN | BINARY_OUTCOME
+  readonly crypto?: CryptoUpDownSpec;                       // только для CRYPTO_UP_DOWN
 
   get resolvedOutcome(): MarketOutcome | undefined;
 
@@ -240,7 +240,7 @@ MarketLifecycleError
 ### 8. Семейство рынка и его спецификация
 
 ```typescript
-type MarketFamily = 'CRYPTO_UP_DOWN';
+type MarketFamily = 'CRYPTO_UP_DOWN' | 'BINARY_OUTCOME';
 
 interface CryptoUpDownSpec {
   readonly asset: CryptoAssetId;     // 'btc'
@@ -248,18 +248,50 @@ interface CryptoUpDownSpec {
 }
 ```
 
+| Семейство | Что означает | Спецификация |
+|---|---|---|
+| `CRYPTO_UP_DOWN` | цена актива вырастет/упадёт за окно | `crypto` **обязательна** |
+| `BINARY_OUTCOME` | два взаимоисключающих исхода и расписание | `crypto` **запрещена** |
+
 `MarketFamily` — закрытый union, а не branded string: каждое семейство требует своей
-доменной спецификации и своей ветки в маппинге Infrastructure, и неизвестное семейство
-интерпретировать невозможно. Добавление второго семейства — новый литерал здесь, новый
-интерфейс спецификации и новое поле рядом с `crypto`; компилятор покажет все непокрытые
-места.
+ветки в маппинге Infrastructure, и неизвестное семейство интерпретировать невозможно.
+
+`BINARY_OUTCOME` — не «неизвестное семейство» и не escape hatch: это точное утверждение
+о том, что мы знаем про рынок, — два исхода и окно торгов, и ничего сверх того. Оно
+появилось не умозрительно, а потому что бот реплеит снапшоты без `rawMarket`
+(`DataRecorder` пишет его условно) и рынки, чей `resolutionSource` не указывает на
+Binance/Chainlink: такой рынок торгуется и обязан быть представим, но crypto-спецификации
+у него нет и выдумать её нельзя.
+
+Связка «семейство → спецификация» проверяется в `Market.create()` **в обе стороны** —
+иначе `BINARY_OUTCOME` стал бы дырой, через которую crypto-данные попадают в рынок,
+который их не имеет. `MarketParser` симметричен: crypto-спека на не-crypto семействе —
+это `Err`, а не молча отброшенное поле.
 
 `crypto.duration` (номинал серии) и `market.duration()` (фактический интервал расписания) —
 разные величины. Обычно совпадают, но площадка может сдвинуть окно конкретного рынка на
 секунды, оставив его в той же 5-минутной серии. `Market.create()` их на равенство **не**
 проверяет — иначе реальный рынок со сдвинутым окном стало бы невозможно описать.
 
-### 9. Иммутабельность гарантирует entity, а не вызывающий
+Практическое следствие для маппинга: номинал берётся из окна крипто-**события**
+(`eventStartTime`..`endDate`), а `startsAt`/`expiresAt` — из расписания самого **рынка**.
+Выводить номинал из `expiresAt - startsAt` значит схлопывать ровно то различие, ради
+которого `MarketDuration` и существует.
+
+### 9. «Нет значения» означает «нет ключа»
+
+Необязательные поля (`slug`, `crypto`) объявлены с модификатором `declare`. Без него
+TypeScript при `target: ES2022` эмитирует объявление поля, и класс определяет ключ даже
+когда значения нет — `'crypto' in market` возвращал бы `true` со значением `undefined`,
+хотя снапшот и JSON этот ключ не содержат. Асимметрия ломает любого потребителя, который
+проверяет наличие через `in` вместо `!== undefined` (такие дефекты в сериализаторах
+репозитория уже находили). С `declare` поле появляется только при присваивании в
+конструкторе, и отсутствие выглядит одинаково на всех трёх представлениях.
+
+Практическое следствие: у рынка семейства `BINARY_OUTCOME` ключа `crypto` нет вовсе —
+не «есть со значением `undefined`».
+
+### 10. Иммутабельность гарантирует entity, а не вызывающий
 
 `Market` не сохраняет `props.state` по ссылке: конструктор пересоздаёт состояние через
 `MarketState.normalize()` (канонические конструкторы уже возвращают `Object.freeze`).
@@ -270,7 +302,7 @@ interface CryptoUpDownSpec {
 `MarketViewModel.toSnapshot()` по той же причине **копирует** состояние и исходы, а не
 отдаёт ссылки: снапшот — отдельный объект, и его мутация не должна доставать до Market.
 
-### 10. Notifications удалены
+### 11. Notifications удалены
 
 Старый пакет держал notification outbox: `close()`/`resolve()` складывали
 `MarketClosedNotification`/`MarketResolvedNotification` в буфер, а `pullNotifications()`
@@ -292,7 +324,7 @@ interface CryptoUpDownSpec {
 Публикация событий жизненного цикла рынка — ответственность application-слоя, который
 знает и причину (`MarketCloseReason`), и реализованный PnL, и корректную metadata.
 
-### 11. Presentation: почему больше нет `getMarketUrl()`
+### 12. Presentation: почему больше нет `getMarketUrl()`
 
 Метод собирал `https://polymarket.com/event/{slug}` — зашивал в generic domain entity знание
 о конкретной площадке и о том, что слаг вообще есть. После перевода `Market` на `venueId` +

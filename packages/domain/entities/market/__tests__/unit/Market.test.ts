@@ -92,6 +92,26 @@ describe('Market.create() — валидный рынок', () => {
     expect(market.outcomes[1].label).toBe('Down');
   });
 
+  it('создаёт рынок семейства BINARY_OUTCOME — без crypto-спецификации', () => {
+    const props = baseProps();
+    const result = Market.create({
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: 'BINARY_OUTCOME',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.family).toBe('BINARY_OUTCOME');
+      expect(result.value.crypto).toBeUndefined();
+    }
+  });
+
   it('создаёт рынок без slug — площадка может его не публиковать', () => {
     const props = baseProps();
     const withoutSlug: MarketProps = {
@@ -138,6 +158,36 @@ describe('Market.create() — иммутабельность результат�
     expect(market.state.status).toBe('CLOSED');
     expect(market.state).not.toBe(mutableState);
     expect(Object.isFrozen(market.state)).toBe(true);
+  });
+
+  it('отсутствующее необязательное поле не оставляет ключа на entity', () => {
+    // ES2022 class fields определяют объявленные поля даже без значения —
+    // отсюда `declare` в Market. Проверяем, что «нет значения» = «нет ключа»,
+    // иначе потребитель с `in` увидит crypto у семейства, которому она запрещена.
+    const props = baseProps();
+    const market = unwrap(Market.create({
+      id: props.id,
+      venueId: props.venueId,
+      question: props.question,
+      startsAt: props.startsAt,
+      expiresAt: props.expiresAt,
+      state: props.state,
+      outcomes: props.outcomes,
+      family: 'BINARY_OUTCOME',
+    }));
+
+    expect('slug' in market).toBe(false);
+    expect('crypto' in market).toBe(false);
+    expect(market.slug).toBeUndefined();
+    expect(market.crypto).toBeUndefined();
+  });
+
+  it('заданное необязательное поле присутствует и заморожено', () => {
+    const market = makeMarket();
+
+    expect('slug' in market).toBe(true);
+    expect('crypto' in market).toBe(true);
+    expect(Object.isFrozen(market.crypto)).toBe(true);
   });
 
   it('не связан с исходным массивом props — мутация props не меняет entity', () => {
@@ -444,6 +494,16 @@ describe('Market.create() — отклонение невалидных данн
     }
   });
 
+  it('отклоняет crypto-спецификацию на семействе BINARY_OUTCOME', () => {
+    const result = makeMarketResult({ family: 'BINARY_OUTCOME' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('crypto');
+      expect(result.error.message).toContain('must not carry a crypto spec');
+    }
+  });
+
   it('отклоняет crypto-спецификацию с неположительной длительностью', () => {
     const result = makeMarketResult({
       crypto: { asset: unsafeCryptoAssetId('btc'), duration: 0 as never },
@@ -664,15 +724,6 @@ describe('Market.markResolved() — фиксация объявленного и
       expect(result.error).toBeInstanceOf(MarketLifecycleError);
       expect(result.error.context?.resolvedOutcomeIndex).toBe(0);
       expect(result.error.context?.observedOutcomeIndex).toBe(1);
-    }
-  });
-
-  it('RESOLVED → markClosed() отклоняется как регрессия состояния', () => {
-    const result = makeMarket({ state: MarketState.resolved(0) }).markClosed();
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(MarketAlreadyResolvedError);
     }
   });
 

@@ -13,14 +13,14 @@ import {
 } from '../../../src/value-objects/MarketFamily.js';
 
 describe('MARKET_FAMILY_VALUES', () => {
-  it('содержит единственное поддерживаемое семейство', () => {
-    expect(MARKET_FAMILY_VALUES).toEqual(['CRYPTO_UP_DOWN']);
+  it('содержит оба поддерживаемых семейства', () => {
+    expect(MARKET_FAMILY_VALUES).toEqual(['CRYPTO_UP_DOWN', 'BINARY_OUTCOME']);
   });
 });
 
 describe('isValidMarketFamily()', () => {
-  it('принимает известное семейство', () => {
-    expect(isValidMarketFamily('CRYPTO_UP_DOWN')).toBe(true);
+  it.each(['CRYPTO_UP_DOWN', 'BINARY_OUTCOME'])('принимает известное семейство %s', (family) => {
+    expect(isValidMarketFamily(family)).toBe(true);
   });
 
   it.each([

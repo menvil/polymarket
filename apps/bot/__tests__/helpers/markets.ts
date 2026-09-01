@@ -54,15 +54,17 @@ export interface TestMarketOptions {
  */
 export function buildTestMarket(options: TestMarketOptions): Market {
   const nowMs = options.nowMs ?? Date.now();
+  const expiresAtMs = nowMs + TEST_MARKET_DURATION_MS;
   const result = buildCanonicalMarket({
     marketId: options.marketId,
     question: `Backtest market ${String(options.marketId)}`,
     instrumentId: options.instrumentId,
     complementaryInstrumentId: options.complementaryInstrumentId,
     outcomeIndex: options.outcomeIndex,
-    expiresAtMs: nowMs + TEST_MARKET_DURATION_MS,
+    expiresAtMs,
+    startsAtMs: nowMs,
     eventStartMs: nowMs,
-    cryptoSymbol: 'btc/usd',
+    crypto: { symbol: 'btc/usd', eventStartMs: nowMs, eventEndMs: expiresAtMs },
   });
   if (!result.ok) {
     throw new Error(`Failed to build test market: ${result.error.message}`);

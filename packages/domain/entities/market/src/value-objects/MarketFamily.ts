@@ -23,12 +23,26 @@
  * там пространство значений действительно открытое, поэтому branded ID.
  *
  * ### Поддерживаемые семейства
- * На данный момент поддерживается ровно одно:
  * - `CRYPTO_UP_DOWN` — бинарный рынок «цена актива вырастет/упадёт за окно».
+ *   Несёт спецификацию `CryptoUpDownSpec` (актив + номинал серии).
+ * - `BINARY_OUTCOME` — бинарный рынок общего вида: два взаимоисключающих исхода
+ *   и расписание, без предметной спецификации.
  *
- * Добавление нового семейства — это добавление литерала сюда, ветки в
- * `MarketSpec` и ветки в маппинге Infrastructure. Компилятор
- * покажет все места, которые нужно дополнить (exhaustive switch).
+ * `BINARY_OUTCOME` — не «неизвестное семейство» и не escape hatch. Это точное
+ * утверждение о том, что мы про рынок знаем: два исхода и окно торгов, и ничего
+ * сверх того. Оно понадобилось не умозрительно: бот реплеит снапшоты, у которых
+ * нет `rawMarket` (`DataRecorder` пишет его условно) либо `resolutionSource` не
+ * указывает на Binance/Chainlink — такой рынок существует, торгуется и должен
+ * быть представим, но crypto-спецификации у него нет и выдумать её нельзя.
+ *
+ * Связка «семейство → спецификация» проверяется в `Market.create()` в обе
+ * стороны: `CRYPTO_UP_DOWN` **требует** `crypto`, `BINARY_OUTCOME` **запрещает**
+ * — иначе второе семейство стало бы дырой, через которую crypto-данные попадают
+ * в рынок, который их не имеет.
+ *
+ * Добавление следующего семейства — это литерал сюда, ветка в `MarketSpec`
+ * и ветка в маппинге Infrastructure. Компилятор покажет все места, которые
+ * нужно дополнить (exhaustive switch).
  *
  * @example
  * ```typescript
@@ -39,7 +53,7 @@
  * }
  * ```
  */
-export type MarketFamily = 'CRYPTO_UP_DOWN';
+export type MarketFamily = 'CRYPTO_UP_DOWN' | 'BINARY_OUTCOME';
 
 /**
  * Список всех допустимых значений MarketFamily
@@ -48,7 +62,10 @@ export type MarketFamily = 'CRYPTO_UP_DOWN';
  * Используется для runtime-валидации в {@link isValidMarketFamily}
  * и для сообщений об ошибках парсинга.
  */
-export const MARKET_FAMILY_VALUES: readonly MarketFamily[] = ['CRYPTO_UP_DOWN'] as const;
+export const MARKET_FAMILY_VALUES: readonly MarketFamily[] = [
+  'CRYPTO_UP_DOWN',
+  'BINARY_OUTCOME',
+] as const;
 
 /**
  * Type guard: проверяет что значение является допустимым MarketFamily
@@ -59,8 +76,9 @@ export const MARKET_FAMILY_VALUES: readonly MarketFamily[] = ['CRYPTO_UP_DOWN'] 
  * @example
  * ```typescript
  * isValidMarketFamily('CRYPTO_UP_DOWN'); // → true
- * isValidMarketFamily('SPORTS');         // → false
- * isValidMarketFamily(null);             // → false
+ * isValidMarketFamily('BINARY_OUTCOME');  // → true
+ * isValidMarketFamily('SPORTS');          // → false
+ * isValidMarketFamily(null);              // → false
  * ```
  */
 export function isValidMarketFamily(v: unknown): v is MarketFamily {

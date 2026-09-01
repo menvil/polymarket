@@ -19,8 +19,9 @@
  * ### Состав
  * - **Market** — entity: identity, структура, расписание, подтверждённое состояние;
  * - **MarketTradingPolicy** — производная фаза `PRE_OPEN`/`OPEN`/`ENDED`/`CLOSED`/`RESOLVED`;
- * - **Value Objects** — `MarketState`, `MarketOutcome`, `MarketFamily`, `MarketDuration`,
- *   `CryptoUpDownSpec`, `MarketSlug`, `MarketStatus` (+ реэкспорт ID из `@polymarket/ids`);
+ * - **Value Objects** — `MarketState`, `MarketOutcome`, `MarketFamily`
+ *   (`CRYPTO_UP_DOWN` со спецификацией `CryptoUpDownSpec` и `BINARY_OUTCOME` без неё),
+ *   `MarketDuration`, `MarketSlug`, `MarketStatus` (+ реэкспорт ID из `@polymarket/ids`);
  * - **View** — `MarketViewModel` (снапшот/JSON), `MarketParser` (обратно), типы
  *   `MarketSnapshot` (доменные типы) и `MarketJSON` (примитивы);
  * - **Errors** — живут в `@polymarket/errors/market`, реэкспортированы для удобства.

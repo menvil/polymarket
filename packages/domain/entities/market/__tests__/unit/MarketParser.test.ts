@@ -334,6 +334,21 @@ describe('MarketParser.from() — семейство и спецификация
     if (!result.ok) expect(result.error.context?.field).toBe('crypto.duration');
   });
 
+  it('разбирает семейство BINARY_OUTCOME без crypto-спецификации', () => {
+    const { crypto: _crypto, ...json } = validJSON();
+    const snapshot = unwrap(MarketParser.from({ ...json, family: 'BINARY_OUTCOME' }));
+
+    expect(snapshot.family).toBe('BINARY_OUTCOME');
+    expect('crypto' in snapshot).toBe(false);
+  });
+
+  it('отклоняет crypto-спецификацию на семействе BINARY_OUTCOME', () => {
+    const result = MarketParser.from({ ...validJSON(), family: 'BINARY_OUTCOME' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.context?.field).toBe('crypto');
+  });
+
   it('отклоняет неположительную crypto.duration', () => {
     const result = MarketParser.from({ ...validJSON(), crypto: { asset: 'btc', duration: -1 } });
 

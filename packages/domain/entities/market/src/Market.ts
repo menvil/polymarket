@@ -161,7 +161,8 @@ export interface MarketProps {
    * Спецификация семейства `CRYPTO_UP_DOWN`.
    *
    * @remarks
-   * Обязательна, когда `family === 'CRYPTO_UP_DOWN'` — это проверяет `create()`.
+   * Обязательна при `family === 'CRYPTO_UP_DOWN'` и запрещена при любом другом
+   * семействе — обе стороны правила проверяет `create()`.
    */
   readonly crypto?: CryptoUpDownSpec;
 }
@@ -178,8 +179,20 @@ export class Market {
   public readonly id: MarketId;
   /** Площадка, на которой наблюдается рынок */
   public readonly venueId: VenueId;
-  /** URL-safe слаг рынка, если площадка его публикует */
-  public readonly slug?: MarketSlug;
+  /**
+   * URL-safe слаг рынка, если площадка его публикует
+   *
+   * @remarks
+   * `declare` здесь не косметика и не лишнее слово. Без него TypeScript при
+   * `target: ES2022` эмитирует объявление поля, и класс определяет ключ даже
+   * когда значения нет: `'slug' in market` возвращал бы `true` со значением
+   * `undefined`. Снапшот и JSON в этом случае ключ **не** содержат — получалась
+   * бы асимметрия, на которой ломается любой потребитель, проверяющий наличие
+   * через `in`, а не через `!== undefined` (такие дефекты в сериализаторах
+   * репозитория уже находили). С `declare` поле появляется только при
+   * присваивании в конструкторе: «нет значения» означает «нет ключа» везде.
+   */
+  public declare readonly slug?: MarketSlug;
   /** Вопрос рынка */
   public readonly question: string;
   /** Запланированное начало торгов */
@@ -192,8 +205,14 @@ export class Market {
   public readonly outcomes: readonly [MarketOutcome, MarketOutcome];
   /** Семейство рынка */
   public readonly family: MarketFamily;
-  /** Спецификация семейства `CRYPTO_UP_DOWN` (для других семейств — undefined) */
-  public readonly crypto?: CryptoUpDownSpec;
+  /**
+   * Спецификация семейства `CRYPTO_UP_DOWN`; у `BINARY_OUTCOME` отсутствует
+   *
+   * @remarks
+   * `declare` — по той же причине, что и у {@link Market.slug}: иначе ключ
+   * `crypto` существовал бы на рынке семейства, которому спецификация запрещена.
+   */
+  public declare readonly crypto?: CryptoUpDownSpec;
 
   /**
    * Приватный конструктор — используйте {@link Market.create}
@@ -248,7 +267,8 @@ export class Market {
    * 5. instrument identity исходов канонические и различные (один outcome → одна identity);
    * 6. расписание: оба конца — `Timestamp`, `startsAt < expiresAt`;
    * 7. `state` — валидный `MarketState`; для RESOLVED индекс победителя указывает на существующий исход;
-   * 8. `family` — известное семейство; для `CRYPTO_UP_DOWN` обязательна валидная `crypto`-спецификация.
+   * 8. `family` — известное семейство; `CRYPTO_UP_DOWN` требует валидную
+   *    `crypto`-спецификацию, любое другое семейство её запрещает.
    *
    * Проверки идентификаторов строгие: значение должно совпадать с результатом
    * своего парсера VO. Благодаря этому `Market.create()` и `MarketParser.from()`
@@ -498,14 +518,25 @@ export class Market {
    * @returns `MarketValidationError` при нарушении, иначе `undefined`
    *
    * @remarks
-   * Связка «семейство → спецификация» проверяется здесь, а не типом:
-   * это единственное место, где нарушение может прийти из внешних данных.
+   * Связка «семейство → спецификация» проверяется здесь, а не типом, и в обе
+   * стороны: `CRYPTO_UP_DOWN` требует `crypto`, любое другое семейство её
+   * запрещает. Это единственное место, где нарушение может прийти из внешних
+   * данных, и единственное, где правило записано целиком.
    */
   private static _validateFamily(props: MarketProps): MarketValidationError | undefined {
     if (!isValidMarketFamily(props.family)) {
       return new MarketValidationError('Market family must be a known MarketFamily', {
         context: { field: 'family', value: props.family },
       });
+    }
+
+    // Семейства без предметной спецификации не должны её нести: иначе
+    // BINARY_OUTCOME стал бы дырой для crypto-данных рынка, который их не имеет.
+    if (props.family !== 'CRYPTO_UP_DOWN' && props.crypto !== undefined) {
+      return new MarketValidationError(
+        `Market family ${props.family} must not carry a crypto spec`,
+        { context: { field: 'crypto', family: props.family } }
+      );
     }
 
     if (props.family === 'CRYPTO_UP_DOWN') {

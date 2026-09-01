@@ -350,15 +350,65 @@ export class MarketRotation {
    * Paper: tickSize/minOrderSize = default (0.001 / 1).
    * Live: tickSize/minOrderSize из API (candidate).
    *
-   * Планировщику передаётся настоящий канонический `Market`, собранный
-   * {@link buildCanonicalMarket} из полей слота. Если честно собрать рынок
-   * нельзя (нет комплементарного токена, неизвестен крипто-актив,
-   * противоречивое расписание) — регистрация отменяется как любая другая
-   * ошибка здесь: лог + `false`, без подстановки заглушки.
+   * ### Порядок шагов
+   * Сначала — всё, что зависит **только от метаданных слота**: `expiresAt`
+   * и канонический `Market` из {@link buildCanonicalMarket}. Только потом —
+   * побочные эффекты: подписка WS, `marketCatalog.registerMarket()`,
+   * `recording.openMarket()`, регистрация стратегии.
+   *
+   * Порядок именно такой, потому что вызывающий (`openMarket`) на `false`
+   * удаляет лишь запись из `activeMarkets`. Если бы сборка рынка падала после
+   * подписки и регистрации в каталоге, за отказом оставались бы висящая
+   * WS-подписка, инструменты в каталоге и открытый market-файл recording.
+   *
+   * Планировщику передаётся настоящий канонический `Market`, собранный из полей
+   * слота. Если честно собрать рынок нельзя (нет комплементарного токена,
+   * противоречивое расписание, крипто-метаданные есть, но не складываются
+   * в спецификацию) — регистрация отменяется как любая другая ошибка здесь:
+   * лог + `false`, без подстановки заглушки. Отсутствие крипто-метаданных
+   * ошибкой не является: такой рынок собирается как `BINARY_OUTCOME`.
    */
   async registerMarketAndStrategy(slot: MarketSlot): Promise<boolean> {
     const { logger, wsAdapter, marketCatalog, engine, recording, accountId } = this._deps;
     const mode = this._deps.mode;
+
+    const expiresAtResult = TimestampService.create(slot.expiresAtMs);
+    if (!expiresAtResult.ok) {
+      logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
+      return false;
+    }
+
+    const compId = slot.complementaryInstrumentId;
+
+    // Канонический Market: собирается из тех же полей слота, что уходят в
+    // планировщик (`crypto.symbol` — тот же `rtdsFilter`, чтобы crypto-актив
+    // рынка и `StrategyEntry.cryptoAsset` не разошлись). Строим ДО любых
+    // побочных эффектов — см. «Порядок шагов» в TSDoc метода.
+    const marketResult = buildCanonicalMarket({
+      marketId: slot.marketId,
+      question: slot.candidate?.question,
+      instrumentId: slot.instrumentId,
+      complementaryInstrumentId: compId,
+      outcomeIndex: slot.outcomeIndex,
+      expiresAtMs: slot.expiresAtMs,
+      startsAtMs: slot.candidate?.startsAt?.toNumber(),
+      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
+      crypto: slot.cryptoMeta
+        ? {
+          symbol: slot.cryptoMeta.rtdsFilter,
+          eventStartMs: slot.cryptoMeta.eventStartTimeMs,
+          eventEndMs: slot.cryptoMeta.endDateMs,
+        }
+        : undefined,
+    });
+    if (!marketResult.ok) {
+      logger.error('Failed to build canonical market', {
+        marketId: String(slot.marketId),
+        instrumentId: String(slot.instrumentId),
+        error: marketResult.error.message,
+      });
+      return false;
+    }
 
     // Подписка на WS комплементарного токена (для dual-token стратегий)
     if (slot.complementaryInstrumentId) {
@@ -370,12 +420,6 @@ export class MarketRotation {
         primaryTokenId: String(slot.instrumentId),
         activeCompTokens: this.activeCompTokens.size,
       });
-    }
-
-    const expiresAtResult = TimestampService.create(slot.expiresAtMs);
-    if (!expiresAtResult.ok) {
-      logger.error('Failed to create expiresAt timestamp', { expiresAtMs: slot.expiresAtMs });
-      return false;
     }
 
     const tickSize = slot.tickSize ?? OutcomePrice.of(new Decimal('0.001'));
@@ -414,30 +458,6 @@ export class MarketRotation {
         expiresAt: expiresAtResult.value,
         rawMarket: slot.candidate.rawMarket,
       }, mode);
-    }
-
-    const compId = slot.complementaryInstrumentId;
-
-    // Канонический Market: собирается из тех же полей слота, что уходят в
-    // планировщик (`cryptoSymbol` — тот же `rtdsFilter`, чтобы crypto-актив
-    // рынка и `StrategyEntry.cryptoAsset` не разошлись).
-    const marketResult = buildCanonicalMarket({
-      marketId: slot.marketId,
-      question: slot.candidate?.question,
-      instrumentId: slot.instrumentId,
-      complementaryInstrumentId: compId,
-      outcomeIndex: slot.outcomeIndex,
-      expiresAtMs: slot.expiresAtMs,
-      eventStartMs: slot.cryptoMeta?.eventStartTimeMs,
-      cryptoSymbol: slot.cryptoMeta?.rtdsFilter,
-    });
-    if (!marketResult.ok) {
-      logger.error('Failed to build canonical market', {
-        marketId: String(slot.marketId),
-        instrumentId: String(slot.instrumentId),
-        error: marketResult.error.message,
-      });
-      return false;
     }
 
     const eventStartMsResult = slot.cryptoMeta?.eventStartTimeMs !== undefined

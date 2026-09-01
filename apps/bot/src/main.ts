@@ -68,7 +68,7 @@ import { SimpleBookRegistry } from './SimpleBookRegistry.js';
 import { DnsOverride } from '@polymarket/exchange/dns';
 import { parseConfig } from './config/parseConfig.js';
 import type { BotConfig } from './config/BotConfig.js';
-import { buildCanonicalMarket } from './bot/buildCanonicalMarket.js';
+import { buildCanonicalMarket, parseGammaMarketStartMs } from './bot/buildCanonicalMarket.js';
 import { buildCoreInfra } from './bot/buildCoreInfra.js';
 import { subscribeToOrderEvents } from './bot/buildEventLogger.js';
 import { buildRepositories } from './bot/buildRepositories.js';
@@ -3015,8 +3015,10 @@ async function runBacktest(): Promise<void> {
   const eventStartMs = eventStartMsResult?.ok ? eventStartMsResult.value : undefined;
 
   // Канонический Market из meta снапшота: оба outcome-токена, расписание и
-  // crypto-спецификация. Стратегии читают `snapshot.market.outcomes`, поэтому
-  // заглушка здесь молча ломала определение стороны токена.
+  // (для крипто-рынков) спецификация серии. Стратегии читают
+  // `snapshot.market.outcomes`, поэтому заглушка здесь молча ломала определение
+  // стороны токена. Снапшот без крипто-метаданных даёт `BINARY_OUTCOME`,
+  // а не отказ: такой рынок торговался и обязан реплеиться.
   const canonicalMarketResult = buildCanonicalMarket({
     marketId,
     question: typeof snapshotRawMarket?.['question'] === 'string' ? snapshotRawMarket['question'] : undefined,
@@ -3024,10 +3026,17 @@ async function runBacktest(): Promise<void> {
     complementaryInstrumentId,
     outcomeIndex,
     expiresAtMs: expirationMs,
+    startsAtMs: parseGammaMarketStartMs(snapshotRawMarket),
     eventStartMs: snapshotEventStartMs !== undefined && !Number.isNaN(snapshotEventStartMs)
       ? snapshotEventStartMs
       : undefined,
-    cryptoSymbol: backtestCryptoMeta?.rtdsFilter,
+    crypto: backtestCryptoMeta
+      ? {
+        symbol: backtestCryptoMeta.rtdsFilter,
+        eventStartMs: backtestCryptoMeta.eventStartTimeMs,
+        eventEndMs: backtestCryptoMeta.endDateMs,
+      }
+      : undefined,
   });
   if (!canonicalMarketResult.ok) {
     logger.fatal('Failed to build canonical market', {
