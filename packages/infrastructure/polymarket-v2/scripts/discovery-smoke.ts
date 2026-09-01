@@ -45,7 +45,11 @@
 import { createPublicClient } from '@polymarket/client';
 import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
-import type { MarketDiscoveryDiagnostics, MarketDiscoveryEntry } from '@polymarket/ports';
+import type {
+  MarketDiscoveryDiagnostics,
+  MarketDiscoveryEntry,
+  MarketDiscoveryInvalidBreakdown,
+} from '@polymarket/ports';
 import { PolymarketMarketDiscovery } from '../src/index.js';
 
 /** Окно обзора `endDate` в часах по умолчанию (ближайшие серии, а не весь мир). */
@@ -115,6 +119,35 @@ function parseWindowHours(raw: string | undefined): number {
 }
 
 /**
+ * Разворачивает разбор непригодных рынков в одну читаемую строку.
+ *
+ * @param breakdown - `diagnostics.invalidMarkets`
+ * @returns Строка вида `6 [classification=0, eventUnavailable=0, …]`
+ *
+ * @remarks
+ * Существует затем, чтобы вложенный объект нельзя было случайно
+ * интерполировать целиком: `String(invalidMarkets)` даёт `[object Object]`,
+ * причём ТОЛЬКО на пути отказа, который здоровый прогон не исполняет.
+ * Такая опечатка живёт до первого настоящего сбоя — то есть ровно до
+ * момента, когда диагностика и нужна. Единственная точка форматирования
+ * заодно гарантирует, что новая причина отказа попадёт в отчёт сама.
+ *
+ * @example
+ * ```typescript
+ * formatInvalidBreakdown({ total: 2, classification: 1, eventUnavailable: 0,
+ *   schedule: 1, seriesDuration: 0, canonicalMapping: 0 });
+ * // → '2 [classification=1, eventUnavailable=0, schedule=1, seriesDuration=0, canonicalMapping=0]'
+ * ```
+ */
+function formatInvalidBreakdown(breakdown: MarketDiscoveryInvalidBreakdown): string {
+  const { total, ...reasons } = breakdown;
+  const detail = Object.entries(reasons)
+    .map(([reason, count]) => `${reason}=${String(count)}`)
+    .join(', ');
+  return `${String(total)} [${detail}]`;
+}
+
+/**
  * Собирает список нарушенных инвариантов прогона.
  *
  * @param input - Исходы обоих обходов и диагностика ИТОГОВОГО снимка
@@ -166,7 +199,7 @@ function parseWindowHours(raw: string | undefined): number {
  *   запросов события дело не дошло вовсе.
  * - `tradeableMarkets > 0`, но canonical рынков нет — проблема классификации
  *   либо обогащения расписанием. Полный отказ `fetchEvent` попадает именно
- *   сюда, и его подпись — большой `invalidMarkets` при ненулевом
+ *   сюда, и его подпись — большой `invalidMarkets.total` при ненулевом
  *   `eventFetches`; сплошной `unsupportedMarkets` вместо него означал бы
  *   сломанный классификатор семейства.
  *
@@ -206,7 +239,7 @@ function parseWindowHours(raw: string | undefined): number {
  *   coldRefreshed: true,
  *   warmRefreshed: true,
  *   universeSize: 0,
- *   diagnostics, // tradeableMarkets: 588, invalidMarkets: 588
+ *   diagnostics, // tradeableMarkets: 588, invalidMarkets.total: 588
  * });
  * // ['empty canonical universe: 588 tradeable market(s) produced no canonical one …']
  * ```
@@ -247,9 +280,10 @@ function collectFailures(input: {
         : `empty canonical universe: ${String(diagnostics.tradeableMarkets)} tradeable market(s) ` +
             'produced no canonical one ' +
             `(unsupported=${String(diagnostics.unsupportedMarkets)}, ` +
-            `invalid=${String(diagnostics.invalidMarkets)}, ` +
             `duplicates=${String(diagnostics.duplicateMarkets)}, ` +
-            `eventFetches=${String(diagnostics.eventFetches)}) — ` +
+            `eventFetches=${String(diagnostics.eventFetches)}, ` +
+            `eventFetchFailures=${String(diagnostics.eventFetchFailures)}, ` +
+            `invalid=${formatInvalidBreakdown(diagnostics.invalidMarkets)}) — ` +
             'classification or schedule enrichment is broken; ' +
             'a total fetchEvent outage lands here, with invalid matching the supported-family count',
     );
