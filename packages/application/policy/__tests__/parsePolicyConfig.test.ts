@@ -709,3 +709,112 @@ describe('устойчивость к недоверенному входу (ф�
     expect(policy.trades).toBe(true);
   });
 });
+
+describe('устойчивость к недоверенному входу (скалярные и вложенные поля)', () => {
+  // Ранее эти поля читались через СТАТИЧЕСКИЙ тип `config.minLiquidity`, хотя
+  // конфигурация приходит из JSON. `minLiquidity: null` давало нативный
+  // TypeError, а `minLiquidity: {}` рапортовало про `minLiquidity.currency` —
+  // то есть уводило читателя во вложенное поле, когда сломан сам контейнер.
+  const MALFORMED: ReadonlyArray<readonly [string, unknown, string]> = [
+    ['minLiquidity: null', null, 'minLiquidity'],
+    ['minLiquidity: строка', 'x', 'minLiquidity'],
+    ['minLiquidity: массив', [], 'minLiquidity'],
+    ['minLiquidity: {} (нет amount)', {}, 'minLiquidity.amount'],
+    ['amount: null', { amount: null, currency: 'USDC' }, 'minLiquidity.amount'],
+    ['amount: объект', { amount: {}, currency: 'USDC' }, 'minLiquidity.amount'],
+    ['currency: null', { amount: 1000, currency: null }, 'minLiquidity.currency'],
+    ['currency: число', { amount: 1000, currency: 7 }, 'minLiquidity.currency'],
+  ];
+
+  it.each(MALFORMED)('%s → PolicyValidationError с полем %s', (_name, minLiquidity, field) => {
+    let caught: unknown;
+    try {
+      parsePolicyConfig({
+        kind: 'POLYMARKET',
+        family: 'CRYPTO_UP_DOWN',
+        minLiquidity,
+      } as never);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PolicyValidationError);
+    expect((caught as PolicyValidationError).context).toMatchObject({ field });
+  });
+
+  it.each([
+    ['null', null],
+    ['{}', {}],
+    ['true', true],
+    ['массив', []],
+  ])('minSpread: %s → PolicyValidationError с полем minSpread', (_name, minSpread) => {
+    let caught: unknown;
+    try {
+      parsePolicyConfig({
+        kind: 'POLYMARKET',
+        family: 'CRYPTO_UP_DOWN',
+        minSpread,
+      } as never);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PolicyValidationError);
+    expect((caught as PolicyValidationError).context).toMatchObject({ field: 'minSpread' });
+  });
+
+  it('нечисловая глубина стакана называет своё поле, а не теряет адрес', () => {
+    // Прежний `as number` протаскивал строку до фабрики: та её отвергала,
+    // но уже без имени поля
+    let caught: unknown;
+    try {
+      parsePolicyConfig({
+        kind: 'CEX',
+        exchangeIds: ['binance'],
+        marketTypes: ['swap'],
+        symbols: ['BTC/USDT:USDT'],
+        orderbook: true,
+        trades: true,
+        orderbookDepth: '10',
+      } as never);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PolicyValidationError);
+    expect((caught as PolicyValidationError).context).toMatchObject({ field: 'orderbookDepth' });
+  });
+
+  it('нестроковое окно называет своё поле', () => {
+    let caught: unknown;
+    try {
+      parsePolicyConfig({ kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', effectiveFrom: 5 } as never);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PolicyValidationError);
+    expect((caught as PolicyValidationError).context).toMatchObject({ field: 'effectiveFrom' });
+  });
+
+  it('корректные значения по-прежнему принимаются в обеих формах', () => {
+    // Число и строка равноправны намеренно: YAML отдаёт 1000 числом, .env — строкой
+    const fromNumber = parsePolicyConfig({
+      kind: 'POLYMARKET',
+      family: 'CRYPTO_UP_DOWN',
+      minLiquidity: { amount: 1000, currency: 'USDC' },
+      minSpread: 0.02,
+    });
+    const fromString = parsePolicyConfig({
+      kind: 'POLYMARKET',
+      family: 'CRYPTO_UP_DOWN',
+      minLiquidity: { amount: '1000', currency: 'USDC' },
+      minSpread: '0.02',
+    });
+
+    expect(fromNumber.minLiquidity?.value().toNumber()).toBe(1000);
+    expect(fromString.minLiquidity?.value().toNumber()).toBe(1000);
+    expect(fromNumber.minSpread?.toDecimal().toNumber()).toBe(0.02);
+    expect(fromString.minSpread?.toDecimal().toNumber()).toBe(0.02);
+  });
+});

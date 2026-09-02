@@ -178,6 +178,54 @@ function requireArray(value: unknown, field: string): readonly unknown[] {
 }
 
 /**
+ * Требует, чтобы значение было ЧИСЛОМ.
+ *
+ * @param value - Значение из недоверенного источника
+ * @param field - Имя поля для сообщения об ошибке
+ * @returns То же значение, суженное до `number`
+ * @throws {PolicyValidationError} Если значение не число
+ *
+ * @internal
+ * @remarks
+ * Проверяется только ФОРМА. Смысловые границы (целое, положительное) — дело
+ * фабрики: она владеет правилами уровня policy, и дублировать их здесь
+ * значило бы завести второе место, где их придётся менять.
+ */
+function requireNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number') {
+    throw new PolicyValidationError('Policy config field must be a number', {
+      context: { field, value, actualType: value === null ? 'null' : typeof value },
+    });
+  }
+  return value;
+}
+
+/**
+ * Требует, чтобы значение было СТРОКОЙ либо ЧИСЛОМ.
+ *
+ * @param value - Значение из недоверенного источника
+ * @param field - Имя поля для сообщения об ошибке
+ * @returns То же значение, суженное до `string | number`
+ * @throws {PolicyValidationError} Если значение другого типа
+ *
+ * @internal
+ * @remarks
+ * Числовые поля конфигурации принимают обе формы намеренно: YAML отдаёт
+ * `1000` числом, а `.env` — строкой, и требовать одну из них значило бы
+ * привязать контракт к формату файла. Но `null`, объект и `boolean` формой
+ * числа не являются: пропущенные дальше, они дошли бы до сервиса-конструктора
+ * и дали бы ошибку без имени поля.
+ */
+function requireStringOrNumber(value: unknown, field: string): string | number {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    throw new PolicyValidationError('Policy config field must be a string or a number', {
+      context: { field, value, actualType: value === null ? 'null' : typeof value },
+    });
+  }
+  return value;
+}
+
+/**
  * Требует, чтобы значение было БУЛЕВЫМ.
  *
  * @param value - Значение из недоверенного источника
@@ -452,17 +500,23 @@ function parseCurrency(raw: unknown, field: string): SupportedCurrency {
  * не рантайм-зависимость, и обходить сервис значило бы обходить его
  * инварианты (NaN, Infinity, предельная сумма).
  */
-function parseMoney(
-  raw: { readonly amount: string | number; readonly currency: string },
-  field: string,
-): Money {
-  const currency = parseCurrency(raw.currency, `${field}.currency`);
-  const created = MoneyService.create(raw.amount, currency);
+function parseMoney(raw: unknown, field: string): Money {
+  // Форма контейнера проверяется ДО его полей: иначе `minLiquidity: null`
+  // падало бы нативным TypeError, а `minLiquidity: {}` рапортовало бы про
+  // `minLiquidity.currency` — то есть уводило бы читателя во вложенное поле,
+  // когда сломан сам объект.
+  const money = requireRecord(raw, field);
+  const amount = requireStringOrNumber(money['amount'], `${field}.amount`);
+  const currency = parseCurrency(
+    requireString(money['currency'], `${field}.currency`),
+    `${field}.currency`,
+  );
+  const created = MoneyService.create(amount, currency);
   if (!created.ok) {
     throw new PolicyValidationError('Policy config money amount is not a valid amount', {
       context: {
         field: `${field}.amount`,
-        value: raw.amount,
+        value: amount,
         currency,
         cause: created.error.message,
       },
@@ -487,8 +541,10 @@ function parseMoney(
  * делает сам сервис — здесь она не повторяется, только переводится в
  * доменную ошибку с именем поля.
  */
-function parseRatio(raw: string | number, field: string): Ratio {
-  const created = RatioService.fromDecimal(raw);
+function parseRatio(raw: unknown, field: string): Ratio {
+  // Явная проверка формы, а не расчёт на то, что сервис отвергнет объект:
+  // «отвергает сегодня» — не контракт, а наблюдение за чужой реализацией.
+  const created = RatioService.fromDecimal(requireStringOrNumber(raw, field));
   if (!created.ok) {
     throw new PolicyValidationError('Policy config ratio is not a valid decimal fraction', {
       context: { field, value: raw, cause: created.error.message },
@@ -537,13 +593,13 @@ function parseTimestamp(raw: unknown, field: string): Timestamp {
  * СОГЛАСОВАННОСТЬ границ (`effectiveFrom < effectiveUntil`) здесь НЕ
  * проверяется — это правило policy, и живёт оно в фабриках.
  */
-function parseWindow(config: PolicyConfig): PolicyWindow {
+function parseWindow(root: Record<string, unknown>): PolicyWindow {
   return {
-    ...(config.effectiveFrom !== undefined
-      ? { effectiveFrom: parseTimestamp(config.effectiveFrom, 'effectiveFrom') }
+    ...(root['effectiveFrom'] !== undefined
+      ? { effectiveFrom: parseTimestamp(root['effectiveFrom'], 'effectiveFrom') }
       : {}),
-    ...(config.effectiveUntil !== undefined
-      ? { effectiveUntil: parseTimestamp(config.effectiveUntil, 'effectiveUntil') }
+    ...(root['effectiveUntil'] !== undefined
+      ? { effectiveUntil: parseTimestamp(root['effectiveUntil'], 'effectiveUntil') }
       : {}),
   };
 }
@@ -595,13 +651,13 @@ export function parsePolymarketPolicyConfig(config: PolymarketPolicyConfig): Pol
     ...(assets !== undefined ? { assets } : {}),
     ...(durations !== undefined ? { durations } : {}),
     ...(title !== undefined ? { title } : {}),
-    ...(config.minLiquidity !== undefined
-      ? { minLiquidity: parseMoney(config.minLiquidity, 'minLiquidity') }
+    ...(root['minLiquidity'] !== undefined
+      ? { minLiquidity: parseMoney(root['minLiquidity'], 'minLiquidity') }
       : {}),
-    ...(config.minSpread !== undefined
-      ? { minSpread: parseRatio(config.minSpread, 'minSpread') }
+    ...(root['minSpread'] !== undefined
+      ? { minSpread: parseRatio(root['minSpread'], 'minSpread') }
       : {}),
-    ...parseWindow(config),
+    ...parseWindow(root),
   });
 }
 
@@ -649,10 +705,13 @@ export function parseCexPolicyConfig(config: CexPolicyConfig): CexPolicy {
     symbols: parseStringList(root['symbols'], 'symbols'),
     orderbook: requireBoolean(root['orderbook'], 'orderbook'),
     trades: requireBoolean(root['trades'], 'trades'),
+    // Глубина проверяется на ФОРМУ здесь и на СМЫСЛ (целая, положительная)
+    // в фабрике. Прежний `as number` протаскивал строку до фабрики, и та
+    // отвергала её без имени поля — ошибка без адреса.
     ...(root['orderbookDepth'] !== undefined
-      ? { orderbookDepth: root['orderbookDepth'] as number }
+      ? { orderbookDepth: requireNumber(root['orderbookDepth'], 'orderbookDepth') }
       : {}),
-    ...parseWindow(config),
+    ...parseWindow(root),
   });
 }
 
