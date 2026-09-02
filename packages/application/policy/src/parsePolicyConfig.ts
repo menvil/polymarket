@@ -76,7 +76,10 @@ import type { Money, Ratio } from '@polymarket/value-objects';
 import type { CexPolicy } from './CexPolicy.js';
 import type { Policy } from './Policy.js';
 import type { PolicyWindow } from './PolicyWindow.js';
-import type { PolymarketPolicy } from './PolymarketPolicy.js';
+import type {
+  PolymarketPolicy,
+  PolymarketPolicyTitleSelectors,
+} from './PolymarketPolicy.js';
 import { POLICY_CONFIG_KIND_VALUES } from './PolicyConfig.js';
 import type { CexPolicyConfig, PolicyConfig, PolymarketPolicyConfig } from './PolicyConfig.js';
 import { PolicyValidationError, createCexPolicy, createPolymarketPolicy } from './createPolicy.js';
@@ -127,6 +130,75 @@ const DURATION_PATTERN = new RegExp(`^(\\d+)(${DURATION_UNITS})$`);
  * @internal
  */
 const DURATION_FORMAT = `<number><${DURATION_UNITS}>`;
+
+/**
+ * Требует, чтобы значение было ОБЪЕКТОМ-записью.
+ *
+ * @param value - Значение из недоверенного источника
+ * @param field - Имя поля для сообщения об ошибке
+ * @returns То же значение, суженное до записи
+ * @throws {PolicyValidationError} Если значение не объект, `null` либо массив
+ *
+ * @internal
+ * @remarks
+ * Массив исключается отдельно: `typeof [] === 'object'`, и без этой проверки
+ * `[]` прошёл бы как конфигурация, а чтение полей дало бы `undefined` —
+ * то есть молча пустую policy вместо ошибки.
+ */
+function requireRecord(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new PolicyValidationError('Policy config field must be an object', {
+      context: { field, value, actualType: Array.isArray(value) ? 'array' : typeof value },
+    });
+  }
+  return value as Record<string, unknown>;
+}
+
+/**
+ * Требует, чтобы значение было МАССИВОМ.
+ *
+ * @param value - Значение из недоверенного источника
+ * @param field - Имя поля для сообщения об ошибке
+ * @returns То же значение, суженное до массива
+ * @throws {PolicyValidationError} Если значение не массив
+ *
+ * @internal
+ * @remarks
+ * Без этой проверки строка в поле списка (`assets: 'btc'`) доходила бы до
+ * `.map()` и давала нативный `TypeError` — ошибку без поля и без значения,
+ * то есть ровно то, чего граница конфигурации существует, чтобы избежать.
+ */
+function requireArray(value: unknown, field: string): readonly unknown[] {
+  if (!Array.isArray(value)) {
+    throw new PolicyValidationError('Policy config field must be an array', {
+      context: { field, value, actualType: typeof value },
+    });
+  }
+  return value;
+}
+
+/**
+ * Требует, чтобы значение было БУЛЕВЫМ.
+ *
+ * @param value - Значение из недоверенного источника
+ * @param field - Имя поля для сообщения об ошибке
+ * @returns То же значение, суженное до `boolean`
+ * @throws {PolicyValidationError} Если значение не `boolean`
+ *
+ * @internal
+ * @remarks
+ * Строгая проверка, а не приведение к истинности: `orderbook: 'no'` — строка
+ * истинная, и мягкое приведение включило бы поток, который автор конфигурации
+ * выключал. Ошибка здесь дешевле, чем лишняя подписка в проде.
+ */
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new PolicyValidationError('Policy config field must be a boolean', {
+      context: { field, value, actualType: typeof value },
+    });
+  }
+  return value;
+}
 
 /**
  * Требует, чтобы значение конфигурации было строкой.
@@ -182,6 +254,64 @@ function parseFamily(raw: unknown): MarketFamily {
 }
 
 /**
+ * Разбирает список строк недоверенной конфигурации.
+ *
+ * @param raw - Значение поля-списка
+ * @param field - Имя поля для сообщения об ошибке
+ * @returns Список строк
+ * @throws {PolicyValidationError} Если значение не массив либо элемент не строка
+ *
+ * @internal
+ * @remarks
+ * Содержимое НЕ нормализуется и не проверяется по смыслу: обрезку,
+ * дедупликацию, непустоту и принадлежность словарю делает фабрика. Здесь
+ * только форма — иначе те же правила существовали бы в двух местах.
+ */
+function parseStringList(raw: unknown, field: string): readonly string[] {
+  return requireArray(raw, field).map((value, index) =>
+    requireString(value, `${field}[${index}]`),
+  );
+}
+
+/**
+ * Разбирает текстовые селекторы недоверенной конфигурации.
+ *
+ * @param raw - Значение поля `title`
+ * @returns Селекторы либо `undefined`, если поля нет
+ * @throws {PolicyValidationError} Если `title` не объект либо любой из его
+ *   списков не массив строк
+ *
+ * @internal
+ * @remarks
+ * Раньше `title` передавался в фабрику КАК ЕСТЬ, и это был худший из
+ * пропусков: `title: 'x'` не падало вовсе — строка не имеет полей
+ * `required`/`anyOf`/`excluded`, все три читались как `undefined`, и policy
+ * молча получалась БЕЗ текстовых селекторов. Конфигурация с опечаткой
+ * выглядела бы рабочей и отбирала бы совсем не те рынки.
+ *
+ * Сами слова не трогаем: обрезку, дедупликацию и поиск противоречий делает
+ * фабрика.
+ */
+function parseTitleSelectors(raw: unknown): PolymarketPolicyTitleSelectors | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const title = requireRecord(raw, 'title');
+  const parseList = (key: 'required' | 'anyOf' | 'excluded'): readonly string[] | undefined =>
+    title[key] === undefined ? undefined : parseStringList(title[key], `title.${key}`);
+
+  const required = parseList('required');
+  const anyOf = parseList('anyOf');
+  const excluded = parseList('excluded');
+
+  return {
+    ...(required !== undefined ? { required } : {}),
+    ...(anyOf !== undefined ? { anyOf } : {}),
+    ...(excluded !== undefined ? { excluded } : {}),
+  };
+}
+
+/**
  * Разбирает список тикеров базовых активов.
  *
  * @param raw - Значение поля `assets` (может отсутствовать)
@@ -199,11 +329,12 @@ function parseFamily(raw: unknown): MarketFamily {
  * «пусто означает отсутствие ограничения» — правило policy, а не формата
  * записи, и жить оно должно в одном месте.
  */
-function parseAssets(raw: readonly string[] | undefined): readonly CryptoAssetId[] | undefined {
+function parseAssets(raw: unknown): readonly CryptoAssetId[] | undefined {
   if (raw === undefined) {
     return undefined;
   }
-  return raw.map((value, index) => {
+  const items = requireArray(raw, 'assets');
+  return items.map((value, index) => {
     const field = `assets[${index}]`;
     const asset = asCryptoAssetId(requireString(value, field));
     if (asset === undefined) {
@@ -271,11 +402,12 @@ function parseDuration(raw: unknown, field: string): MarketDuration {
  *
  * @internal
  */
-function parseDurations(raw: readonly string[] | undefined): readonly MarketDuration[] | undefined {
+function parseDurations(raw: unknown): readonly MarketDuration[] | undefined {
   if (raw === undefined) {
     return undefined;
   }
-  return raw.map((value, index) => parseDuration(value, `durations[${index}]`));
+  const items = requireArray(raw, 'durations');
+  return items.map((value, index) => parseDuration(value, `durations[${index}]`));
 }
 
 /**
@@ -452,15 +584,17 @@ function parseWindow(config: PolicyConfig): PolicyWindow {
  * ```
  */
 export function parsePolymarketPolicyConfig(config: PolymarketPolicyConfig): PolymarketPolicy {
-  const assets = parseAssets(config.assets);
-  const durations = parseDurations(config.durations);
+  const root = requireRecord(config, 'config');
+  const assets = parseAssets(root['assets']);
+  const durations = parseDurations(root['durations']);
+  const title = parseTitleSelectors(root['title']);
 
   return createPolymarketPolicy({
     kind: 'POLYMARKET',
-    family: parseFamily(config.family),
+    family: parseFamily(root['family']),
     ...(assets !== undefined ? { assets } : {}),
     ...(durations !== undefined ? { durations } : {}),
-    ...(config.title !== undefined ? { title: config.title } : {}),
+    ...(title !== undefined ? { title } : {}),
     ...(config.minLiquidity !== undefined
       ? { minLiquidity: parseMoney(config.minLiquidity, 'minLiquidity') }
       : {}),
@@ -506,14 +640,18 @@ export function parsePolymarketPolicyConfig(config: PolymarketPolicyConfig): Pol
  * ```
  */
 export function parseCexPolicyConfig(config: CexPolicyConfig): CexPolicy {
+  const root = requireRecord(config, 'config');
+
   return createCexPolicy({
     kind: 'CEX',
-    exchangeIds: config.exchangeIds,
-    marketTypes: config.marketTypes,
-    symbols: config.symbols,
-    orderbook: config.orderbook,
-    trades: config.trades,
-    ...(config.orderbookDepth !== undefined ? { orderbookDepth: config.orderbookDepth } : {}),
+    exchangeIds: parseStringList(root['exchangeIds'], 'exchangeIds'),
+    marketTypes: parseStringList(root['marketTypes'], 'marketTypes'),
+    symbols: parseStringList(root['symbols'], 'symbols'),
+    orderbook: requireBoolean(root['orderbook'], 'orderbook'),
+    trades: requireBoolean(root['trades'], 'trades'),
+    ...(root['orderbookDepth'] !== undefined
+      ? { orderbookDepth: root['orderbookDepth'] as number }
+      : {}),
     ...parseWindow(config),
   });
 }
@@ -584,6 +722,11 @@ export function parsePolicyConfig(config: PolymarketPolicyConfig): PolymarketPol
 export function parsePolicyConfig(config: CexPolicyConfig): CexPolicy;
 export function parsePolicyConfig(config: PolicyConfig): Policy;
 export function parsePolicyConfig(config: PolicyConfig): Policy {
+  // Конфигурация приходит из `JSON.parse`, то есть ВНЕ системы типов:
+  // `null` вместо объекта — обычный результат пустого файла, и без этой
+  // проверки чтение `.kind` дало бы нативный TypeError без имени поля.
+  requireRecord(config, 'config');
+
   switch (config.kind) {
     case 'POLYMARKET':
       return parsePolymarketPolicyConfig(config);

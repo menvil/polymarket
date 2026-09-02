@@ -623,3 +623,89 @@ describe('parsePolicyConfig: результат совпадает с прямо
     expect(fromConfig.effectiveFrom?.equals(parsedFrom.value)).toBe(true);
   });
 });
+
+describe('устойчивость к недоверенному входу (форма конфига)', () => {
+  // Конфигурация приходит из JSON.parse/env, то есть ВНЕ системы типов.
+  // До этих проверок шесть таких входов давали нативный TypeError без имени
+  // поля, а два принимались МОЛЧА: `title: 'x'` давал policy вообще без
+  // текстовых селекторов, `orderbook: 'yes'` проходил как истина.
+  const MALFORMED: ReadonlyArray<readonly [string, unknown, string]> = [
+    ['корень null', null, 'config'],
+    ['корень undefined', undefined, 'config'],
+    ['корень строка', '{}', 'config'],
+    ['корень массив', [], 'config'],
+    ['assets не массив', { kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', assets: 'btc' }, 'assets'],
+    ['assets[0] не строка', { kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', assets: [1] }, 'assets[0]'],
+    ['durations не массив', { kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', durations: 5 }, 'durations'],
+    ['title не объект', { kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', title: 'x' }, 'title'],
+    [
+      'title.required не массив',
+      { kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', title: { required: 'a' } },
+      'title.required',
+    ],
+    [
+      'title.excluded[0] не строка',
+      { kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', title: { excluded: [7] } },
+      'title.excluded[0]',
+    ],
+    ['family не строка', { kind: 'POLYMARKET', family: 7 }, 'family'],
+    [
+      'CEX exchangeIds null',
+      { kind: 'CEX', exchangeIds: null, marketTypes: ['swap'], symbols: ['S'], orderbook: true, trades: true },
+      'exchangeIds',
+    ],
+    [
+      'CEX symbols не массив',
+      { kind: 'CEX', exchangeIds: ['b'], marketTypes: ['swap'], symbols: 'S', orderbook: true, trades: true },
+      'symbols',
+    ],
+    [
+      'CEX orderbook не boolean',
+      { kind: 'CEX', exchangeIds: ['b'], marketTypes: ['swap'], symbols: ['S'], orderbook: 'yes', trades: false },
+      'orderbook',
+    ],
+    [
+      'CEX trades отсутствует',
+      { kind: 'CEX', exchangeIds: ['b'], marketTypes: ['swap'], symbols: ['S'], orderbook: true },
+      'trades',
+    ],
+  ];
+
+  it.each(MALFORMED)('%s → PolicyValidationError с полем %s', (_name, input, field) => {
+    let caught: unknown;
+    try {
+      parsePolicyConfig(input as never);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PolicyValidationError);
+    expect((caught as PolicyValidationError).context).toMatchObject({ field });
+  });
+
+  it('строка вместо title больше не даёт МОЛЧА policy без селекторов', () => {
+    // Худший из прежних пропусков: конфигурация с опечаткой выглядела рабочей
+    // и отбирала совсем не те рынки
+    expect(() =>
+      parsePolicyConfig({
+        kind: 'POLYMARKET',
+        family: 'CRYPTO_UP_DOWN',
+        title: 'excluded-testnet',
+      } as never),
+    ).toThrow(PolicyValidationError);
+  });
+
+  it('корректный конфиг с булевыми потоками по-прежнему принимается', () => {
+    const policy = parsePolicyConfig({
+      kind: 'CEX',
+      exchangeIds: ['binance'],
+      marketTypes: ['swap'],
+      symbols: ['BTC/USDT:USDT'],
+      orderbook: false,
+      trades: true,
+    });
+
+    expect(policy.orderbook).toBe(false);
+    expect(policy.trades).toBe(true);
+  });
+});
