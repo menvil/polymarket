@@ -1,0 +1,47 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": false,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts"
+  ],
+  "references": [
+    {
+      "path": "../polymarket-v2/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/errors/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/ids/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/logger/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/time/tsconfig.build.json"
+    },
+    {
+      "path": "../../foundation/timestamp/tsconfig.build.json"
+    },
+    {
+      "path": "../../application/ports/tsconfig.build.json"
+    }
+  ]
+}
