@@ -192,7 +192,18 @@ export interface EntryOptions {
   readonly asset?: string;
   /** Начало торгов. */
   readonly startsAtMs?: number;
-  /** Фактическое окно рынка. */
+  /**
+   * НОМИНАЛ серии (`crypto.duration`).
+   *
+   * @remarks
+   * Отдельно от {@link EntryOptions.windowMs} намеренно: номинал —
+   * классификация («рынок 5-минутной серии»), а фактическое окно
+   * `expiresAt - startsAt` площадка вправе сдвинуть. Связать их значило бы
+   * сделать невыразимым нормальный рынок, у которого окно оказалось
+   * 4 минуты вместо 5.
+   */
+  readonly nominalMs?: number;
+  /** ФАКТИЧЕСКОЕ окно рынка (по умолчанию совпадает с номиналом). */
   readonly windowMs?: number;
   /** Площадка рынка. */
   readonly venueId?: VenueId;
@@ -217,13 +228,14 @@ export function makeEntry(options: EntryOptions = {}): MarketDiscoveryEntry {
     id = 'market-x',
     asset = 'btc',
     startsAtMs = AT_1800_MS,
-    windowMs = FIVE_MIN_MS,
+    nominalMs = FIVE_MIN_MS,
+    windowMs = nominalMs,
     venueId = KnownVenues.POLYMARKET,
     state = 'ACTIVE',
   } = options;
 
-  const duration = asMarketDuration(FIVE_MIN_MS);
-  if (duration === undefined) throw new Error('bad duration fixture');
+  const duration = asMarketDuration(nominalMs);
+  if (duration === undefined) throw new Error(`bad duration fixture: ${String(nominalMs)}`);
 
   const created = Market.create({
     id: unsafeMarketId(id),
