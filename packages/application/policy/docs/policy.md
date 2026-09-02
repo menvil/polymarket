@@ -186,3 +186,6 @@ Allow-list **закрытый**: открытый («всё, кроме запр
 - [`market-scorer.md`](./market-scorer.md) — алгоритм ранжирования
 - `packages/application/market-discovery/docs/market-discovery.md` —
   `MarketUniverse`, откуда берутся записи
+- `packages/application/subscription-planning/docs/polymarket-subscription-planner.md`
+  — следующий слой: какие из подходящих рынков ещё можно приобрести для
+  будущей подписки (policy там оценивается на `market.startsAt`)
