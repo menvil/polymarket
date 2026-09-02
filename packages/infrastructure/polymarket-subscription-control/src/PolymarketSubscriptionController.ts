@@ -64,6 +64,30 @@
  * проверка повторяется после каждой асинхронной границы, а всё открытое
  * откатывается.
  *
+ * ### Одно физическое поколение на рынок
+ *
+ * Ключ рынка занят всё время, пока живёт хоть один его физический ресурс:
+ * сперва состоянием в карте рынков, а с момента снятия последнего claim —
+ * записью в реестре разборов. Свободным он не бывает ни на один тик, и
+ * `acquire` в самом начале дожидается идущего разбора.
+ *
+ * Это не перестраховка. `PolymarketOpenSubscription.close()` дожидается
+ * остановки pump-цикла, то есть занимает НЕнулевое время, а ссылки на
+ * shared RTDS-фиды адресуются ключом рынка, а не экземпляром подписки:
+ *
+ * ```text
+ * release(A, X): owners → 0, ключ освобождён, close() ещё идёт
+ * acquire(B, X): новое поколение X → refs.add("X") — а "X" уже в Set: no-op
+ * старый teardown: refs.delete("X") → refs пуст → фид ЗАКРЫТ
+ *
+ * результат: X ACTIVE с rtdsFeedKeys = [btc], физического фида нет
+ * ```
+ *
+ * Пока поколение ровно одно, «ссылка = рынок» остаётся корректным
+ * инвариантом. Публичная модель состояния при этом не расширяется третьей
+ * фазой: снаружи рынок либо есть (`OPENING`/`ACTIVE`), либо его нет, а
+ * разбор — внутреннее свойство перехода.
+ *
  * ### RTDS-ссылки принадлежат РЫНКУ, а не владельцам
  *
  * ```text
@@ -275,6 +299,14 @@ export class PolymarketSubscriptionController {
   private readonly _markets = new Map<string, MarketSubscriptionState>();
   /** Shared RTDS-фиды по `rtdsFeedKey(feed)`. */
   private readonly _rtdsFeeds = new Map<string, SharedRtdsFeed>();
+  /**
+   * Идущие разборы ресурсов по `String(marketId)`.
+   *
+   * @remarks
+   * Ключ рынка занят, пока его физический ресурс разбирается, — см. раздел
+   * «Одно физическое поколение на рынок» в TSDoc класса.
+   */
+  private readonly _teardowns = new Map<string, Promise<void>>();
 
   private _closed = false;
   private _closePromise: Promise<void> | null = null;
@@ -340,6 +372,16 @@ export class PolymarketSubscriptionController {
     assertOwnerKey(ownerKey);
     const marketId = entry.market.id;
     const key = String(marketId);
+
+    // Предыдущее поколение этого рынка ещё разбирается: приобретать нельзя,
+    // пока его ресурсы живы (см. TSDoc класса). После ожидания ВСЕ проверки
+    // выполняются заново — за это время рынок мог стартовать, источник
+    // отказать, а контроллер остановиться.
+    let teardown = this._teardowns.get(key);
+    while (teardown !== undefined) {
+      await teardown;
+      teardown = this._teardowns.get(key);
+    }
 
     const existing = this._markets.get(key);
     if (existing !== undefined) {
@@ -458,13 +500,14 @@ export class PolymarketSubscriptionController {
       return 'retained';
     }
 
-    // Синхронно до первого await: второй release/acquire увидит пустой ключ
+    // Синхронно до первого await: состояние снимается и ТУТ ЖЕ сменяется
+    // регистрацией разбора — ключ не бывает свободным ни на один тик.
     this._markets.delete(key);
     this._logger.info('Last owner released claim, closing market subscription', {
       marketId: key,
       ownerKey,
     });
-    await this._closePhysicalResources(current);
+    await this._beginTeardown(current);
     return 'closed';
   }
 
@@ -542,8 +585,9 @@ export class PolymarketSubscriptionController {
 
     for (const state of [...this._markets.values()]) {
       this._discard(state);
-      await this._closePhysicalResources(state);
+      await this._beginTeardown(state);
     }
+    await this._drainTeardowns();
     await this._forceCloseRemainingFeeds('source failure');
     return true;
   }
@@ -580,8 +624,11 @@ export class PolymarketSubscriptionController {
 
       for (const state of [...this._markets.values()]) {
         this._discard(state);
-        await this._closePhysicalResources(state);
+        await this._beginTeardown(state);
       }
+      // Разборы, начатые снятием последнего claim-а ДО остановки, в карте
+      // рынков уже не видны — их дожидается реестр.
+      await this._drainTeardowns();
       await this._forceCloseRemainingFeeds('controller shutdown');
 
       this._logger.info('PolymarketSubscriptionController closed');
@@ -976,7 +1023,7 @@ export class PolymarketSubscriptionController {
    */
   private async _rollback(state: MarketSubscriptionState): Promise<void> {
     this._discard(state);
-    await this._closePhysicalResources(state);
+    await this._beginTeardown(state);
   }
 
   /**
@@ -993,6 +1040,77 @@ export class PolymarketSubscriptionController {
     const key = String(state.marketId);
     if (this._markets.get(key) === state) {
       this._markets.delete(key);
+    }
+  }
+
+  /**
+   * Начинает разбор ресурсов рынка, ЗАНИМАЯ его ключ до конца разбора.
+   *
+   * @param state - Снятое из карты состояние рынка
+   * @returns Promise завершения разбора
+   *
+   * @remarks
+   * Регистрация в реестре выполняется СИНХРОННО — до первого await внутри
+   * разбора, — и вызывающий обязан снимать состояние из карты в той же
+   * синхронной секции. Только так ключ рынка не бывает свободным ни на один
+   * тик: сперва его держит состояние, затем сразу — запись разбора.
+   *
+   * Разборы одного ключа выстраиваются в цепочку: следующий начинается
+   * после предыдущего. Запись удаляется с identity-guard по promise —
+   * чужой, более поздний разбор чужой уборкой не снимается.
+   */
+  private _beginTeardown(state: MarketSubscriptionState): Promise<void> {
+    const key = String(state.marketId);
+    const running = this._teardowns.get(key);
+    let settle: () => void = () => undefined;
+    const tracked = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this._teardowns.set(key, tracked); // синхронно: ключ занят с этого тика
+
+    void (async () => {
+      try {
+        if (running !== undefined) {
+          await running;
+        }
+        await this._closePhysicalResources(state);
+      } catch (error) {
+        // Разбор не имеет права отказать: некому обработать, а незакрытая
+        // регистрация навсегда заблокировала бы рынок.
+        this._logger.warn('Market teardown failed', {
+          marketId: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        if (this._teardowns.get(key) === tracked) {
+          this._teardowns.delete(key);
+        }
+        settle();
+      }
+    })();
+
+    return tracked;
+  }
+
+  /**
+   * Дожидается всех идущих разборов ресурсов.
+   *
+   * @returns Promise завершения
+   *
+   * @remarks
+   * Нужен остановке и реконсиляции: разбор, начатый снятием последнего
+   * claim-а, уже НЕ виден в карте рынков, и без этого ожидания `close()`
+   * вернулся бы, пока физическая подписка ещё закрывается, — то есть соврал
+   * бы про «ресурсов больше нет».
+   *
+   * Цикл, а не один `allSettled`: пока идёт ожидание, разбор может
+   * появиться (например, конкурентный `release`, начавшийся до остановки).
+   * Он конечен — новые приобретения к этому моменту запрещены, а каждый
+   * завершившийся разбор снимает себя с учёта.
+   */
+  private async _drainTeardowns(): Promise<void> {
+    while (this._teardowns.size > 0) {
+      await Promise.allSettled([...this._teardowns.values()]);
     }
   }
 

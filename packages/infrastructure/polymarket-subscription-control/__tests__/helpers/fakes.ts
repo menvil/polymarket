@@ -160,15 +160,27 @@ export function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-/** Подписка-подделка со счётчиком закрытий. */
+/** Подписка-подделка со счётчиком закрытий и управляемой задержкой close. */
 export class FakeOpenSubscription implements PolymarketOpenSubscription {
   public closeCalls = 0;
+  /**
+   * Если задано — `close()` ждёт этот promise.
+   *
+   * @remarks
+   * Настоящий `PolymarketOpenSubscription.close()` дожидается остановки
+   * pump-цикла, то есть занимает НЕнулевое время. Мгновенная подделка
+   * закрытия физически не способна показать гонку между разбором старого
+   * ресурса и приобретением нового под тем же рынком.
+   */
+  public closeHold: Promise<void> | undefined;
 
   public constructor(public readonly label: string) {}
 
   public readonly close = async (): Promise<void> => {
     this.closeCalls += 1;
-    return Promise.resolve();
+    if (this.closeHold !== undefined) {
+      await this.closeHold;
+    }
   };
 }
 
