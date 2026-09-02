@@ -103,10 +103,8 @@ instrumentId: InstrumentId`, `DecisionEntry.strategyId: StrategyId`, `OrderEntry
 Порт НЕ ранжирует рынки: ключевые слова, минимальная ликвидность/спред, предпочтения по
 активу и длительности, top-N — owner policy НАД портом (Policy-MR).
 
-`IMarketFilterConfig` — пороги фильтрации LEGACY-кандидатов (см. ниже, почему это не VO).
-
-**`DiscoveredMarket`** (`DiscoveredMarket.ts`) — LEGACY-контракт, вход `MarketFilter`/
-`MarketScorer` и V1-адаптера; исчезнет вместе с их миграцией на `MarketDiscoveryEntry`.
+**`DiscoveredMarket`** (`DiscoveredMarket.ts`) — LEGACY-контракт, вход V1-адаптера;
+исчезнет вместе с V1-путём. Отбор по canonical-записям делает `@polymarket/policy`.
 `spread?: Ratio`, `liquidity: Money`,
 `eventStartMs?: Timestamp` (все три — Этап 10c плана миграции). `score: Decimal` и
 `startsAt?: Timestamp` не меняются: `score` — внутренний sort-key без чистого
@@ -130,17 +128,20 @@ Decimal(...)` раунд-трип — конверсия порта на `Money`
 `IOrderedEventOutbox` — однометодные/узкие порты для конкретных use-case-ов (см. TSDoc
 каждого файла — уже исчерпывающий, не дублируется здесь).
 
-## Почему `IMarketFilterConfig`'s пороги остаются `number`
+## `IMarketFilterConfig` удалён
 
-Все 8 полей (`minTimeToExpiryHours`, `minSpread`, `minLiquidity`, `maxMarketsToReturn`,
-`minDurationMinutes`, `maxDurationMinutes` + 3 keyword-массива) — пороги сравнения внутри
-`MarketFilter.filterCandidates()`, не единичные измеренные величины. Тот же принцип, что
-уже применён в Этапе 2 (`market-state`'s `lookbackMs`/`staleMs`) и Этапе 4
-(`DetectorConfig.minSpreadAfterFees`): конфиг-пороги не переводятся на VO — VO даёт
-безопасность единиц измерения там, где значение течёт через систему и может быть спутано
-с другим по смыслу числом; порог, который только сравнивается с одним конкретным полем в
-одном конкретном фильтре, такой защиты не требует, а конструирование `Ratio.of()`/`OutcomePrice.of()`
-на каждый конфиг добавляет только шум.
+Порог-конфиг старого отбора (`minTimeToExpiryHours`, `minSpread`, `minLiquidity`,
+`maxMarketsToReturn`, `minDurationMinutes`/`maxDurationMinutes` + keyword-массивы) больше
+не существует. Его заменил `PolymarketPolicy` из `@polymarket/policy` — не переименованием,
+а другим контрактом: пороги там выражены canonical-типами (`Money`, `Ratio`,
+`MarketDuration`, `CryptoAssetId`), потому что policy сравнивается с canonical `Market`, и
+примитив на этой границе означал бы конверсию на каждом сравнении плюс молчаливую
+возможность сопоставить миллисекунды с минутами.
+
+Три поля не мигрировали сознательно: `maxMarketsToReturn` (количество выбирает
+потребитель — `ranked.slice(0, n)`), `minTimeToExpiryHours` и duration-диапазон в минутах
+(это lifecycle/lead-time, он принадлежит будущему Subscription Planner, а не
+owner-селектору).
 
 ## Что отложено и почему
 
@@ -164,8 +165,6 @@ discovery" выше для подробностей по `IDecisionJournal`/`IMa
   этим типизированным миром и сырым `Order`/`OrderEvent`-миром находится в
   `OrderEventBridge.ts` (см. Решение 12, `docs/architecture/boundary-contract.md`), не
   в самих портах.
-- **`IMarketFilterConfig`** — не трогается вообще, пороги, не единичные величины (см.
-  раздел выше).
 - **`DecisionJournalRecorder.close()`'s небезопасный `as MarketId`-каст** — пре-
   существующий, некритичный пробел типобезопасности на строковых ключах внутреннего
   `Map`; не относится ни к одной находке Этапа 10c, не форсируется.

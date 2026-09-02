@@ -1,22 +1,25 @@
 /**
- * @polymarket/market-discovery — universe рынков, фильтрация и скоринг.
+ * @polymarket/market-discovery — universe обнаруженных рынков.
  *
  * @remarks
- * Application-layer пакет обнаружения и выбора торговых рынков.
+ * Пакет владеет ОДНОЙ вещью: `MarketUniverse` — in-memory source of truth
+ * текущего canonical universe. Он принимает `MarketDiscoverySnapshot` от
+ * Infrastructure Discovery и отвечает на вопросы «есть ли такой рынок» и
+ * «какие рынки сейчас известны».
  *
- * ### Содержимое
- * - `MarketUniverse` — in-memory source of truth текущего canonical universe
- *   (`MarketDiscoverySnapshot` → lookup/итерация по `Market`);
- * - `MarketFilter` — LEGACY-фильтрация кандидатов по `IMarketFilterConfig`;
- * - `MarketScorer` — LEGACY-скоринг и сортировка (expiresAt ASC, liquidity DESC).
+ * ### Что отсюда ушло и почему
  *
- * ### Состояние миграции
+ * Здесь жили `MarketFilter` и `MarketScorer` на LEGACY-контракте
+ * `DiscoveredMarket`. Они отвечали на вопрос ВКУСА — какие рынки интересны
+ * потребителю, — то есть были owner policy, а не частью обнаружения.
+ * Обнаружение и отбор меняются по разным причинам, и держать их в одном
+ * пакете значило бы, что смена предпочтений потребителя трогает пакет про
+ * universe.
  *
- * `MarketUniverse` работает с canonical `Market`. `MarketFilter`/`MarketScorer`
- * пока работают с LEGACY-контрактом `DiscoveredMarket` и НЕ участвуют в
- * Polymarket V2 Discovery: owner selection вынесен из Infrastructure и станет
- * Policy НАД universe в следующем MR — тогда Filter/Scorer будут мигрированы
- * на `MarketDiscoveryEntry`, а `DiscoveredMarket` исчезнет.
+ * Оба переехали в `@polymarket/policy` и работают там с canonical
+ * `MarketDiscoveryEntry` и `Policy`. Здесь их больше нет — ни как
+ * реализации, ни как deprecated-обёртки: два рабочих отбора одновременно
+ * означали бы два ответа на один вопрос.
  *
  * @example
  * ```typescript
@@ -25,10 +28,10 @@
  * const universe = new MarketUniverse(clock);
  * await discovery.refresh();
  * universe.replace(discovery.getSnapshot());
+ *
+ * const entry = universe.get(KnownVenues.POLYMARKET, marketId);
  * ```
  *
  * @packageDocumentation
  */
 export { MarketUniverse } from './MarketUniverse.js';
-export { MarketFilter } from './MarketFilter.js';
-export { MarketScorer } from './MarketScorer.js';
