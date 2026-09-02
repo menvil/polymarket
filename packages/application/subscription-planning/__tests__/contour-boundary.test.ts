@@ -122,7 +122,15 @@ function stripComments(content: string): string {
   return content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-/** Собирает все import-specifiers файла. */
+/**
+ * Собирает все module-specifiers файла.
+ *
+ * @remarks
+ * `require()` разбирается наравне с `import`, хотя пакет — ESM: проверка
+ * существует ровно для того, чего в `src` быть НЕ должно, и пропустить
+ * `require('@polymarket/client')` она не имеет права только потому, что
+ * такая строка ещё и не соберётся.
+ */
 function collectImports(filePath: string): string[] {
   const content = stripComments(readFileSync(filePath, 'utf8'));
   const specifiers: string[] = [];
@@ -130,6 +138,7 @@ function collectImports(filePath: string): string[] {
     /(?:import|export)[^'"]*from\s+['"]([^'"]+)['"]/g,
     /import\s+['"]([^'"]+)['"]/g,
     /import\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g,
   ];
   for (const pattern of patterns) {
     let match: RegExpExecArray | null = pattern.exec(content);
@@ -147,10 +156,17 @@ describe('dependency graph boundary', () => {
     const packageJson = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
     };
+    // Все ЧЕТЫРЕ поля: peer/optional объявляют связь так же настоящим
+    // образом, как runtime и dev, и запрет, проверяющий только два из них,
+    // пропустил бы драйвер площадки, приехавший через peerDependencies.
     const declared = [
       ...Object.keys(packageJson.dependencies ?? {}),
       ...Object.keys(packageJson.devDependencies ?? {}),
+      ...Object.keys(packageJson.peerDependencies ?? {}),
+      ...Object.keys(packageJson.optionalDependencies ?? {}),
     ];
 
     for (const forbidden of FORBIDDEN_DEPENDENCIES) {
