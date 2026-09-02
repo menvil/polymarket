@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.lint.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@polymarket/polymarket-subscription-control": ["./src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
