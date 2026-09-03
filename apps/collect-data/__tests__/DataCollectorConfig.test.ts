@@ -64,6 +64,19 @@ describe('parseCexPolicies — одна CexPolicy на биржу', () => {
     expect(() => parseCexPolicies('{ not json')).toThrow('Invalid CEX config JSON');
   });
 
+  it('legacy-алиас type "futures" даёт ту же policy, что и "future"', () => {
+    const entry = (type: string): string =>
+      JSON.stringify({ binance: { type, symbols: ['BTC/USDT'], orderbook: true, trades: true, obDepth: 10 } });
+
+    const legacy = parseCexPolicies(entry('futures'));
+    const canonical = parseCexPolicies(entry('future'));
+
+    // Прежний парсер нормализовал этот алиас; рабочий конфиг с "futures"
+    // обязан продолжать стартовать после переезда на owner policy.
+    expect(legacy[0]?.marketTypes).toEqual(['future']);
+    expect(legacy).toEqual(canonical);
+  });
+
   it('неизвестный тип рынка → ошибка (валидирует parseCexPolicyConfig)', () => {
     expect(() =>
       parseCexPolicies(JSON.stringify({ binance: { type: 'perp', symbols: ['BTC/USDT'], orderbook: true, trades: true } })),

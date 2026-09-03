@@ -119,6 +119,27 @@ interface CexConfigFileEntry {
 }
 
 /**
+ * Приводит legacy-написание вида рынка к словарю Application.
+ *
+ * @param raw - Значение поля `type` из `cex-config.json`
+ * @returns Строка вида рынка для `parseCexPolicyConfig`
+ *
+ * @remarks
+ * ЕДИНСТВЕННОЕ расхождение словарей — legacy `'futures'` против canonical
+ * `'future'`; остальные значения совпадают. Формат `cex-config.json` сохранён
+ * от прежнего коллектора, и тот нормализовал этот алиас, поэтому нормализация
+ * остаётся здесь: иначе рабочий конфиг с `"type": "futures"` перестал бы
+ * стартовать при переезде на owner policy.
+ *
+ * Прочие значения проходят БЕЗ изменений — их точную проверку и внятную
+ * ошибку («допустимо вот это») делает `parseCexPolicyConfig`; вторая копия
+ * словаря видов рынка здесь не заводится.
+ */
+function toPolicyMarketType(raw: unknown): string {
+  return raw === 'futures' ? 'future' : String(raw);
+}
+
+/**
  * Разбирает внешнюю CEX-конфигурацию в НАБОР owner policy — по одной на биржу.
  *
  * @param json - Содержимое `cex-config.json` (или inline `CEX_CONFIG`)
@@ -164,8 +185,9 @@ export function parseCexPolicies(json: string): readonly CexPolicy[] {
     const policy = parsePolicyConfig({
       kind: 'CEX',
       exchangeIds: [exchangeId],
-      // `type` из файла проверит parseCexPolicyConfig по словарю Application.
-      marketTypes: [String(entry.type)],
+      // Legacy-алиас `futures` нормализуется; остальное проверит
+      // parseCexPolicyConfig по словарю Application.
+      marketTypes: [toPolicyMarketType(entry.type)],
       symbols: Array.isArray(entry.symbols) ? (entry.symbols as string[]) : [],
       orderbook: entry.orderbook === true,
       trades: entry.trades === true,
