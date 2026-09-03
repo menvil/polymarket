@@ -11,6 +11,7 @@ import { CexSource } from '../src/index.js';
 import {
   CapturingLogger,
   CapturingPublisher,
+  type CapturedLogEntry,
   FakeExchangeFactory,
   type FakeExchangeCapabilities,
   type FakeExchangeInstance,
@@ -1061,5 +1062,244 @@ describe('граница close(): запрет публикаций, а не у�
     // Факт «сокет ещё дочищается» обязан быть видимым, а не молчаливым.
     const closedEntry = logger.entries.find((entry) => entry.message === 'CexSource closed');
     expect(closedEntry?.context?.['pendingInstanceCloses']).toBe(1);
+  });
+});
+
+describe('frozen-book detection', () => {
+  /** Книга с заданной лучшей ценой: меняет содержимое bids/asks. */
+  function bookAt(price: number, overrides: Record<string, unknown> = {}): CcxtRawOrderBook {
+    return makeRawOb({
+      bids: [
+        [price, 1],
+        [price - 0.5, 2],
+      ],
+      asks: [
+        [price + 0.5, 1],
+        [price + 1, 2],
+      ],
+      ...overrides,
+    });
+  }
+
+  /** Сработал ли детектор (по warn-логу). */
+  function frozenWarnings(logger: CapturingLogger): CapturedLogEntry[] {
+    return logger.entries.filter(
+      (entry) => entry.level === 'warn' && entry.message === 'Frozen orderbook detected, restarting stream',
+    );
+  }
+
+  it('несколько одинаковых снимков подряд — НЕ отказ', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ orderbookFrozenTimeoutMs: 300 }),
+      { watchOrderBookForSymbols: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter);
+
+    // Рынок вправе стоять на месте: три одинаковых снимка за ~40ms.
+    for (let i = 0; i < 3; i++) {
+      factory.latest.obMultiplexFeed.push(bookAt(100));
+      await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === i + 1);
+      await sleep(20);
+    }
+
+    expect(factory.instances).toHaveLength(1);
+    expect(frozenWarnings(logger)).toHaveLength(0);
+    expect(publisher.ofType('CEX_ORDERBOOK')).toHaveLength(3);
+
+    await source.close();
+  });
+
+  it('книга не меняется дольше таймаута → controlled restart', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ orderbookFrozenTimeoutMs: 60 }),
+      { watchOrderBookForSymbols: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter);
+    const firstInstance = factory.instances[0]!;
+
+    firstInstance.obMultiplexFeed.push(bookAt(100));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 1);
+    await sleep(100); // дольше frozen-таймаута
+    firstInstance.obMultiplexFeed.push(bookAt(100));
+
+    await waitUntil(() => factory.instances.length === 2);
+    expect(firstInstance.closeCalls).toBeGreaterThanOrEqual(1);
+
+    const warnings = frozenWarnings(logger);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.context).toMatchObject({ symbol: SYMBOL, timeoutMs: 60 });
+    expect(warnings[0]?.context?.['frozenForMs']).toBeGreaterThanOrEqual(60);
+
+    await source.close();
+  });
+
+  it('изменение книги сбрасывает таймер', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ orderbookFrozenTimeoutMs: 200 }),
+      { watchOrderBookForSymbols: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter);
+    const instance = factory.instances[0]!;
+
+    // A → почти таймаут → A → изменение на B → почти таймаут → B.
+    // Суммарно прошло больше таймаута, но без 200ms БЕЗ изменений.
+    instance.obMultiplexFeed.push(bookAt(100));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 1);
+    await sleep(120);
+    instance.obMultiplexFeed.push(bookAt(100));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 2);
+    instance.obMultiplexFeed.push(bookAt(101));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 3);
+    await sleep(120);
+    instance.obMultiplexFeed.push(bookAt(101));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 4);
+
+    expect(factory.instances).toHaveLength(1);
+    expect(frozenWarnings(logger)).toHaveLength(0);
+
+    await source.close();
+  });
+
+  it('multiplex: активность одного символа НЕ сбрасывает таймер другого', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ symbols: [SYMBOL, SYMBOL_B], orderbookFrozenTimeoutMs: 80 }),
+      { watchOrderBookForSymbols: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter);
+    const instance = factory.instances[0]!;
+
+    // ETH запомнен, дальше меняется только BTC.
+    instance.obMultiplexFeed.push(bookAt(2000, { symbol: SYMBOL_B }));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 1);
+
+    for (let i = 0; i < 3; i++) {
+      await sleep(40);
+      instance.obMultiplexFeed.push(bookAt(100 + i, { symbol: SYMBOL }));
+      await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === i + 2);
+    }
+
+    // BTC жив всё это время, но ETH не менялся дольше таймаута.
+    expect(factory.instances).toHaveLength(1);
+    instance.obMultiplexFeed.push(bookAt(2000, { symbol: SYMBOL_B }));
+
+    await waitUntil(() => factory.instances.length === 2);
+    const warnings = frozenWarnings(logger);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.context).toMatchObject({ symbol: SYMBOL_B });
+
+    await source.close();
+  });
+
+  it('per-symbol режим: замерзание одного символа рестартует OB-сессию', async () => {
+    const { source, factory, logger } = makeHarness(
+      baseConfig({
+        symbols: [SYMBOL, SYMBOL_B],
+        orderbookFrozenTimeoutMs: 60,
+        orderbookStaleTimeoutMs: 5_000, // тишина BTC не должна ловиться stale
+      }),
+      { watchOrderBook: true },
+    );
+    source.start();
+    await waitUntil(
+      () =>
+        factory.instances.length === 1 &&
+        factory.latest.obFeed(SYMBOL).hasWaiter &&
+        factory.latest.obFeed(SYMBOL_B).hasWaiter,
+    );
+    const instance = factory.instances[0]!;
+
+    instance.obFeed(SYMBOL_B).push(bookAt(2000, { symbol: SYMBOL_B }));
+    await waitUntil(() => instance.obFeed(SYMBOL_B).hasWaiter);
+    instance.obFeed(SYMBOL).push(bookAt(100));
+    await waitUntil(() => instance.obFeed(SYMBOL).hasWaiter);
+
+    await sleep(100);
+    instance.obFeed(SYMBOL_B).push(bookAt(2000, { symbol: SYMBOL_B }));
+
+    await waitUntil(() => factory.instances.length === 2);
+    expect(frozenWarnings(logger)[0]?.context).toMatchObject({ symbol: SYMBOL_B });
+
+    await source.close();
+  });
+
+  it('REST fetch: успешные ответы с неизменной книгой → restart', async () => {
+    const { source, factory, logger } = makeHarness(
+      baseConfig({
+        orderbookMethod: 'fetch',
+        fetchPollIntervalMs: 10,
+        orderbookFrozenTimeoutMs: 60,
+      }),
+      { fetchOrderBook: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1);
+    const instance = factory.instances[0]!;
+
+    // REST успешно отдаёт один и тот же (закэшированный) стакан.
+    for (let i = 0; i < 50; i++) {
+      instance.obFetchFeed.push(bookAt(100));
+    }
+
+    await waitUntil(() => factory.instances.length === 2, 3_000);
+    expect(frozenWarnings(logger).length).toBeGreaterThanOrEqual(1);
+
+    await source.close();
+  });
+
+  it('меняющиеся timestamp/nonce прогрессом НЕ считаются', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ orderbookFrozenTimeoutMs: 60 }),
+      { watchOrderBookForSymbols: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter);
+    const instance = factory.instances[0]!;
+
+    // Метаданные vendor-а двигаются, bids/asks — нет.
+    instance.obMultiplexFeed.push(bookAt(100, { timestamp: 1, nonce: 1, datetime: 'a' }));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 1);
+    await sleep(100);
+    instance.obMultiplexFeed.push(bookAt(100, { timestamp: 2, nonce: 2, datetime: 'b' }));
+
+    await waitUntil(() => factory.instances.length === 2);
+    expect(frozenWarnings(logger)).toHaveLength(1);
+
+    await source.close();
+  });
+
+  it('frozen стакан не трогает поток сделок', async () => {
+    const { source, factory, publisher, logger } = makeHarness(
+      baseConfig({ watchTrades: true, orderbookFrozenTimeoutMs: 60 }),
+      { watchOrderBookForSymbols: true, watchTradesForSymbols: true },
+    );
+    source.start();
+    await waitUntil(
+      () =>
+        factory.instances.length === 2 &&
+        factory.instances.some((i) => i.obMultiplexFeed.hasWaiter) &&
+        factory.instances.some((i) => i.tradesMultiplexFeed.hasWaiter),
+    );
+    const obBefore = obInstance(factory);
+    const tradesBefore = tradesInstance(factory);
+
+    obBefore.obMultiplexFeed.push(bookAt(100));
+    await waitUntil(() => publisher.ofType('CEX_ORDERBOOK').length === 1);
+    await sleep(100);
+    obBefore.obMultiplexFeed.push(bookAt(100));
+
+    // OB-сессия пересоздана, инстанс сделок — тот же и продолжает работать.
+    await waitUntil(() => factory.instances.length === 3);
+    expect(frozenWarnings(logger)).toHaveLength(1);
+    expect(obBefore.closeCalls).toBeGreaterThanOrEqual(1);
+    expect(tradesBefore.closeCalls).toBe(0);
+
+    tradesBefore.tradesMultiplexFeed.push([makeRawTrade()]);
+    await waitUntil(() => publisher.ofType('CEX_TRADE').length === 1);
+
+    await source.close();
   });
 });
