@@ -98,6 +98,38 @@ describe('DataCollector.tick() — спрос через control-plane', () => {
     await collector.close();
   });
 
+  it('CEX-сверка получает `ranAt` PM-прохода, а не момент ДО обхода каталога', async () => {
+    const { contour, collector } = makeCollector({ cex: true });
+    await collector.start();
+    await collector.tick();
+
+    // `runOnce` читает часы уже после discovery.refresh() и возвращает этот
+    // момент как `ranAt` — именно он и есть момент решения тика.
+    const ranAt = contour.polymarketControlRuntime.ranAt;
+    expect(ranAt).toBeDefined();
+    expect(contour.cexController.momentsSeen).toContain(ranAt);
+    // Момент тика строго ПОЗЖЕ показаний часов рантайма (18:00:00), то есть
+    // это не устаревший снимок, взятый до сетевого обхода каталога.
+    expect(ranAt?.toNumber()).toBeGreaterThan(Date.parse('2026-09-01T18:00:00.000Z'));
+
+    await collector.close();
+  });
+
+  it('если PM-проход отказал, CEX-сверка идёт по свежим часам', async () => {
+    const { contour, collector } = makeCollector({ cex: true });
+    contour.polymarketControlRuntime.runFailure = new Error('gamma down');
+    await collector.start();
+    await collector.tick();
+
+    // Единого момента тика нет — CEX-решение не должно зависеть от Gamma.
+    expect(contour.cexController.demandsSeen.length).toBeGreaterThanOrEqual(1);
+    expect(contour.cexController.momentsSeen[0]?.toNumber()).toBe(
+      Date.parse('2026-09-01T18:00:00.000Z'),
+    );
+
+    await collector.close();
+  });
+
   it('отказ runOnce не роняет тик (best-effort)', async () => {
     const { contour, collector } = makeCollector();
     contour.polymarketControlRuntime.runFailure = new Error('gamma down');

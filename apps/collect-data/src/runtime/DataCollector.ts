@@ -344,8 +344,10 @@ export class DataCollector {
    *
    * @remarks
    * Один тик = один проход спроса: `runOnce` приобретает первые кандидаты
-   * плана Polymarket, `reconcile` сверяет желаемое CEX-состояние. Часы
-   * читаются ОДИН раз и один и тот же момент уходит в оба решения тика.
+   * плана Polymarket, `reconcile` сверяет желаемое CEX-состояние. Единый
+   * момент решения тика — `ranAt` из отчёта `runOnce` (часы там читаются
+   * после обхода каталога), он же уходит в CEX-сверку. Если PM-проход
+   * отказал, `ranAt` нет, и CEX-решение принимается по свежим часам.
    */
   public async tick(): Promise<void> {
     const running = this._tick();
@@ -359,9 +361,20 @@ export class DataCollector {
 
   /** Тело одного control-тика. */
   private async _tick(): Promise<void> {
-    const now = Timestamp.now(this._clock);
+    // Момент тика берётся из ОТЧЁТА PM-прохода: `runOnce` читает часы сам —
+    // уже ПОСЛЕ обхода каталога — и возвращает этот момент как `ranAt`. Именно
+    // он и есть единый момент решения тика, который дальше получает CEX.
+    //
+    // Читать часы здесь, ДО `runOnce`, было бы худшим из вариантов: обход
+    // каталога занимает сетевой round-trip, и CEX получал бы момент заведомо
+    // старше того, на который планировался Polymarket. Тик не описывал бы ни
+    // одного момента — ни общего, ни текущего.
+    let ranAt: Timestamp | undefined;
     try {
-      await this._components.polymarketControlRuntime.runOnce(this._components.polymarketDemands);
+      const result = await this._components.polymarketControlRuntime.runOnce(
+        this._components.polymarketDemands,
+      );
+      ranAt = result.ranAt;
     } catch (error) {
       this._logger.error('Polymarket control tick failed', {
         error: error instanceof Error ? error.message : String(error),
@@ -369,6 +382,9 @@ export class DataCollector {
     }
     if (this._components.cexDemands.length > 0) {
       try {
+        // PM-проход отказал — единого момента тика нет, читаем часы сами:
+        // CEX-решение не должно зависеть от доступности Gamma.
+        const now = ranAt ?? Timestamp.now(this._clock);
         await this._components.cexController.reconcile(this._components.cexDemands, now);
       } catch (error) {
         this._logger.error('CEX reconcile tick failed', {

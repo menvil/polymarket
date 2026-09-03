@@ -111,7 +111,10 @@ export interface CollectorConfig {
 
   /**
    * Окно обзора каталога discovery в часах (как далеко вперёд искать рынки).
-   * @remarks Не задано — дефолт рантайма (2ч). Влияет на размер universe.
+   * @remarks
+   * Не задано — параметр НЕ передаётся, и действует canonical дефолт самого
+   * `PolymarketMarketDiscovery` (6ч, покрывает серии 5m/15m/1h/4h). Своего
+   * дубля дефолта конфигурация приложения не заводит.
    */
   readonly discoveryWindowHours: number | undefined;
 
@@ -120,19 +123,6 @@ export interface CollectorConfig {
    * `reconcile`.
    */
   readonly controlTickMs: number;
-
-  /**
-   * Метод получения стакана CEX-источников (`watch`|`fetch`).
-   * @remarks Транспортный параметр (не входит в `CexPolicy`); инъецируется
-   * фабрикой источников контроллера. Не задан — дефолт `CexSource`.
-   */
-  readonly cexOrderbookMethod: 'watch' | 'fetch' | undefined;
-
-  /**
-   * Интервал планового рестарта CEX-транспорта (мс).
-   * @remarks Транспортный параметр; не задан — дефолт `CexSource`.
-   */
-  readonly cexRestartIntervalMs: number | undefined;
 }
 
 /**
@@ -216,15 +206,6 @@ export function loadConfig(): CollectorConfig {
       .filter(Boolean);
   }
 
-  function parseOrderbookMethod(name: string): 'watch' | 'fetch' | undefined {
-    const val = process.env[name];
-    if (val === undefined || val === '') return undefined;
-    if (val !== 'watch' && val !== 'fetch') {
-      throw new Error(`Env var ${name} must be 'watch' or 'fetch', got: ${val}`);
-    }
-    return val;
-  }
-
   return {
     dnsOverrideEnabled:   optional('DNS_OVERRIDE_ENABLED', 'false') === 'true',
     gammaApiBaseUrl:      optional('GAMMA_API_BASE_URL', 'https://gamma-api.polymarket.com'),
@@ -253,7 +234,5 @@ export function loadConfig(): CollectorConfig {
     policyDurations:      parseList('COLLECTOR_POLICY_DURATIONS'),
     discoveryWindowHours: optionalNumberOrUndefined('DISCOVERY_WINDOW_HOURS'),
     controlTickMs:        optionalNumber('COLLECTOR_CONTROL_TICK_MS', 5_000),
-    cexOrderbookMethod:   parseOrderbookMethod('CEX_ORDERBOOK_METHOD'),
-    cexRestartIntervalMs: optionalNumberOrUndefined('CEX_RESTART_INTERVAL_MS'),
   };
 }

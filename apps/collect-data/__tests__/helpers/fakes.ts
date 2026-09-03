@@ -13,6 +13,7 @@ import type { IClock } from '@polymarket/time';
 import type { MessageBusDrainError, MessageBusStats } from '@polymarket/message-bus';
 import type { Result } from '@polymarket/result';
 import { Err, Ok } from '@polymarket/result';
+import { TimestampService } from '@polymarket/timestamp';
 import type { Timestamp } from '@polymarket/timestamp';
 import type {
   ExternalMessageRecorderCexStats,
@@ -261,6 +262,10 @@ export class FakePolymarketClient implements CollectorPolymarketClient {
 export class FakePolymarketControlRuntime implements CollectorPolymarketControlRuntime {
   public readonly demandsSeen: readonly PolymarketSubscriptionDemand[][] = [];
   public runFailure: Error | undefined;
+  /** Момент, объявленный последним проходом (уходит в CEX-сверку). */
+  public ranAt: Timestamp | undefined;
+  /** Момент, который проход объявит своим `ranAt`. */
+  private readonly _nowMs = Date.parse('2026-09-01T18:00:05.000Z');
 
   public constructor(private readonly _log: CallLog) {}
 
@@ -272,8 +277,12 @@ export class FakePolymarketControlRuntime implements CollectorPolymarketControlR
     if (this.runFailure !== undefined) {
       throw this.runFailure;
     }
-    // Отчёт прохода в тестах не проверяется — возвращаем узкую заглушку.
-    return undefined as unknown as PolymarketControlRuntimeResult;
+    // Отчёт прохода в тестах не проверяется целиком, но `ranAt` — часть
+    // контракта: именно он становится моментом решения тика для CEX-сверки.
+    const created = TimestampService.create(this._nowMs);
+    if (!created.ok) throw new Error('bad ranAt fixture');
+    this.ranAt = created.value;
+    return { ranAt: this.ranAt } as unknown as PolymarketControlRuntimeResult;
   }
 }
 
@@ -316,6 +325,8 @@ const EMPTY_CEX_CONTROLLER_STATS: CexSubscriptionControllerStats = {
 /** Порт CEX-контроллера: reconcile + close, фиксирует спрос каждого прохода. */
 export class FakeCexController implements CollectorCexController {
   public readonly demandsSeen: readonly CexSubscriptionDemand[][] = [];
+  /** Моменты, с которыми пришла сверка (проверяем, ЧЕЙ это момент тика). */
+  public readonly momentsSeen: readonly Timestamp[] = [];
   public reconcileFailure: Error | undefined;
   public closeCalls = 0;
 
@@ -327,6 +338,7 @@ export class FakeCexController implements CollectorCexController {
   ): Promise<CexSubscriptionReconcileResult> {
     this._log.record('cexController.reconcile');
     (this.demandsSeen as CexSubscriptionDemand[][]).push([...demands]);
+    (this.momentsSeen as Timestamp[]).push(_now);
     if (this.reconcileFailure !== undefined) {
       throw this.reconcileFailure;
     }

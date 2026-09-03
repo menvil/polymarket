@@ -12,10 +12,9 @@ CEX/Chainlink-данных, используемых при калибровке
 | ----------------------------- | ----------------------------------------------------------------- |
 | `main.ts`                     | Тонкий bootstrap: конфиг → логгер → process-подготовка → рантайм    |
 | `config.ts`                   | `CollectorConfig` — загрузка настроек из `.env`                     |
-| `runtime/DataCollector.ts`    | Рантайм: composition, lifecycle источников, расписание, статус      |
+| `runtime/DataCollector.ts`    | Рантайм: control-тик (runOnce + reconcile), lifecycle, статус       |
 | `runtime/createDataCollector.ts` | Composition root контура (bus, recorder, sources, control plane) |
 | `runtime/DataCollectorConfig.ts` | Конфигурация рантайма + граница «внешний конфиг → V2»            |
-| `runtime/collectionLifecycle.ts` | Read-only проекция lifecycle рынков                              |
 | `runtime/processBootstrap.ts` | DNS-обход и единый охраняемый путь остановки                        |
 | `analyzeChainlinkLeadLag.ts`  | CLI: корреляционный анализ lead-lag CEX microprice vs Chainlink      |
 | `fitChainlinkLinearModels.ts` | CLI: Ridge-регрессия по тем же данным — веса бирж, горизонт          |
@@ -141,10 +140,9 @@ Polymarket-архивы пишутся с `formatVersion: 2` — строки 2+
 | `COLLECTOR_POLICY_DURATIONS`     | Номиналы серий owner policy (`5m,15m`; пусто — любой) |
 | `MARKET_DISCOVERY_*_KEYWORDS`    | Keyword-селекторы → `PolymarketPolicy.title`        |
 | `MARKET_DISCOVERY_MIN_SPREAD` / `_MIN_LIQUIDITY` | Пороги → `minSpread`/`minLiquidity` policy |
-| `DISCOVERY_WINDOW_HOURS`         | Окно обзора каталога (по умолчанию 2ч)              |
+| `DISCOVERY_WINDOW_HOURS`         | Окно обзора каталога; не задано — canonical дефолт discovery (6ч) |
 | `COLLECTOR_CONTROL_TICK_MS`      | Пауза между control-тиками (по умолчанию 5000)      |
 | `CEX_CONFIG_FILE` / `CEX_CONFIG` | Конфигурация бирж; не задана — CEX выключен         |
-| `CEX_ORDERBOOK_METHOD` / `CEX_RESTART_INTERVAL_MS` | Транспорт CEX-источников (не входит в CexPolicy) |
 | `CEX_WINDOW_MINUTES`             | Размер окна партиции (по умолчанию — 5)             |
 | `DNS_OVERRIDE_ENABLED`           | Обход подменённого DNS провайдера                   |
 
@@ -152,7 +150,12 @@ Polymarket-архивы пишутся с `formatVersion: 2` — строки 2+
 keyword-селекторы), а не keyword-фильтр discovery. Формат `cex-config.json`
 сохранён (ключ = `exchangeId`), но каждая биржа превращается в отдельную
 `CexPolicy` — точный список её символов не размывается декартовым произведением.
-Невалидная policy-конфигурация не даёт процессу стартовать (fail-fast).
+Транспортные поля записи (`obMethod`, `restartIntervalMs`, `obDepth`,
+`exchangeId`) сохраняются ПО-БИРЖЕВО, как и раньше: они не входят в `CexPolicy`,
+но доезжают до нужного `CexSource` через фабрику по `exchangeId`. Неверные
+значения (`orderbook: "true"`, строковый `obDepth`, неизвестный `obMethod`)
+роняют старт, а не превращаются молча в валидные. Невалидная
+policy-конфигурация не даёт процессу стартовать (fail-fast).
 
 ## CLI-инструменты калибровки crypto-сигналов
 

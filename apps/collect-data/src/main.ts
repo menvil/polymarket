@@ -70,7 +70,7 @@ logger.info('Starting Polymarket data collector', {
   controlTickMs: runtimeConfig.control.tickMs,
   policyFamily: runtimeConfig.polymarketPolicy.family,
   policyAssets: runtimeConfig.polymarketPolicy.assets ?? [],
-  cexExchanges: runtimeConfig.cex.policies.flatMap((policy) => policy.exchangeIds),
+  cexExchanges: runtimeConfig.cex.exchanges.map((exchange) => exchange.exchangeId),
 });
 
 const bootstrap = await applyProcessBootstrap({

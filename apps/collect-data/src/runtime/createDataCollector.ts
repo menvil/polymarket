@@ -217,26 +217,36 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
     storage: polymarketStorage,
     logger,
     sessionProvider: gate.sessionProvider(),
-    ...(config.cex.policies.length > 0 ? { cex: { bus, storage: cexStorage } } : {}),
+    ...(config.cex.exchanges.length > 0 ? { cex: { bus, storage: cexStorage } } : {}),
   });
 
   // ── CEX control-plane: контроллер создаёт immutable-поколения источников ─
+  // Транспортные параметры остаются ПО-БИРЖЕВЫМИ: контроллер собирает
+  // спецификацию пула (биржа/символы/потоки/глубина), а фабрика накладывает
+  // `obMethod`/`restartIntervalMs` именно той биржи, для которой поднимает
+  // источник. Общее значение на все биржи молча игнорировало бы конфигурации,
+  // где они различаются.
+  const cexTransportByExchange = new Map(
+    config.cex.exchanges.map((exchange) => [exchange.exchangeId, exchange.transport]),
+  );
   const cexController = new CexSubscriptionController({
-    sourceFactory: (sourceConfig) =>
-      new CexSource({
+    sourceFactory: (sourceConfig) => {
+      const transport = cexTransportByExchange.get(sourceConfig.exchangeId);
+      return new CexSource({
         config: {
           ...sourceConfig,
-          ...(config.cex.transport.orderbookMethod !== undefined
-            ? { orderbookMethod: config.cex.transport.orderbookMethod }
+          ...(transport?.orderbookMethod !== undefined
+            ? { orderbookMethod: transport.orderbookMethod }
             : {}),
-          ...(config.cex.transport.restartIntervalMs !== undefined
-            ? { restartIntervalMs: config.cex.transport.restartIntervalMs }
+          ...(transport?.restartIntervalMs !== undefined
+            ? { restartIntervalMs: transport.restartIntervalMs }
             : {}),
         },
         bus,
         metadataGenerator,
         logger,
-      }),
+      });
+    },
     logger,
   });
 
@@ -248,9 +258,10 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
       acquireLimit: config.control.acquireLimit,
     },
   ];
-  const cexDemands: readonly CexSubscriptionDemand[] = config.cex.policies.map(
-    (policy: CexPolicy) => ({ ownerKey: cexOwnerKeyFor(policy), policy }),
-  );
+  const cexDemands: readonly CexSubscriptionDemand[] = config.cex.exchanges.map((exchange) => ({
+    ownerKey: cexOwnerKeyFor(exchange.policy),
+    policy: exchange.policy,
+  }));
 
   const collector = new DataCollector({
     components: {

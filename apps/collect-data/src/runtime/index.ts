@@ -31,9 +31,10 @@ export type {
   CreateDataCollectorOptions,
   CreatedDataCollector,
 } from './createDataCollector.js';
-export { parseCexPolicies, toDataCollectorConfig } from './DataCollectorConfig.js';
+export { parseCexExchangeConfigs, toDataCollectorConfig } from './DataCollectorConfig.js';
 export type {
   CexCollectionConfig,
+  CexExchangeConfig,
   CexTransportConfig,
   ControlRuntimeConfig,
   DataCollectorConfig,
