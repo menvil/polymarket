@@ -13,15 +13,16 @@
  *
  * Discovery keyword-фильтр (`requiredKeywords`/`anyOfKeywords`/`excluded`)
  * переносится в `PolymarketPolicy.title`; `assets`/`durations` приходят из
- * новых переменных. CEX-конфигурация превращается в НАБОР описаний бирж — по
- * одному на биржу (policy + её собственные транспортные параметры), чтобы
- * точный список символов биржи не размывался декартовым произведением общей
- * policy, а `obMethod`/`restartIntervalMs` остались по-биржевыми.
+ * новых переменных. CEX-конфигурация превращается в НАБОР описаний ПРОФИЛЕЙ —
+ * по одному на запись файла (policy + транспорт), чтобы точный список символов
+ * не размывался декартовым произведением общей policy, транспорт остался
+ * адресуемым парой `exchangeId + marketType`, а несколько профилей одной биржи
+ * (`binance-spot`/`binance-futures`) давали РАЗНЫХ владельцев спроса.
  */
 import { forkEnvironmentConfig } from '@polymarket/client';
 import type { EnvironmentConfig } from '@polymarket/client';
 import { parsePolicyConfig } from '@polymarket/policy';
-import type { CexPolicy, PolymarketPolicy } from '@polymarket/policy';
+import type { CexPolicy, CexPolicyMarketType, PolymarketPolicy } from '@polymarket/policy';
 import type { CollectorConfig } from '../config.js';
 
 /**
@@ -41,15 +42,15 @@ export interface PolymarketRecordingConfig {
 }
 
 /**
- * Транспортные параметры ОДНОЙ биржи (НЕ входят в `CexPolicy`).
+ * Транспортные параметры ОДНОГО физического пула (НЕ входят в `CexPolicy`).
  *
  * @remarks
  * `CexPolicy` описывает ПОТРЕБНОСТЬ (биржа/символы/потоки/глубина), а способ
- * получения стакана и интервал рестарта — свойства транспорта. Они остаются
- * ПО-БИРЖЕВЫМИ, как в прежнем `cex-config.json`: фабрика источников
- * CEX-контроллера накладывает их по `exchangeId` создаваемого источника.
- * Общих на все биржи значений здесь нет — это молча ломало бы конфигурации,
- * где у бирж РАЗНЫЕ `obMethod`/`restartIntervalMs`.
+ * получения стакана и интервал рестарта — свойства транспорта. Они приходят из
+ * записи `cex-config.json` и адресуются парой `exchangeId + marketType`:
+ * фабрика источников накладывает их на тот пул, для которого поднимает
+ * источник. Общих на все биржи значений здесь нет — это молча ломало бы
+ * конфигурации с РАЗНЫМИ `obMethod`/`restartIntervalMs`.
  */
 export interface CexTransportConfig {
   /** Метод получения стакана (`watch`|`fetch`); не задан — дефолт `CexSource`. */
@@ -59,15 +60,62 @@ export interface CexTransportConfig {
 }
 
 /**
- * Описание одной биржи: owner policy + её собственные транспортные параметры.
+ * Описание одного ПРОФИЛЯ конфигурации: owner policy + его транспорт.
+ *
+ * @remarks
+ * Профиль — это одна запись `cex-config.json`. Он НЕ равен бирже: одна биржа
+ * законно описывается несколькими профилями с разными видами рынка
+ * (`binance-spot` и `binance-futures`, оба с `exchangeId: "binance"`).
+ * Поэтому идентичностей здесь три, и путать их нельзя:
+ *
+ * ```text
+ * profileKey  — ключ записи конфигурации   → identity ВЛАДЕЛЬЦА спроса
+ * exchangeId  — настоящая биржа            → identity транспорта
+ * marketType  — вид рынка                  → вместе с exchangeId адресует пул
+ * ```
  */
 export interface CexExchangeConfig {
-  /** Идентификатор биржи (ключ словаря либо явный `exchangeId` записи). */
+  /**
+   * Ключ записи в `cex-config.json` — стабильная identity профиля.
+   *
+   * @remarks
+   * Из него строится `ownerKey` спроса. Брать для этого `exchangeId` нельзя:
+   * два профиля одной биржи дали бы ОДИН ownerKey, а CEX-контроллер запрещает
+   * дубликат владельца в одном проходе и отверг бы весь спрос.
+   */
+  readonly profileKey: string;
+  /** Идентификатор биржи (явный `exchangeId` записи либо ключ профиля). */
   readonly exchangeId: string;
-  /** Owner policy ровно этой биржи. */
+  /**
+   * Вид рынка профиля.
+   *
+   * @remarks
+   * Часть адреса физического пула (`exchangeId + marketType + stream` —
+   * так его ключует сам контроллер), поэтому транспорт адресуется парой
+   * `exchangeId + marketType`, а не одной биржей.
+   */
+  readonly marketType: CexPolicyMarketType;
+  /** Owner policy ровно этого профиля. */
   readonly policy: CexPolicy;
-  /** Транспортные параметры ровно этой биржи. */
+  /** Транспортные параметры физического пула этого профиля. */
   readonly transport: CexTransportConfig;
+}
+
+/**
+ * Строит ключ адресации транспорта: биржа + вид рынка.
+ *
+ * @param exchangeId - Идентификатор биржи
+ * @param marketType - Вид рынка
+ * @returns Составной ключ physical-пула в части, определяющей транспорт
+ *
+ * @remarks
+ * Контроллер ключует физический пул тройкой `exchangeId + marketType + stream`.
+ * Транспорт (`obMethod`/`restartIntervalMs`) от потока не зависит, поэтому
+ * ключ здесь — пара. Адресация ОДНОЙ биржей схлопывала бы spot и future
+ * одного экземпляра биржи, и один транспорт молча затирал бы другой.
+ */
+export function cexTransportKey(exchangeId: string, marketType: string): string {
+  return `${exchangeId}|${marketType}`;
 }
 
 /**
@@ -238,6 +286,8 @@ export function parseCexExchangeConfigs(json: string): readonly CexExchangeConfi
   }
 
   const exchanges: CexExchangeConfig[] = [];
+  /** Транспорт, уже объявленный для физического пула (для проверки конфликта). */
+  const transportByPool = new Map<string, { profileKey: string; transport: CexTransportConfig }>();
   for (const [exchangeKey, rawEntry] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof rawEntry !== 'object' || rawEntry === null) {
       throw new Error(`Invalid CEX config for '${exchangeKey}': expected an object`);
@@ -290,16 +340,60 @@ export function parseCexExchangeConfigs(json: string): readonly CexExchangeConfi
       throw new Error(`Invalid CEX config for '${exchangeKey}': expected a CEX policy`);
     }
 
+    // Вид рынка берётся из УЖЕ проверенной policy: словарь Application там
+    // сужен, и повторять его здесь нечем.
+    const marketType = policy.marketTypes[0];
+    if (marketType === undefined) {
+      throw new Error(`Invalid CEX config for '${exchangeKey}': market type is missing`);
+    }
+    const transport: CexTransportConfig = {
+      ...(entry.obMethod !== undefined ? { orderbookMethod: entry.obMethod } : {}),
+      ...(restartIntervalMs !== undefined ? { restartIntervalMs } : {}),
+    };
+
+    // Один физический пул — один транспорт. Два профиля одной пары
+    // `exchangeId + marketType` законны (контроллер объединит их символы), но
+    // ДВА РАЗНЫХ `obMethod`/`restartIntervalMs` на один пул неразрешимы:
+    // источник поднимается один. Молчаливый выбор одного из них означал бы,
+    // что настройки профиля зависят от порядка ключей в JSON.
+    const poolKey = cexTransportKey(exchangeId, marketType);
+    const declared = transportByPool.get(poolKey);
+    if (declared !== undefined && !sameTransport(declared.transport, transport)) {
+      throw new Error(
+        `Invalid CEX config: profiles '${declared.profileKey}' and '${exchangeKey}' both target ` +
+          `${exchangeId}/${marketType} but declare different transport settings ` +
+          `(obMethod/restartIntervalMs); one physical pool cannot have two`,
+      );
+    }
+    transportByPool.set(poolKey, { profileKey: exchangeKey, transport });
+
     exchanges.push({
+      profileKey: exchangeKey,
       exchangeId,
+      marketType,
       policy,
-      transport: {
-        ...(entry.obMethod !== undefined ? { orderbookMethod: entry.obMethod } : {}),
-        ...(restartIntervalMs !== undefined ? { restartIntervalMs } : {}),
-      },
+      transport,
     });
   }
   return exchanges;
+}
+
+/**
+ * Совпадают ли транспортные параметры двух профилей.
+ *
+ * @param left - Транспорт уже разобранного профиля
+ * @param right - Транспорт текущего профиля
+ * @returns `true`, если оба поля равны (включая «оба не заданы»)
+ *
+ * @remarks
+ * Сравниваются именно ОБА поля: одинаковый `obMethod` при разных
+ * `restartIntervalMs` — такой же конфликт, как и наоборот.
+ */
+function sameTransport(left: CexTransportConfig, right: CexTransportConfig): boolean {
+  return (
+    left.orderbookMethod === right.orderbookMethod &&
+    left.restartIntervalMs === right.restartIntervalMs
+  );
 }
 
 /** Production-значения эндпоинтов, при которых форк окружения не нужен. */

@@ -23,7 +23,7 @@ export type {
   DataCollectorState,
   DataCollectorStatus,
 } from './DataCollector.js';
-export { createDataCollector } from './createDataCollector.js';
+export { buildCexDemands, buildCexTransportIndex, createDataCollector } from './createDataCollector.js';
 export type {
   ContourBus,
   ContourMessage,
@@ -31,7 +31,7 @@ export type {
   CreateDataCollectorOptions,
   CreatedDataCollector,
 } from './createDataCollector.js';
-export { parseCexExchangeConfigs, toDataCollectorConfig } from './DataCollectorConfig.js';
+export { cexTransportKey, parseCexExchangeConfigs, toDataCollectorConfig } from './DataCollectorConfig.js';
 export type {
   CexCollectionConfig,
   CexExchangeConfig,

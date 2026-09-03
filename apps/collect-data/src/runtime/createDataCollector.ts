@@ -53,8 +53,12 @@ import {
 } from '@polymarket/data-collection';
 import { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
 import { COLLECTOR_RAW_OWNER_KEY, PolymarketCollectionGate } from '@polymarket/collector';
-import type { CexPolicy } from '@polymarket/policy';
-import type { DataCollectorConfig } from './DataCollectorConfig.js';
+import type {
+  CexExchangeConfig,
+  CexTransportConfig,
+  DataCollectorConfig,
+} from './DataCollectorConfig.js';
+import { cexTransportKey } from './DataCollectorConfig.js';
 import { DataCollector } from './DataCollector.js';
 
 /**
@@ -104,20 +108,70 @@ export interface CreatedDataCollector {
 }
 
 /**
- * Строит owner key CEX-спроса для конкретной биржи под идентичностью коллектора.
+ * Строит owner key CEX-спроса для профиля конфигурации.
  *
- * @param policy - CEX owner policy одной биржи
- * @returns Ключ вида `collector:raw:<exchange>` (стабильный, непрозрачный)
+ * @param profileKey - Ключ записи `cex-config.json`
+ * @returns Ключ вида `collector:raw:<profile>` (стабильный, непрозрачный)
  *
  * @remarks
- * CEX-контроллер запрещает дубликат `ownerKey` в одном `reconcile`, а одна
- * `CexPolicy` не может нести РАЗНЫЕ списки символов разных бирж без декартова
- * произведения. Поэтому спрос коллектора выражается по одному владельцу на
- * биржу — все под префиксом `collector:raw`. Контроллер всё равно агрегирует
- * их claim-ы в общие физические пулы.
+ * Владельца идентифицирует ПРОФИЛЬ, а не биржа. Одна биржа законно описывается
+ * несколькими профилями (`binance-spot`, `binance-futures` с одинаковым
+ * `exchangeId`), а CEX-контроллер запрещает дубликат `ownerKey` в одном
+ * `reconcile` и отверг бы весь спрос ещё до каких-либо изменений. Ключ профиля
+ * уникален по построению — это ключ JSON-объекта.
  */
-function cexOwnerKeyFor(policy: CexPolicy): string {
-  return `${COLLECTOR_RAW_OWNER_KEY}:${policy.exchangeIds.join('-')}`;
+function cexOwnerKeyFor(profileKey: string): string {
+  return `${COLLECTOR_RAW_OWNER_KEY}:${profileKey}`;
+}
+
+/**
+ * Собирает CEX-спрос коллектора из описаний профилей конфигурации.
+ *
+ * @param exchanges - Описания профилей (`parseCexExchangeConfigs`)
+ * @returns Спрос по владельцу на профиль
+ *
+ * @remarks
+ * Экспортируется, чтобы инвариант «профили одной биржи дают РАЗНЫХ владельцев»
+ * проверялся тестом против настоящего `CexSubscriptionController`, а не через
+ * подъём всей композиции.
+ *
+ * @example
+ * ```typescript
+ * const demands = buildCexDemands(config.cex.exchanges);
+ * await cexController.reconcile(demands, now);
+ * ```
+ */
+export function buildCexDemands(
+  exchanges: readonly CexExchangeConfig[],
+): readonly CexSubscriptionDemand[] {
+  return exchanges.map((exchange) => ({
+    ownerKey: cexOwnerKeyFor(exchange.profileKey),
+    policy: exchange.policy,
+  }));
+}
+
+/**
+ * Строит индекс транспорта по паре «биржа + вид рынка».
+ *
+ * @param exchanges - Описания профилей (`parseCexExchangeConfigs`)
+ * @returns Индекс, из которого фабрика источников берёт транспорт пула
+ *
+ * @remarks
+ * Ключ — {@link cexTransportKey}, а не один `exchangeId`: контроллер ключует
+ * физический пул тройкой `exchangeId + marketType + stream`, и адресация одной
+ * биржей схлопнула бы spot и future одного экземпляра биржи. Конфликт двух
+ * профилей на один пул уже отвергнут при разборе конфигурации, поэтому
+ * перезаписи здесь быть не может.
+ */
+export function buildCexTransportIndex(
+  exchanges: readonly CexExchangeConfig[],
+): ReadonlyMap<string, CexTransportConfig> {
+  return new Map(
+    exchanges.map((exchange) => [
+      cexTransportKey(exchange.exchangeId, exchange.marketType),
+      exchange.transport,
+    ]),
+  );
 }
 
 /**
@@ -221,17 +275,16 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
   });
 
   // ── CEX control-plane: контроллер создаёт immutable-поколения источников ─
-  // Транспортные параметры остаются ПО-БИРЖЕВЫМИ: контроллер собирает
-  // спецификацию пула (биржа/символы/потоки/глубина), а фабрика накладывает
-  // `obMethod`/`restartIntervalMs` именно той биржи, для которой поднимает
-  // источник. Общее значение на все биржи молча игнорировало бы конфигурации,
-  // где они различаются.
-  const cexTransportByExchange = new Map(
-    config.cex.exchanges.map((exchange) => [exchange.exchangeId, exchange.transport]),
-  );
+  // Транспорт адресуется парой `exchangeId + marketType` — так же, как
+  // контроллер ключует физический пул. Адресация одной биржей схлопнула бы
+  // spot и future одного экземпляра биржи, и один транспорт молча затирал бы
+  // другой.
+  const cexTransportByPool = buildCexTransportIndex(config.cex.exchanges);
   const cexController = new CexSubscriptionController({
     sourceFactory: (sourceConfig) => {
-      const transport = cexTransportByExchange.get(sourceConfig.exchangeId);
+      const transport = cexTransportByPool.get(
+        cexTransportKey(sourceConfig.exchangeId, sourceConfig.marketType),
+      );
       return new CexSource({
         config: {
           ...sourceConfig,
@@ -258,10 +311,7 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
       acquireLimit: config.control.acquireLimit,
     },
   ];
-  const cexDemands: readonly CexSubscriptionDemand[] = config.cex.exchanges.map((exchange) => ({
-    ownerKey: cexOwnerKeyFor(exchange.policy),
-    policy: exchange.policy,
-  }));
+  const cexDemands: readonly CexSubscriptionDemand[] = buildCexDemands(config.cex.exchanges);
 
   const collector = new DataCollector({
     components: {
