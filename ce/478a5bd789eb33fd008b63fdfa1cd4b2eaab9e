@@ -1,0 +1,30 @@
+apps/collect-data/src/runtime/createDataCollector.ts
+  s_564a12403b5d8a::t_5b86534c9f6423 56-61,278-282,285-287,314
+  s_564a12403b5d8a::t_482ef60a71caeb 111,113-114,117-121,123-174
+apps/collect-data/__tests__/cex-profiles.test.ts
+  s_564a12403b5d8a::t_cf8c964183b98f 1-226
+apps/collect-data/src/runtime/DataCollectorConfig.ts
+  s_564a12403b5d8a::t_cbe4db37ab1329 16-20,45,49-53
+  s_564a12403b5d8a::t_192b70bdbf3cec 289-290
+  s_564a12403b5d8a::t_20212a92396407 63-75,78-87,89-98,100,104-118
+  s_564a12403b5d8a::t_fd8d985002f46f 25
+  s_564a12403b5d8a::t_dda03658f1536c 343-369,371,373,375,381-396
+apps/collect-data/src/runtime/index.ts
+  s_564a12403b5d8a::t_cbe4db37ab1329 26,34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ce478a5bd789eb33fd008b63fdfa1cd4b2eaab9e",
+  "prompts": {},
+  "sessions": {
+    "s_564a12403b5d8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "db1b0eef-47e3-4d0b-b3fb-50620958d631",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
