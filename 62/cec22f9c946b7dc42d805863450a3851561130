@@ -1,0 +1,29 @@
+packages/infrastructure/cex-v2/__tests__/CexSource.test.ts
+  s_28e0f8f3b9ad92::t_0de8542142f299 1067-1305
+  s_28e0f8f3b9ad92::t_ebc371d7d1dbbe 14
+packages/infrastructure/cex-v2/src/index.ts
+  s_28e0f8f3b9ad92::t_64eeefa2553409 39
+packages/infrastructure/cex-v2/src/CexSourceConfig.ts
+  s_28e0f8f3b9ad92::t_64eeefa2553409 21,23-27,81-88,90-110
+packages/infrastructure/cex-v2/src/CexSource.ts
+  s_28e0f8f3b9ad92::t_444b6c920de0c6 183-252,571-573,852-863,1070-1106
+  s_28e0f8f3b9ad92::t_9fe764c8062106 357
+  s_28e0f8f3b9ad92::t_f7cfc66ba4b894 35-59,73-74,568,822-823
+  s_28e0f8f3b9ad92::t_6912af94af413c 108,311,320-334,397-398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "62cec22f9c946b7dc42d805863450a3851561130",
+  "prompts": {},
+  "sessions": {
+    "s_28e0f8f3b9ad92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eeec2a04-6b6b-40f0-b260-295d6e145e57",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
