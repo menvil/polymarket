@@ -23,6 +23,7 @@ export type {
   ExternalMessageRecorderCexStats,
   PolymarketRecordingBusSubscription,
   PolymarketRecordingRegistration,
+  PolymarketRecordingSessionProvider,
   PolymarketRecordingStorage,
   PolymarketRtdsFeedKey,
   CexRecordingBusSubscription,

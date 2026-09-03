@@ -1,35 +1,46 @@
 /**
- * Тестовые fakes компонентов контура сбора.
+ * Тестовые fakes компонентов контура сбора (после Collector-cutover).
  *
  * @remarks
- * Все fakes — узкие структурные реализации портов `DataCollector`: они
- * фиксируют вызовы и позволяют программировать отказы, не поднимая ни сети,
- * ни CCXT, ни диска. Поведение самих компонентов проверяется тестами их
- * собственных пакетов — здесь проверяется РАНТАЙМ: порядок запуска, откат,
- * лестница остановки, проекция lifecycle и операционный статус.
+ * Узкие структурные реализации портов `DataCollector`: фиксируют порядок
+ * вызовов и позволяют программировать отказы, не поднимая ни сети, ни CCXT,
+ * ни диска. Поведение самих компонентов проверяется тестами их пакетов —
+ * здесь проверяется РАНТАЙМ: порядок запуска, откат, лестница остановки,
+ * control-тик и операционный статус.
  */
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
-import { asMarketId } from '@polymarket/ids';
-import type { CollectionSessionSnapshot } from '@polymarket/collection-coordinator';
-import type { PolymarketDiscoveredMarket } from '@polymarket/polymarket-v2';
-import type { Timestamp } from '@polymarket/timestamp';
 import type { MessageBusDrainError, MessageBusStats } from '@polymarket/message-bus';
 import type { Result } from '@polymarket/result';
 import { Err, Ok } from '@polymarket/result';
+import type { Timestamp } from '@polymarket/timestamp';
+import type {
+  ExternalMessageRecorderCexStats,
+  ExternalMessageRecorderStats,
+} from '@polymarket/external-message-recorder';
+import type { CexWindowRecorderStats } from '@polymarket/data-collection';
+import type { PolymarketSubscriptionControllerStats } from '@polymarket/polymarket-subscription-control';
+import type {
+  CexSubscriptionControllerStats,
+  CexSubscriptionDemand,
+  CexSubscriptionReconcileResult,
+} from '@polymarket/cex-subscription-control';
+import type {
+  PolymarketControlRuntimeResult,
+  PolymarketSubscriptionDemand,
+} from '@polymarket/polymarket-control-runtime';
+import type { PolymarketCollectionGateStats } from '@polymarket/collector';
 import type {
   CollectorBus,
-  CollectorCexSource,
-  CollectorCexSourceEntry,
+  CollectorCexController,
   CollectorCexStorage,
-  CollectorCoordinator,
-  CollectorDiscovery,
-  CollectorFinalizer,
+  CollectorGate,
   CollectorPolymarketClient,
+  CollectorPolymarketController,
+  CollectorPolymarketControlRuntime,
   CollectorPolymarketSource,
   CollectorPolymarketStorage,
   CollectorRecorder,
-  CollectorTwapObservations,
   DataCollectorComponents,
 } from '../../src/runtime/DataCollector.js';
 
@@ -41,44 +52,26 @@ export class CallLog {
     this.calls.push(name);
   }
 
-  /**
-   * Индекс первого вызова; отсутствие вызова — ошибка теста.
-   *
-   * @remarks
-   * Обычный `indexOf` вернул бы -1, и сравнение порядка (`a < b`) прошло бы
-   * ВАКУУМНО для шага, которого вообще не было. Порядковые проверки обязаны
-   * падать именно в этом случае.
-   */
+  /** Индекс первого вызова; отсутствие вызова — ошибка теста (не -1). */
   public orderOf(name: string): number {
     const index = this.calls.indexOf(name);
     if (index === -1) {
-      throw new Error(`Expected call '${name}' was never made. Calls: ${this.calls.join(' → ')}`);
+      throw new Error(`Expected call "${name}" was never recorded. Calls: [${this.calls.join(', ')}]`);
     }
     return index;
   }
-
-  /** Индекс первого вызова (или -1) — для проверок «вызова не было». */
-  public indexOf(name: string): number {
-    return this.calls.indexOf(name);
-  }
-
-  /** Сколько раз вызывалось. */
-  public countOf(name: string): number {
-    return this.calls.filter((call) => call === name).length;
-  }
 }
 
-/** Управляемые часы: время двигает тест. */
+/** Управляемые часы: `now` фиксирован и настраивается. */
 export class FakeClock implements IClock {
-  constructor(private _ms: number = 1_700_000_000_000) {}
+  public constructor(private _nowMs = Date.parse('2026-09-01T18:00:00.000Z')) {}
 
   public now(): Date {
-    return new Date(this._ms);
+    return new Date(this._nowMs);
   }
 
-  /** Двигает время вперёд. */
-  public advance(ms: number): void {
-    this._ms += ms;
+  public setNow(ms: number): void {
+    this._nowMs = ms;
   }
 }
 
@@ -86,493 +79,356 @@ export class FakeClock implements IClock {
 export interface LoggedLine {
   readonly level: string;
   readonly message: string;
-  readonly context: Record<string, unknown> | undefined;
+  readonly context?: Record<string, unknown>;
 }
 
-/** Логгер, складывающий строки в массив. */
+/** ILogger, копящий записи в память. */
 export class CapturingLogger implements ILogger {
   public readonly lines: LoggedLine[] = [];
 
-  private _log(level: string, message: string, context?: Record<string, unknown>): void {
-    this.lines.push({ level, message, context });
-  }
-
   public trace(message: string, context?: Record<string, unknown>): void {
-    this._log('trace', message, context);
+    this.lines.push({ level: 'trace', message, context });
   }
   public debug(message: string, context?: Record<string, unknown>): void {
-    this._log('debug', message, context);
+    this.lines.push({ level: 'debug', message, context });
   }
   public info(message: string, context?: Record<string, unknown>): void {
-    this._log('info', message, context);
+    this.lines.push({ level: 'info', message, context });
   }
   public warn(message: string, context?: Record<string, unknown>): void {
-    this._log('warn', message, context);
+    this.lines.push({ level: 'warn', message, context });
   }
   public error(message: string, context?: Record<string, unknown>): void {
-    this._log('error', message, context);
+    this.lines.push({ level: 'error', message, context });
   }
   public fatal(message: string, context?: Record<string, unknown>): void {
-    this._log('fatal', message, context);
+    this.lines.push({ level: 'fatal', message, context });
   }
-  public child(): ILogger {
+  public child(_bindings: Record<string, unknown>): ILogger {
     return this;
-  }
-
-  /** Строки указанного уровня. */
-  public byLevel(level: string): LoggedLine[] {
-    return this.lines.filter((line) => line.level === level);
   }
 }
 
-/** Fake общего bus: считает drain/close, умеет отклонять их. */
-export class FakeBus implements CollectorBus {
-  public drainRejection: MessageBusDrainError | undefined;
-  public closeRejection: MessageBusDrainError | undefined;
-  public stats: MessageBusStats = {
-    queueSize: 0,
-    subscribedTypes: 2,
-    dispatching: false,
-    closed: false,
-    publishedTotal: 0,
-    dispatchedTotal: 0,
-    handlerErrorsTotal: 0,
-    rejectedPublicationsTotal: 0,
-  };
+const OK_VOID: Result<void, MessageBusDrainError> = Ok(undefined);
 
-  constructor(private readonly _log: CallLog) {}
+const EMPTY_BUS_STATS: MessageBusStats = {
+  queueSize: 0,
+  subscribedTypes: 0,
+  dispatching: false,
+  closed: false,
+  publishedTotal: 0,
+  dispatchedTotal: 0,
+  handlerErrorsTotal: 0,
+  rejectedPublicationsTotal: 0,
+};
+
+/** Порт общего bus: фиксирует drain/close, отказы программируются. */
+export class FakeBus implements CollectorBus {
+  public drainFailure: MessageBusDrainError | undefined;
+  public closeFailure: MessageBusDrainError | undefined;
+
+  public constructor(private readonly _log: CallLog) {}
 
   public async drain(): Promise<Result<void, MessageBusDrainError>> {
     this._log.record('bus.drain');
-    return this.drainRejection !== undefined ? Err(this.drainRejection) : Ok(undefined);
+    return this.drainFailure !== undefined ? Err(this.drainFailure) : OK_VOID;
   }
-
   public async close(): Promise<Result<void, MessageBusDrainError>> {
     this._log.record('bus.close');
-    return this.closeRejection !== undefined ? Err(this.closeRejection) : Ok(undefined);
+    return this.closeFailure !== undefined ? Err(this.closeFailure) : OK_VOID;
   }
-
   public getStats(): MessageBusStats {
-    return this.stats;
+    return EMPTY_BUS_STATS;
   }
 }
 
-/** Fake recording-подписчика bus. */
-export class FakeRecorder implements CollectorRecorder {
-  public startError: Error | undefined;
-  public closeRejection: Error | undefined;
+const EMPTY_RECORDER_STATS: ExternalMessageRecorderStats = {
+  marketMessagesRouted: 0,
+  rtdsMessagesRouted: 0,
+  recordsWritten: 0,
+  recordsSkippedInactive: 0,
+  serializationFailures: 0,
+  registrationFailures: 0,
+  unroutedMarketMessages: 0,
+  marketSessionsAdmitted: 0,
+  marketMessagesIgnoredByPolicy: 0,
+  marketMessagesDroppedAfterExpiry: 0,
+  unroutedRtdsMessages: 0,
+  handlerErrors: 0,
+};
 
-  constructor(private readonly _log: CallLog) {}
+const EMPTY_RECORDER_CEX_STATS: ExternalMessageRecorderCexStats = {
+  cexMessagesRouted: 0,
+  cexRecordsAccepted: 0,
+  cexRecordsDroppedInactive: 0,
+  cexWriteFailures: 0,
+  cexHandlerErrors: 0,
+};
+
+/** Порт recording-подписчика: start/close, отказ старта программируется. */
+export class FakeRecorder implements CollectorRecorder {
+  public startFailure: Error | undefined;
+  public startCalls = 0;
+  public closeCalls = 0;
+
+  public constructor(private readonly _log: CallLog) {}
 
   public start(): void {
     this._log.record('recorder.start');
-    if (this.startError !== undefined) throw this.startError;
+    this.startCalls++;
+    if (this.startFailure !== undefined) {
+      throw this.startFailure;
+    }
   }
-
   public async close(): Promise<void> {
     this._log.record('recorder.close');
-    if (this.closeRejection !== undefined) throw this.closeRejection;
+    this.closeCalls++;
   }
-
-  public getStats(): ReturnType<CollectorRecorder['getStats']> {
-    return {
-      marketMessagesRouted: 0,
-      rtdsMessagesRouted: 0,
-      recordsWritten: 7,
-      recordsSkippedInactive: 0,
-      serializationFailures: 0,
-      registrationFailures: 0,
-      unroutedMarketMessages: 0,
-      marketMessagesDroppedAfterExpiry: 0,
-      unroutedRtdsMessages: 0,
-      handlerErrors: 0,
-    };
+  public getStats(): ExternalMessageRecorderStats {
+    return EMPTY_RECORDER_STATS;
   }
-
-  public getCexStats(): ReturnType<CollectorRecorder['getCexStats']> {
-    return {
-      cexMessagesRouted: 0,
-      cexRecordsAccepted: 3,
-      cexRecordsDroppedInactive: 0,
-      cexWriteFailures: 0,
-      cexHandlerErrors: 0,
-    };
+  public getCexStats(): ExternalMessageRecorderCexStats {
+    return EMPTY_RECORDER_CEX_STATS;
   }
 }
 
-/** Fake storage-политики Polymarket. */
+/** Порт storage-политики Polymarket: cleanup, отказ программируется. */
 export class FakePolymarketStorage implements CollectorPolymarketStorage {
-  public cleanupRejection: Error | undefined;
-  /** Пока задан — `cleanup()` не завершается (запуск наблюдаемо «в полёте»). */
-  public cleanupGate: Promise<void> | undefined;
+  public cleanupFailure: Error | undefined;
+  public cleanupCalls = 0;
 
-  constructor(private readonly _log: CallLog) {}
+  public constructor(private readonly _log: CallLog) {}
 
   public async cleanup(): Promise<void> {
     this._log.record('polymarketStorage.cleanup');
-    if (this.cleanupGate !== undefined) {
-      await this.cleanupGate;
+    this.cleanupCalls++;
+    if (this.cleanupFailure !== undefined) {
+      throw this.cleanupFailure;
     }
-    if (this.cleanupRejection !== undefined) throw this.cleanupRejection;
   }
 }
 
-/** Fake storage-политики CEX-окон. */
-export class FakeCexStorage implements CollectorCexStorage {
-  public cleanupRejection: Error | undefined;
+const EMPTY_CEX_WINDOW_STATS: CexWindowRecorderStats = {
+  partitionsCompleted: 0,
+  rotationFailures: 0,
+  streamCloseFailures: 0,
+  compressionFailures: 0,
+};
 
-  constructor(private readonly _log: CallLog) {}
+/** Порт storage-политики CEX-окон: cleanup + статистика. */
+export class FakeCexStorage implements CollectorCexStorage {
+  public cleanupCalls = 0;
+
+  public constructor(private readonly _log: CallLog) {}
 
   public async cleanup(): Promise<void> {
     this._log.record('cexStorage.cleanup');
-    if (this.cleanupRejection !== undefined) throw this.cleanupRejection;
+    this.cleanupCalls++;
   }
-
-  public getStats(): ReturnType<CollectorCexStorage['getStats']> {
-    return {
-      partitionsCompleted: 4,
-      rotationFailures: 0,
-      streamCloseFailures: 0,
-      compressionFailures: 0,
-    };
+  public getStats(): CexWindowRecorderStats {
+    return EMPTY_CEX_WINDOW_STATS;
   }
 }
 
-/** Fake Polymarket-source. */
+/** Порт общего PM-source: close + health-сигналы. */
 export class FakePolymarketSource implements CollectorPolymarketSource {
   public hasFailed = false;
   public isClosed = false;
-  public closeRejection: Error | undefined;
+  public closeCalls = 0;
 
-  constructor(private readonly _log: CallLog) {}
+  public constructor(private readonly _log: CallLog) {}
 
   public async close(): Promise<void> {
     this._log.record('polymarketSource.close');
     this.isClosed = true;
-    if (this.closeRejection !== undefined) throw this.closeRejection;
+    this.closeCalls++;
   }
 }
 
-/** Fake SDK-клиента: считает client-level cleanup, умеет его провалить. */
+/** Порт SDK-клиента: закрытие shared realtime. */
 export class FakePolymarketClient implements CollectorPolymarketClient {
-  public closeRejection: Error | undefined;
+  public closeCalls = 0;
 
-  constructor(private readonly _log: CallLog) {}
+  public constructor(private readonly _log: CallLog) {}
 
   public async closeSubscriptions(): Promise<void> {
     this._log.record('polymarketClient.closeSubscriptions');
-    if (this.closeRejection !== undefined) throw this.closeRejection;
+    this.closeCalls++;
   }
 }
 
-/** Fake одного CEX-source. */
-export class FakeCexSource implements CollectorCexSource {
-  public hasFailed = false;
-  public isRunning = false;
-  public startError: Error | undefined;
-  public closeRejection: Error | undefined;
+/** Порт control-runtime: фиксирует спрос каждого прохода. */
+export class FakePolymarketControlRuntime implements CollectorPolymarketControlRuntime {
+  public readonly demandsSeen: readonly PolymarketSubscriptionDemand[][] = [];
+  public runFailure: Error | undefined;
 
-  constructor(
-    private readonly _log: CallLog,
-    public readonly exchangeId: string,
-  ) {}
+  public constructor(private readonly _log: CallLog) {}
 
-  public start(): void {
-    this._log.record(`cexSource.start(${this.exchangeId})`);
-    if (this.startError !== undefined) throw this.startError;
-    this.isRunning = true;
-  }
-
-  public async close(): Promise<void> {
-    this._log.record(`cexSource.close(${this.exchangeId})`);
-    this.isRunning = false;
-    if (this.closeRejection !== undefined) throw this.closeRejection;
-  }
-
-  public getStats(): ReturnType<CollectorCexSource['getStats']> {
-    return { orderbookSnapshotFailures: 0, tradeSnapshotFailures: 0 };
+  public async runOnce(
+    demands: readonly PolymarketSubscriptionDemand[],
+  ): Promise<PolymarketControlRuntimeResult> {
+    this._log.record('pmControlRuntime.runOnce');
+    (this.demandsSeen as PolymarketSubscriptionDemand[][]).push([...demands]);
+    if (this.runFailure !== undefined) {
+      throw this.runFailure;
+    }
+    // Отчёт прохода в тестах не проверяется — возвращаем узкую заглушку.
+    return undefined as unknown as PolymarketControlRuntimeResult;
   }
 }
 
-/**
- * Минимальный Timestamp для снимков.
- *
- * @remarks
- * Рантайм вызывает у него только `toNumber()`; конструировать настоящий VO
- * ради этого не нужно, но тип обязан быть настоящим — иначе расширение
- * контракта снимка прошло бы мимо тестов.
- */
-export function timestampOf(ms: number): Timestamp {
-  return { toNumber: () => ms } as Timestamp;
-}
-
-/**
- * Кандидат discovery в объёме, который читает рантайм.
- *
- * @remarks
- * Проекция реального `PolymarketDiscoveredMarket` по РЕАЛЬНЫМ полям: если
- * рантайм начнёт читать что-то ещё или контракт изменится, тест перестанет
- * компилироваться — в отличие от `never[]`, который скрывал бы расхождение.
- */
-export type FakeCandidate = Pick<
-  PolymarketDiscoveredMarket,
-  'marketId' | 'question' | 'expiresAt'
->;
-
-/** Создаёт кандидата с заданным id. */
-export function candidate(id: string, expiresAtMs = 2_000_000): FakeCandidate {
-  return {
-    marketId: asMarketId(id)!,
-    question: `Question ${id}`,
-    expiresAt: timestampOf(expiresAtMs),
-  };
-}
-
-/** Fake Discovery: тест задаёт содержимое кэша кандидатов. */
-export class FakeDiscovery implements CollectorDiscovery {
-  public candidates: FakeCandidate[] = [];
-  public findRejection: Error | undefined;
-
-  public async findCandidates(): Promise<readonly FakeCandidate[]> {
-    if (this.findRejection !== undefined) throw this.findRejection;
-    return this.candidates;
-  }
-}
-
-/**
- * Снимок сессии в объёме, который читает рантайм.
- *
- * @remarks
- * Проекция реального `CollectionSessionSnapshot`; `state` сделан изменяемым,
- * чтобы тест мог двигать сессию по lifecycle.
- */
-export type FakeSession = Pick<
-  CollectionSessionSnapshot,
-  'marketId' | 'question' | 'expiresAt'
-> & {
-  state: CollectionSessionSnapshot['state'];
+const EMPTY_PM_CONTROLLER_STATS: PolymarketSubscriptionControllerStats = {
+  openingMarkets: 0,
+  activeMarkets: 0,
+  claims: 0,
+  rtdsFeeds: [],
+  sourceFailed: false,
+  closed: false,
 };
 
-/** Fake координатора: сессии и счётчики задаёт тест. */
-export class FakeCoordinator implements CollectorCoordinator {
-  public sessions: FakeSession[] = [];
-  public refreshCalls = 0;
-  public fillCalls = 0;
-  public closeRejection: Error | undefined;
-  /** Пока задан — `fillSlots()` не завершается (тик наблюдаемо «в полёте»). */
-  private _gate: Promise<void> | undefined;
-  private _openGate: (() => void) | undefined;
-
-  constructor(private readonly _log: CallLog) {}
-
-  /**
-   * Подвешивает следующий `fillSlots()` до вызова {@link FakeCoordinator.release}.
-   *
-   * @remarks
-   * Позволяет проверить, что остановка ДОЖИДАЕТСЯ тика, а не просто
-   * оказывается позже него по случайному стечению планировщика.
-   */
-  public block(): void {
-    this._gate = new Promise<void>((resolve) => {
-      this._openGate = resolve;
-    });
-  }
-
-  /**
-   * Снимает блокировку для БУДУЩИХ вызовов, не отпуская уже подвешенный.
-   *
-   * @remarks
-   * Нужно для проверки ПЕРЕКРЫВАЮЩИХСЯ тиков: первый остаётся в полёте, а
-   * второй проходит насквозь и завершается раньше него.
-   */
-  public unblockFuture(): void {
-    this._gate = undefined;
-  }
-
-  /** Отпускает подвешенный `fillSlots()`. */
-  public release(): void {
-    this._openGate?.();
-    this._gate = undefined;
-    this._openGate = undefined;
-  }
-
-  public async refreshCandidates(): Promise<void> {
-    this.refreshCalls++;
-    this._log.record('coordinator.refreshCandidates');
-  }
-
-  public async fillSlots(): Promise<number> {
-    this.fillCalls++;
-    this._log.record('coordinator.fillSlots.start');
-    if (this._gate !== undefined) {
-      await this._gate;
-    }
-    this._log.record('coordinator.fillSlots');
-    return 0;
-  }
-
-  public listSessions(): FakeSession[] {
-    return this.sessions;
-  }
-
-  public getStats(): ReturnType<CollectorCoordinator['getStats']> {
-    return {
-      activeSessions: this.sessions.filter((session) => session.state === 'ACTIVE').length,
-      openingSessions: this.sessions.filter((session) => session.state === 'OPENING').length,
-      finalizingSessions: this.sessions.filter((session) => session.state === 'FINALIZING').length,
-      rtdsFeeds: [],
-    };
-  }
-
-  public async close(): Promise<void> {
-    this._log.record('coordinator.close');
-    this.sessions = [];
-    if (this.closeRejection !== undefined) throw this.closeRejection;
-  }
-}
-
-/** Fake финализатора: счётчики двигает тест. */
-export class FakeFinalizer implements CollectorFinalizer {
-  public pendingFinalizations = 0;
-  public archivedTotal = 0;
-  public archiveFailures = 0;
-  public runOnceCalls = 0;
-  public drainCalls = 0;
-  public closeRejection: Error | undefined;
-
-  constructor(private readonly _log: CallLog) {}
-
-  public async runOnce(): Promise<void> {
-    this.runOnceCalls++;
-    this._log.record('finalizer.runOnce');
-  }
-
-  public async drain(): Promise<void> {
-    this.drainCalls++;
-    this._log.record('finalizer.drain');
-  }
-
-  public officialFinalizations = 0;
-  public fallbackFinalizations = 0;
-  public fallbackByTimeout = 0;
-  public fallbackByShutdown = 0;
-  public discardedUnresolvable = 0;
-
-  public getStats(): ReturnType<CollectorFinalizer['getStats']> {
-    return {
-      pendingFinalizations: this.pendingFinalizations,
-      archivedTotal: this.archivedTotal,
-      archiveFailures: this.archiveFailures,
-      officialFinalizations: this.officialFinalizations,
-      fallbackFinalizations: this.fallbackFinalizations,
-      fallbackByTimeout: this.fallbackByTimeout,
-      fallbackByShutdown: this.fallbackByShutdown,
-      discardedUnresolvable: this.discardedUnresolvable,
-    };
-  }
-
-  public async close(): Promise<void> {
-    this._log.record('finalizer.close');
-    if (this.closeRejection !== undefined) throw this.closeRejection;
-  }
-}
-
-/** Fake наблюдателя settlement-потока: журналирует свой lifecycle. */
-export class FakeTwapObservations implements CollectorTwapObservations {
-  public startCalls = 0;
+/** Порт PM-контроллера: close + статистика. */
+export class FakePolymarketController implements CollectorPolymarketController {
   public closeCalls = 0;
-  public accepted = 0;
 
-  constructor(private readonly _log: CallLog) {}
+  public constructor(private readonly _log: CallLog) {}
 
-  public start(): void {
-    this.startCalls++;
-    this._log.record('twapObservations.start');
-  }
-
-  public close(): void {
+  public async close(): Promise<void> {
+    this._log.record('polymarketController.close');
     this.closeCalls++;
-    this._log.record('twapObservations.close');
   }
-
-  public getStats(): ReturnType<CollectorTwapObservations['getStats']> {
-    return { feeds: 0, buffered: 0, accepted: this.accepted, rejected: 0 };
+  public getStats(): PolymarketSubscriptionControllerStats {
+    return EMPTY_PM_CONTROLLER_STATS;
   }
 }
 
-/** Полный набор fake-компонентов одного теста. */
+const EMPTY_CEX_CONTROLLER_STATS: CexSubscriptionControllerStats = {
+  owners: 0,
+  logicalClaims: 0,
+  desiredPools: 0,
+  physicalPools: 0,
+  orderbookPools: 0,
+  tradePools: 0,
+  runningPools: 0,
+  failedPools: 0,
+  closed: false,
+};
+
+/** Порт CEX-контроллера: reconcile + close, фиксирует спрос каждого прохода. */
+export class FakeCexController implements CollectorCexController {
+  public readonly demandsSeen: readonly CexSubscriptionDemand[][] = [];
+  public reconcileFailure: Error | undefined;
+  public closeCalls = 0;
+
+  public constructor(private readonly _log: CallLog) {}
+
+  public async reconcile(
+    demands: readonly CexSubscriptionDemand[],
+    _now: Timestamp,
+  ): Promise<CexSubscriptionReconcileResult> {
+    this._log.record('cexController.reconcile');
+    (this.demandsSeen as CexSubscriptionDemand[][]).push([...demands]);
+    if (this.reconcileFailure !== undefined) {
+      throw this.reconcileFailure;
+    }
+    return undefined as unknown as CexSubscriptionReconcileResult;
+  }
+  public async close(): Promise<void> {
+    this._log.record('cexController.close');
+    this.closeCalls++;
+  }
+  public getStats(): CexSubscriptionControllerStats {
+    return EMPTY_CEX_CONTROLLER_STATS;
+  }
+}
+
+const EMPTY_GATE_STATS: PolymarketCollectionGateStats = {
+  admitted: 0,
+  ignoredUnknownMarket: 0,
+  ignoredByPolicy: 0,
+  invalidMarketId: 0,
+};
+
+/** Порт политики допуска (только диагностика). */
+export class FakeGate implements CollectorGate {
+  public getStats(): PolymarketCollectionGateStats {
+    return EMPTY_GATE_STATS;
+  }
+}
+
+/** Собранный набор fakes + общий журнал вызовов. */
 export interface FakeContour {
   readonly log: CallLog;
-  readonly logger: CapturingLogger;
-  readonly clock: FakeClock;
   readonly bus: FakeBus;
   readonly recorder: FakeRecorder;
+  readonly gate: FakeGate;
   readonly polymarketStorage: FakePolymarketStorage;
   readonly cexStorage: FakeCexStorage;
   readonly polymarketSource: FakePolymarketSource;
   readonly polymarketClient: FakePolymarketClient;
-  readonly cexSources: FakeCexSource[];
-  readonly discovery: FakeDiscovery;
-  readonly coordinator: FakeCoordinator;
-  readonly finalizer: FakeFinalizer;
-  readonly twapObservations: FakeTwapObservations;
+  readonly polymarketControlRuntime: FakePolymarketControlRuntime;
+  readonly polymarketController: FakePolymarketController;
+  readonly cexController: FakeCexController;
   readonly components: DataCollectorComponents;
 }
 
-/**
- * Собирает полный fake-контур.
- *
- * @param exchangeIds - Биржи, для которых создаются fake CEX-source-ы
- * @returns Все fakes + собранные `DataCollectorComponents`
- */
-export function makeFakeContour(exchangeIds: readonly string[] = ['binance', 'okx']): FakeContour {
+/** Спрос коллектора для fake-контура (значения не важны — фиксируется порядок). */
+const PM_DEMAND: PolymarketSubscriptionDemand = {
+  ownerKey: 'collector:raw',
+  policy: { kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN' },
+  acquireLimit: 20,
+};
+const CEX_DEMAND: CexSubscriptionDemand = {
+  ownerKey: 'collector:raw:binance',
+  policy: {
+    kind: 'CEX',
+    exchangeIds: ['binance'],
+    marketTypes: ['spot'],
+    symbols: ['BTC/USDT'],
+    orderbook: true,
+    trades: true,
+  },
+};
+
+/** Собирает полный fake-контур; `cex: false` — CEX-спрос пуст. */
+export function makeFakeContour(options: { readonly cex?: boolean } = {}): FakeContour {
   const log = new CallLog();
-  const logger = new CapturingLogger();
-  const clock = new FakeClock();
   const bus = new FakeBus(log);
   const recorder = new FakeRecorder(log);
+  const gate = new FakeGate();
   const polymarketStorage = new FakePolymarketStorage(log);
   const cexStorage = new FakeCexStorage(log);
   const polymarketSource = new FakePolymarketSource(log);
   const polymarketClient = new FakePolymarketClient(log);
-  const cexSources = exchangeIds.map((exchangeId) => new FakeCexSource(log, exchangeId));
-  const discovery = new FakeDiscovery();
-  const coordinator = new FakeCoordinator(log);
-  const finalizer = new FakeFinalizer(log);
-  const twapObservations = new FakeTwapObservations(log);
-
-  const entries: CollectorCexSourceEntry[] = cexSources.map((source) => ({
-    exchangeId: source.exchangeId,
-    source,
-  }));
-
-  return {
-    log,
-    logger,
-    clock,
+  const polymarketControlRuntime = new FakePolymarketControlRuntime(log);
+  const polymarketController = new FakePolymarketController(log);
+  const cexController = new FakeCexController(log);
+  const cexEnabled = options.cex !== false;
+  const components: DataCollectorComponents = {
     bus,
     recorder,
+    gate,
     polymarketStorage,
     cexStorage,
     polymarketSource,
     polymarketClient,
-    cexSources,
-    discovery,
-    coordinator,
-    finalizer,
-    twapObservations,
-    components: {
-      bus,
-      recorder,
-      polymarketStorage,
-      cexStorage,
-      polymarketSource,
-      polymarketClient,
-      cexSources: entries,
-      discovery,
-      coordinator,
-      finalizer,
-      twapObservations,
-    },
+    polymarketControlRuntime,
+    polymarketController,
+    cexController,
+    polymarketDemands: [PM_DEMAND],
+    cexDemands: cexEnabled ? [CEX_DEMAND] : [],
+  };
+  return {
+    log,
+    bus,
+    recorder,
+    gate,
+    polymarketStorage,
+    cexStorage,
+    polymarketSource,
+    polymarketClient,
+    polymarketControlRuntime,
+    polymarketController,
+    cexController,
+    components,
   };
 }

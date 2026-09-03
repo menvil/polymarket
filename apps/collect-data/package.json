@@ -17,23 +17,29 @@
     "test": "node --experimental-vm-modules ../../node_modules/.bin/jest"
   },
   "dependencies": {
+    "@polymarket/cex-subscription-control": "0.1.0",
     "@polymarket/cex-v2": "0.1.0",
     "@polymarket/client": "^0.6.0",
-    "@polymarket/collection-coordinator": "0.1.0",
+    "@polymarket/collector": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
     "@polymarket/exchange": "0.1.0",
     "@polymarket/external-message-bus": "0.1.0",
     "@polymarket/external-message-recorder": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
+    "@polymarket/market": "0.1.0",
     "@polymarket/market-discovery": "0.1.0",
-    "@polymarket/market-finalizer": "0.1.0",
-    "@polymarket/message-bus": "0.1.0",
     "@polymarket/messages": "0.1.0",
+    "@polymarket/message-bus": "0.1.0",
+    "@polymarket/policy": "0.1.0",
+    "@polymarket/polymarket-control-runtime": "0.1.0",
+    "@polymarket/polymarket-subscription-control": "0.1.0",
     "@polymarket/polymarket-v2": "0.1.0",
     "@polymarket/ports": "0.1.0",
     "@polymarket/result": "^0.1.0",
-    "@polymarket/time": "0.1.0"
+    "@polymarket/subscription-planning": "0.1.0",
+    "@polymarket/time": "0.1.0",
+    "@polymarket/timestamp": "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

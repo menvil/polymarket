@@ -66,9 +66,11 @@ logger.info('Starting Polymarket data collector', {
   outputDir: runtimeConfig.outputDir,
   sourceSubDir: runtimeConfig.polymarket.sourceSubDir,
   compression: runtimeConfig.polymarket.compression,
-  maxMarkets: runtimeConfig.collection.maxMarkets,
-  discoveryRefreshMs: runtimeConfig.collection.discoveryRefreshMs,
-  cexExchanges: runtimeConfig.cex.sources.map((source) => source.exchangeId),
+  acquireLimit: runtimeConfig.control.acquireLimit,
+  controlTickMs: runtimeConfig.control.tickMs,
+  policyFamily: runtimeConfig.polymarketPolicy.family,
+  policyAssets: runtimeConfig.polymarketPolicy.assets ?? [],
+  cexExchanges: runtimeConfig.cex.policies.flatMap((policy) => policy.exchangeIds),
 });
 
 const bootstrap = await applyProcessBootstrap({
@@ -88,15 +90,20 @@ const statusInterval = setInterval(() => {
   const memory = process.memoryUsage();
   logger.info('Collector status', {
     uptimeMin: status.uptimeMs === null ? null : Math.round(status.uptimeMs / 60_000),
-    active: status.collection.activeSessions,
-    finalizing: status.collection.finalizingSessions,
-    archived: status.finalization.archivedTotal,
-    rtdsFeeds: status.collection.rtdsFeeds.length,
+    pmActiveMarkets: status.polymarket.activeMarkets,
+    pmClaims: status.polymarket.claims,
+    pmRtdsFeeds: status.polymarket.rtdsFeeds.length,
+    admitted: status.gate.admitted,
+    ignoredUnknown: status.gate.ignoredUnknownMarket,
+    ignoredByPolicy: status.gate.ignoredByPolicy,
+    cexDesiredPools: status.cex.desiredPools,
+    cexPhysicalPools: status.cex.physicalPools,
+    cexFailedPools: status.cex.failedPools,
     recordsWritten: status.recorder.recordsWritten,
     cexRecords: status.recorderCex.cexRecordsAccepted,
     cexPartitions: status.cexWindows.partitionsCompleted,
     busQueue: status.bus.queueSize,
-    failedCexSources: status.sources.cex.filter((source) => source.hasFailed).length,
+    pmSourceFailed: status.polymarketSource.hasFailed,
     rssMb: Math.round(memory.rss / (1024 * 1024)),
     heapUsedMb: Math.round(memory.heapUsed / (1024 * 1024)),
   });

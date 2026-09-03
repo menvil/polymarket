@@ -109,6 +109,49 @@ export interface PolymarketRecordingRegistration {
 }
 
 /**
+ * Порт ленивого допуска рынка к записи по ПЕРВОМУ наблюдению.
+ *
+ * @remarks
+ * ### Зачем провайдер существует
+ *
+ * До Collector-cutover recording-сессии создавал `MarketCollectionCoordinator`
+ * ДО открытия подписки (recorder-first): рынок регистрировался заранее, и
+ * первое CLOB-событие уже попадало в готовую сессию. После cutover физические
+ * подписки принадлежат общему control-plane (`collector:raw`), и recorder
+ * НЕ знает заранее, какой рынок и когда пришлёт первое наблюдение.
+ *
+ * Провайдер закрывает ровно этот разрыв: когда `POLYMARKET_MARKET` приходит
+ * для рынка БЕЗ активной сессии, recorder однократно спрашивает провайдера
+ * «начинать ли запись этого рынка и с какой регистрацией». Провайдер (в
+ * контуре collector — политика поверх `MarketUniverse`) отвечает готовой
+ * {@link PolymarketRecordingRegistration} либо `undefined` (рынок не
+ * интересен/неизвестен).
+ *
+ * ### Ключевой инвариант: первое наблюдение НЕ теряется
+ *
+ * Провайдер вызывается СИНХРОННО внутри обработчика того же сообщения:
+ * `нет сессии → admit → registerMarket → записать ЭТО ЖЕ сообщение`. Между
+ * созданием сессии и записью нет `await` и нет «начнём со следующего
+ * сообщения» — именно это делает первое raw-наблюдение, инициировавшее
+ * сессию, записанным, а не потерянным.
+ *
+ * ### Где НЕ вызывается
+ *
+ * Провайдер спрашивается ТОЛЬКО при отсутствии активной сессии. Для уже
+ * активной сессии policy не пересчитывается — запись идёт напрямую (contract
+ * «policy решает начать, а не продолжать»). RTDS-сообщения провайдер не
+ * трогают вовсе: у них нет marketId, и лениво создать по ним сессию нельзя.
+ *
+ * @param sourceMarketId - `payload.market` входящего события (conditionId ==
+ *   `String(marketMeta.marketId)`)
+ * @returns Готовая регистрация — начать запись этого рынка; `undefined` —
+ *   рынок игнорируется (сессия не создаётся, сообщение не пишется)
+ */
+export type PolymarketRecordingSessionProvider = (
+  sourceMarketId: string,
+) => PolymarketRecordingRegistration | undefined;
+
+/**
  * Порт подписки recorder-а на общий ExternalMessageBus.
  *
  * @remarks
@@ -210,6 +253,18 @@ export interface ExternalMessageRecorderDependencies {
    * Без неё recorder ведёт себя ровно как в N-002..N-004.
    */
   readonly cex?: ExternalMessageRecorderCexDependencies;
+  /**
+   * Опциональный ленивый допуск рынка к записи по первому наблюдению.
+   *
+   * @remarks
+   * Без провайдера recorder ведёт себя как раньше: `POLYMARKET_MARKET` для
+   * незарегистрированного рынка считается unrouted (регистрацию делает
+   * внешний вызов `registerMarket`). С провайдером recorder сам спрашивает
+   * его при отсутствии сессии — см. {@link PolymarketRecordingSessionProvider}.
+   * Это точка расширения Collector-cutover, а не второй storage-путь: сама
+   * запись, routing и counters — те же.
+   */
+  readonly sessionProvider?: PolymarketRecordingSessionProvider;
 }
 
 /**
@@ -230,6 +285,26 @@ export interface ExternalMessageRecorderStats {
   readonly registrationFailures: number;
   /** Market-сообщений без зарегистрированной сессии (например, после finalize). */
   readonly unroutedMarketMessages: number;
+  /**
+   * Сессий, созданных ленивым провайдером по первому наблюдению рынка.
+   *
+   * @remarks
+   * Ненулевое значение означает, что запись рынков инициируется наблюдаемым
+   * трафиком (Collector-cutover), а не внешним `registerMarket`. Каждая такая
+   * сессия немедленно записывает то самое первое сообщение, что её создало.
+   */
+  readonly marketSessionsAdmitted: number;
+  /**
+   * Market-сообщений, СОЗНАТЕЛЬНО пропущенных провайдером (рынок не интересен
+   * либо неизвестен).
+   *
+   * @remarks
+   * Отдельно от `unroutedMarketMessages`: там — потеря при отсутствующей
+   * сессии и БЕЗ провайдера; здесь — штатное решение политики «этот рынок мы
+   * не собираем». Смешивать их значило бы читать нормальный игнор как потерю.
+   * Ноль, если провайдер не сконфигурирован.
+   */
+  readonly marketMessagesIgnoredByPolicy: number;
   /**
    * Market-сообщений, отброшенных СОЗНАТЕЛЬНО после истечения рынка.
    *
@@ -372,6 +447,7 @@ export class ExternalMessageRecorder {
   private readonly _bus: PolymarketRecordingBusSubscription;
   private readonly _storage: PolymarketRecordingStorage;
   private readonly _cex: ExternalMessageRecorderCexDependencies | undefined;
+  private readonly _sessionProvider: PolymarketRecordingSessionProvider | undefined;
   private readonly _logger: ILogger;
 
   /** Активные сессии: sourceMarketId (== String(marketId) == conditionId) → сессия. */
@@ -399,6 +475,8 @@ export class ExternalMessageRecorder {
   private _serializationFailures = 0;
   private _registrationFailures = 0;
   private _unroutedMarketMessages = 0;
+  private _marketSessionsAdmitted = 0;
+  private _marketMessagesIgnoredByPolicy = 0;
   private _marketMessagesDroppedAfterExpiry = 0;
   private _unroutedRtdsMessages = 0;
   private _handlerErrors = 0;
@@ -419,6 +497,7 @@ export class ExternalMessageRecorder {
     this._bus = deps.bus;
     this._storage = deps.storage;
     this._cex = deps.cex;
+    this._sessionProvider = deps.sessionProvider;
     this._logger = deps.logger.child({ component: 'ExternalMessageRecorder' });
   }
 
@@ -789,6 +868,8 @@ export class ExternalMessageRecorder {
       serializationFailures: this._serializationFailures,
       registrationFailures: this._registrationFailures,
       unroutedMarketMessages: this._unroutedMarketMessages,
+      marketSessionsAdmitted: this._marketSessionsAdmitted,
+      marketMessagesIgnoredByPolicy: this._marketMessagesIgnoredByPolicy,
       marketMessagesDroppedAfterExpiry: this._marketMessagesDroppedAfterExpiry,
       unroutedRtdsMessages: this._unroutedRtdsMessages,
       handlerErrors: this._handlerErrors,
@@ -868,6 +949,50 @@ export class ExternalMessageRecorder {
   }
 
   /**
+   * Пытается лениво создать сессию рынка по первому наблюдению.
+   *
+   * @param sourceMarketId - `payload.market` входящего события
+   * @returns Созданная активная сессия либо `undefined` (провайдера нет,
+   *   рынок отклонён политикой, либо storage отверг регистрацию)
+   *
+   * @remarks
+   * Единственная точка, где сессия создаётся ТРАФИКОМ, а не внешним
+   * `registerMarket`. Вызывается синхронно из обработчика первого сообщения,
+   * поэтому вернувшаяся сессия сразу же принимает это сообщение — первое
+   * наблюдение не теряется. Провайдер обязан вернуть регистрацию именно
+   * запрошенного рынка; регистрация другого рынка отклоняется (иначе текущее
+   * сообщение всё равно осталось бы без сессии).
+   */
+  private _admitSession(sourceMarketId: string): RecordingSession | undefined {
+    if (this._sessionProvider === undefined) {
+      this._unroutedMarketMessages++;
+      return undefined;
+    }
+    const registration = this._sessionProvider(sourceMarketId);
+    if (registration === undefined) {
+      this._marketMessagesIgnoredByPolicy++;
+      return undefined;
+    }
+    if (String(registration.marketMeta.marketId) !== sourceMarketId) {
+      // Провайдер вернул регистрацию ДРУГОГО рынка — записать текущее
+      // сообщение было бы некуда; это дефект провайдера, а не рынка.
+      this._marketMessagesIgnoredByPolicy++;
+      this._logger.warn('Session provider returned a registration for a different market', {
+        requested: sourceMarketId,
+        returned: String(registration.marketMeta.marketId),
+      });
+      return undefined;
+    }
+    const installed = this.registerMarket(registration);
+    if (!installed) {
+      // registerMarket уже увеличил registrationFailures и залогировал причину.
+      return undefined;
+    }
+    this._marketSessionsAdmitted++;
+    return this._sessions.get(sourceMarketId);
+  }
+
+  /**
    * Handler market-сообщений: маршрутизация по source market id.
    *
    * @param message - Typed сообщение `POLYMARKET_MARKET`
@@ -885,10 +1010,16 @@ export class ExternalMessageRecorder {
     }
     try {
       const sourceMarketId = message.payload.payload.market;
-      const session = this._sessions.get(sourceMarketId);
+      let session = this._sessions.get(sourceMarketId);
       if (!session) {
-        this._unroutedMarketMessages++;
-        return;
+        // Ленивый допуск (Collector-cutover): сессии ещё нет — спрашиваем
+        // провайдера СИНХРОННО и, если он согласен, создаём сессию и тут же
+        // записываем ЭТО ЖЕ первое сообщение. Без провайдера — прежнее
+        // поведение (unrouted).
+        session = this._admitSession(sourceMarketId);
+        if (!session) {
+          return; // счётчик уже увеличен внутри _admitSession
+        }
       }
       // Сессия, сужённая до settlement-фида (рынок истёк), market-события
       // больше не принимает: торговый lifecycle закончен на expiresAt

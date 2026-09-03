@@ -1,34 +1,50 @@
 /**
- * Composition root контура сбора: единственное место, где создаются bus,
- * recorder, source-ы и control-plane компоненты.
+ * Composition root контура сбора после Collector-cutover.
  *
  * @remarks
- * Фабрика существует, чтобы production-`main.ts` и verification-runner
- * checkpoint-а поднимали ОДИН И ТОТ ЖЕ контур:
+ * Единственное место, где собираются шина, recorder, control-plane и source-ы.
+ * Ключевой сдвиг cutover: коллектор больше НЕ владеет источниками — он
+ * выражает спрос (`collector:raw`) через общий control-plane и записывает
+ * интересующие рынки как обычный подписчик шины.
  *
  * ```text
- *                createDataCollector(...)
- *                    ↑              ↑
- *              production      checkpoint
- *                 main         verification
+ * MarketDiscovery → MarketUniverse
+ *        │                 ▲
+ *        │        collector demand (collector:raw + PolymarketPolicy)
+ *        ▼                 │
+ * PolymarketControlRuntime.runOnce()
+ *        ▼
+ * PolymarketSubscriptionController → PolymarketSource ──┐
+ *                                                       │
+ * collector CEX demand (collector:raw:<exchange> + CexPolicy)
+ *        ▼                                              │
+ * CexSubscriptionController → CexSource generations ────┤
+ *                                                       ▼
+ *                                              ExternalMessageBus
+ *                                                ├── Collector (recorder + gate)
+ *                                                └── (semantic adapter — sibling)
  * ```
  *
  * Второй copy composition root в репозитории быть не должно: расхождение
- * между «проверенным» и «работающим» контуром — именно тот класс дефектов,
- * который verification обязан ловить, а не создавать.
+ * «проверенного» и «работающего» контура — тот класс дефектов, который
+ * verification обязан ловить, а не создавать.
  */
 import { createPublicClient } from '@polymarket/client';
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import { LiveHighResolutionClock, MessageMetadataGenerator } from '@polymarket/messages';
-import { MarketFilter, MarketScorer } from '@polymarket/market-discovery';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
-import {
-  PolymarketMarketDiscovery,
-  PolymarketSource,
-  PolymarketTwapObservations,
-} from '@polymarket/polymarket-v2';
+import { PolymarketMarketDiscovery, PolymarketSource } from '@polymarket/polymarket-v2';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
+import { MarketUniverse } from '@polymarket/market-discovery';
+import { PolymarketSubscriptionPlanner } from '@polymarket/subscription-planning';
+import { PolymarketSubscriptionController } from '@polymarket/polymarket-subscription-control';
+import { PolymarketControlRuntime } from '@polymarket/polymarket-control-runtime';
+import type { PolymarketSubscriptionDemand } from '@polymarket/polymarket-control-runtime';
+import { CexSubscriptionController } from '@polymarket/cex-subscription-control';
+import type { CexSubscriptionDemand } from '@polymarket/cex-subscription-control';
+import { CexSource } from '@polymarket/cex-v2';
+import type { CexExternalMessage } from '@polymarket/cex-v2';
 import {
   CexWindowRecorder,
   DataRecorder,
@@ -36,20 +52,17 @@ import {
   NDJSONFormatter,
 } from '@polymarket/data-collection';
 import { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
-import { MarketCollectionCoordinator } from '@polymarket/collection-coordinator';
-import { MarketFinalizer } from '@polymarket/market-finalizer';
-import { CexSource } from '@polymarket/cex-v2';
-import type { CexExternalMessage } from '@polymarket/cex-v2';
+import { COLLECTOR_RAW_OWNER_KEY, PolymarketCollectionGate } from '@polymarket/collector';
+import type { CexPolicy } from '@polymarket/policy';
 import type { DataCollectorConfig } from './DataCollectorConfig.js';
-import type { CollectorCexSourceEntry } from './DataCollector.js';
 import { DataCollector } from './DataCollector.js';
 
 /**
- * Union сообщений всех raw sources контура на ОДНОМ bus.
+ * Union сообщений всех raw sources контура на ОДНОЙ шине.
  *
  * @remarks
- * Общий тип bus-а — это и есть raw-event boundary системы: будущий
- * Semantic Adapter подписывается на него, а не на API коллектора.
+ * Общий тип шины — это и есть raw-event boundary системы: семантический
+ * adapter подписывается на него, а не на API коллектора.
  */
 export type ContourMessage = PolymarketExternalMessage | CexExternalMessage;
 
@@ -71,22 +84,12 @@ export interface CreateDataCollectorOptions {
    * Общий raw bus. Если не передан — создаётся фабрикой.
    *
    * @remarks
-   * Передача снаружи — тот самый extension point: consumer (наблюдатель
-   * checkpoint-а, будущий Semantic Adapter) создаёт bus, подписывается на
-   * него и только потом отдаёт его коллектору. Обратной зависимости не
-   * возникает: consumer знает про bus, а не про `DataCollector`.
+   * Передача снаружи — extension point: consumer (semantic adapter,
+   * verification-наблюдатель) создаёт bus, подписывается на него и только
+   * потом отдаёт его коллектору. Обратной зависимости нет.
    */
   readonly bus?: ContourBus;
-  /**
-   * Общий SDK-клиент. Если не передан — создаётся фабрикой по
-   * `config.polymarket.environment`.
-   *
-   * @remarks
-   * Клиент — разделяемый ресурс source/discovery/finalizer, и его realtime
-   * закрывает рантайм (`closeSubscriptions` в лестнице остановки). Инъекция
-   * нужна диагностике и тестам, которым важно держать ссылку на тот же
-   * экземпляр.
-   */
+  /** Общий SDK-клиент. Если не передан — создаётся фабрикой. */
   readonly client?: ContourPolymarketClient;
 }
 
@@ -94,39 +97,44 @@ export interface CreateDataCollectorOptions {
 export interface CreatedDataCollector {
   /** Рантайм сбора. */
   readonly collector: DataCollector;
-  /**
-   * Общий raw bus контура.
-   *
-   * @remarks
-   * Возвращается, чтобы consumer мог подписаться ДО `collector.start()` —
-   * recorder уже подписан, ingress ещё не начат.
-   */
+  /** Общий raw bus контура (для подписки consumer-а ДО `start()`). */
   readonly bus: ContourBus;
-  /**
-   * Общий SDK-клиент контура.
-   *
-   * @remarks
-   * Возвращается для диагностики; закрывать его самостоятельно не нужно —
-   * это делает `collector.close()`.
-   */
+  /** Общий SDK-клиент контура (для диагностики; закрывает его `collector.close()`). */
   readonly client: ContourPolymarketClient;
+}
+
+/**
+ * Строит owner key CEX-спроса для конкретной биржи под идентичностью коллектора.
+ *
+ * @param policy - CEX owner policy одной биржи
+ * @returns Ключ вида `collector:raw:<exchange>` (стабильный, непрозрачный)
+ *
+ * @remarks
+ * CEX-контроллер запрещает дубликат `ownerKey` в одном `reconcile`, а одна
+ * `CexPolicy` не может нести РАЗНЫЕ списки символов разных бирж без декартова
+ * произведения. Поэтому спрос коллектора выражается по одному владельцу на
+ * биржу — все под префиксом `collector:raw`. Контроллер всё равно агрегирует
+ * их claim-ы в общие физические пулы.
+ */
+function cexOwnerKeyFor(policy: CexPolicy): string {
+  return `${COLLECTOR_RAW_OWNER_KEY}:${policy.exchangeIds.join('-')}`;
 }
 
 /**
  * Собирает полный контур сбора и возвращает рантайм вместе с общим bus.
  *
- * @param options - Конфигурация, логгер, часы и (опционально) готовый bus
+ * @param options - Конфигурация, логгер, часы и (опционально) готовый bus/клиент
  * @returns Рантайм и общий raw bus контура
  *
  * @remarks
  * Инварианты сборки:
- * - ОДИН `ExternalMessageBus` на процесс (отдельных PM/CEX/RTDS bus нет);
- * - ОДИН `ExternalMessageRecorder` как общий recording-consumer, под
- *   которым живут ДВЕ storage-политики (market-сессии и CEX-окна);
- * - весь ingress идёт `source → bus`; recorder — consumer bus, а не цель
- *   прямых вызовов source-ов;
- * - обе storage-политики получают ОДИН `outputDir` (раскладка parity с
- *   legacy: `{date}/{sourceSubDir}/` для рынков, `{date}/{exchange}/` для бирж).
+ * - ОДИН `ExternalMessageBus` на процесс;
+ * - ОДИН `ExternalMessageRecorder` (Collector) как recording-consumer с
+ *   политикой допуска `PolymarketCollectionGate` в качестве `sessionProvider`;
+ * - PM source ПРИНАДЛЕЖИТ контуру и разделён с discovery/контроллером;
+ * - CEX source-ы создаёт и закрывает CEX-контроллер через фабрику;
+ * - policy допуска коллектора == policy его PM-спроса (иначе подписались бы на
+ *   одно, а записывали другое).
  *
  * @example
  * ```typescript
@@ -170,79 +178,96 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
       compression: config.cex.compression,
       bufferSize: config.cex.bufferSize,
       flushIntervalMs: config.cex.flushIntervalMs,
-      ...(config.cex.windowMinutes !== undefined
-        ? { windowMinutes: config.cex.windowMinutes }
-        : {}),
+      ...(config.cex.windowMinutes !== undefined ? { windowMinutes: config.cex.windowMinutes } : {}),
     },
     logger,
   );
 
-  // ── ОДИН recording-consumer общего bus ────────────────────────────────
+  // ── Polymarket control-plane ──────────────────────────────────────────
+  const discovery = new PolymarketMarketDiscovery(
+    { client, clock, logger },
+    config.discoveryWindowMs !== undefined ? { endDateWindowMs: config.discoveryWindowMs } : {},
+  );
+  const universe = new MarketUniverse(clock);
+  const planner = new PolymarketSubscriptionPlanner();
+  const polymarketSource = new PolymarketSource({ client, bus, metadataGenerator, logger });
+  const polymarketController = new PolymarketSubscriptionController({
+    discovery,
+    source: polymarketSource,
+    clock,
+    logger,
+  });
+  const polymarketControlRuntime = new PolymarketControlRuntime({
+    discovery,
+    universe,
+    planner,
+    controller: polymarketController,
+    clock,
+    logger,
+  });
+
+  // ── Collector: recorder + политика допуска (universe + owner policy) ──
+  const gate = new PolymarketCollectionGate({
+    universe,
+    policy: config.polymarketPolicy,
+    logger,
+  });
   const recorder = new ExternalMessageRecorder({
     bus,
     storage: polymarketStorage,
     logger,
-    ...(config.cex.sources.length > 0 ? { cex: { bus, storage: cexStorage } } : {}),
+    sessionProvider: gate.sessionProvider(),
+    ...(config.cex.policies.length > 0 ? { cex: { bus, storage: cexStorage } } : {}),
   });
 
-  // ── Polymarket: ingress + discovery + coordinator + finalizer ─────────
-  const polymarketSource = new PolymarketSource({ client, bus, metadataGenerator, logger });
-  const discovery = new PolymarketMarketDiscovery(
-    { client, filter: new MarketFilter(), scorer: new MarketScorer(clock), clock, logger },
-    { filter: config.discovery.filter },
-  );
-  // Наблюдатель settlement-потока — ещё один независимый consumer ТОГО ЖЕ
-  // bus (не встроен в recorder и не связан с ним): по нему координатор
-  // понимает, что граничное наблюдение TWAP получено и датасет истёкшего
-  // рынка можно замораживать.
-  const twapObservations = new PolymarketTwapObservations({ bus, logger });
-  const coordinator = new MarketCollectionCoordinator(
-    {
-      discovery,
-      source: polymarketSource,
-      recorder,
-      settlementObserver: twapObservations,
-      clock,
-      logger,
-    },
-    {
-      maxMarkets: config.collection.maxMarkets,
-      ...(config.collection.minTimeToStartMs !== undefined
-        ? { minTimeToStartMs: config.collection.minTimeToStartMs }
-        : {}),
-      ...(config.collection.settlementGraceMs !== undefined
-        ? { settlementGraceMs: config.collection.settlementGraceMs }
-        : {}),
-    },
-  );
-  const finalizer = new MarketFinalizer(
-    { coordinator, recorder, gamma: client, clock, logger },
-    config.finalization,
-  );
+  // ── CEX control-plane: контроллер создаёт immutable-поколения источников ─
+  const cexController = new CexSubscriptionController({
+    sourceFactory: (sourceConfig) =>
+      new CexSource({
+        config: {
+          ...sourceConfig,
+          ...(config.cex.transport.orderbookMethod !== undefined
+            ? { orderbookMethod: config.cex.transport.orderbookMethod }
+            : {}),
+          ...(config.cex.transport.restartIntervalMs !== undefined
+            ? { restartIntervalMs: config.cex.transport.restartIntervalMs }
+            : {}),
+        },
+        bus,
+        metadataGenerator,
+        logger,
+      }),
+    logger,
+  });
 
-  // ── CEX: по одному source на биржу, на ТОМ ЖЕ bus ─────────────────────
-  const cexSources: readonly CollectorCexSourceEntry[] = config.cex.sources.map(
-    (sourceConfig) => ({
-      exchangeId: sourceConfig.exchangeId,
-      source: new CexSource({ config: sourceConfig, bus, metadataGenerator, logger }),
-    }),
+  // ── Спрос коллектора: PM (один owner) и CEX (owner на биржу) ──────────
+  const polymarketDemands: readonly PolymarketSubscriptionDemand[] = [
+    {
+      ownerKey: COLLECTOR_RAW_OWNER_KEY,
+      policy: config.polymarketPolicy,
+      acquireLimit: config.control.acquireLimit,
+    },
+  ];
+  const cexDemands: readonly CexSubscriptionDemand[] = config.cex.policies.map(
+    (policy: CexPolicy) => ({ ownerKey: cexOwnerKeyFor(policy), policy }),
   );
 
   const collector = new DataCollector({
     components: {
       bus,
       recorder,
+      gate,
       polymarketStorage,
       cexStorage,
       polymarketSource,
       polymarketClient: client,
-      cexSources,
-      discovery,
-      coordinator,
-      finalizer,
-      twapObservations,
+      polymarketControlRuntime,
+      polymarketController,
+      cexController,
+      polymarketDemands,
+      cexDemands,
     },
-    collection: config.collection,
+    control: config.control,
     clock,
     logger,
   });

@@ -82,6 +82,39 @@ SDK-decoded события, а не legacy raw wire-фреймы. Legacy-фай�
 (header-данные приносят `registerMarket`/`updateMarketMeta`; Gamma-refresh
 и финализация после expiry — будущий Market Finalizer N-004).
 
+## 4a. Ленивый допуск по первому наблюдению (Collector-cutover)
+
+До cutover recording-сессию создавал координатор ДО открытия подписки
+(recorder-first): рынок регистрировался заранее, и первое CLOB-событие
+попадало в готовую сессию. После cutover физические подписки принадлежат
+общему control-plane (`collector:raw`), и recorder не знает заранее, какой
+рынок и когда пришлёт первое наблюдение.
+
+Опциональный `sessionProvider` закрывает этот разрыв:
+
+```text
+POLYMARKET_MARKET (market = X)
+        ↓
+активная сессия X?  ──YES──►  пишем напрямую (policy НЕ пересчитывается)
+        │NO
+        ▼
+sessionProvider(X)  ── undefined ──►  игнор (marketMessagesIgnoredByPolicy++)
+        │ registration
+        ▼
+registerMarket(registration)  →  записать ЭТО ЖЕ первое сообщение
+```
+
+Ключевой инвариант: провайдер вызывается СИНХРОННО внутри обработчика того
+же сообщения, поэтому первое наблюдение, инициировавшее сессию, пишется, а
+не теряется (нет `await` между созданием сессии и записью, нет «начнём со
+следующего»). Провайдер спрашивается ТОЛЬКО при отсутствии активной сессии —
+для уже активной сессии policy не пересчитывается. RTDS-сообщения провайдер
+не трогают (у них нет marketId). Без `sessionProvider` поведение прежнее:
+незарегистрированный рынок остаётся `unroutedMarketMessages`. Саму политику
+допуска (`MarketUniverse` + `Policy`) держит collector, а не recorder —
+провайдер приходит функцией `(sourceMarketId) => registration | undefined`,
+и граница пакета не расширяется (закреплено `contour-boundary.test.ts`).
+
 ## 5. Ingestion отделён от storage
 
 Пакет — ТОЛЬКО тонкий bus-subscriber/routing-слой. Buffering, flush

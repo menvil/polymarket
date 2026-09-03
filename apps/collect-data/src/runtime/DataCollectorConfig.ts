@@ -1,31 +1,30 @@
 /**
- * Конфигурация production-рантайма коллектора и boundary-конверсия из
- * внешней (env/JSON) конфигурации приложения.
+ * Конфигурация production-рантайма коллектора и boundary-конверсия из внешней
+ * (env/JSON) конфигурации приложения в canonical owner policy контура.
  *
  * @remarks
- * Граница «внешняя конфигурация → V2-рантайм» живёт ЗДЕСЬ и только здесь:
+ * После Collector-cutover отбор рынков — это owner policy, а не keyword-фильтр
+ * discovery. Граница «внешняя конфигурация → canonical Policy» живёт ЗДЕСЬ:
  *
  * ```text
  * .env + cex-config.json  →  toDataCollectorConfig()  →  DataCollectorConfig
- *   (CollectorConfig)                                     (V2-компоненты)
+ *   (CollectorConfig)          parsePolicyConfig()        (canonical policies)
  * ```
  *
- * Legacy-типы коллектора (`CexCollectorConfig`/`CexExchangeConfig`) внутрь
- * рантайма НЕ протаскиваются: JSON-файл разбирается здесь и превращается в
- * `CexSourceConfig[]` пакета `@polymarket/cex-v2`.
+ * Discovery keyword-фильтр (`requiredKeywords`/`anyOfKeywords`/`excluded`)
+ * переносится в `PolymarketPolicy.title`; `assets`/`durations` приходят из
+ * новых переменных. CEX-конфигурация превращается в НАБОР `CexPolicy` — по
+ * одной на биржу, чтобы точный список символов биржи не размывался декартовым
+ * произведением одной общей policy.
  */
 import { forkEnvironmentConfig } from '@polymarket/client';
 import type { EnvironmentConfig } from '@polymarket/client';
-import type { IMarketFilterConfig } from '@polymarket/ports';
-import type { CexMarketType, CexSourceConfig } from '@polymarket/cex-v2';
+import { parsePolicyConfig } from '@polymarket/policy';
+import type { CexPolicy, PolymarketPolicy } from '@polymarket/policy';
 import type { CollectorConfig } from '../config.js';
 
 /**
  * Параметры записи Polymarket-датасетов (market-session policy рекордера).
- *
- * @remarks
- * Значения передаются в `DataRecorder` как есть; собственной file-логики у
- * рантайма нет (PART 6 — новая третья реализация storage запрещена).
  */
 export interface PolymarketRecordingConfig {
   /** Поддиректория источника внутри date-папки (`{out}/{date}/{sourceSubDir}/`). */
@@ -36,24 +35,34 @@ export interface PolymarketRecordingConfig {
   readonly flushIntervalMs: number;
   /** Сжатие датасета при финализации. */
   readonly compression: 'none' | 'gzip';
-  /**
-   * Окружение официального SDK. Не задано — production по умолчанию.
-   *
-   * @remarks
-   * Собирается из `GAMMA_API_BASE_URL`/`POLYMARKET_WS_URL`, если они заданы:
-   * иначе конфигурация приложения объявляла бы эндпоинты, которые контур
-   * молча игнорирует.
-   */
+  /** Окружение официального SDK (форк production, если эндпоинты переопределены). */
   readonly environment?: EnvironmentConfig;
 }
 
 /**
- * Параметры CEX-контура: набор source-ов + политика окон записи.
+ * Транспортные параметры CEX-источников (НЕ входят в `CexPolicy`).
+ *
+ * @remarks
+ * `CexPolicy` описывает ПОТРЕБНОСТЬ (биржа/символы/потоки/глубина), а способ
+ * получения стакана и интервал рестарта — свойства транспорта. Их инъецирует
+ * фабрика источников CEX-контроллера, не переписывая пользовательскую policy.
+ */
+export interface CexTransportConfig {
+  /** Метод получения стакана (`watch`|`fetch`); не задан — дефолт `CexSource`. */
+  readonly orderbookMethod?: 'watch' | 'fetch';
+  /** Интервал планового рестарта транспорта (мс); не задан — дефолт `CexSource`. */
+  readonly restartIntervalMs?: number;
+}
+
+/**
+ * Параметры CEX-контура: набор owner policy (по бирже) + политика окон записи.
  */
 export interface CexCollectionConfig {
-  /** Конфигурации V2-source-ов (одна на биржу × тип рынка). */
-  readonly sources: readonly CexSourceConfig[];
-  /** Размер окна партиции (минуты). Не задан — дефолт `CexWindowRecorder` (5). */
+  /** Owner policy по бирже (пустой список — CEX выключен). */
+  readonly policies: readonly CexPolicy[];
+  /** Транспортные параметры источников. */
+  readonly transport: CexTransportConfig;
+  /** Размер окна партиции (минуты); не задан — дефолт `CexWindowRecorder` (5). */
   readonly windowMinutes?: number;
   /** Записей в буфере окна до сброса. */
   readonly bufferSize: number;
@@ -64,160 +73,76 @@ export interface CexCollectionConfig {
 }
 
 /**
- * Параметры collection-цикла (что и как часто открывать/закрывать).
+ * Параметры control-цикла (что и как часто приобретать/сверять).
  */
-export interface CollectionRuntimeConfig {
-  /** Максимум одновременных collection-сессий. */
-  readonly maxMarkets: number;
-  /** Минимальный запас до старта события, раньше которого рынок открывается (мс). */
-  readonly minTimeToStartMs?: number;
+export interface ControlRuntimeConfig {
   /**
-   * Сколько ждать граничное наблюдение settlement-потока после истечения
-   * рынка, прежде чем заморозить датасет (мс).
-   *
-   * @remarks
-   * Дефолт принадлежит координатору (5 с — измеренная задержка доставки
-   * RTDS ×2). Ручка нужна тестам и диагностике; в production не задаётся.
+   * Сколько первых кандидатов плана приобретать за тик (`acquireLimit`).
+   * @remarks Считает КАНДИДАТОВ, а не удерживаемые рынки: уже начавшиеся
+   * рынки в план не входят и лимит не расходуют.
    */
-  readonly settlementGraceMs?: number;
-  /** Пауза между обновлениями candidate cache (мс). */
-  readonly discoveryRefreshMs: number;
-  /** Пауза между тиками runtime-цикла (fillSlots + finalizer) (мс). */
-  readonly runtimeTickMs: number;
-}
-
-/**
- * Параметры post-expiry финализации (пробрасываются в `MarketFinalizer`).
- *
- * @remarks
- * Значения по умолчанию принадлежат самому финализатору — рантайм их НЕ
- * переопределяет (MR-A: resolution hardening вне scope).
- */
-export interface FinalizationRuntimeConfig {
-  /** Минимальная пауза между enrichment-попытками одного рынка (мс). */
-  readonly enrichmentRetryMs?: number;
-  /** Потолок ожидания полного enrichment-а (мс). */
-  readonly enrichmentMaxWaitMs?: number;
+  readonly acquireLimit: number;
+  /** Пауза между control-тиками (мс): один тик = `runOnce` + `reconcile`. */
+  readonly tickMs: number;
 }
 
 /**
  * Полная конфигурация production-рантайма коллектора.
  */
 export interface DataCollectorConfig {
-  /**
-   * Корень датасетов, общий для обеих storage-политик.
-   *
-   * @remarks
-   * Раскладка (parity с legacy-коллектором):
-   * ```text
-   * {outputDir}/{YYYY-MM-DD}/{sourceSubDir}/{question}___{marketId}.jsonl[.gz]
-   * {outputDir}/{YYYY-MM-DD}/{exchangeId}/{exchange}_{symbol}_..._ET.jsonl[.gz]
-   * ```
-   */
+  /** Корень датасетов, общий для обеих storage-политик. */
   readonly outputDir: string;
   /** Политика записи Polymarket-сессий. */
   readonly polymarket: PolymarketRecordingConfig;
-  /** Конфигурация Discovery V2 (фильтр кандидатов). */
-  readonly discovery: { readonly filter: IMarketFilterConfig };
-  /** Параметры collection-цикла. */
-  readonly collection: CollectionRuntimeConfig;
-  /** Параметры финализации. */
-  readonly finalization: FinalizationRuntimeConfig;
-  /** Параметры CEX-контура (пустой `sources` — CEX выключен). */
+  /** Owner policy площадки Polymarket: какие рынки собирает коллектор. */
+  readonly polymarketPolicy: PolymarketPolicy;
+  /** Окно обзора каталога discovery (мс); не задано — дефолт рантайма. */
+  readonly discoveryWindowMs?: number;
+  /** Параметры control-цикла. */
+  readonly control: ControlRuntimeConfig;
+  /** Параметры CEX-контура (пустой `policies` — CEX выключен). */
   readonly cex: CexCollectionConfig;
 }
 
-/** Дефолтная пауза тика runtime-цикла (мс). */
-const DEFAULT_RUNTIME_TICK_MS = 5_000;
+/** Дефолтная пауза control-тика (мс). */
+const DEFAULT_CONTROL_TICK_MS = 5_000;
+/** Дефолтное окно обзора каталога (2 часа). */
+const DEFAULT_DISCOVERY_WINDOW_MS = 2 * 60 * 60_000;
 
 /** Legacy-описание одной биржи в `cex-config.json`. */
 interface CexConfigFileEntry {
-  readonly exchangeId?: unknown;
   readonly type?: unknown;
   readonly symbols?: unknown;
   readonly orderbook?: unknown;
   readonly trades?: unknown;
   readonly obDepth?: unknown;
-  readonly restartIntervalMs?: unknown;
-  readonly obMethod?: unknown;
 }
 
 /**
- * Приводит legacy-тип рынка к canonical `CexMarketType`.
- *
- * @param raw - Значение поля `type` из внешней конфигурации
- * @param exchangeKey - Ключ биржи (для сообщения об ошибке)
- * @returns Тип рынка в терминах `@polymarket/cex-v2`
- * @throws {Error} Если значение не является известным типом рынка
- *
- * @remarks
- * Единственное расхождение словарей — legacy `'futures'` против canonical
- * CCXT `'future'`; остальные значения совпадают.
- */
-function toCexMarketType(raw: unknown, exchangeKey: string): CexMarketType {
-  if (raw === 'spot' || raw === 'swap') {
-    return raw;
-  }
-  if (raw === 'future' || raw === 'futures') {
-    return 'future';
-  }
-  throw new Error(
-    `Invalid CEX config for '${exchangeKey}': type must be 'spot' | 'future' | 'swap', got ${JSON.stringify(raw)}`,
-  );
-}
-
-/**
- * Читает опциональное положительное число из внешней конфигурации.
- *
- * @param raw - Сырое значение
- * @param field - Имя поля (для сообщения об ошибке)
- * @param exchangeKey - Ключ биржи (для сообщения об ошибке)
- * @returns Число либо `undefined`, если поле не задано
- * @throws {Error} Если значение задано, но не является конечным числом > 0
- */
-function optionalPositiveNumber(
-  raw: unknown,
-  field: string,
-  exchangeKey: string,
-): number | undefined {
-  if (raw === undefined || raw === null) {
-    return undefined;
-  }
-  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
-    throw new Error(
-      `Invalid CEX config for '${exchangeKey}': ${field} must be a finite number > 0, got ${JSON.stringify(raw)}`,
-    );
-  }
-  return raw;
-}
-
-/**
- * Разбирает внешнюю CEX-конфигурацию в набор `CexSourceConfig`.
+ * Разбирает внешнюю CEX-конфигурацию в НАБОР owner policy — по одной на биржу.
  *
  * @param json - Содержимое `cex-config.json` (или inline `CEX_CONFIG`)
- * @returns Конфигурации V2-source-ов, по одной на биржу
+ * @returns Canonical `CexPolicy[]`, по одной на биржу
  * @throws {Error} При невалидном JSON или невалидном описании биржи
  *
  * @remarks
- * Формат файла сохранён от legacy-коллектора (ключ словаря = `exchangeId`),
- * чтобы production-конфигурация не переписывалась вместе с рантаймом;
- * конверсия имён полей выполняется здесь:
- *
- * ```text
- * { type, symbols, orderbook, trades, obDepth, obMethod, restartIntervalMs }
- *                              ↓
- * { marketType, symbols, watchOrderbook, watchTrades, orderbookDepth,
- *   orderbookMethod, restartIntervalMs }
- * ```
+ * Одна policy на биржу СОЗНАТЕЛЬНО: `CexPolicy` раскрывается декартовым
+ * произведением `exchangeIds × marketTypes × symbols`, поэтому склеить
+ * несколько бирж с РАЗНЫМИ списками символов в одну policy значило бы
+ * подписать каждую биржу на объединённый набор — включая пары, которых у неё
+ * нет. Отдельная policy на биржу сохраняет точный список символов; CEX-
+ * контроллер всё равно агрегирует их claim-ы в общие физические пулы.
+ * Валидацию (словарь типов рынка, непустые списки, `orderbook || trades`,
+ * глубина) выполняет `parseCexPolicyConfig` — второй копии правил здесь нет.
  *
  * @example
  * ```typescript
- * const sources = parseCexSourceConfigs('{"binance":{"type":"spot",' +
- *   '"symbols":["BTC/USDT"],"orderbook":true,"trades":true}}');
- * // → [{ exchangeId: 'binance', marketType: 'spot', ... }]
+ * const policies = parseCexPolicies('{"binance":{"type":"spot",' +
+ *   '"symbols":["BTC/USDT"],"orderbook":true,"trades":true,"obDepth":10}}');
+ * // → [{ kind:'CEX', exchangeIds:['binance'], marketTypes:['spot'], ... }]
  * ```
  */
-export function parseCexSourceConfigs(json: string): readonly CexSourceConfig[] {
+export function parseCexPolicies(json: string): readonly CexPolicy[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -230,68 +155,28 @@ export function parseCexSourceConfigs(json: string): readonly CexSourceConfig[] 
     throw new Error('Invalid CEX config: expected an object keyed by exchange id');
   }
 
-  const sources: CexSourceConfig[] = [];
-  for (const [exchangeKey, rawEntry] of Object.entries(parsed as Record<string, unknown>)) {
+  const policies: CexPolicy[] = [];
+  for (const [exchangeId, rawEntry] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof rawEntry !== 'object' || rawEntry === null) {
-      throw new Error(`Invalid CEX config for '${exchangeKey}': expected an object`);
+      throw new Error(`Invalid CEX config for '${exchangeId}': expected an object`);
     }
     const entry = rawEntry as CexConfigFileEntry;
-    // Порядок проверок = порядок «фундаментальности» поля: сначала тип рынка,
-    // затем набор символов, затем потоки, затем необязательные параметры —
-    // так сообщение указывает на первую по-настоящему сломанную вещь.
-    const marketType = toCexMarketType(entry.type, exchangeKey);
-    const symbols = entry.symbols;
-    if (
-      !Array.isArray(symbols) ||
-      symbols.length === 0 ||
-      symbols.some((symbol) => typeof symbol !== 'string' || symbol.length === 0)
-    ) {
-      throw new Error(
-        `Invalid CEX config for '${exchangeKey}': symbols must be a non-empty array of strings`,
-      );
-    }
-    if (entry.obMethod !== undefined && entry.obMethod !== 'watch' && entry.obMethod !== 'fetch') {
-      throw new Error(
-        `Invalid CEX config for '${exchangeKey}': obMethod must be 'watch' | 'fetch', got ${JSON.stringify(entry.obMethod)}`,
-      );
-    }
-    const exchangeId =
-      typeof entry.exchangeId === 'string' && entry.exchangeId.length > 0
-        ? entry.exchangeId
-        : exchangeKey;
-
-    const orderbookDepth = optionalPositiveNumber(entry.obDepth, 'obDepth', exchangeKey);
-    const restartIntervalMs = optionalPositiveNumber(
-      entry.restartIntervalMs,
-      'restartIntervalMs',
-      exchangeKey,
-    );
-
-    if (typeof entry.orderbook !== 'boolean' || typeof entry.trades !== 'boolean') {
-      throw new Error(
-        `Invalid CEX config for '${exchangeKey}': orderbook and trades must be booleans`,
-      );
-    }
-    // Биржа без единого потока — почти наверняка опечатка в конфигурации:
-    // source поднимется, соединится и не запишет ни строки.
-    if (!entry.orderbook && !entry.trades) {
-      throw new Error(
-        `Invalid CEX config for '${exchangeKey}': at least one of orderbook/trades must be true`,
-      );
-    }
-
-    sources.push({
-      exchangeId,
-      marketType,
-      symbols: symbols as readonly string[],
-      watchOrderbook: entry.orderbook,
-      watchTrades: entry.trades,
-      ...(orderbookDepth !== undefined ? { orderbookDepth } : {}),
-      ...(entry.obMethod !== undefined ? { orderbookMethod: entry.obMethod } : {}),
-      ...(restartIntervalMs !== undefined ? { restartIntervalMs } : {}),
+    const policy = parsePolicyConfig({
+      kind: 'CEX',
+      exchangeIds: [exchangeId],
+      // `type` из файла проверит parseCexPolicyConfig по словарю Application.
+      marketTypes: [String(entry.type)],
+      symbols: Array.isArray(entry.symbols) ? (entry.symbols as string[]) : [],
+      orderbook: entry.orderbook === true,
+      trades: entry.trades === true,
+      ...(typeof entry.obDepth === 'number' ? { orderbookDepth: entry.obDepth } : {}),
     });
+    if (policy.kind !== 'CEX') {
+      throw new Error(`Invalid CEX config for '${exchangeId}': expected a CEX policy`);
+    }
+    policies.push(policy);
   }
-  return sources;
+  return policies;
 }
 
 /** Production-значения эндпоинтов, при которых форк окружения не нужен. */
@@ -303,20 +188,6 @@ const DEFAULT_MARKET_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/mar
  *
  * @param config - Внешняя конфигурация приложения
  * @returns Форк production-окружения либо `undefined`, если переопределений нет
- *
- * @remarks
- * Пока эндпоинты совпадают с production, форк не создаётся — клиент работает
- * на штатной конфигурации SDK. Как только `GAMMA_API_BASE_URL` или
- * `POLYMARKET_WS_URL` отличаются, они ДОЛЖНЫ дойти до клиента: иначе
- * конфигурация приложения обещает переключение окружения, которого на самом
- * деле не происходит.
- *
- * `POLYMARKET_WS_URL` указывает на market-канал CLOB, поэтому переопределяется
- * именно `clob.market`.
- *
- * `forkEnvironmentConfig` помечен в SDK как `@experimental` («signature may
- * change without notice»), поэтому вызов локализован в одной функции: при
- * смене контракта чинить придётся только её.
  */
 function toEnvironmentConfig(config: CollectorConfig): EnvironmentConfig | undefined {
   const gammaOverridden = config.gammaApiBaseUrl !== DEFAULT_GAMMA_BASE_URL;
@@ -332,23 +203,61 @@ function toEnvironmentConfig(config: CollectorConfig): EnvironmentConfig | undef
 }
 
 /**
+ * Строит owner policy площадки Polymarket из внешней конфигурации.
+ *
+ * @param config - Загруженная `CollectorConfig`
+ * @returns Canonical `PolymarketPolicy` семейства `CRYPTO_UP_DOWN`
+ * @throws {Error} Если конфигурация не даёт policy площадки
+ *
+ * @remarks
+ * Keyword-фильтры discovery переносятся в `title`-селекторы policy;
+ * `minLiquidity`/`minSpread` — как есть. Семейство фиксировано `CRYPTO_UP_DOWN`
+ * — контур собирает крипто-рынки up/down.
+ */
+function toPolymarketPolicy(config: CollectorConfig): PolymarketPolicy {
+  const policy = parsePolicyConfig({
+    kind: 'POLYMARKET',
+    family: 'CRYPTO_UP_DOWN',
+    ...(config.policyAssets.length > 0 ? { assets: [...config.policyAssets] } : {}),
+    ...(config.policyDurations.length > 0 ? { durations: [...config.policyDurations] } : {}),
+    ...(config.requiredKeywords.length > 0 ||
+    config.anyOfKeywords.length > 0 ||
+    config.excludedKeywords.length > 0
+      ? {
+          title: {
+            ...(config.requiredKeywords.length > 0 ? { required: [...config.requiredKeywords] } : {}),
+            ...(config.anyOfKeywords.length > 0 ? { anyOf: [...config.anyOfKeywords] } : {}),
+            ...(config.excludedKeywords.length > 0 ? { excluded: [...config.excludedKeywords] } : {}),
+          },
+        }
+      : {}),
+    ...(config.minLiquidity > 0
+      ? { minLiquidity: { amount: config.minLiquidity, currency: 'USDC' } }
+      : {}),
+    ...(config.minSpread > 0 ? { minSpread: config.minSpread } : {}),
+  });
+  if (policy.kind !== 'POLYMARKET') {
+    throw new Error('Collector policy config must produce a Polymarket policy');
+  }
+  return policy;
+}
+
+/**
  * Превращает внешнюю конфигурацию приложения в конфигурацию V2-рантайма.
  *
  * @param config - Загруженная из окружения `CollectorConfig`
  * @returns Конфигурация рантайма, готовая для `createDataCollector`
- * @throws {Error} Если CEX-конфигурация задана, но невалидна
+ * @throws {Error} Если policy-конфигурация невалидна
  *
  * @remarks
- * Отказ разбора CEX-конфигурации — fail-fast: legacy-коллектор в этом случае
- * молча продолжал БЕЗ CEX (`logger.error` + `cexService = null`), из-за чего
- * прогон выглядел живым, но половина датасета не писалась. Здесь такая
- * конфигурация не даёт процессу стартовать; чтобы выключить CEX сознательно,
- * достаточно не задавать `CEX_CONFIG_FILE`/`CEX_CONFIG`.
+ * Fail-fast: невалидная owner policy (в т.ч. `cex-config.json`) не даёт
+ * процессу стартовать. Чтобы выключить CEX сознательно, достаточно не
+ * задавать `CEX_CONFIG_FILE`/`CEX_CONFIG` (пустой набор policy).
  *
  * @example
  * ```typescript
  * const runtimeConfig = toDataCollectorConfig(loadConfig());
- * const collector = createDataCollector({ config: runtimeConfig, logger, clock });
+ * const { collector } = createDataCollector({ config: runtimeConfig, logger, clock });
  * ```
  */
 export function toDataCollectorConfig(config: CollectorConfig): DataCollectorConfig {
@@ -362,31 +271,29 @@ export function toDataCollectorConfig(config: CollectorConfig): DataCollectorCon
       compression: config.compression,
       ...(environment !== undefined ? { environment } : {}),
     },
-    discovery: {
-      filter: {
-        minTimeToExpiryHours: config.minTimeToExpiryHours,
-        minSpread: config.minSpread,
-        minLiquidity: config.minLiquidity,
-        maxMarketsToReturn: config.maxMarkets,
-        requiredKeywords: config.requiredKeywords,
-        anyOfKeywords: config.anyOfKeywords,
-        excludedKeywords: config.excludedKeywords,
-      },
+    polymarketPolicy: toPolymarketPolicy(config),
+    discoveryWindowMs:
+      config.discoveryWindowHours !== undefined
+        ? config.discoveryWindowHours * 60 * 60_000
+        : DEFAULT_DISCOVERY_WINDOW_MS,
+    control: {
+      acquireLimit: config.maxMarkets,
+      tickMs: config.controlTickMs > 0 ? config.controlTickMs : DEFAULT_CONTROL_TICK_MS,
     },
-    collection: {
-      maxMarkets: config.maxMarkets,
-      discoveryRefreshMs: config.marketScanPauseMs,
-      runtimeTickMs: DEFAULT_RUNTIME_TICK_MS,
-    },
-    finalization: {},
     cex: {
-      sources: config.cexConfig === null ? [] : parseCexSourceConfigs(config.cexConfig),
+      policies: config.cexConfig === null ? [] : parseCexPolicies(config.cexConfig),
+      transport: {
+        ...(config.cexOrderbookMethod !== undefined
+          ? { orderbookMethod: config.cexOrderbookMethod }
+          : {}),
+        ...(config.cexRestartIntervalMs !== undefined
+          ? { restartIntervalMs: config.cexRestartIntervalMs }
+          : {}),
+      },
       bufferSize: config.cexBufferSize,
       flushIntervalMs: config.cexFlushIntervalMs,
       compression: config.compression,
-      ...(config.cexWindowMinutes !== undefined
-        ? { windowMinutes: config.cexWindowMinutes }
-        : {}),
+      ...(config.cexWindowMinutes !== undefined ? { windowMinutes: config.cexWindowMinutes } : {}),
     },
   };
 }
