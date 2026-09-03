@@ -1,0 +1,31 @@
+packages/infrastructure/cex-v2/__tests__/CexSource.test.ts
+  s_28e0f8f3b9ad92::t_bf9030b8b3f6b5 982-984,992-993,995-996,998-1001,1005-1006,1013-1014,1016-1017,1019-1022,1024,1027,1038,1049-1051,1053-1057,1059,1061-1063
+packages/infrastructure/cex-subscription-control/src/CexSubscriptionController.ts
+  s_28e0f8f3b9ad92::t_0caa58772924c3 112,118-131,877,1134-1136,1153-1156,1162-1165,1277-1280,1306,1327-1331,1333-1335
+packages/infrastructure/cex-v2/src/CexSource.ts
+  s_28e0f8f3b9ad92::t_669f0c652dd0cf 377-378,385,388-411,414,1064-1069,1071-1073,1108
+  s_28e0f8f3b9ad92::t_753b8ccfaccaec 231,234-237,239-242,431-436
+packages/infrastructure/cex-subscription-control/__tests__/real-source-integration.test.ts
+  s_28e0f8f3b9ad92::t_379605984d3590 6-7,10-12,15-21,25,43-52,72-73,78-81,86-88,90-92,96-105,126-132,134,138-141,146-147,159-167,178-179,181-184,186-187,191-192,195,198-199,202,204-247,252-266
+  s_28e0f8f3b9ad92::t_20952a029a3997 89,93-95,193-194,196-197,200-201,203
+packages/infrastructure/cex-v2/src/CexSourceConfig.ts
+  s_28e0f8f3b9ad92::t_669f0c652dd0cf 92-95
+packages/infrastructure/cex-subscription-control/docs/cex-subscription-control.md
+  s_28e0f8f3b9ad92::t_3c9f23d143eb20 253,259,261,263-281,286,288,291-303,305,307-308,311-312,414-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fb6ea8baa074bae1a44686ef381ecfac5252d11f",
+  "prompts": {},
+  "sessions": {
+    "s_28e0f8f3b9ad92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eeec2a04-6b6b-40f0-b260-295d6e145e57",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
