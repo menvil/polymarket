@@ -154,6 +154,19 @@ describe('замена поколения без перекрытия', () => {
     // close() старого поколения ещё висит: второго источника нет вовсе.
     expect(generation1?.closeCalls).toBe(1);
     expect(probe.sources).toHaveLength(1);
+    expect(generation1?.startCalls).toBe(1);
+
+    // Пока teardown не подтверждён, поколение 1 ОСТАЁТСЯ за контроллером:
+    // identity занята, новое поколение не закоммичено.
+    expect(controller.getStats().physicalPools).toBe(1);
+    expect(controller.listPools()[0]).toMatchObject({
+      poolKey: 'binance|swap|TRADES',
+      generation: 1,
+      satisfied: true,
+    });
+    // Логический снимок коммитится атомарно в КОНЦЕ прохода, поэтому
+    // снаружи виден прежний — незавершённый проход состояния не показывает.
+    expect(controller.listPools()[0]?.symbols).toEqual(['BTC/USDT']);
 
     release();
     const result = await pending;

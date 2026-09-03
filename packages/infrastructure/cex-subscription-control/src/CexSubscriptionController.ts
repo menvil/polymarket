@@ -109,10 +109,20 @@
  *
  * ```text
  * spec изменилась
- *   → await old.close()      ← полностью
+ *   → await old.close()          ← ПОДТВЕРЖДЁННЫЙ teardown транспорта
+ *   → освободить identity пула
  *   → factory(new config)
  *   → new.start()
  * ```
+ *
+ * «Подтверждённый» — не фигура речи: `CexSource.close()` резолвится
+ * только когда ни один его `instance.close()` больше не выполняется в
+ * фоне. Session-таймаут `closeTimeoutMs` ограничивает лишь ожидание
+ * ВНУТРИ одной сессии (чтобы зависший vendor не подвесил supervised
+ * restart) и границей жизненного цикла не является. Пока teardown не
+ * подтверждён, ключ пула остаётся занятым — включая случай, когда
+ * `close()` отказал: это проблема доступности, а не разрешение поднять
+ * дубль поверх живого транспорта.
  *
  * Обратный порядок («поднять новое, потом закрыть старое») дал бы окно, в
  * котором ОБА поколения публикуют `CEX_ORDERBOOK`/`CEX_TRADE` с
@@ -858,8 +868,14 @@ export class CexSubscriptionController {
       for (const key of [...this._pools.keys()].sort(compareStrings)) {
         const pool = this._pools.get(key);
         if (pool === undefined) continue;
-        this._pools.delete(key);
+        // Сначала подтверждённый teardown, только потом освобождение
+        // записи: `close()` не должен резолвиться, пока хоть один
+        // созданный им транспорт ещё закрывается.
         await this._closeSource(pool, 'controller shutdown');
+        // На остановке identity освобождается и при неудачном закрытии:
+        // следующего поколения не будет вовсе, поэтому удерживать запись
+        // не от чего, а `physicalPools = 0` после `close()` — контракт.
+        this._releasePool(key, pool);
       }
       this._desired = new Map();
       this._claims = Object.freeze([]);
@@ -1111,9 +1127,14 @@ export class CexSubscriptionController {
 
     if (desired === undefined) {
       if (current === undefined) return;
-      this._pools.delete(key);
+      // Ключ остаётся занятым, пока teardown не подтверждён: освободить его
+      // раньше значило бы объявить identity свободной при живом транспорте.
       const failure = await this._closeSource(current, 'pool no longer desired');
-      if (failure !== null) report.failures.push(failure);
+      if (failure !== null) {
+        report.failures.push(failure);
+        return;
+      }
+      this._releasePool(key, current);
       report.closedPools.push(key);
       return;
     }
@@ -1124,15 +1145,24 @@ export class CexSubscriptionController {
         report.unchangedPools.push(key);
         return;
       }
-      // Замена поколения: старое закрывается ПОЛНОСТЬЮ до создания нового.
-      // Перекрытие поколений дало бы дубли одной routing identity, которые
-      // data-plane не отличит (см. TSDoc класса).
-      this._pools.delete(key);
+      // Замена поколения: старое закрывается ПОДТВЕРЖДЁННО до создания
+      // нового. `CexSource.close()` резолвится только когда ни один
+      // `instance.close()` больше не выполняется в фоне, поэтому здесь
+      // порядок буквальный: close → release identity → factory → start.
+      // Перекрытие поколений дало бы два живых транспорта одной routing
+      // identity (см. TSDoc класса).
       const closeFailure = await this._closeSource(
         current,
         healthy ? 'pool spec changed' : 'pool source terminal',
       );
-      if (closeFailure !== null) report.failures.push(closeFailure);
+      if (closeFailure !== null) {
+        // Teardown НЕ подтверждён: старый транспорт мог остаться живым.
+        // Это проблема доступности пула, но не разрешение поднять поверх
+        // него потенциального дубля — поколение остаётся за контроллером.
+        report.failures.push(closeFailure);
+        return;
+      }
+      this._releasePool(key, current);
 
       const replacement = await this._materialize(key, desired.spec, 'replace');
       if (!replacement.ok) {
@@ -1240,6 +1270,11 @@ export class CexSubscriptionController {
    *
    * @internal
    * @remarks
+   * Ожидание ПОДТВЕРЖДЁННОЕ: `start()` мог успеть поднять часть
+   * транспорта, и вернуть управление раньше его закрытия значило бы
+   * разрешить следующему проходу поднять поколение той же identity поверх
+   * недобитого.
+   *
    * Отказ закрытия здесь только логируется: в отчёт уже уезжает причина,
    * по которой источник не поднялся, и второй отказ о том же пуле
    * рассказал бы не больше.
@@ -1256,6 +1291,27 @@ export class CexSubscriptionController {
   }
 
   /**
+   * Освобождает physical identity пула ПОСЛЕ подтверждённого teardown.
+   *
+   * @param key - Ключ пула
+   * @param expected - Поколение, которое освобождается
+   *
+   * @internal
+   * @remarks
+   * Identity-guard, а не просто `delete`: удаляется ровно ТО поколение,
+   * teardown которого подтверждён. Проходы сериализованы, и подменить
+   * запись между `close()` и удалением сейчас некому, — но правило
+   * «освобождай только то, что закрыл» не должно зависеть от внешней
+   * дисциплины вызовов, иначе первая же будущая параллельная ветка
+   * удалила бы чужое живое поколение.
+   */
+  private _releasePool(key: CexPoolKey, expected: CexPoolState): void {
+    if (this._pools.get(key) === expected) {
+      this._pools.delete(key);
+    }
+  }
+
+  /**
    * Закрывает поколение источника.
    *
    * @param pool - Состояние пула (уже убранное из карты)
@@ -1264,11 +1320,17 @@ export class CexSubscriptionController {
    *
    * @internal
    * @remarks
-   * Отказ `close()` не откатывается и пул не восстанавливает: источник, у
-   * которого не получилось закрыться, желаемого состояния не
-   * удовлетворяет всё равно. Отказ попадает в отчёт, а место в карте
-   * остаётся свободным — иначе следующий проход не смог бы поднять
-   * замену.
+   * Резолв `CexSource.close()` означает ПОДТВЕРЖДЁННЫЙ teardown: ни один
+   * `instance.close()` этого источника больше не выполняется в фоне.
+   * Именно на этом держится запрет перекрытия поколений — до исправления
+   * `close()` мог вернуть управление по истечении session-таймаута, пока
+   * vendor ещё закрывал websocket-ы.
+   *
+   * Отказ `close()` пул НЕ освобождает: teardown не подтверждён, значит
+   * старый транспорт мог остаться живым, и поднимать поверх него новое
+   * поколение той же identity нельзя. Освобождение записи — работа
+   * вызывающего ({@link CexSubscriptionController._releasePool}) и только
+   * после успеха.
    */
   private async _closeSource(
     pool: CexPoolState,

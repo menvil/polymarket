@@ -117,6 +117,8 @@ describe('остановка контроллера', () => {
 
     // Проход ещё идёт — close() завершиться не может.
     expect(closed).toBe(false);
+    // И владение старым поколением ещё не отдано: teardown не подтверждён.
+    expect(controller.getStats().physicalPools).toBe(1);
 
     release();
     await pending;
@@ -183,5 +185,33 @@ describe('остановка контроллера', () => {
       owners: 0,
       closed: true,
     });
+  });
+});
+
+describe('close() дожидается подтверждённого teardown источника', () => {
+  it('пока close() источника висит, controller.close() не резолвится и владение не отдано', async () => {
+    const { controller, probe } = makeController();
+
+    await controller.reconcile([{ ownerKey: 'A', policy: policy() }], ts(AT_1800_MS));
+    const source = probe.sources[0];
+    const release = source?.holdClose() ?? (() => undefined);
+
+    let closed = false;
+    const closing = controller.close().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // close() источника вызван, но teardown транспорта ещё идёт.
+    expect(source?.closeCalls).toBe(1);
+    expect(closed).toBe(false);
+    expect(controller.getStats().physicalPools).toBe(1);
+
+    release();
+    await closing;
+
+    expect(closed).toBe(true);
+    expect(controller.getStats().physicalPools).toBe(0);
   });
 });

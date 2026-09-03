@@ -48,7 +48,9 @@
   "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@polymarket/external-message-bus": "0.1.0",
+    "@polymarket/message-bus": "0.1.0",
     "@polymarket/messages": "0.1.0",
+    "@polymarket/result": "^0.1.0",
     "@polymarket/time": "0.1.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^26.1.1",

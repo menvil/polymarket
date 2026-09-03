@@ -79,7 +79,20 @@ export interface CexSourceConfig {
   readonly tradesStaleTimeoutMs?: number;
   /** Пауза между REST-опросами fetch-режима (ms). Default: 500. */
   readonly fetchPollIntervalMs?: number;
-  /** Таймаут закрытия CCXT-инстанса (ms). Default: 10s. */
+  /**
+   * Сколько cleanup ОДНОЙ сессии ждёт закрытия её CCXT-инстанса (ms).
+   * Default: 10s.
+   *
+   * @remarks
+   * Это НЕ «через столько транспорт закрыт». Таймаут ограничивает ровно
+   * одно: сколько session cleanup держит supervised restart, чтобы
+   * зависший vendor не подвесил плановый/аварийный перезапуск навсегда.
+   * По его истечении закрытие продолжается в фоне.
+   *
+   * Подтверждённого завершения всех таких закрытий дожидается
+   * `CexSource.close()` — граница жизненного цикла владельца source; она
+   * таймаутом не ограничена.
+   */
   readonly closeTimeoutMs?: number;
   /** Начальный backoff supervised-рестарта (ms). Default: 2s. */
   readonly initialBackoffMs?: number;

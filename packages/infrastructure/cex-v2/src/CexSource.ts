@@ -227,6 +227,23 @@ export class CexSource {
   private _orderbookSnapshotFailures = 0;
   private _tradeSnapshotFailures = 0;
   /** Promise остановки потоков, начатой терминальным отказом pipeline. */
+  /**
+   * Незавершённые операции закрытия CCXT-инстансов.
+   *
+   * @remarks
+   * Существует ровно ради честного `close()`. Session-level cleanup ждёт
+   * закрытие инстанса НЕ дольше `closeTimeoutMs` (иначе зависший vendor
+   * подвесил бы supervised restart навсегда), но истёкший таймаут —
+   * это «мы перестали ЖДАТЬ», а не «teardown завершён». Забытая таким
+   * образом операция продолжала бы закрывать websocket-ы в фоне уже после
+   * того, как владелец source получил управление и, возможно, поднял новое
+   * поколение той же routing identity.
+   *
+   * Поэтому операция остаётся здесь до фактического settle и удаляется
+   * ТОЛЬКО им — таймаут из набора ничего не убирает.
+   */
+  private readonly _pendingInstanceCloses = new Set<Promise<void>>();
+
   private _failureStopPromise: Promise<void> | null = null;
   /** Promise первого close() — повторные вызовы ждут его же. */
   private _closePromise: Promise<void> | null = null;
@@ -356,12 +373,32 @@ export class CexSource {
   }
 
   /**
-   * Graceful shutdown: абортит оба потока и дожидается их завершения.
+   * Graceful shutdown: граница жизненного цикла владельца source.
    *
    * @returns Promise, разрешающийся когда все transport-циклы остановлены
-   *   и CCXT-инстансы закрыты
+   *   И все операции закрытия CCXT-инстансов ЗАВЕРШЕНЫ
    *
    * @remarks
+   * ### Что именно гарантирует резолв
+   *
+   * ```text
+   * await source.close()
+   *   ⇒ ни один instance.close() этого source больше не выполняется в фоне
+   * ```
+   *
+   * Это сильнее, чем «остановка запрошена». Session-level `closeTimeoutMs`
+   * ограничивает лишь то, сколько cleanup ОДНОЙ сессии держит supervised
+   * restart; истёкший таймаут оставляет vendor-закрытие работать дальше.
+   * Владельцу source этого недостаточно: если он поднимет новое поколение
+   * с той же routing identity (биржа + тип рынка + символ + поток), пока
+   * старый транспорт ещё закрывается, два поколения окажутся живы
+   * одновременно. Поэтому здесь ожидание ПОДТВЕРЖДЁННОЕ и, в отличие от
+   * session cleanup, не ограничено таймаутом.
+   *
+   * Порядок: запретить новые сессии → аборт текущих → дождаться
+   * `RestartingTask.stop()` (после него новых инстансов не появится) →
+   * дождаться реестра незавершённых закрытий.
+   *
    * Идемпотентен (повторные вызовы ждут первый). Общий bus НЕ закрывается —
    * им владеет composition root. Безопасен при гонке с плановым/аварийным
    * рестартом: `RestartingTask` не начинает новую сессию после `stop()`.
@@ -377,6 +414,10 @@ export class CexSource {
       if (this._tradesTask) stops.push(this._tradesTask.stop());
       if (this._failureStopPromise) stops.push(this._failureStopPromise);
       await Promise.all(stops);
+      // Supervised-петли остановлены ⇒ новых CCXT-инстансов появиться уже
+      // не может, и набор незавершённых закрытий больше не растёт. Только
+      // теперь ожидание конечно.
+      await this._awaitPendingInstanceCloses();
       this._logger.info('CexSource closed');
     })();
     return this._closePromise;
@@ -1000,17 +1041,27 @@ export class CexSource {
   }
 
   /**
-   * Закрывает CCXT-инстанс с таймаутом: сперва WS-клиенты, затем сам
-   * инстанс; ошибки закрытия — debug (ожидаемы при рестарте).
+   * Ограничивает ОЖИДАНИЕ закрытия CCXT-инстанса внутри session cleanup.
+   *
+   * @param instance - Инстанс закрываемой сессии
+   *
+   * @remarks
+   * Таймаут здесь ограничивает ровно одно: сколько session cleanup держит
+   * supervised restart. Он НЕ означает, что транспорт закрыт, — истёкший
+   * таймаут оставляет операцию выполняться дальше, и она остаётся
+   * зарегистрированной в {@link CexSource._pendingInstanceCloses}, пока не
+   * завершится по-настоящему. Подтверждённого teardown дожидается
+   * {@link CexSource.close} — граница жизненного цикла владельца source.
+   *
+   * Прежняя версия после таймаута теряла операцию из виду, и `close()`
+   * возвращал управление, пока `instance.close()` ещё выполнялся: владелец
+   * (например, контроллер подписок) мог поднять новое поколение той же
+   * routing identity поверх ещё живого транспорта старого.
    */
   private async _closeInstanceWithTimeout(instance: CcxtProExchangeInstance): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const closeOperation = this._closeInstanceOnce(instance).catch((err) => {
-      this._logger.debug('Error closing CCXT instance (expected on restart)', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
+    const closeOperation = this._trackInstanceClose(instance);
 
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const timeout = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(() => resolve('timeout'), this._closeTimeoutMs);
       timer.unref?.();
@@ -1020,8 +1071,59 @@ export class CexSource {
     if (timer) clearTimeout(timer);
 
     if (result === 'timeout') {
-      this._logger.warn('Timed out closing CCXT instance', { timeoutMs: this._closeTimeoutMs });
-      closeOperation.catch(() => undefined);
+      this._logger.warn('Timed out waiting for CCXT instance close (teardown continues)', {
+        timeoutMs: this._closeTimeoutMs,
+        pendingCloses: this._pendingInstanceCloses.size,
+      });
+    }
+  }
+
+  /**
+   * Регистрирует операцию закрытия инстанса в реестре незавершённых.
+   *
+   * @param instance - Инстанс закрываемой сессии
+   * @returns Промис операции: не отклоняется, settle = teardown завершён
+   *
+   * @remarks
+   * Наблюдает УЖЕ создаваемую операцию, второй `instance.close()` не
+   * порождает: единственность закрытия обеспечивает once-guard сессии
+   * (`closeOnce ??=`), а этот метод вызывается ровно из неё.
+   *
+   * Отказ vendor-закрытия ожидаем при рестарте и гасится здесь же — и
+   * ради отсутствия unhandled rejection, и потому что предмет реестра не
+   * успешность закрытия, а факт «асинхронный teardown больше не идёт».
+   */
+  private _trackInstanceClose(instance: CcxtProExchangeInstance): Promise<void> {
+    const operation = this._closeInstanceOnce(instance).catch((err: unknown) => {
+      this._logger.debug('Error closing CCXT instance (expected on restart)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+    // Удаляет себя только по фактическому settle. Ссылка на `tracked`
+    // внутри собственного обработчика безопасна: он выполняется строго
+    // после присваивания.
+    const tracked: Promise<void> = operation.finally(() => {
+      this._pendingInstanceCloses.delete(tracked);
+    });
+    this._pendingInstanceCloses.add(tracked);
+    return tracked;
+  }
+
+  /**
+   * Дожидается завершения ВСЕХ незавершённых закрытий инстансов.
+   *
+   * @returns Промис, разрешающийся при пустом реестре
+   *
+   * @remarks
+   * Цикл, а не один снимок: вызывается после остановки supervised-петель,
+   * когда новых инстансов появиться уже не может, но защита от пополнения
+   * набора между снимком и его ожиданием стоит одной строки, а её
+   * отсутствие стоило бы ровно того же тихого фонового teardown, ради
+   * которого весь реестр и заведён.
+   */
+  private async _awaitPendingInstanceCloses(): Promise<void> {
+    while (this._pendingInstanceCloses.size > 0) {
+      await Promise.all([...this._pendingInstanceCloses]);
     }
   }
 

@@ -978,3 +978,110 @@ describe('CexSource: конфигурация', () => {
     ).toThrow('exchangeId');
   });
 });
+
+describe('подтверждённый teardown транспорта (граница close())', () => {
+  it('close() НЕ резолвится, пока instance.close() выполняется — даже после closeTimeoutMs', async () => {
+    const { source, factory, logger } = makeHarness(baseConfig({ closeTimeoutMs: 20 }), {
+      watchOrderBookForSymbols: true,
+    });
+    source.start();
+    await waitUntil(
+      () => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter,
+    );
+
+    const release = factory.latest.holdClose();
+
+    let closed = false;
+    const closing = source.close().then(() => {
+      closed = true;
+    });
+
+    // Ждём заведомо дольше closeTimeoutMs: session cleanup уже перестал ЖДАТЬ
+    // (об этом есть warning), но teardown транспорта ещё идёт.
+    await waitUntil(() =>
+      logger.entries.some(
+        (entry) =>
+          entry.level === 'warn' && entry.message.includes('Timed out waiting for CCXT instance'),
+      ),
+    );
+    await sleep(40);
+
+    expect(closed).toBe(false);
+    expect(factory.latest.closeCalls).toBe(1);
+
+    release();
+    await closing;
+
+    expect(closed).toBe(true);
+  });
+
+  it('таймаут НЕ отменяет teardown: закрытие остаётся незавершённым, а не забытым', async () => {
+    const { source, factory } = makeHarness(baseConfig({ closeTimeoutMs: 10 }), {
+      watchOrderBookForSymbols: true,
+    });
+    source.start();
+    await waitUntil(
+      () => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter,
+    );
+    const release = factory.latest.holdClose();
+
+    const closing = source.close();
+    await sleep(60); // многократно больше closeTimeoutMs
+
+    // Единственный корректный признак «поколение ещё живо»: close() не отдал
+    // управление владельцу source.
+    await expect(Promise.race([closing.then(() => 'resolved'), sleep(20).then(() => 'pending')])).resolves.toBe(
+      'pending',
+    );
+
+    release();
+    await closing;
+  });
+
+  it('closeTimeoutMs по-прежнему ограничивает ожидание ВНУТРИ session cleanup', async () => {
+    const { source, factory } = makeHarness(
+      baseConfig({ closeTimeoutMs: 20, initialBackoffMs: 5, maxBackoffMs: 10 }),
+      { watchOrderBookForSymbols: true },
+    );
+    source.start();
+    await waitUntil(
+      () => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter,
+    );
+
+    // Закрытие инстанса первой сессии зависает навсегда.
+    const release = factory.instances[0]!.holdClose();
+    factory.instances[0]!.obMultiplexFeed.fail(new Error('transport down'));
+
+    // Supervised restart обязан продолжиться: зависший vendor не должен
+    // подвешивать перезапуск сессии — ради этого таймаут и существует.
+    await waitUntil(() => factory.instances.length === 2, 2_000);
+    expect(factory.instances[1]).toBeDefined();
+
+    release();
+    await source.close();
+  });
+
+  it('close() дожидается teardown ОБОИХ потоков', async () => {
+    const { source, factory } = makeHarness(
+      baseConfig({ watchOrderbook: true, watchTrades: true, closeTimeoutMs: 20 }),
+      { watchOrderBookForSymbols: true, watchTradesForSymbols: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 2);
+
+    // Задержан teardown ТОЛЬКО одного из двух инстансов.
+    const release = factory.instances[1]!.holdClose();
+
+    let closed = false;
+    const closing = source.close().then(() => {
+      closed = true;
+    });
+    await sleep(60);
+
+    expect(closed).toBe(false);
+
+    release();
+    await closing;
+    expect(closed).toBe(true);
+  });
+});

@@ -164,7 +164,7 @@ describe('отказ при замене поколения', () => {
 });
 
 describe('отказ при закрытии', () => {
-  it('close() бросил: пул всё равно убран, отказ записан', async () => {
+  it('close() бросил: identity НЕ освобождена, отказ записан', async () => {
     const { controller, probe } = makeController();
 
     await controller.reconcile([{ ownerKey: 'A', policy: policy() }], ts(AT_1800_MS));
@@ -173,8 +173,52 @@ describe('отказ при закрытии', () => {
 
     const result = await controller.reconcile([], ts(AT_1800_MS));
 
-    expect(result.closedPools).toEqual(['binance|swap|TRADES']);
+    // Teardown не подтверждён → старый транспорт мог остаться живым.
+    // Объявить ключ свободным значило бы разрешить поднять поверх него
+    // дубль той же routing identity.
+    expect(result.closedPools).toEqual([]);
     expect(result.failures[0]).toMatchObject({ stage: 'close', reason: 'close hung' });
+    expect(controller.getStats().physicalPools).toBe(1);
+  });
+
+  it('следующий проход повторяет закрытие и освобождает пул после успеха', async () => {
+    const { controller, probe } = makeController();
+
+    await controller.reconcile([{ ownerKey: 'A', policy: policy() }], ts(AT_1800_MS));
+    const source = probe.sources[0];
+    if (source !== undefined) source.closeError = new Error('close hung');
+    await controller.reconcile([], ts(AT_1800_MS));
+
+    if (source !== undefined) source.closeError = null;
+    const retry = await controller.reconcile([], ts(AT_1800_MS));
+
+    expect(retry.closedPools).toEqual(['binance|swap|TRADES']);
+    expect(retry.failures).toEqual([]);
+    expect(source?.closeCalls).toBe(2);
     expect(controller.getStats().physicalPools).toBe(0);
+  });
+
+  it('отказ закрытия при замене НЕ разрешает поднять новое поколение', async () => {
+    const { controller, probe } = makeController();
+
+    await controller.reconcile(
+      [{ ownerKey: 'A', policy: policy({ symbols: ['BTC/USDT'] }) }],
+      ts(AT_1800_MS),
+    );
+    const source = probe.sources[0];
+    if (source !== undefined) source.closeError = new Error('close hung');
+
+    const result = await controller.reconcile(
+      [{ ownerKey: 'A', policy: policy({ symbols: ['BTC/USDT', 'ETH/USDT'] }) }],
+      ts(AT_1800_MS),
+    );
+
+    expect(result.replacedPools).toEqual([]);
+    expect(result.failures[0]).toMatchObject({ stage: 'close', reason: 'close hung' });
+    // Ни фабрика, ни start второго поколения не вызывались.
+    expect(probe.sources).toHaveLength(1);
+    // Старое поколение остаётся за контроллером как барьер identity.
+    expect(controller.listPools()[0]).toMatchObject({ satisfied: true, generation: 1 });
+    expect(controller.getStats().physicalPools).toBe(1);
   });
 });
