@@ -239,6 +239,34 @@ function formatPhase(title: string, result: CexSubscriptionReconcileResult): str
   ];
 }
 
+/**
+ * Записывает терминально отказавшие пулы в провалы прогона.
+ *
+ * @param phase - Фаза, после которой сделана проверка
+ * @param pools - Снимок пулов контроллера
+ * @param failures - Накопитель провалов прогона
+ *
+ * @remarks
+ * Проверка нужна ОТДЕЛЬНО от `result.failures`: тот отчёт описывает
+ * переходы САМОГО прохода, а источник может уйти в терминальный отказ уже
+ * ПОСЛЕ успешного перехода — например, за время окна наблюдения. Такой
+ * пул остаётся желаемым и внешне выглядит как поднятый, поэтому без этой
+ * проверки smoke завершился бы нулевым кодом при мёртвом потоке.
+ *
+ * Вызывать до СЛЕДУЮЩЕГО reconcile: он заменит отказавшее поколение, и
+ * причина провала перестанет быть видна (останется только неожиданный
+ * bump номера поколения).
+ */
+function recordFailedPools(
+  phase: string,
+  pools: readonly CexSubscriptionPoolSnapshot[],
+  failures: string[],
+): void {
+  for (const pool of pools) {
+    if (pool.failed) failures.push(`${phase}: pool ${pool.poolKey} is in terminal failure`);
+  }
+}
+
 /** Номера поколений по ключу пула. */
 function generations(pools: readonly CexSubscriptionPoolSnapshot[]): Map<string, number> {
   return new Map(pools.map((pool) => [pool.poolKey, pool.generation]));
@@ -314,6 +342,7 @@ async function main(): Promise<void> {
     );
     if (orderbookCount === 0) failures.push('no CEX_ORDERBOOK observed during baseline');
     if (tradeCount === 0) failures.push('no CEX_TRADE observed during baseline');
+    recordFailedPools('baseline', controller.listPools(), failures);
 
     // ─── Фаза 2: sharing ─────────────────────────────────────────────────
     const sharingDemands: CexSubscriptionDemand[] = [
@@ -338,6 +367,7 @@ async function main(): Promise<void> {
         failures.push(`sharing phase bumped generation of ${key}`);
       }
     }
+    recordFailedPools('sharing', controller.listPools(), failures);
 
     // ─── Фаза 3: expansion ───────────────────────────────────────────────
     const expandedPolicy = buildPolicy(config, [config.symbol, config.secondSymbol], {
@@ -371,6 +401,7 @@ async function main(): Promise<void> {
     for (const symbol of [config.symbol, config.secondSymbol]) {
       if (!symbolsSeen.has(symbol)) failures.push(`no observations for ${symbol} after expansion`);
     }
+    recordFailedPools('expansion', controller.listPools(), failures);
 
     // ─── Фаза 4: shrink и полное снятие спроса ───────────────────────────
     const shrink = await controller.reconcile(
@@ -384,6 +415,7 @@ async function main(): Promise<void> {
     if (controller.listPools().some((pool) => pool.ownerKeys.includes(OWNER_A))) {
       failures.push('owner A still holds claims after leaving');
     }
+    recordFailedPools('shrink', controller.listPools(), failures);
 
     const drained = await controller.reconcile([], Timestamp.now(clock));
     lines.push(...formatPhase('phase 4b — empty demands', drained));
