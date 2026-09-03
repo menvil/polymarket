@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.lint.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@polymarket/cex-subscription-control": ["./src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "__tests__/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

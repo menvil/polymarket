@@ -32,7 +32,31 @@
  *   отказом сессии;
  * - плановый перезапуск инстансов (default 30 мин, ±10% jitter) —
  *   контроль внутренних кэшей/памяти CCXT Pro;
- * - hung-book detection (`ask < bid`) — controlled restart сессии стакана.
+ * - hung-book detection (`ask < bid`) — controlled restart сессии стакана;
+ * - frozen-book detection (default 60s) — controlled restart сессии
+ *   стакана, когда ответы приходят, но книга не меняется.
+ *
+ * ### Защиты транспорта стакана — четыре РАЗНЫХ отказа
+ *
+ * ```text
+ * ответа нет вовсе / зависший watch     → orderbookStaleTimeoutMs
+ * ответы валидны, но книга не меняется  → orderbookFrozenTimeoutMs
+ * ask < bid                             → crossed-book restart
+ * штатный lifecycle                     → restartIntervalMs (плановый)
+ * ```
+ *
+ * Первые две легко перепутать, а ловят они противоположные симптомы.
+ * Stale-таймаут измеряет МОЛЧАНИЕ: vendor ничего не отдаёт. Frozen-таймаут
+ * измеряет ОТСУТСТВИЕ ПРОГРЕССА при исправном на вид потоке: снапшоты
+ * приходят, они валидны, просто содержимое одно и то же. Второй случай
+ * stale-таймаут не поймает никогда — с его точки зрения всё в порядке, —
+ * и именно так замерзший стрим молча отдаёт устаревшую цену.
+ *
+ * Прогресс считается по содержимому верхних уровней bids/asks, отдельно
+ * ДЛЯ КАЖДОГО символа, и только внутри текущей сессии. Два одинаковых
+ * снапшота подряд — нормальная рыночная ситуация, а не отказ. Публикацию
+ * детектор не меняет: одинаковые валидные снапшоты по-прежнему уходят в
+ * шину, дедупликации данных здесь нет — это health транспорта.
  *
  * ### Сделки: без повторной эмиссии кэша
  *
@@ -46,8 +70,8 @@
  *
  * ### Policy отказов (та же семантика, что у PolymarketSource)
  *
- * - **transport/vendor отказ** (сеть, WS, rejection watch, stale, crossed
- *   book) — проблема сессии: закрытие инстанса → supervised backoff →
+ * - **transport/vendor отказ** (сеть, WS, rejection watch, stale, frozen
+ *   book, crossed book) — проблема сессии: закрытие инстанса → supervised backoff →
  *   новый инстанс → resubscribe; второй поток не затрагивается;
  * - **`Err` от `bus.publish`** — отказ КОНТУРА ДОСТАВКИ, а не транспорта:
  *   source переходит в наблюдаемое терминальное `failed`, останавливает
@@ -81,6 +105,7 @@ import {
   DEFAULT_MAX_BACKOFF_MS,
   DEFAULT_ORDERBOOK_DEPTH,
   DEFAULT_ORDERBOOK_STALE_TIMEOUT_MS,
+  DEFAULT_ORDERBOOK_FROZEN_TIMEOUT_MS,
   DEFAULT_RESTART_INTERVAL_MS,
   DEFAULT_TRADES_STALE_TIMEOUT_MS,
   PLANNED_RESTART_JITTER_RATIO,
@@ -155,6 +180,77 @@ const PUBLISH_ABORTED: unique symbol = Symbol('cex-source-publish-aborted');
 type EmitOutcome = 'continue' | 'restart' | 'stop';
 
 /**
+ * Прогресс стакана одного символа внутри OB-сессии.
+ *
+ * @internal
+ */
+interface OrderbookProgress {
+  /** Отпечаток последнего РАЗЛИЧНОГО содержимого книги. */
+  fingerprint: string;
+  /** Момент, когда содержимое книги последний раз изменилось. */
+  lastProgressAt: number;
+}
+
+/**
+ * Строит отпечаток значимого содержимого одной стороны книги.
+ *
+ * @param levels - Уровни стороны (bids либо asks)
+ * @param depth - Сколько верхних уровней учитывать
+ * @returns Компактная детерминированная строка
+ *
+ * @internal
+ * @remarks
+ * По ЗНАЧЕНИЯМ, а не по ссылке: CCXT Pro переиспользует один живой
+ * mutable-объект книги между обновлениями, поэтому сравнение ссылок
+ * показывало бы «ничего не изменилось» всегда.
+ *
+ * Учитываются цена и объём — то, что мы реально потребляем. Прочие
+ * элементы уровня (у некоторых бирж, например, счётчик ордеров) в
+ * отпечаток не входят: их изменение при неизменных цене и объёме
+ * прогрессом книги не является, а вот замаскировать замерзание могло бы.
+ */
+function fingerprintSide(
+  levels: ReadonlyArray<readonly (number | null | undefined)[]> | undefined,
+  depth: number,
+): string {
+  if (!levels) return '';
+  const limit = Math.min(levels.length, depth);
+  let out = '';
+  for (let index = 0; index < limit; index++) {
+    const level = levels[index];
+    out += `${String(level?.[0])}:${String(level?.[1])};`;
+  }
+  return out;
+}
+
+/**
+ * Строит отпечаток значимого состояния книги.
+ *
+ * @param bids - Уровни покупок
+ * @param asks - Уровни продаж
+ * @param depth - Сколько верхних уровней учитывать
+ * @returns Компактная детерминированная строка
+ *
+ * @internal
+ * @remarks
+ * Только bids/asks. `timestamp`, `nonce` и прочая vendor-метаданность
+ * СОЗНАТЕЛЬНО не участвуют: некоторые биржи двигают их и при полностью
+ * неизменной книге, и включение таких полей превратило бы детектор в
+ * бесполезный — он подтверждал бы «прогресс» на замёрзшем стакане.
+ *
+ * Криптографический хэш здесь не нужен: отпечаток живёт внутри одной
+ * сессии, сравнивается только сам с собой, и коллизия двух РАЗНЫХ книг
+ * невозможна — строка содержит сами значения, а не их свёртку.
+ */
+function orderbookFingerprint(
+  bids: ReadonlyArray<readonly (number | null | undefined)[]> | undefined,
+  asks: ReadonlyArray<readonly (number | null | undefined)[]> | undefined,
+  depth: number,
+): string {
+  return `${fingerprintSide(bids, depth)}|${fingerprintSide(asks, depth)}`;
+}
+
+/**
  * Ingress boundary CEX V2: наблюдения CCXT Pro → canonical ExternalMessages
  * → общий ExternalMessageBus.
  *
@@ -212,6 +308,7 @@ export class CexSource {
   private readonly _symbols: readonly string[];
   private readonly _effectiveDepth: number;
   private readonly _obStaleTimeoutMs: number;
+  private readonly _obFrozenTimeoutMs: number;
   private readonly _tradesStaleTimeoutMs: number;
   private readonly _fetchPollIntervalMs: number;
   private readonly _closeTimeoutMs: number;
@@ -220,12 +317,43 @@ export class CexSource {
   private readonly _obTask: RestartingTask | null;
   private readonly _tradesTask: RestartingTask | null;
 
+  /**
+   * Прогресс стакана по символам ТЕКУЩЕЙ OB-сессии.
+   *
+   * @remarks
+   * Session-local: очищается в начале каждой сессии, поэтому свежий
+   * инстанс всегда начинает отслеживание с нуля и первый же полученный
+   * стакан замёрзшим считаться не может.
+   *
+   * Ключ — символ, и это принципиально: в multiplex-режиме один инстанс
+   * обслуживает несколько символов, и активность одного НЕ должна
+   * сбрасывать таймер другого — иначе живой BTC вечно маскировал бы
+   * замёрзший ETH.
+   */
+  private readonly _obProgress = new Map<string, OrderbookProgress>();
+
   private _started = false;
   private _closed = false;
   private _failed = false;
   // Счётчики CexSourceStats (mutable-состояние диагностики)
   private _orderbookSnapshotFailures = 0;
   private _tradeSnapshotFailures = 0;
+  /**
+   * Незавершённые операции закрытия CCXT-инстансов — ДИАГНОСТИКА.
+   *
+   * @remarks
+   * Реестр существует затем, чтобы фоновая дочистка vendor-соединений была
+   * ВИДНА: истёкший `closeTimeoutMs` означает «мы перестали ЖДАТЬ», а не
+   * «teardown завершён», и без счётчика этот факт наблюдался бы только по
+   * косвенным признакам (лишние сокеты, задержка выхода процесса).
+   *
+   * Ждать его нельзя: зависший `instance.close()` подвесил бы `close()`, а
+   * за ним и весь lifecycle владельца source. Именно от этого защищает
+   * `closeTimeoutMs`, и распространять ту же защиту на границу
+   * жизненного цикла — обязательно (см. TSDoc {@link CexSource.close}).
+   */
+  private readonly _pendingInstanceCloses = new Set<Promise<void>>();
+
   /** Promise остановки потоков, начатой терминальным отказом pipeline. */
   private _failureStopPromise: Promise<void> | null = null;
   /** Promise первого close() — повторные вызовы ждут его же. */
@@ -266,6 +394,8 @@ export class CexSource {
     }
 
     this._obStaleTimeoutMs = deps.config.orderbookStaleTimeoutMs ?? DEFAULT_ORDERBOOK_STALE_TIMEOUT_MS;
+    this._obFrozenTimeoutMs =
+      deps.config.orderbookFrozenTimeoutMs ?? DEFAULT_ORDERBOOK_FROZEN_TIMEOUT_MS;
     this._tradesStaleTimeoutMs = deps.config.tradesStaleTimeoutMs ?? DEFAULT_TRADES_STALE_TIMEOUT_MS;
     this._fetchPollIntervalMs = deps.config.fetchPollIntervalMs ?? DEFAULT_FETCH_POLL_INTERVAL_MS;
     this._closeTimeoutMs = deps.config.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
@@ -356,12 +486,47 @@ export class CexSource {
   }
 
   /**
-   * Graceful shutdown: абортит оба потока и дожидается их завершения.
+   * Graceful shutdown: граница жизненного цикла владельца source.
    *
-   * @returns Promise, разрешающийся когда все transport-циклы остановлены
-   *   и CCXT-инстансы закрыты
+   * @returns Promise, разрешающийся когда обе supervised-петли завершены и
+   *   source больше не способен ничего опубликовать
    *
    * @remarks
+   * ### Что именно гарантирует резолв
+   *
+   * ```text
+   * await source.close()
+   *   ⇒ этот source НИКОГДА больше не инициирует bus.publish()
+   * ```
+   *
+   * Гарантия держится на двух фактах: `RestartingTask.stop()` не просто
+   * шлёт abort, а дожидается полного выхода петли сессий, а единственная
+   * точка выхода в data plane — `_publish()`, который первым делом
+   * проверяет `signal.aborted`. После завершения петли публиковать
+   * попросту некому.
+   *
+   * ### Чего резолв НЕ означает
+   *
+   * Vendor-сокет мог не успеть закрыться: `instance.close()` продолжает
+   * best-effort дочистку в фоне, а её счётчик виден в
+   * {@link CexSource._pendingInstanceCloses} и в логе закрытия. Ждать её
+   * здесь НЕЛЬЗЯ — зависший `instance.close()` подвесил бы `close()`
+   * навсегда, а вместе с ним и весь lifecycle владельца (для контроллера
+   * подписок это означало бы, что одна залипшая биржа останавливает
+   * реконсиляцию всех остальных). Ровно от этого и защищает
+   * `closeTimeoutMs`, и распространять защиту на эту границу обязательно.
+   *
+   * Владельцу источника нужен именно запрет ПУБЛИКАЦИЙ, а не физическое
+   * уничтожение сокета: перекрытие поколений опасно дублями наблюдений в
+   * шине, а «живой, но немой» сокет наблюдений не порождает. Публикация,
+   * начатая непосредственно перед abort, — законная публикация ещё
+   * владевшего identity поколения: `MessageBus.publish()` ставит
+   * сообщение в очередь синхронно, поэтому она попадает в FIFO раньше
+   * всего, что опубликует следующее поколение.
+   *
+   * Порядок: запретить новые сессии → аборт текущих → дождаться
+   * `RestartingTask.stop()` обеих петель.
+   *
    * Идемпотентен (повторные вызовы ждут первый). Общий bus НЕ закрывается —
    * им владеет composition root. Безопасен при гонке с плановым/аварийным
    * рестартом: `RestartingTask` не начинает новую сессию после `stop()`.
@@ -377,7 +542,12 @@ export class CexSource {
       if (this._tradesTask) stops.push(this._tradesTask.stop());
       if (this._failureStopPromise) stops.push(this._failureStopPromise);
       await Promise.all(stops);
-      this._logger.info('CexSource closed');
+      // Supervised-петли завершены ⇒ ни один цикл source больше не способен
+      // инициировать publish. Vendor-инстансы при этом могут дочищаться в
+      // фоне — ЖДАТЬ их здесь нельзя (см. TSDoc метода).
+      this._logger.info('CexSource closed', {
+        pendingInstanceCloses: this._pendingInstanceCloses.size,
+      });
     })();
     return this._closePromise;
   }
@@ -395,9 +565,12 @@ export class CexSource {
    * Выбор метода: multiplex → per-symbol watch → REST fetch
    * (сконфигурированный `orderbookMethod: 'fetch'` пропускает WS-режимы).
    * Нормальный return = controlled restart (плановый перезапуск, crossed
-   * book); исключение = restart с backoff.
+   * либо frozen book); исключение = restart с backoff.
    */
   private async _runObSession(signal: AbortSignal): Promise<void> {
+    // Отслеживание прогресса — session-local: новый инстанс начинает с
+    // чистого листа, и первый его стакан замёрзшим быть не может.
+    this._obProgress.clear();
     const instance = await this._makeInstance();
     let closeOnce: Promise<void> | null = null;
     const closeInstance = (): Promise<void> => {
@@ -646,8 +819,8 @@ export class CexSource {
    *   vendor-объект НЕ патчится, routing-символ уходит в typed payload
    * @param signal - Сигнал остановки сессии
    * @returns `'continue'` — цикл продолжается; `'restart'` — controlled
-   *   restart сессии (crossed book); `'stop'` — сессия завершается
-   *   (shutdown или терминальный отказ pipeline)
+   *   restart сессии (crossed либо frozen book); `'stop'` — сессия
+   *   завершается (shutdown или терминальный отказ pipeline)
    */
   private async _emitOrderbook(
     rawOb: CcxtRawOrderBook,
@@ -670,6 +843,18 @@ export class CexSource {
     if (typeof bestBid === 'number' && typeof bestAsk === 'number' && bestAsk < bestBid) {
       this._logger.warn('Hung orderbook detected (ask < bid), restarting stream', {
         symbol,
+        bid: bestBid,
+        ask: bestAsk,
+      });
+      return 'restart';
+    }
+
+    const frozenForMs = this._trackOrderbookProgress(symbol, bids, asks);
+    if (frozenForMs !== null) {
+      this._logger.warn('Frozen orderbook detected, restarting stream', {
+        symbol,
+        frozenForMs,
+        timeoutMs: this._obFrozenTimeoutMs,
         bid: bestBid,
         ask: bestAsk,
       });
@@ -882,6 +1067,43 @@ export class CexSource {
    * прерван сигналом, уже находится в очереди движка; его Result
    * дологируется асинхронно.
    */
+  /**
+   * Отмечает прогресс книги символа и сообщает, замёрзла ли она.
+   *
+   * @param symbol - Символ наблюдения
+   * @param bids - Уровни покупок
+   * @param asks - Уровни продаж
+   * @returns Сколько миллисекунд книга не менялась, если превышен
+   *   frozen-таймаут; иначе `null`
+   *
+   * @internal
+   * @remarks
+   * Два одинаковых снимка подряд — НЕ отказ: рынок вправе стоять на
+   * месте, и считать повтор ошибкой значило бы рестартовать поток на
+   * каждом спокойном инструменте. Отказ — отсутствие изменений ДОЛЬШЕ
+   * таймаута при продолжающихся успешных ответах.
+   *
+   * Первый стакан символа только запоминается: сравнивать его не с чем, и
+   * замёрзшим он не бывает по определению.
+   */
+  private _trackOrderbookProgress(
+    symbol: string,
+    bids: ReadonlyArray<readonly (number | null | undefined)[]> | undefined,
+    asks: ReadonlyArray<readonly (number | null | undefined)[]> | undefined,
+  ): number | null {
+    const fingerprint = orderbookFingerprint(bids, asks, this._effectiveDepth);
+    const now = Date.now();
+    const previous = this._obProgress.get(symbol);
+
+    if (previous === undefined || previous.fingerprint !== fingerprint) {
+      this._obProgress.set(symbol, { fingerprint, lastProgressAt: now });
+      return null;
+    }
+
+    const frozenForMs = now - previous.lastProgressAt;
+    return frozenForMs >= this._obFrozenTimeoutMs ? frozenForMs : null;
+  }
+
   private async _publish(message: CexExternalMessage, signal: AbortSignal): Promise<EmitOutcome> {
     if (signal.aborted) return 'stop';
 
@@ -1000,17 +1222,26 @@ export class CexSource {
   }
 
   /**
-   * Закрывает CCXT-инстанс с таймаутом: сперва WS-клиенты, затем сам
-   * инстанс; ошибки закрытия — debug (ожидаемы при рестарте).
+   * Ограничивает ОЖИДАНИЕ закрытия CCXT-инстанса внутри session cleanup.
+   *
+   * @param instance - Инстанс закрываемой сессии
+   *
+   * @remarks
+   * Таймаут ограничивает ровно одно: сколько session cleanup держит
+   * supervised restart, чтобы зависший vendor не подвесил плановый или
+   * аварийный перезапуск навсегда. Он НЕ означает, что транспорт закрыт, —
+   * истёкшее ожидание оставляет операцию выполняться дальше, и она
+   * остаётся зарегистрированной в
+   * {@link CexSource._pendingInstanceCloses} до фактического завершения.
+   *
+   * Останавливать поток наблюдений это не мешает: право публиковать
+   * снимает abort сессии, а не закрытие сокета (см. TSDoc
+   * {@link CexSource.close}).
    */
   private async _closeInstanceWithTimeout(instance: CcxtProExchangeInstance): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const closeOperation = this._closeInstanceOnce(instance).catch((err) => {
-      this._logger.debug('Error closing CCXT instance (expected on restart)', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
+    const closeOperation = this._trackInstanceClose(instance);
 
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const timeout = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(() => resolve('timeout'), this._closeTimeoutMs);
       timer.unref?.();
@@ -1020,9 +1251,42 @@ export class CexSource {
     if (timer) clearTimeout(timer);
 
     if (result === 'timeout') {
-      this._logger.warn('Timed out closing CCXT instance', { timeoutMs: this._closeTimeoutMs });
-      closeOperation.catch(() => undefined);
+      this._logger.warn('Timed out waiting for CCXT instance close (teardown continues)', {
+        timeoutMs: this._closeTimeoutMs,
+        pendingCloses: this._pendingInstanceCloses.size,
+      });
     }
+  }
+
+  /**
+   * Регистрирует операцию закрытия инстанса в реестре незавершённых.
+   *
+   * @param instance - Инстанс закрываемой сессии
+   * @returns Промис операции: не отклоняется, settle = teardown завершён
+   *
+   * @remarks
+   * Наблюдает УЖЕ создаваемую операцию, второй `instance.close()` не
+   * порождает: единственность закрытия обеспечивает once-guard сессии
+   * (`closeOnce ??=`), а этот метод вызывается ровно из неё.
+   *
+   * Отказ vendor-закрытия ожидаем при рестарте и гасится здесь же — и
+   * ради отсутствия unhandled rejection, и потому что предмет реестра не
+   * успешность закрытия, а наблюдаемость идущей фоновой дочистки.
+   */
+  private _trackInstanceClose(instance: CcxtProExchangeInstance): Promise<void> {
+    const operation = this._closeInstanceOnce(instance).catch((err: unknown) => {
+      this._logger.debug('Error closing CCXT instance (expected on restart)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+    // Удаляет себя только по фактическому settle. Ссылка на `tracked`
+    // внутри собственного обработчика безопасна: он выполняется строго
+    // после присваивания.
+    const tracked: Promise<void> = operation.finally(() => {
+      this._pendingInstanceCloses.delete(tracked);
+    });
+    this._pendingInstanceCloses.add(tracked);
+    return tracked;
   }
 
   private async _closeInstanceOnce(instance: CcxtProExchangeInstance): Promise<void> {

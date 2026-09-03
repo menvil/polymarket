@@ -18,8 +18,13 @@ export const DEFAULT_ORDERBOOK_DEPTH = 10;
  * production-значение legacy-коллектора (2 часа приводили к росту RSS до 4 GB).
  */
 export const DEFAULT_RESTART_INTERVAL_MS = 30 * 60 * 1000;
-/** Stale-таймаут стакана по умолчанию: нет обновлений 60s → рестарт сессии. */
+/** Stale-таймаут стакана по умолчанию: нет ОТВЕТА 60s → рестарт сессии. */
 export const DEFAULT_ORDERBOOK_STALE_TIMEOUT_MS = 60_000;
+/**
+ * Frozen-таймаут стакана по умолчанию: ответы приходят, но содержимое книги
+ * не меняется 60s → рестарт сессии.
+ */
+export const DEFAULT_ORDERBOOK_FROZEN_TIMEOUT_MS = 60_000;
 /** Stale-таймаут сделок по умолчанию: нет обновлений 180s → рестарт сессии. */
 export const DEFAULT_TRADES_STALE_TIMEOUT_MS = 180_000;
 /** Пауза между REST-опросами в режиме `orderbookMethod: 'fetch'`. */
@@ -73,13 +78,55 @@ export interface CexSourceConfig {
   readonly orderbookMethod?: 'watch' | 'fetch';
   /** Интервал планового перезапуска CCXT-инстансов (ms). Default: 30 минут. */
   readonly restartIntervalMs?: number;
-  /** Stale-таймаут стакана (ms). Default: 60s. */
+  /**
+   * Stale-таймаут стакана (ms): сколько ждать ОТВЕТА vendor-а. Default: 60s.
+   *
+   * @remarks
+   * Срабатывает, когда `watch`/`fetch` не отдаёт ничего. Молчащий транспорт
+   * и замёрзший стакан — разные отказы, и путать их нельзя: см.
+   * {@link CexSourceConfig.orderbookFrozenTimeoutMs}.
+   */
   readonly orderbookStaleTimeoutMs?: number;
+  /**
+   * Frozen-таймаут стакана (ms): сколько терпеть НЕИЗМЕННОЕ содержимое
+   * книги при продолжающихся успешных ответах. Default: 60s.
+   *
+   * @remarks
+   * ### Чем отличается от `orderbookStaleTimeoutMs`
+   *
+   * ```text
+   * vendor не отвечает вовсе          → orderbookStaleTimeoutMs
+   * vendor отвечает, книга не меняется → orderbookFrozenTimeoutMs
+   * ```
+   *
+   * Второй случай stale-таймаут не ловит принципиально: с точки зрения
+   * транспорта всё исправно — приходят валидные снапшоты, просто один и
+   * тот же. Такой поток выглядит живым и молча отдаёт устаревшую цену.
+   *
+   * Прогресс считается по СОДЕРЖИМОМУ верхних уровней bids/asks. Два
+   * одинаковых снимка подряд — нормальная рыночная ситуация и отказом не
+   * являются; отказ — отсутствие изменений ДОЛЬШЕ этого таймаута.
+   */
+  readonly orderbookFrozenTimeoutMs?: number;
   /** Stale-таймаут сделок (ms). Default: 180s. */
   readonly tradesStaleTimeoutMs?: number;
   /** Пауза между REST-опросами fetch-режима (ms). Default: 500. */
   readonly fetchPollIntervalMs?: number;
-  /** Таймаут закрытия CCXT-инстанса (ms). Default: 10s. */
+  /**
+   * Сколько cleanup ОДНОЙ сессии ждёт закрытия её CCXT-инстанса (ms).
+   * Default: 10s.
+   *
+   * @remarks
+   * Это НЕ «через столько транспорт закрыт». Таймаут ограничивает ровно
+   * одно: сколько session cleanup держит supervised restart, чтобы
+   * зависший vendor не подвесил плановый/аварийный перезапуск навсегда.
+   * По его истечении закрытие продолжается в фоне.
+   *
+   * `CexSource.close()` фоновой дочистки НЕ дожидается: право публиковать
+   * снимает abort сессии, а не закрытие сокета, и безусловное ожидание
+   * превратило бы один зависший `instance.close()` в бессрочную остановку
+   * всего lifecycle владельца source.
+   */
   readonly closeTimeoutMs?: number;
   /** Начальный backoff supervised-рестарта (ms). Default: 2s. */
   readonly initialBackoffMs?: number;

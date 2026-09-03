@@ -149,6 +149,34 @@ export class FakeExchangeInstance implements CcxtProExchangeInstance {
   /** Хронология vendor-вызовов для ассертов mode-selection/routing. */
   public readonly vendorCalls: RecordedVendorCall[] = [];
   public closeCalls = 0;
+  /** Барьер, задерживающий ЗАВЕРШЕНИЕ close() (pending watch уже отклонены). */
+  private _closeGate: Promise<void> | null = null;
+
+  /**
+   * Задерживает завершение `close()` до вызова возвращённой функции.
+   *
+   * @returns Функция, отпускающая зависшее закрытие инстанса
+   *
+   * @remarks
+   * Отклонение pending watch-промисов при этом происходит СРАЗУ, как у
+   * реального ccxt.pro: иначе сессия не вышла бы из watch-цикла и тест
+   * проверял бы не отложенный teardown, а зависший abort.
+   *
+   * @example
+   * ```typescript
+   * const release = instance.holdClose();
+   * const closing = source.close(); // не резолвится
+   * release();
+   * await closing;
+   * ```
+   */
+  public holdClose(): () => void {
+    let resolve: () => void = () => undefined;
+    this._closeGate = new Promise<void>((res) => {
+      resolve = res;
+    });
+    return resolve;
+  }
 
   /** Feed per-symbol стакана (создаётся по требованию). */
   public obFeed(symbol: string): FakeFeed<CcxtRawOrderBook> {
@@ -254,7 +282,7 @@ export class FakeExchangeInstance implements CcxtProExchangeInstance {
     for (const feed of this._tradesSymbolFeeds.values()) {
       feed.rejectPending(closedError);
     }
-    return Promise.resolve();
+    return this._closeGate ?? Promise.resolve();
   };
 }
 
