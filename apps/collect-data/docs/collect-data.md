@@ -140,7 +140,8 @@ ignoredNotHeldByCollector), жизненный цикл записей (`collect
 ```text
 collection:    activeSessions, finalizingSessions, attachedTotal, sealedTotal,
                claimsReleased, completedTotal, shutdownSessions,
-               finalizationFailures, sessionsWithoutClaim
+               finalizationFailures, sessionsWithoutClaim,
+               orphanSessionsDiscarded
 finalization:  pendingFinalizations, archivedTotal, archiveFailures,
                officialFinalizations, fallbackFinalizations,
                fallbackByTimeout, fallbackByShutdown, discardedUnresolvable

@@ -318,6 +318,7 @@ export {
   FakeDiscovery,
   FakeSource,
   MutableClock,
+  deferred,
   makeSelected,
 } from '../../../polymarket-subscription-control/__tests__/helpers/fakes.js';
 

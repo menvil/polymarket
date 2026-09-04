@@ -723,3 +723,125 @@ const { finalizer } = harness;
     expect(finalizer.isClosed).toBe(true);
   });
 });
+
+// ── Подхват FINALIZING независимо от инициатора перехода ────────────────────
+
+describe('FINALIZING-сессия попадает в финализатор, кто бы ни совершил переход', () => {
+  it('A. переход сделал lifecycle (точный таймер сессии) → финализатор подхватывает и архивирует', async () => {
+    const harness = createFinalizerHarness();
+    const { recorder, subscriptions, gamma, clock, lifecycle, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78027.1, finalPrice: 78325.2 }),
+    );
+    openMarket(harness);
+    clock.advance(EXPIRE_ADVANCE_MS);
+
+    // Ровно то, что делает таймер сессии: переход БЕЗ участия финализатора.
+    const transitioned = await lifecycle.beginFinalization(mid(CID_A));
+    expect(transitioned).toBeDefined();
+    await lifecycle.awaitSettlementCapture(mid(CID_A));
+    // Граница уже отработала: датасет заморожен, claim снят.
+    expect(recorder.seals).toEqual([CID_A]);
+    expect(subscriptions.released).toEqual([CID_A]);
+    expect(finalizer.getStats().pendingFinalizations).toBe(0);
+
+    await finalizer.runOnce();
+
+    // Раньше здесь рынок молча оставался FINALIZING навсегда: Gamma-опрос не
+    // начинался, header не финализировался, архив не создавался.
+    expect(gamma.fetchMarketCalls).toHaveLength(1);
+    expect(lastFinalization(recorder).status).toBe('complete');
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(lifecycle.listSessions()).toEqual([]);
+    expect(finalizer.getStats()).toMatchObject({
+      pendingFinalizations: 0,
+      archivedTotal: 1,
+      officialFinalizations: 1,
+    });
+  });
+
+  it('A2. переход сделан ДО истечения бюджета — startedAtMs остаётся моментом ГРАНИЦЫ', async () => {
+    const harness = createFinalizerHarness();
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78027.1, finalPrice: 78325.2 }),
+    );
+    openMarket(harness);
+    clock.advance(EXPIRE_ADVANCE_MS);
+    const boundaryMs = clock.now().getTime();
+
+    await lifecycle.beginFinalization(mid(CID_A));
+    // Финализатор подхватывает НЕ сразу — через control-тик.
+    clock.advance(7_000);
+    await finalizer.runOnce();
+
+    // Момент подхвата в header не попадает: иначе `startedAtMs` архива и
+    // отсчёт бюджета ожидания сдвигались бы на задержку control-тика.
+    expect(lastFinalization(recorder).startedAtMs).toBe(boundaryMs);
+  });
+
+  it('B. переход сделал lifecycle.runOnce() ДО прохода финализатора', async () => {
+    const harness = createFinalizerHarness();
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78027.1, finalPrice: 78325.2 }),
+    );
+    openMarket(harness);
+    clock.advance(EXPIRE_ADVANCE_MS);
+
+    // Порядок production-тика: lifecycle.runOnce() → finalizer.runOnce().
+    await lifecycle.runOnce();
+    expect(lifecycle.listSessions()[0]?.state).toBe('FINALIZING');
+
+    await finalizer.runOnce();
+
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+    expect(lifecycle.listSessions()).toEqual([]);
+  });
+
+  it('C. повторный проход не создаёт второй pending и не дублирует begin/finalize', async () => {
+    const harness = createFinalizerHarness();
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
+    // Резолюции ещё нет — рынок остаётся pending между проходами.
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
+      createFreshGammaEvent(),
+    );
+    openMarket(harness);
+    clock.advance(EXPIRE_ADVANCE_MS);
+    await lifecycle.beginFinalization(mid(CID_A));
+
+    await finalizer.runOnce();
+    await finalizer.runOnce(); // тот же тик — cadence не наступил
+    clock.advance(30_000);
+    await finalizer.runOnce();
+
+    expect(finalizer.getStats().pendingFinalizations).toBe(1);
+    // Переход выполнен РОВНО один раз, архив не создавался.
+    expect(recorder.narrowings).toHaveLength(1);
+    expect(recorder.seals).toEqual([CID_A]);
+    expect(recorder.finalizations).toEqual([]);
+    // Ровно две Gamma-попытки: третий проход попал в cadence второго.
+    expect(gamma.fetchMarketCalls).toHaveLength(2);
+  });
+
+  it('рынок, который ещё торгуется, не подхватывается и не переводится', async () => {
+    const harness = createFinalizerHarness();
+    const { recorder, gamma, lifecycle, finalizer } = harness;
+    armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent());
+    openMarket(harness); // истекает через 70 минут
+
+    await finalizer.runOnce();
+
+    expect(finalizer.getStats().pendingFinalizations).toBe(0);
+    expect(recorder.seals).toEqual([]);
+    expect(lifecycle.listSessions()[0]?.state).toBe('ACTIVE');
+  });
+});

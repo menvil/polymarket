@@ -28,8 +28,9 @@ SEALED .jsonl (payload заморожен; LINE 1 всё ещё перезапи
 ```text
 MarketFinalizer.runOnce()          ← cadence у composition root
  │
- ├── listSessions(): ACTIVE && expiresAt <= now
- │        ↓
+ ├── listSessions(): ACTIVE && expiresAt <= now  → beginFinalization()
+ │                    FINALIZING (перевёл не мы)  → getFinalizingSession()
+ │        ↓            дедупликация по _pending: рынок регистрируется раз
  ├── lifecycle.beginFinalization(marketId)
  │     ├── state → FINALIZING ДО первого await (at most once)
  │     ├── recorder.beginMarketFinalization (CLOB и spot больше не пишутся)
@@ -49,6 +50,27 @@ MarketFinalizer.runOnce()          ← cadence у composition root
  └── финальный путь: header → finalizeMarket(EXPIRED) → gzip
         → lifecycle.completeFinalization (identity-guard: только FINALIZING)
 ```
+
+## Почему подхват FINALIZING обязателен
+
+Границу датасета держит ТОЧНЫЙ таймер сессии в lifecycle, а не проход
+финализатора. Значит, к моменту прохода рынок обычно УЖЕ `FINALIZING`, а
+`beginFinalization` устроен «ровно один раз» и отвечает `undefined`. Искать
+только `ACTIVE` значило бы никогда не подхватить такой рынок:
+
+```text
+18:05:00.000  таймер сессии → FINALIZING → grace → seal → release
+18:05:05.000  runOnce() видит FINALIZING и пропускает
+              → Gamma polling не начинается
+              → header не финализируется, архива нет
+              → сессия висит FINALIZING вечно
+```
+
+Поэтому источников снимка два (`beginFinalization` для due `ACTIVE`,
+`getFinalizingSession` для `FINALIZING`), а регистрация одна — по `_pending`.
+`startedAtMs` берётся из снимка (`finalizingSinceMs`), а не из момента
+подхвата: иначе `finalization.startedAtMs` архива и отсчёт бюджета ожидания
+сдвигались бы на задержку control-тика.
 
 ## Почему НЕ «timer → closeSession(EXPIRED) → updateMarketMeta»
 

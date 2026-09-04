@@ -196,6 +196,16 @@ export interface PolymarketCollectionLifecycleStats {
    * (нет vendor-подготовки для резолюции), поэтому она наблюдаема отдельно.
    */
   readonly sessionsWithoutClaim: number;
+  /**
+   * Датасеты, снесённые как сироты откаченного приобретения.
+   *
+   * @remarks
+   * Ненулевое значение — норма при отказах RTDS-подписок: приобретение
+   * откатилось уже ПОСЛЕ первого записанного наблюдения. Рост этого счётчика
+   * вместе с `failed`-исходами приобретения означает нестабильный транспорт,
+   * а не дефект записи.
+   */
+  readonly orphanSessionsDiscarded: number;
 }
 
 /** Внутреннее состояние одной сессии. */
@@ -206,6 +216,16 @@ interface LifecycleSession<TPrepared extends CollectionMarketPreparation> {
   readonly recordingStartedAt: Timestamp;
   readonly expiresAt: Timestamp;
   state: CollectionSessionState;
+  /**
+   * Момент перехода в FINALIZING (epoch ms); `undefined` пока ACTIVE.
+   *
+   * @remarks
+   * Принадлежит ТОМУ, КТО совершил переход, а не тому, кто его заметил:
+   * переход делает точный таймер сессии, а подхватывает финализатор на
+   * следующем проходе — и `finalization.startedAtMs` в header-е обязан
+   * остаться моментом ГРАНИЦЫ, а не моментом подхвата.
+   */
+  finalizingSinceMs?: number;
   /** Таймер истечения (снимается при переходе/закрытии). */
   expiryTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -257,6 +277,7 @@ export class PolymarketCollectionLifecycle<
   private _shutdownSessions = 0;
   private _finalizationFailures = 0;
   private _sessionsWithoutClaim = 0;
+  private _orphanSessionsDiscarded = 0;
 
   /**
    * Создаёт lifecycle поверх инъецированных recorder/control-plane.
@@ -380,20 +401,39 @@ export class PolymarketCollectionLifecycle<
   }
 
   /**
-   * Один проход lifecycle: sync новых сессий + страховка по просроченным.
+   * Один проход lifecycle: снос сирот, sync новых сессий, страховка по
+   * просроченным.
    *
    * @returns Promise завершения прохода
    *
    * @remarks
-   * Штатную границу держит таймер сессии; этот проход — safety net на случай
+   * ### Предусловие вызова
+   *
+   * Вызывается ПОСЛЕ того, как control-проход этого тика завершился
+   * (`PolymarketControlRuntime.runOnce()` дождан). Это существенно для шага
+   * сноса сирот: пока транзакция приобретения идёт, claim рынка уже
+   * существует (он создаётся синхронно при резервации), поэтому «строки есть,
+   * claim-а нет» однозначно означает УЖЕ ОТКАЧЕННОЕ приобретение, а не
+   * приобретение в процессе.
+   *
+   * ### Порядок шагов
+   *
+   * ```text
+   * 1. снос сирот failed acquisition   (датасет без claim-а — удалить)
+   * 2. приём новых recording-сессий    (attach + immutable selected)
+   * 3. страховка по просроченным       (ACTIVE due → FINALIZING)
+   * ```
+   *
+   * Штатную границу держит таймер сессии; шаг 3 — safety net на случай
    * пропущенного таймера (перегруженный event loop, восстановление после
    * ошибки) и точка входа для shutdown, где нужно перевести истёкшие сессии
-   * до дренажа финализатора. Отказ перехода одного рынка не прерывает проход.
+   * до дренажа финализатора. Отказ по одному рынку не прерывает проход.
    */
   public async runOnce(): Promise<void> {
     if (this._closed) {
       return;
     }
+    await this._discardOrphanedSessions();
     this.syncSessions();
     const nowMs = this._clock.now().getTime();
     for (const session of [...this._sessions.values()]) {
@@ -406,6 +446,86 @@ export class PolymarketCollectionLifecycle<
         this._finalizationFailures++;
         this._logger.error('Expiry transition failed, continuing pass', {
           marketId: String(session.marketId),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Сносит recording-сессии, оставшиеся от ОТКАЧЕННОГО приобретения.
+   *
+   * @returns Promise завершения сноса
+   *
+   * @remarks
+   * ### Откуда берётся сирота
+   *
+   * Снимок удерживаемого рынка доступен уже на стадии `OPENING` — иначе
+   * терялся бы первый (опорный) book-снапшот, который приходит сразу после
+   * `subscribeMarket()`. Плата за это — окно, в котором запись уже началась,
+   * а транзакция приобретения ещё может откатиться:
+   *
+   * ```text
+   * OPENING: subscribeMarket() ok → initial book → допуск → сессия + строка
+   *          RTDS subscribe FAILED → rollback → claim рынка исчез
+   *          recording-сессия ОСТАЛАСЬ с одной строкой
+   * ```
+   *
+   * Оставить её нельзя: на следующем тике приобретение повторится, но
+   * recording-сессия уже существует, и новый initial book попадёт в ТОТ ЖЕ
+   * файл БЕЗ повторного допуска. Один датасет склеил бы отказавшее поколение
+   * подписки, дыру и поколение-повтор — для replay это ложь о непрерывности
+   * наблюдений.
+   *
+   * ### Почему «нет claim-а» — надёжный признак
+   *
+   * Claim создаётся СИНХРОННО при резервации рынка, до первого `await`
+   * транзакции, и исчезает только при откате либо явном `release`. Значит,
+   * пока приобретение идёт, claim есть; «строки есть, claim-а нет» — это уже
+   * завершившийся откат, а не гонка с идущим приобретением. Предусловие
+   * «control-проход тика дождан» (см. {@link PolymarketCollectionLifecycle.runOnce})
+   * закрывает и остаток.
+   *
+   * ### Что НЕ сносится
+   *
+   * - сессии, уже принятые lifecycle (у них свой путь границы);
+   * - `FINALIZING`/`SEALED` (claim там снят ШТАТНО — после заморозки
+   *   датасета, и архивом владеет финализатор);
+   * - сессии без единой записанной строки (сносить нечего: файла нет).
+   *
+   * Снос — `finalizeMarket(SHUTDOWN)`: storage удаляет незавершённый `.jsonl`,
+   * recorder снимает сессию и routing. Следующее приобретение начинает
+   * ЧИСТУЮ новую сессию. Отказ по одному рынку наблюдаем и не прерывает
+   * проход.
+   */
+  private async _discardOrphanedSessions(): Promise<void> {
+    for (const snapshot of this._recorder.listMarketSessions()) {
+      const key = String(snapshot.marketId);
+      if (snapshot.state !== 'ACTIVE' || this._sessions.has(key)) {
+        continue;
+      }
+      if (snapshot.firstObservedAtMs === undefined) {
+        continue; // строк нет — датасета тоже нет
+      }
+      if (this._subscriptions.getHeldMarket(this._ownerKey, snapshot.marketId) !== undefined) {
+        continue; // claim на месте — сессию примет syncSessions
+      }
+      try {
+        await this._recorder.finalizeMarket(snapshot.marketId, 'SHUTDOWN');
+        this._orphanSessionsDiscarded++;
+        this._logger.warn('Orphaned recording session discarded: acquisition was rolled back', {
+          marketId: key,
+          ownerKey: this._ownerKey,
+        });
+        this._emitEvent('DROPPED', {
+          marketId: snapshot.marketId,
+          question: snapshot.marketMeta.question,
+          expiresAtMs: snapshot.marketMeta.expiresAt.toNumber(),
+        });
+      } catch (error) {
+        this._finalizationFailures++;
+        this._logger.error('Failed to discard orphaned recording session', {
+          marketId: key,
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -458,6 +578,7 @@ export class PolymarketCollectionLifecycle<
 
     // ── Синхронная секция: НИ ОДНОГО await до конца ─────────────────────
     session.state = 'FINALIZING';
+    session.finalizingSinceMs = this._clock.now().getTime();
     this._clearExpiryTimer(session);
     const settlementFeeds = session.selected.rtdsFeeds.filter(isTwapRtdsFeed);
     const narrowed = this._beginRecorderFinalization(session, settlementFeeds);
@@ -476,12 +597,79 @@ export class PolymarketCollectionLifecycle<
       settlementFeeds: settlementFeeds.map((feed) => rtdsFeedKey(feed)),
     });
     this._emit('FINALIZING', session);
-    return {
+    return this._toFinalizingSnapshot(session);
+  }
+
+  /**
+   * Возвращает immutable-снимок УЖЕ FINALIZING сессии.
+   *
+   * @param marketId - ID рынка
+   * @returns Тот же контракт, что отдаёт
+   *   {@link PolymarketCollectionLifecycle.beginFinalization}, либо
+   *   `undefined` — сессии нет либо она ещё ACTIVE
+   *
+   * @remarks
+   * ### Зачем нужен отдельно от `beginFinalization`
+   *
+   * Переход `ACTIVE → FINALIZING` совершает ТОТ, кто первым дошёл до
+   * границы: точный таймер сессии, страховочный `runOnce()` lifecycle либо
+   * сам финализатор. `beginFinalization` устроен «ровно один раз» и второму
+   * вызывающему честно отвечает `undefined` — а значит, финализатор,
+   * опоздавший к переходу, остался бы вообще без снимка:
+   *
+   * ```text
+   * 18:05:00.000  таймер сессии → FINALIZING → grace → seal → release
+   * 18:05:05.000  finalizer.runOnce() видит FINALIZING и... пропускает
+   *               → Gamma polling не начинается, архива нет, сессия вечна
+   * ```
+   *
+   * Этот метод закрывает разрыв: КТО БЫ ни инициировал переход, финализатор
+   * получает тот же immutable контракт и регистрирует рынок ровно один раз
+   * (дедупликация — по его собственному `_pending`).
+   *
+   * Метод НИЧЕГО не меняет: он не двигает стадию, не трогает таймеры и не
+   * запускает задачу границы. Повторные вызовы возвращают один и тот же
+   * снимок, пока сессию не снимет `completeFinalization`.
+   *
+   * @example
+   * ```typescript
+   * const session =
+   *   snapshot.state === 'FINALIZING'
+   *     ? lifecycle.getFinalizingSession(snapshot.marketId)
+   *     : await lifecycle.beginFinalization(snapshot.marketId);
+   * ```
+   */
+  public getFinalizingSession(
+    marketId: MarketId,
+  ): FinalizingCollectionSession<TPrepared> | undefined {
+    const session = this._sessions.get(String(marketId));
+    if (session === undefined || session.state !== 'FINALIZING') {
+      return undefined;
+    }
+    return this._toFinalizingSnapshot(session);
+  }
+
+  /**
+   * Собирает immutable-снимок FINALIZING-сессии.
+   *
+   * @param session - Сессия в состоянии FINALIZING
+   * @returns Контракт для финализатора
+   *
+   * @remarks
+   * Единственное место сборки снимка: два независимых литерала однажды
+   * разошлись бы полями, и путь «таймер → подхват» отдавал бы финализатору
+   * не то же самое, что путь «финализатор сам перевёл».
+   */
+  private _toFinalizingSnapshot(
+    session: LifecycleSession<TPrepared>,
+  ): FinalizingCollectionSession<TPrepared> {
+    return Object.freeze({
       marketId: session.marketId,
       recordingStartedAt: session.recordingStartedAt,
       selected: session.selected,
       marketMeta: session.marketMeta,
-    };
+      finalizingSinceMs: session.finalizingSinceMs ?? this._clock.now().getTime(),
+    });
   }
 
   /**
@@ -584,6 +772,7 @@ export class PolymarketCollectionLifecycle<
       shutdownSessions: this._shutdownSessions,
       finalizationFailures: this._finalizationFailures,
       sessionsWithoutClaim: this._sessionsWithoutClaim,
+      orphanSessionsDiscarded: this._orphanSessionsDiscarded,
     });
   }
 
@@ -815,17 +1004,45 @@ export class PolymarketCollectionLifecycle<
     }
   }
 
-  /** Рассылает событие lifecycle, гася исключения слушателей. */
+  /**
+   * Рассылает событие lifecycle по данным ПРИНЯТОЙ сессии.
+   *
+   * @param kind - Вид перехода
+   * @param session - Сессия, с которой произошёл переход
+   */
   private _emit(kind: CollectionLifecycleKind, session: LifecycleSession<TPrepared>): void {
+    this._emitEvent(kind, {
+      marketId: session.marketId,
+      question: session.marketMeta.question,
+      expiresAtMs: session.expiresAt.toNumber(),
+    });
+  }
+
+  /**
+   * Рассылает событие lifecycle, гася исключения слушателей.
+   *
+   * @param kind - Вид перехода
+   * @param about - Идентификация рынка перехода
+   *
+   * @remarks
+   * Принимает данные рынка, а не принятую сессию: снос сироты происходит с
+   * recording-сессией, которую lifecycle принять как раз НЕ смог, и требовать
+   * для события `LifecycleSession` значило бы сделать самый интересный
+   * переход единственным ненаблюдаемым.
+   */
+  private _emitEvent(
+    kind: CollectionLifecycleKind,
+    about: { readonly marketId: MarketId; readonly question: string; readonly expiresAtMs: number },
+  ): void {
     if (this._listeners.size === 0) {
       return;
     }
     const event: CollectionLifecycleEvent = {
       kind,
-      marketId: session.marketId,
+      marketId: about.marketId,
       atMs: this._clock.now().getTime(),
-      question: session.marketMeta.question,
-      expiresAtMs: session.expiresAt.toNumber(),
+      question: about.question,
+      expiresAtMs: about.expiresAtMs,
     };
     for (const listener of this._listeners) {
       try {

@@ -392,6 +392,7 @@ const EMPTY_LIFECYCLE_STATS: PolymarketCollectionLifecycleStats = {
   shutdownSessions: 0,
   finalizationFailures: 0,
   sessionsWithoutClaim: 0,
+  orphanSessionsDiscarded: 0,
 };
 
 /** Порт lifecycle записей: журналирует проходы и остановку. */

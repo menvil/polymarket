@@ -30,10 +30,12 @@ import { CapturingLogger } from './helpers/CapturingLogger.js';
 import type { ContourMessage, SubscriptionHarness } from './helpers/fixtures.js';
 import {
   BASE_START_MS,
+  BTC_FULL_FEEDS,
   FakeCexStorage,
   FakePolymarketStorage,
   acquireFor,
   bookEvent,
+  deferred,
   makeEntry,
   makePolicy,
   makeSubscriptionHarness,
@@ -466,5 +468,150 @@ describe('lifecycle: таймер границы и наблюдаемость',
       contour.subscriptions.controller.getHeldMarket(COLLECTOR_RAW_OWNER_KEY, entry.market.id),
     ).toBeUndefined();
     expect(contour.lifecycle.getStats().shutdownSessions).toBe(1);
+  });
+});
+
+describe('сирота откаченного приобретения: датасет failed-поколения не склеивается с retry', () => {
+  /**
+   * Доводит приобретение до момента «market подписан, RTDS в процессе».
+   *
+   * @param contour - Контур сбора
+   * @param entry - Canonical запись рынка
+   * @param options - Отказывающие RTDS-символы и удержание RTDS-подписки
+   * @returns Обёртка над ещё не завершённым приобретением
+   *
+   * @remarks
+   * Именно это окно делает возможной сироту: `subscribeMarket()` уже открыт и
+   * pump публикует первый book, а транзакция ещё может откатиться.
+   *
+   * Промис приобретения возвращается ЗАВЁРНУТЫМ в объект: голый
+   * `Promise<Promise<T>>` вызывающий `await` развернул бы до конца и сразу
+   * повис бы на удержанной RTDS-подписке.
+   */
+  async function acquireUntilRtdsInFlight(
+    contour: LifecycleContour,
+    entry: MarketDiscoveryEntry,
+    options: { readonly hold: Promise<void>; readonly failSymbol?: string },
+  ): Promise<{ readonly acquiring: Promise<unknown> }> {
+    contour.subscriptions.discovery.register(entry, { rtdsFeeds: BTC_FULL_FEEDS });
+    contour.subscriptions.source.rtdsHold = options.hold;
+    if (options.failSymbol !== undefined) {
+      contour.subscriptions.source.rtdsErrorSymbols.add(options.failSymbol);
+    }
+    const acquiring = contour.subscriptions.controller.acquire(COLLECTOR_RAW_OWNER_KEY, entry);
+    while (contour.subscriptions.source.rtdsCallCount === 0) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return { acquiring };
+  }
+
+  it('rollback после первой записанной строки → датасет снесён, retry пишет ЧИСТУЮ новую сессию', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeLifecycleContour([entry]);
+    contour.recorder.start();
+
+    // ── Поколение 1: market подписан, RTDS в полёте ───────────────────────
+    const gate = deferred();
+    const { acquiring } = await acquireUntilRtdsInFlight(contour, entry, {
+      hold: gate.promise,
+      failSymbol: 'btcusdt',
+    });
+    // Первый book приходит ВО ВРЕМЯ OPENING и записывается: claim уже есть.
+    await publishMarket(contour, 'btc-5m-1');
+    expect(contour.pmStorage.registered).toHaveLength(1);
+    expect(contour.pmStorage.writes).toHaveLength(1);
+
+    // ── RTDS отказал → контроллер откатывает приобретение ─────────────────
+    gate.resolve();
+    contour.subscriptions.source.rtdsHold = undefined;
+    await expect(acquiring).resolves.toMatchObject({ status: 'failed' });
+    expect(
+      contour.subscriptions.controller.getHeldMarket(COLLECTOR_RAW_OWNER_KEY, entry.market.id),
+    ).toBeUndefined();
+    // Recording-сессия пережила откат — это и есть сирота.
+    expect(contour.recorder.listMarketSessions()).toHaveLength(1);
+
+    // ── Проход lifecycle сносит её как незавершённый датасет ──────────────
+    await contour.lifecycle.runOnce();
+
+    expect(contour.pmStorage.finalized).toEqual([{ marketId: 'btc-5m-1', reason: 'SHUTDOWN' }]);
+    expect(contour.recorder.listMarketSessions()).toEqual([]);
+    expect(contour.lifecycle.listSessions()).toEqual([]);
+    expect(contour.lifecycle.getStats().orphanSessionsDiscarded).toBe(1);
+
+    // ── Поколение 2: приобретение повторяется и УСПЕВАЕТ ──────────────────
+    contour.subscriptions.source.rtdsErrorSymbols.clear();
+    await acquireFor(contour.subscriptions, entry, COLLECTOR_RAW_OWNER_KEY);
+    await publishMarket(contour, 'btc-5m-1');
+    contour.lifecycle.syncSessions();
+
+    // Новая регистрация — значит НОВЫЙ датасет, а не дописывание в старый.
+    expect(contour.pmStorage.registered).toHaveLength(2);
+    expect(contour.recorder.getStats().marketSessionsAdmitted).toBe(2);
+    // Порядок доказывает отсутствие склейки: запись → снос → новая запись.
+    expect(contour.pmStorage.finalized).toHaveLength(1);
+    expect(contour.lifecycle.listSessions()).toHaveLength(1);
+    expect(contour.lifecycle.listSessions()[0]?.state).toBe('ACTIVE');
+  });
+
+  it('успешное OPENING → ACTIVE снос НЕ трогает, первый pre-open book сохранён', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeLifecycleContour([entry]);
+    contour.recorder.start();
+
+    const gate = deferred();
+    const { acquiring } = await acquireUntilRtdsInFlight(contour, entry, { hold: gate.promise });
+    await publishMarket(contour, 'btc-5m-1');
+
+    // Снос идёт ПОКА приобретение ещё в полёте: claim уже создан (синхронно
+    // при резервации), поэтому сессия сиротой не считается.
+    await contour.lifecycle.runOnce();
+    expect(contour.pmStorage.finalized).toEqual([]);
+
+    gate.resolve();
+    contour.subscriptions.source.rtdsHold = undefined;
+    await expect(acquiring).resolves.toMatchObject({ status: 'opened' });
+
+    await contour.lifecycle.runOnce();
+
+    expect(contour.pmStorage.finalized).toEqual([]);
+    expect(contour.lifecycle.getStats().orphanSessionsDiscarded).toBe(0);
+    // Опорный pre-open снапшот на месте.
+    expect(contour.pmStorage.writes).toHaveLength(1);
+    expect(contour.lifecycle.listSessions()[0]?.state).toBe('ACTIVE');
+  });
+
+  it('FINALIZING/SEALED сессия НЕ сносится: там claim снят штатно, архивом владеет финализатор', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeLifecycleContour([entry]);
+    await startRecording(contour, entry);
+    contour.subscriptions.clock.set(EXPIRES_AT_MS);
+    await contour.lifecycle.beginFinalization(entry.market.id);
+    await contour.lifecycle.awaitSettlementCapture(entry.market.id);
+    // Claim снят ПОСЛЕ заморозки — именно так и должно быть.
+    expect(
+      contour.subscriptions.controller.getHeldMarket(COLLECTOR_RAW_OWNER_KEY, entry.market.id),
+    ).toBeUndefined();
+
+    await contour.lifecycle.runOnce();
+
+    expect(contour.pmStorage.finalized).toEqual([]);
+    expect(contour.lifecycle.getStats().orphanSessionsDiscarded).toBe(0);
+    expect(contour.lifecycle.listSessions()[0]?.state).toBe('FINALIZING');
+  });
+
+  it('рынок ЧУЖОГО владельца сессии не создаёт — сносить нечего', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeLifecycleContour([entry]);
+    await acquireFor(contour.subscriptions, entry, 'strategy:A');
+    contour.recorder.start();
+
+    await publishMarket(contour, 'btc-5m-1');
+    await contour.lifecycle.runOnce();
+
+    expect(contour.pmStorage.registered).toEqual([]);
+    expect(contour.pmStorage.finalized).toEqual([]);
+    expect(contour.gate.getStats().ignoredNotHeldByCollector).toBe(1);
+    expect(contour.lifecycle.getStats().orphanSessionsDiscarded).toBe(0);
   });
 });

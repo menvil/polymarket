@@ -102,6 +102,47 @@ shutdown).
 несколько секунд лишнего трафика вместо «полуclaim-ов» и частичного владения
 ресурсом в контроллере подписок.
 
+### 3a. Переход `ACTIVE → FINALIZING` совершает один, а подхватывает другой
+
+Границу держит таймер сессии, а Gamma-резолюцией владеет `MarketFinalizer` —
+это два разных компонента и два разных момента времени:
+
+```text
+18:05:00.000  таймер сессии → FINALIZING → grace → seal → release
+18:05:05.000  finalizer.runOnce()  ← видит рынок уже FINALIZING
+```
+
+`beginFinalization` устроен «ровно один раз» и второму вызывающему честно
+отвечает `undefined`. Если бы финализатор искал только `ACTIVE`, такой рынок
+не попал бы в `_pending` НИКОГДА: seal и release состоялись бы, а Gamma
+polling нет — сессия висела бы `FINALIZING` вечно, архив не создавался.
+
+Поэтому инвариант формулируется по РЕЗУЛЬТАТУ, а не по инициатору:
+
+```text
+кто бы ни совершил ACTIVE → FINALIZING
+  (точный таймер сессии / lifecycle.runOnce / сам финализатор)
+
+MarketFinalizer обязан получить РОВНО ОДИН immutable
+FinalizingCollectionSession и зарегистрировать рынок один раз
+```
+
+Источников снимка два, регистрация одна:
+
+| Стадия сессии | Как финализатор получает снимок |
+| --- | --- |
+| `ACTIVE` и `expiresAt <= now` | `beginFinalization()` — переход делает сам |
+| `FINALIZING` | `getFinalizingSession()` — переход сделал кто-то другой |
+
+Дедупликация — по собственному `_pending` финализатора. Перестановка
+`finalizer.runOnce` перед `lifecycle.runOnce` эту дыру НЕ закрывает: точный
+таймер асинхронен и срабатывает между тиками.
+
+Момент границы едет в снимке (`finalizingSinceMs`) и попадает в
+`finalization.startedAtMs` архива: брать `now` в момент подхвата значило бы
+записать момент, который к границе датасета отношения не имеет, и сдвинуть
+отсчёт бюджета ожидания на задержку control-тика.
+
 ### 4. Gamma polling — ПОСЛЕ immutable-границы датасета
 
 ```text
@@ -131,6 +172,48 @@ expiresAt → cutoff → settlement grace → SEAL → release claim
 После `sealMarket` сессия остаётся `SEALED`-надгробием до `finalizeMarket`:
 между заморозкой и снятием claim-а рынок ещё присылает события, и без
 надгробия ленивый допуск создал бы ВТОРУЮ сессию поверх готового датасета.
+
+## Сирота откаченного приобретения
+
+Снимок удерживаемого рынка доступен уже в `OPENING` — иначе терялся бы первый
+(опорный) book-снапшот. Плата за это — окно, в котором запись уже началась, а
+транзакция приобретения ещё может откатиться:
+
+```text
+OPENING: subscribeMarket() ok → initial book → допуск → сессия + первая строка
+         RTDS subscribe FAILED → rollback → claim рынка исчез
+         recording-сессия ОСТАЛАСЬ с одной строкой
+```
+
+Оставить её нельзя: на следующем тике приобретение повторится, но
+recording-сессия уже существует, и новый initial book попадёт в ТОТ ЖЕ файл
+БЕЗ повторного допуска. Один датасет склеил бы отказавшее поколение подписки,
+дыру и поколение-повтор — для replay это ложь о непрерывности наблюдений.
+
+Поэтому `lifecycle.runOnce()` начинается со сноса сирот:
+
+```text
+recording-сессия ACTIVE
+  + есть первая записанная строка
+  + НЕ принята lifecycle
+  + claim collector:raw отсутствует
+        ↓
+recorder.finalizeMarket(SHUTDOWN)   storage удаляет незавершённый .jsonl,
+                                    recorder снимает сессию и routing
+        ↓
+следующее приобретение начинает ЧИСТУЮ новую сессию
+```
+
+**Почему «нет claim-а» — надёжный признак, а не гонка.** Claim создаётся
+СИНХРОННО при резервации рынка, до первого `await` транзакции, и исчезает
+только при откате либо явном `release`. Значит, пока приобретение идёт, claim
+есть; «строки есть, claim-а нет» — это уже завершившийся откат. Предусловие
+вызова (`runOnce()` идёт ПОСЛЕ дожданного control-прохода тика) закрывает
+остаток.
+
+**Что не сносится:** сессии, уже принятые lifecycle (у них свой путь границы);
+`FINALIZING`/`SEALED` (там claim снят ШТАТНО — после заморозки датасета, и
+архивом владеет финализатор); сессии без единой записанной строки.
 
 ## Разделение владения RTDS
 
@@ -213,7 +296,8 @@ CexPolicy → CexSubscriptionController → CexSource → ExternalMessageBus
 ```text
 collection:    activeSessions, finalizingSessions, attachedTotal, sealedTotal,
                claimsReleased, completedTotal, shutdownSessions,
-               finalizationFailures, sessionsWithoutClaim
+               finalizationFailures, sessionsWithoutClaim,
+               orphanSessionsDiscarded
 finalization:  pendingFinalizations, archivedTotal, archiveFailures,
                officialFinalizations, fallbackFinalizations,
                fallbackByTimeout, fallbackByShutdown, discardedUnresolvable
@@ -221,7 +305,8 @@ finalization:  pendingFinalizations, archivedTotal, archiveFailures,
 
 `sessionsWithoutClaim` ненулевой означает рассинхрон recording-контура и
 control-plane: запись идёт, а claim-а нет — такую сессию нельзя корректно
-финализировать.
+финализировать. `orphanSessionsDiscarded` растёт вместе с `failed`-исходами
+приобретения: это нестабильный транспорт, а не дефект записи.
 
 ## Проверка датасета после реального прогона
 

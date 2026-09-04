@@ -158,7 +158,11 @@ export type FinalizingMarketSession = FinalizingCollectionSession<SelectedPolyma
  */
 export type FinalizationLifecycle = Pick<
   PolymarketCollectionLifecycle<SelectedPolymarketMarket>,
-  'listSessions' | 'beginFinalization' | 'awaitSettlementCapture' | 'completeFinalization'
+  | 'listSessions'
+  | 'beginFinalization'
+  | 'getFinalizingSession'
+  | 'awaitSettlementCapture'
+  | 'completeFinalization'
 >;
 
 /**
@@ -645,13 +649,23 @@ export class MarketFinalizer {
   private async _runPass(): Promise<void> {
     const nowMs = this._clock.now().getTime();
 
-    // ── 1. Expiry-переходы due ACTIVE-сессий ────────────────────────────────
-    // Штатно границу держит таймер lifecycle; этот проход — safety net и
-    // единственный путь для рынков, истёкших между двумя control-тиками.
+    // ── 1. Подхват FINALIZING-сессий (кто бы ни совершил переход) ────────────
+    //
+    // Границу датасета держит ТОЧНЫЙ таймер сессии в lifecycle, а не этот
+    // проход. Значит, к моменту прохода рынок обычно УЖЕ FINALIZING, и
+    // `beginFinalization` честно отвечает `undefined` (переход ровно один
+    // раз). Искать только ACTIVE значило бы никогда не подхватить такой
+    // рынок: seal и release состоялись бы, а Gamma polling — нет, и сессия
+    // висела бы FINALIZING вечно.
+    //
+    // Поэтому источников снимка два, а регистрация — одна:
+    //
+    //   ACTIVE && due  → beginFinalization()      (переход делаем сами)
+    //   FINALIZING     → getFinalizingSession()   (переход сделал кто-то)
+    //
+    // Дедупликация — по `_pending`: рынок регистрируется ровно один раз,
+    // независимо от того, кто и когда его перевёл.
     for (const snapshot of this._lifecycle.listSessions()) {
-      if (snapshot.state !== 'ACTIVE' || snapshot.expiresAt.toNumber() > nowMs) {
-        continue;
-      }
       const key = String(snapshot.marketId);
       if (this._pending.has(key)) {
         continue;
@@ -659,21 +673,29 @@ export class MarketFinalizer {
       // Per-session изоляция: отказ перехода одного рынка (например, throw
       // seal-пути) не роняет runOnce и не лишает остальные сессии enrichment-а
       let session: FinalizingMarketSession | undefined;
-      try {
-        session = await this._lifecycle.beginFinalization(snapshot.marketId);
-      } catch (error) {
-        this._logger.error('beginFinalization failed for expired market, continuing pass', {
-          marketId: key,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        continue;
+      if (snapshot.state === 'FINALIZING') {
+        session = this._lifecycle.getFinalizingSession(snapshot.marketId);
+      } else if (snapshot.expiresAt.toNumber() <= nowMs) {
+        try {
+          session = await this._lifecycle.beginFinalization(snapshot.marketId);
+        } catch (error) {
+          this._logger.error('beginFinalization failed for expired market, continuing pass', {
+            marketId: key,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+      } else {
+        continue; // рынок ещё торгуется
       }
       if (session === undefined) {
-        continue; // сессию успели закрыть/перевести — переход at most once
+        continue; // сессию успели снять/заменить между снимком и вызовом
       }
       this._pending.set(key, {
         session,
-        startedAtMs: nowMs,
+        // Момент ГРАНИЦЫ, а не момент подхвата: иначе `startedAtMs` архива
+        // и отсчёт бюджета ожидания сдвигались бы на задержку control-тика.
+        startedAtMs: session.finalizingSinceMs,
         attempts: 0,
         lastAttemptMs: null,
         crypto: {},
@@ -683,6 +705,7 @@ export class MarketFinalizer {
         marketId: key,
         question: session.selected.question,
         isCrypto: session.selected.crypto !== undefined,
+        transitionedBy: snapshot.state === 'FINALIZING' ? 'lifecycle' : 'finalizer',
       });
     }
 

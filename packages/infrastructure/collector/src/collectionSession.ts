@@ -118,6 +118,18 @@ export interface FinalizingCollectionSession<
   readonly selected: TPrepared;
   /** Регистрация рынка в storage (в ней — базовый canonical header). */
   readonly marketMeta: MarketMeta;
+  /**
+   * Момент перехода сессии в FINALIZING (epoch ms).
+   *
+   * @remarks
+   * Момент ГРАНИЦЫ, а не момент подхвата финализатором. Переход совершает
+   * тот, кто первым дошёл до `expiresAt` (точный таймер сессии, страховочный
+   * проход lifecycle либо сам финализатор), а подхват может случиться на
+   * следующем control-тике. Брать `now` в момент подхвата значило бы
+   * записать в `finalization.startedAtMs` архива момент, который к границе
+   * датасета отношения не имеет, и сдвинуть отсчёт бюджета ожидания.
+   */
+  readonly finalizingSinceMs: number;
 }
 
 /**
