@@ -43,7 +43,22 @@ import type {
   CexOrderbookPayload,
   CexTradePayload,
 } from '@polymarket/cex-v2';
-import type { PolymarketExternalMessage, StandardMarketEvent } from '@polymarket/polymarket-v2';
+import type {
+  PolymarketExternalMessage,
+  PolymarketRtdsFeed,
+  SelectedPolymarketMarket,
+  StandardMarketEvent,
+} from '@polymarket/polymarket-v2';
+import { PolymarketSubscriptionController } from '@polymarket/polymarket-subscription-control';
+// Подделки source/discovery берутся из тестовой обвязки САМОГО контроллера
+// подписок — единый source of truth (тот же приём, что у market-finalizer):
+// иначе появился бы второй, расходящийся набор фикстур того же транспорта.
+import {
+  FakeDiscovery,
+  FakeSource,
+  MutableClock,
+} from '../../../polymarket-subscription-control/__tests__/helpers/fakes.js';
+import { CapturingLogger } from './CapturingLogger.js';
 
 /** Union всех raw-сообщений контура коллектора на одной шине. */
 export type ContourMessage = PolymarketExternalMessage | CexExternalMessage;
@@ -196,6 +211,12 @@ export interface CapturedPolymarketWrite {
 export class FakePolymarketStorage implements PolymarketRecordingStorage {
   public readonly registered: MarketMeta[] = [];
   public readonly writes: CapturedPolymarketWrite[] = [];
+  /** `String(marketId)` замороженных датасетов в порядке заморозки. */
+  public readonly sealed: string[] = [];
+  /** Финализации в порядке вызовов. */
+  public readonly finalized: Array<{ marketId: string; reason: 'EXPIRED' | 'SHUTDOWN' }> = [];
+  /** Обновления header-а в порядке вызовов. */
+  public readonly metaUpdates: Array<{ marketId: string; header: Record<string, unknown> }> = [];
   public closeCalls = 0;
 
   public registerMarket(meta: MarketMeta): boolean {
@@ -208,11 +229,16 @@ export class FakePolymarketStorage implements PolymarketRecordingStorage {
     return 'recorded';
   }
 
-  public async sealMarket(): Promise<boolean> {
+  public async sealMarket(marketId: MarketId): Promise<boolean> {
+    this.sealed.push(String(marketId));
     return true;
   }
 
-  public async updateMarketMeta(): Promise<boolean> {
+  public async updateMarketMeta(
+    marketId: MarketId,
+    header: Record<string, unknown>,
+  ): Promise<boolean> {
+    this.metaUpdates.push({ marketId: String(marketId), header });
     return true;
   }
 
@@ -220,8 +246,11 @@ export class FakePolymarketStorage implements PolymarketRecordingStorage {
     return undefined;
   }
 
-  public async finalizeMarket(): Promise<void> {
-    // Архивация в этих тестах не проверяется.
+  public async finalizeMarket(
+    marketId: MarketId,
+    reason: 'EXPIRED' | 'SHUTDOWN',
+  ): Promise<void> {
+    this.finalized.push({ marketId: String(marketId), reason });
   }
 
   public async flush(): Promise<void> {
@@ -282,3 +311,98 @@ export function marketIdOf(id: string): string {
 }
 
 export { MarketUniverse };
+
+// ─────────────────────── Control-plane подписок (реальный) ───────────────────
+
+export {
+  FakeDiscovery,
+  FakeSource,
+  MutableClock,
+  makeSelected,
+} from '../../../polymarket-subscription-control/__tests__/helpers/fakes.js';
+
+/** Spot-фид Binance по BTC (та же identity, что у контроллера). */
+export const BTC_BINANCE_FEED: PolymarketRtdsFeed = {
+  topic: 'prices.crypto.binance',
+  symbol: 'btcusdt',
+};
+/** Spot-фид Chainlink по BTC. */
+export const BTC_CHAINLINK_FEED: PolymarketRtdsFeed = {
+  topic: 'prices.crypto.chainlink',
+  symbol: 'btc/usd',
+};
+/** Settlement-фид Chainlink TWAP, окно 60 секунд. */
+export const BTC_TWAP_60_FEED: PolymarketRtdsFeed = {
+  topic: 'prices.crypto.chainlink.twap',
+  symbol: 'btc/usd',
+  windowSeconds: 60,
+};
+/** Полный набор фидов крипто-рынка: spot + официальный settlement-поток. */
+export const BTC_FULL_FEEDS: readonly PolymarketRtdsFeed[] = [
+  BTC_BINANCE_FEED,
+  BTC_CHAINLINK_FEED,
+  BTC_TWAP_60_FEED,
+];
+
+/** Собранный control-plane подписок с НАСТОЯЩИМ контроллером. */
+export interface SubscriptionHarness {
+  readonly controller: PolymarketSubscriptionController;
+  readonly discovery: FakeDiscovery;
+  readonly source: FakeSource;
+  readonly clock: MutableClock;
+}
+
+/**
+ * Поднимает НАСТОЯЩИЙ `PolymarketSubscriptionController` на подделках транспорта.
+ *
+ * @param nowMs - Момент часов контура (по умолчанию — минута до старта рынков)
+ * @returns Контроллер и его подделки
+ *
+ * @remarks
+ * Контроллер настоящий намеренно: инварианты владения (claim чужого владельца,
+ * retention при shared owners, закрытие последним claim-ом) — это правила
+ * ЕГО состояния, и на моке они проверялись бы против выдуманной структуры.
+ *
+ * @example
+ * ```typescript
+ * const harness = makeSubscriptionHarness();
+ * harness.discovery.register(entry, { rtdsFeeds: BTC_FULL_FEEDS });
+ * await harness.controller.acquire(COLLECTOR_RAW_OWNER_KEY, entry);
+ * ```
+ */
+export function makeSubscriptionHarness(nowMs = BASE_START_MS - 60_000): SubscriptionHarness {
+  const discovery = new FakeDiscovery();
+  const source = new FakeSource();
+  const clock = new MutableClock(nowMs);
+  const controller = new PolymarketSubscriptionController({
+    discovery,
+    source,
+    clock,
+    logger: new CapturingLogger(),
+  });
+  return { controller, discovery, source, clock };
+}
+
+/**
+ * Регистрирует vendor-подготовку рынка и приобретает его владельцем.
+ *
+ * @param harness - Control-plane подписок
+ * @param entry - Canonical запись universe
+ * @param ownerKey - Владелец claim-а
+ * @param rtdsFeeds - Фиды подготовки (по умолчанию spot + settlement TWAP)
+ * @returns Зарегистрированная подготовка
+ * @throws {Error} Если контроллер отказал в приобретении (дефект фикстуры)
+ */
+export async function acquireFor(
+  harness: SubscriptionHarness,
+  entry: MarketDiscoveryEntry,
+  ownerKey: string,
+  rtdsFeeds: readonly PolymarketRtdsFeed[] = BTC_FULL_FEEDS,
+): Promise<SelectedPolymarketMarket> {
+  const selected = harness.discovery.register(entry, { rtdsFeeds });
+  const result = await harness.controller.acquire(ownerKey, entry);
+  if (result.status === 'rejected' || result.status === 'failed') {
+    throw new Error(`acquire fixture failed: ${JSON.stringify(result)}`);
+  }
+  return selected;
+}

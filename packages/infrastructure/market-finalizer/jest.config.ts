@@ -10,7 +10,10 @@ const config: Config = {
     // Публичный API пакетов контура импортируется по имени пакета (root export),
     // а не через приватные relative-пути — маппим имена на исходники.
     '^@polymarket/market-finalizer$': '<rootDir>/src/index.ts',
-    '^@polymarket/collection-coordinator$': '<rootDir>/../collection-coordinator/src/index.ts',
+    '^@polymarket/collector$': '<rootDir>/../collector/src/index.ts',
+    '^@polymarket/policy$': '<rootDir>/../../application/policy/src/index.ts',
+    '^@polymarket/polymarket-subscription-control$':
+      '<rootDir>/../polymarket-subscription-control/src/index.ts',
     '^@polymarket/polymarket-v2$': '<rootDir>/../polymarket-v2/src/index.ts',
     '^@polymarket/external-message-recorder$':
       '<rootDir>/../persistence/external-message-recorder/src/index.ts',

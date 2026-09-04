@@ -86,7 +86,8 @@ MarketFinalizer.drain()      ← ШТАТНЫЙ wind-down: дождаться о
       ↓                        cadence до полного enrichmentMaxWaitMs-бюджета)
 MarketFinalizer.close()      ← аварийный путь: FINALIZING → EXPIRED best-known
       ↓                        (БЕЗ новых Gamma-запросов); прерывает спящий drain
-CollectionCoordinator.close() ← ACTIVE/OPENING → SHUTDOWN (incomplete удаляются)
+PolymarketCollectionLifecycle.close() ← ACTIVE → SHUTDOWN (incomplete удаляются,
+      ↓                                    claim-ы коллектора сняты)
       ↓
 PolymarketSource.close() → ExternalMessageBus.drain()
       → ExternalMessageRecorder.close() → ExternalMessageBus.close()
@@ -107,9 +108,15 @@ pending-рынок архивируется `complete` либо `timeout` по �
 # live-характеризация финализационных данных Gamma (PART 62)
 npx tsx packages/infrastructure/market-finalizer/scripts/characterize.ts
 
-# полный live lifecycle: open → record → expiry → seal → enrich → gzip (~8-16 мин)
-npx tsx packages/infrastructure/market-finalizer/scripts/smoke.ts
+# полный live lifecycle контура (production-фабрика): open → record → expiry
+# → seal → release → enrich → gzip
+npx tsx scripts/checkpoint-raw-live.mts
 ```
+
+Собственные `smoke.ts`/`soak.ts` удалены вместе с зависимостью на legacy
+`MarketCollectionCoordinator`: они поднимали снятую с вооружения композицию.
+Их роль полностью покрывает `scripts/checkpoint-raw-live.mts`, который
+поднимает ТОТ ЖЕ контур, что production `main.ts`.
 
 Подробности контракта — `docs/market-finalization.md`.
 

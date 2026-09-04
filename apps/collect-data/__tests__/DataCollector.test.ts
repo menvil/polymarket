@@ -130,6 +130,36 @@ describe('DataCollector.tick() — спрос через control-plane', () => {
     await collector.close();
   });
 
+  it('тик синхронизирует lifecycle и делает проход финализатора', async () => {
+    const { contour, collector } = makeCollector({ cex: true });
+    await collector.start();
+    contour.log.clear();
+    await collector.tick();
+
+    expect(contour.lifecycle.runOnceCalls).toBeGreaterThanOrEqual(1);
+    expect(contour.finalizer.runOnceCalls).toBeGreaterThanOrEqual(1);
+    // Порядок внутри тика: спрос → lifecycle → финализация замороженных.
+    expect(contour.log.orderOf('cexController.reconcile')).toBeLessThan(
+      contour.log.orderOf('lifecycle.runOnce'),
+    );
+    expect(contour.log.orderOf('lifecycle.runOnce')).toBeLessThan(
+      contour.log.orderOf('finalizer.runOnce'),
+    );
+
+    await collector.close();
+  });
+
+  it('отказ lifecycle.runOnce не отменяет проход финализатора', async () => {
+    const { contour, collector } = makeCollector({ cex: false });
+    await collector.start();
+    contour.lifecycle.runOnceFailure = new Error('lifecycle boom');
+
+    await collector.tick();
+
+    expect(contour.finalizer.runOnceCalls).toBeGreaterThanOrEqual(1);
+    await collector.close();
+  });
+
   it('отказ runOnce не роняет тик (best-effort)', async () => {
     const { contour, collector } = makeCollector();
     contour.polymarketControlRuntime.runFailure = new Error('gamma down');
@@ -143,12 +173,19 @@ describe('DataCollector.tick() — спрос через control-plane', () => {
 });
 
 describe('DataCollector.close() — лестница остановки', () => {
-  it('порядок: cexController → pmController → source → client → drain → recorder → bus.close', async () => {
+  it('порядок: lifecycle/finalizer → controllers → source → client → drain → recorder → bus.close', async () => {
     const { contour, collector } = makeCollector({ cex: true });
     await collector.start();
     await collector.close();
 
     const order = [
+      // Сначала доводятся до конца УЖЕ начатые записи…
+      'lifecycle.runOnce',
+      'lifecycle.awaitAllSettlementCaptures',
+      'finalizer.drain',
+      'finalizer.close',
+      'lifecycle.close',
+      // …и только потом снимаются физические подписки.
       'cexController.close',
       'polymarketController.close',
       'polymarketSource.close',
@@ -219,6 +256,53 @@ describe('DataCollector.status()', () => {
     expect(status.gate.admitted).toBe(0);
     expect(status.recorder.recordsWritten).toBe(0);
     expect(status.polymarketSource.isClosed).toBe(false);
+
+    await collector.close();
+  });
+
+  it('снимок несёт lifecycle и finalization — их читает реальный прогон', async () => {
+    const { collector } = makeCollector();
+    await collector.start();
+
+    const status = collector.status();
+    // Жизненный цикл записей: сколько пишется и сколько финализируется.
+    expect(status.collection).toMatchObject({
+      activeSessions: 0,
+      finalizingSessions: 0,
+      sealedTotal: 0,
+      claimsReleased: 0,
+      finalizationFailures: 0,
+    });
+    // Резолюция: pending/official/fallback/discard и отказы архива.
+    expect(status.finalization).toMatchObject({
+      pendingFinalizations: 0,
+      officialFinalizations: 0,
+      fallbackFinalizations: 0,
+      discardedUnresolvable: 0,
+      archiveFailures: 0,
+    });
+
+    await collector.close();
+  });
+});
+
+describe('DataCollector.drain() — wind-down финализаций без остановки контура', () => {
+  it('замораживает истёкшие датасеты и дренирует финализатор, контур остаётся running', async () => {
+    const { contour, collector } = makeCollector();
+    await collector.start();
+
+    await collector.drain();
+
+    expect(contour.log.orderOf('lifecycle.runOnce')).toBeLessThan(
+      contour.log.orderOf('lifecycle.awaitAllSettlementCaptures'),
+    );
+    expect(contour.log.orderOf('lifecycle.awaitAllSettlementCaptures')).toBeLessThan(
+      contour.log.orderOf('finalizer.drain'),
+    );
+    expect(contour.finalizer.drainCalls).toBe(1);
+    // Дренаж НЕ останавливает контур: сбор продолжается.
+    expect(collector.state).toBe('running');
+    expect(contour.lifecycle.closeCalls).toBe(0);
 
     await collector.close();
   });

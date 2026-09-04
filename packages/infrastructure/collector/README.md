@@ -14,6 +14,10 @@ Sources
   ├── Collector (ExternalMessageRecorder + PolymarketCollectionGate)
   ├── PolymarketSemanticAdapter
   └── CexSemanticAdapter
+
+PolymarketSubscriptionController
+  ▲ getHeldMarket (допуск) / release (граница датасета)
+  └── PolymarketCollectionLifecycle → MarketFinalizer
 ```
 
 Collector — **sibling**, а не gate: если он отключён/сломан/не хочет рынок,
@@ -25,17 +29,22 @@ Collector — **sibling**, а не gate: если он отключён/слом
 
 ## 2. Что делает пакет
 
-Ровно две вещи:
-
 - **`COLLECTOR_RAW_OWNER_KEY`** (`'collector:raw'`) — canonical идентичность
   владельца-коллектора. Ею параметризуются ДВА спроса (Polymarket и CEX);
   одна константа не даёт им разъехаться на разных владельцев.
 - **`PolymarketCollectionGate`** — политика допуска Polymarket-рынка к записи
-  по первому наблюдению. Передаётся recorder-у как `sessionProvider`.
+  по первому наблюдению (universe + policy + подтверждённый claim). Передаётся
+  recorder-у как `sessionProvider`.
+- **`PolymarketCollectionLifecycle`** — жизненный цикл УЖЕ НАЧАТОЙ записи:
+  `ACTIVE → expiresAt → FINALIZING → settlement grace → seal → release claim`.
+- **`buildFinalizedMarketHeader`** и DTO финализации — формат
+  `finalization`-раздела canonical header-а, который заполняет
+  `MarketFinalizer`.
 
 Подписка на шину, запись на диск, RTDS fan-out, CEX-окна — всё это делает
-`ExternalMessageRecorder`; storage — `@polymarket/data-collection`. Второго
-пути записи здесь нет.
+`ExternalMessageRecorder`; storage — `@polymarket/data-collection`; физические
+подписки — `PolymarketSubscriptionController`. Второго пути записи и второго
+владельца подписок здесь нет.
 
 ## 3. Главный routing-инвариант
 
@@ -51,6 +60,9 @@ gate.admit(X):
         ▼
    policy подошла на market.startsAt?  ── нет ──►  игнор (uninteresting)
         │ да
+        ▼
+   collector:raw реально держит X?    ── нет ──►  игнор
+        │ да                                     (ignoredNotHeldByCollector)
         ▼
    registration  →  recorder создаёт сессию и пишет ЭТО ЖЕ первое сообщение
 ```
@@ -87,9 +99,12 @@ Policy коллектора ДОЛЖНА совпадать с policy спрос
   СОЗНАТЕЛЬНО отличается от legacy `headerVersion: 1` координатора (иначе один
   дискриминатор нёс бы два несовместимых shape).
 
-RTDS-фиды в этой фазе НЕ регистрируются (`rtdsFeeds` не задаётся) — см. §8.
-Vendor-подготовку (`prepareMarket`) gate не трогает: она принадлежит
-subscription-controller.
+`rtdsFeeds` берутся из immutable vendor-подготовки УДЕРЖИВАЕМОГО рынка —
+той же, по которой контроллер открыл транспорт. Второй `prepareMarket()` был
+бы хуже его отсутствия: два независимых снимка discovery разошлись бы, и
+рынок записывался бы с одним набором фидов, а подписан был бы с другим. Сами
+подписки gate не открывает — `rtdsFeeds` регистрации это ТОЛЬКО маршрутизация
+записи.
 
 ## 6. Границы (закреплено `contour-boundary.test.ts`)
 
@@ -103,10 +118,19 @@ subscription-controller.
 ## 7. Использование
 
 ```typescript
-import { PolymarketCollectionGate, COLLECTOR_RAW_OWNER_KEY } from '@polymarket/collector';
+import {
+  COLLECTOR_RAW_OWNER_KEY,
+  PolymarketCollectionGate,
+  PolymarketCollectionLifecycle,
+} from '@polymarket/collector';
 import { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
 
-const gate = new PolymarketCollectionGate({ universe, policy: pmPolicy, logger });
+const gate = new PolymarketCollectionGate({
+  universe,
+  policy: pmPolicy,
+  subscriptions: polymarketController,
+  logger,
+});
 const recorder = new ExternalMessageRecorder({
   bus,
   storage: polymarketStorage,
@@ -114,6 +138,10 @@ const recorder = new ExternalMessageRecorder({
   cex: { bus, storage: cexStorage },
   sessionProvider: gate.sessionProvider(),
 });
+const lifecycle = new PolymarketCollectionLifecycle<SelectedPolymarketMarket>(
+  { recorder, subscriptions: polymarketController, clock, logger },
+  { settlementGraceMs: 5_000 },
+);
 recorder.start();
 
 // Спрос коллектора в общий control-plane:
@@ -121,33 +149,42 @@ await pmControlRuntime.runOnce([{ ownerKey: COLLECTOR_RAW_OWNER_KEY, policy: pmP
 await cexController.reconcile([{ ownerKey: COLLECTOR_RAW_OWNER_KEY, policy: cexPolicy }], now);
 ```
 
-## 8. Чего в пакете НЕТ (и что отложено на lifecycle-этап)
+## 8. Жизненный цикл записи
+
+```text
+claim collector:raw ДО открытия рынка   (control-plane)
+        ↓
+первое CLOB-наблюдение → ACTIVE          (gate + recorder)
+        ↓ таймер РОВНО на expiresAt
+FINALIZING                               CLOB и обычные RTDS больше не пишутся
+        ↓ settlementGraceMs (5 с)        только settlement TWAP точной identity
+seal                                     payload заморожен
+        ↓
+release('collector:raw')                 claim снимается ПОСЛЕ заморозки
+        ↓
+MarketFinalizer                          Gamma → финальный header → .jsonl.gz
+```
+
+Три решения, которые определяют этот порядок, разобраны в
+`docs/collector.md`: истечение по таймеру сессии (а не по control-тику),
+снятие claim-а ПОСЛЕ seal (иначе теряется граничное наблюдение TWAP) и
+независимость сессии от `MarketUniverse` (рынок исчезает из снимка discovery
+сразу после истечения).
+
+Конфигурация: `settlementGraceMs` (по умолчанию `5_000` — измеренная
+задержка доставки RTDS ×2).
+
+## 9. Чего в пакете НЕТ
 
 Собственная шина, собственный subscription manager, control-события на шине,
-прямое владение источниками — их не будет здесь никогда.
+прямое владение источниками — их не будет здесь никогда. Ни `subscribeMarket`,
+ни `prepareMarket`, ни ref-count физических фидов: это проверяется
+structural-тестом границы.
 
-Отложено на следующий этап (полный CollectionSession lifecycle), причём
-осознанно, а не по недосмотру:
+Осознанно отложено:
 
-- **RTDS-запись (spot-цены + settlement TWAP).** Фиды `btcusdt`/`btc/usd`
-  РАЗДЕЛЯЕМЫ между всеми рынками актива. Без expiry/seal сессия рынка живёт до
-  остановки процесса, и запись фидов в неё дописывала бы цены актива в датасет
-  давно истёкшего рынка. Поэтому фиды регистрирует этап, который вводит
-  expiry/seal. CLOB-события самого рынка так не текут: они прекращаются с его
-  истечением.
-- **Терминальное состояние сессии.** Gate stateless, а истёкший 5m-рынок Gamma
-  держит `active` до резолюции, поэтому в мире, где есть seal/finalize, позднее
-  наблюдение могло бы РЕ-допустить уже закрытый рынок (zombie-сессия). В этой
-  фазе seal/finalize НЕ вызываются, так что триггера нет; терминальный набор
-  ключей введёт lifecycle-этап вместе с seal.
-- **Vendor-данные для финализации.** `MarketFinalizer` требует
-  `SelectedPolymarketMarket` (vendor-модель), которой canonical registration не
-  несёт. Как финализация получит vendor-данные (из кэша `prepareMarket`
-  контроллера либо повторным `fetchMarket` по `gammaMarketId`) — решает
-  lifecycle-этап.
-- **Допуск по claim-состоянию.** Сейчас допуск — по policy (как требует
-  спецификация этапа). Гарантия «полный архив только для рынков, приобретённых
-  самим коллектором» (а не подхваченных с середины на разделяемой подписке) —
-  тоже lifecycle-этап.
-- **release claim, expiry, settlement grace, resolution fallback, dataset
-  sealing.**
+- **Замена отказавшего источника** для уже пишущихся сессий: реконсиляция
+  терминального отказа `PolymarketSource` живёт в контроллере подписок.
+- **Crash recovery незавершённых `.jsonl`**: их удаляет startup cleanup
+  storage — восстановление прерванной сессии требует доверия к недописанному
+  файлу, а не только к его наличию.

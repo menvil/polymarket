@@ -123,6 +123,22 @@ export interface CollectorConfig {
    * `reconcile`.
    */
   readonly controlTickMs: number;
+
+  /**
+   * Boundary grace settlement-потока (мс): сколько после истечения рынка
+   * ждать граничное наблюдение TWAP, прежде чем заморозить датасет.
+   *
+   * @remarks
+   * Не задано — действует измеренный дефолт рантайма (5 с). Своего дубля
+   * дефолта конфигурация приложения не заводит.
+   */
+  readonly settlementGraceMs: number | undefined;
+
+  /** Пауза между Gamma-попытками одного финализируемого рынка (мс). */
+  readonly enrichmentRetryMs: number | undefined;
+
+  /** Бюджет ожидания официальной резолюции рынка (мс). */
+  readonly enrichmentMaxWaitMs: number | undefined;
 }
 
 /**
@@ -234,5 +250,8 @@ export function loadConfig(): CollectorConfig {
     policyDurations:      parseList('COLLECTOR_POLICY_DURATIONS'),
     discoveryWindowHours: optionalNumberOrUndefined('DISCOVERY_WINDOW_HOURS'),
     controlTickMs:        optionalNumber('COLLECTOR_CONTROL_TICK_MS', 5_000),
+    settlementGraceMs:    optionalNumberOrUndefined('COLLECTOR_SETTLEMENT_GRACE_MS'),
+    enrichmentRetryMs:    optionalNumberOrUndefined('COLLECTOR_ENRICHMENT_RETRY_MS'),
+    enrichmentMaxWaitMs:  optionalNumberOrUndefined('COLLECTOR_ENRICHMENT_MAX_WAIT_MS'),
   };
 }

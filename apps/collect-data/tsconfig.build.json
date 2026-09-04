@@ -20,7 +20,8 @@
     "__tests__",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
-    "src/**/__tests__/**"
+    "src/**/__tests__/**",
+    "src/backfillPolymarketMeta.ts"
   ],
   "references": [
     {
@@ -70,6 +71,9 @@
     },
     {
       "path": "../../packages/infrastructure/collector/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/market-finalizer/tsconfig.build.json"
     },
     {
       "path": "../../packages/application/policy/tsconfig.build.json"

@@ -53,8 +53,12 @@ Collector — **sibling** consumer, а не gate перед семантикой
 | `subscribe`/`prepareMarket`/`watchOrderBook`/`watchTrades` | ни одного прямого вызова из коллектора (структурный тест) |
 | `MarketFinalizer`/`PolymarketTwapObservations` | убраны из композиции (finalization — следующий этап) |
 
-`apps/collect-data` больше не зависит от `@polymarket/collection-coordinator`
-и `@polymarket/market-finalizer`.
+`apps/collect-data` больше не зависит от `@polymarket/collection-coordinator`.
+
+> **Следующий этап выполнен.** Полный жизненный цикл записи (expiry →
+> FINALIZING → settlement grace → seal → release claim → финализация) описан
+> в `docs/guides/collector-market-lifecycle.md`. Всё, что ниже помечено как
+> «отложено», там и закрыто.
 
 ## Как сохраняется первое raw-сообщение
 
@@ -96,22 +100,19 @@ CEX-интерес выражается по ОДНОМУ владельцу н�
 символов разных бирж без декартова произведения, а CEX-контроллер запрещает
 дубликат `ownerKey` и всё равно агрегирует claim-ы в общие пулы.
 
-## Что осознанно отложено на следующий этап (lifecycle)
+## Что было отложено этим этапом и где закрыто
 
-Этот этап узкий: минимальное состояние сессии (в recorder), запись CLOB-
-событий рынка и CEX orderbook/trades. НЕ входит и отложено с обоснованием:
+Cutover был узким: минимальное состояние сессии (в recorder), запись CLOB-
+событий рынка и CEX orderbook/trades. Отложенное закрыто следующим этапом
+(`docs/guides/collector-market-lifecycle.md`):
 
-- **RTDS-запись (spot + settlement TWAP).** Фиды разделяемы между рынками
-  актива; без expiry/seal запись шла бы в датасет истёкшего рынка бесконечно.
-  CLOB-события так не текут — прекращаются с истечением рынка сами.
-- **Терминальное состояние сессии / expiry / seal / finalization / release
-  claim.** В этой фазе seal/finalize не вызываются, поэтому позднее наблюдение
-  не может ре-допустить закрытый рынок; накопление claim-ов и сессий — принятое
-  состояние минимальной фазы.
-- **Vendor-данные для финализации** (`SelectedPolymarketMarket`) — canonical
-  registration их не несёт; способ их получения решит lifecycle-этап.
-- **Допуск по claim-состоянию** вместо повторной policy-оценки на разделяемой
-  подписке.
+| Отложено на cutover | Как решено |
+| --- | --- |
+| RTDS-запись (spot + settlement TWAP) | `rtdsFeeds` из подготовки удерживаемого рынка; на `expiresAt` routing сужается до settlement-потока, затем seal |
+| expiry / seal / finalization / release claim | `PolymarketCollectionLifecycle`: таймер сессии → FINALIZING → grace → seal → release |
+| терминальное состояние сессии | `SEALED`-надгробие в recorder + отсутствие claim-а после release |
+| vendor-данные для финализации | `PolymarketSubscriptionController.getHeldMarket` отдаёт immutable подготовку |
+| допуск по claim-состоянию | gate требует подтверждённый claim `collector:raw` |
 
 ## Replay/backtest независимы
 

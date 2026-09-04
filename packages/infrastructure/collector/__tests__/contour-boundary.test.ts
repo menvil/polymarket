@@ -11,6 +11,10 @@
  * - **I. Replay-контур не зависит от Collector.** Backtesting/replay-пакеты и
  *   storage не импортируют `@polymarket/collector`, а recorder не зависит от
  *   коллектора (провайдер сессий инъецируется, а не импортируется).
+ * - **Q. Legacy boundary.** Canonical runtime сбора (коллектор, финализатор,
+ *   composition root приложения) НЕ зависит от legacy
+ *   `@polymarket/collection-coordinator`: тот остаётся behavior oracle и
+ *   целью удаления, а не участником контура.
  */
 import { describe, it, expect } from '@jest/globals';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -50,6 +54,7 @@ const ALLOWED_SOURCE_IMPORTS = new Set([
   '@polymarket/market-discovery',
   '@polymarket/policy',
   '@polymarket/ports',
+  '@polymarket/time',
   '@polymarket/timestamp',
 ]);
 
@@ -174,5 +179,48 @@ describe('I. Replay-контур не зависит от Collector', () => {
         expect(collectImports(filePath)).not.toContain('@polymarket/collector');
       }
     }
+  });
+});
+
+describe('Q. Canonical runtime не зависит от legacy collection-coordinator', () => {
+  /** Пакеты и приложения, образующие canonical runtime сбора. */
+  const CANONICAL_RUNTIME_ROOTS: readonly string[] = [
+    PACKAGE_ROOT,
+    join(INFRA_ROOT, 'market-finalizer'),
+    join(INFRA_ROOT, 'polymarket-subscription-control'),
+    join(INFRA_ROOT, 'polymarket-control-runtime'),
+    join(PERSISTENCE_ROOT, 'external-message-recorder'),
+    join(PACKAGE_ROOT, '..', '..', '..', 'apps', 'collect-data'),
+  ];
+
+  it('ни один src canonical runtime не импортирует legacy-координатор', () => {
+    const violations: string[] = [];
+    for (const root of CANONICAL_RUNTIME_ROOTS) {
+      for (const filePath of listSourceFiles(join(root, 'src'))) {
+        if (collectImports(filePath).includes('@polymarket/collection-coordinator')) {
+          violations.push(filePath);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('legacy-координатора нет в РАНТАЙМ-зависимостях canonical runtime', () => {
+    const violations: string[] = [];
+    for (const root of CANONICAL_RUNTIME_ROOTS) {
+      if (runtimeDependencies(root).includes('@polymarket/collection-coordinator')) {
+        violations.push(root);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('legacy-координатор помечен как удаляемый (не canonical runtime)', () => {
+    const legacyIndex = readFileSync(
+      join(INFRA_ROOT, 'collection-coordinator', 'src', 'index.ts'),
+      'utf8',
+    );
+    expect(legacyIndex).toContain('@deprecated');
+    expect(legacyIndex).toContain('LEGACY BEHAVIOR ORACLE');
   });
 });

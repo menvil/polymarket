@@ -5,13 +5,13 @@
  * ### Роль в контуре сбора после cutover
  *
  * ```text
- * shared control-plane (collector:raw)      MarketDiscovery → MarketUniverse
+ * shared control-plane                      MarketDiscovery → MarketUniverse
  *        открывает физические подписки              ↑ canonical рынки
  *                    ↓                              │
- *          PolymarketSource → ExternalMessageBus    │
- *                    ↓ POLYMARKET_MARKET            │
+ *          PolymarketSource → ExternalMessageBus    │  claim collector:raw?
+ *                    ↓ POLYMARKET_MARKET            │        ↑
  *          ExternalMessageRecorder ── нет сессии ──► PolymarketCollectionGate.admit()
- *                    ↑ registration                        universe.get + policy
+ *                    ↑ registration                   universe + policy + ownership
  *                    записать ЭТО ЖЕ первое сообщение
  * ```
  *
@@ -40,6 +40,36 @@
  * торгов, и рынок с полуоткрытым окном policy мог бы «внезапно» перестать
  * подходить ровно в момент, когда он начал присылать данные.
  *
+ * ### Совпадения policy НЕДОСТАТОЧНО: рынок должен быть НАШИМ
+ *
+ * Шина общая, и физическая подписка рынка может существовать из-за ЧУЖОГО
+ * владельца:
+ *
+ * ```text
+ * strategy:A держит рынок X   →  события X идут на общую шину
+ * collector:raw НЕ приобрёл X →  коллектор писать X не имеет права
+ * ```
+ *
+ * Совпадение policy этого не различает: policy отвечает на вопрос «такие
+ * рынки нам интересны», а не «этот рынок мы приобрели». Поэтому допуск
+ * завершается подтверждением claim-а у `PolymarketSubscriptionController`.
+ * Рынок, существующий только из-за другого владельца, игнорируется —
+ * отдельным счётчиком `ignoredNotHeldByCollector`, а не общим «не подошёл».
+ *
+ * ### Откуда берутся RTDS-фиды регистрации
+ *
+ * Из immutable vendor-подготовки, которую контроллер получил ПРИ
+ * ПРИОБРЕТЕНИИ рынка. Второй `prepareMarket()` здесь был бы хуже, чем его
+ * отсутствие: два независимых снимка discovery разошлись бы, и рынок
+ * записывался бы с одним набором фидов, а физически подписан был бы с
+ * другим. Открытие подписок при этом остаётся полностью за контроллером —
+ * `rtdsFeeds` регистрации это ТОЛЬКО маршрутизация записи:
+ *
+ * ```text
+ * Controller: физическая подписка RTDS + ref-count по рынкам
+ * Recorder:   в какие market-файлы писать наблюдение общего фида
+ * ```
+ *
  * ### Что gate НЕ делает
  *
  * Не хранит сессий (их держит recorder), не пересчитывает policy для уже
@@ -47,26 +77,33 @@
  * не знает про release/expiry/finalization (отдельный этап lifecycle) и не
  * трогает CEX (у биржевых потоков нет marketId и нет сессий — их пишет
  * оконная политика recorder-а).
- *
- * ### Почему в этой фазе НЕ регистрируются RTDS-фиды
- *
- * Registration намеренно НЕ объявляет `rtdsFeeds`: без lifecycle истечения
- * (expiry → seal) сессия рынка живёт до остановки процесса, а RTDS-фиды
- * (`btcusdt`, `btc/usd`) РАЗДЕЛЯЕМЫ между всеми рынками актива. Записывать их
- * в никогда не закрывающуюся сессию значило бы бесконечно дописывать цены
- * актива в датасет давно истёкшего рынка. Поэтому в этой узкой фазе
- * записываются только CLOB-события самого рынка (они прекращаются с его
- * истечением сами), а RTDS-цены и settlement-поток TWAP — часть следующего
- * этапа, который вводит expiry/seal и вместе с ними безопасную регистрацию
- * фидов.
  */
 import type { ILogger } from '@polymarket/logger';
 import { asMarketId, KnownVenues } from '@polymarket/ids';
+import type { MarketId } from '@polymarket/ids';
 import type { MarketDiscoveryEntry, MarketMeta } from '@polymarket/ports';
 import type { MarketUniverse } from '@polymarket/market-discovery';
 import { MarketFilter } from '@polymarket/policy';
 import type { PolymarketPolicy } from '@polymarket/policy';
 import type { PolymarketRecordingRegistration } from '@polymarket/external-message-recorder';
+import { COLLECTOR_RAW_OWNER_KEY } from './collectorOwner.js';
+import type { CollectionMarketPreparation } from './collectionSession.js';
+
+/**
+ * Read-only проекция claim-ов общего control-plane, нужная допуску.
+ *
+ * @remarks
+ * Структурное подмножество `PolymarketSubscriptionController.getHeldMarket`.
+ * Узость намеренна: gate физически не может ни приобрести рынок, ни снять
+ * чужой claim — он только СПРАШИВАЕТ, наш ли этот рынок, и берёт его
+ * immutable подготовку.
+ */
+export interface CollectionOwnershipView {
+  getHeldMarket(
+    ownerKey: string,
+    marketId: MarketId,
+  ): { readonly selected: CollectionMarketPreparation } | undefined;
+}
 
 /**
  * Зависимости {@link PolymarketCollectionGate}.
@@ -89,8 +126,22 @@ export interface PolymarketCollectionGateDependencies {
    * другое.
    */
   readonly policy: PolymarketPolicy;
+  /**
+   * Read-only проекция claim-ов общего control-plane.
+   *
+   * @remarks
+   * Тот же экземпляр контроллера, которым control-plane приобретает рынки:
+   * допуск к записи и владение физическим ресурсом обязаны опираться на
+   * ОДНО состояние, иначе коллектор писал бы рынки, которых не держит.
+   */
+  readonly subscriptions: CollectionOwnershipView;
   /** Логгер (будет обёрнут в child с component-контекстом). */
   readonly logger: ILogger;
+  /**
+   * Ключ владельца, чьи claim-ы подтверждают допуск.
+   * @defaultValue {@link COLLECTOR_RAW_OWNER_KEY}
+   */
+  readonly ownerKey?: string;
 }
 
 /**
@@ -111,6 +162,16 @@ export interface PolymarketCollectionGateStats {
   readonly ignoredUnknownMarket: number;
   /** Наблюдений по рынку, не подошедшему под owner policy. */
   readonly ignoredByPolicy: number;
+  /**
+   * Наблюдений по рынку, который коллектор НЕ приобретал.
+   *
+   * @remarks
+   * Рынок подошёл под policy и есть в universe, но физически живёт из-за
+   * ЧУЖОГО владельца на общей шине. Это штатный игнор, а не потеря — и не
+   * «не подошёл под policy»: смешивать их значило бы читать нормальную
+   * работу shared control-plane как расхождение конфигурации.
+   */
+  readonly ignoredNotHeldByCollector: number;
   /** Наблюдений с непарсируемым source market id (защитный контур). */
   readonly invalidMarketId: number;
 }
@@ -120,7 +181,9 @@ export interface PolymarketCollectionGateStats {
  *
  * @example
  * ```typescript
- * const gate = new PolymarketCollectionGate({ universe, policy, logger });
+ * const gate = new PolymarketCollectionGate({
+ *   universe, policy, subscriptions: polymarketController, logger,
+ * });
  * const recorder = new ExternalMessageRecorder({
  *   bus, storage, logger,
  *   sessionProvider: gate.sessionProvider(),
@@ -130,12 +193,15 @@ export interface PolymarketCollectionGateStats {
 export class PolymarketCollectionGate {
   private readonly _universe: MarketUniverse;
   private readonly _policy: PolymarketPolicy;
+  private readonly _subscriptions: CollectionOwnershipView;
+  private readonly _ownerKey: string;
   private readonly _logger: ILogger;
   private readonly _filter = new MarketFilter();
 
   private _admitted = 0;
   private _ignoredUnknownMarket = 0;
   private _ignoredByPolicy = 0;
+  private _ignoredNotHeldByCollector = 0;
   private _invalidMarketId = 0;
 
   /**
@@ -146,6 +212,8 @@ export class PolymarketCollectionGate {
   constructor(deps: PolymarketCollectionGateDependencies) {
     this._universe = deps.universe;
     this._policy = deps.policy;
+    this._subscriptions = deps.subscriptions;
+    this._ownerKey = deps.ownerKey ?? COLLECTOR_RAW_OWNER_KEY;
     this._logger = deps.logger.child({ component: 'PolymarketCollectionGate' });
   }
 
@@ -168,8 +236,9 @@ export class PolymarketCollectionGate {
    * Решает, начинать ли запись рынка по его первому наблюдению.
    *
    * @param sourceMarketId - `payload.market` входящего события (conditionId)
-   * @returns Recording-регистрация — рынок интересен, начать запись; либо
-   *   `undefined` — рынок неизвестен, не подошёл под policy или id невалиден
+   * @returns Recording-регистрация — рынок интересен и приобретён, начать
+   *   запись; либо `undefined` — рынок неизвестен, не подошёл под policy,
+   *   не удерживается коллектором или id невалиден
    * @throws Ничего не бросает: любая несогласованность входа — это `undefined`
    *
    * @remarks
@@ -178,7 +247,10 @@ export class PolymarketCollectionGate {
    * 2. Ищем рынок в universe по паре `(POLYMARKET, marketId)`; нет — игнор
    *    (рынок неизвестен коллектору).
    * 3. Проверяем owner policy на `market.startsAt`; не подошёл — игнор.
-   * 4. Строим registration из canonical `Market` (header/tokenIds/spot RTDS).
+   * 4. Спрашиваем control-plane, держит ли `collector:raw` этот рынок; нет —
+   *    игнор (физический поток принадлежит другому владельцу).
+   * 5. Строим registration: canonical header из `Market` + RTDS-фиды из
+   *    immutable vendor-подготовки удерживаемого рынка.
    *
    * @example
    * ```typescript
@@ -212,11 +284,23 @@ export class PolymarketCollectionGate {
       return undefined;
     }
 
-    const registration = this._buildRegistration(entry);
+    // Совпадения policy мало: физический поток мог открыть ДРУГОЙ владелец
+    const held = this._subscriptions.getHeldMarket(this._ownerKey, marketId);
+    if (held === undefined) {
+      this._ignoredNotHeldByCollector++;
+      this._logger.debug('Collection admission skipped: market is not held by the collector', {
+        sourceMarketId,
+        ownerKey: this._ownerKey,
+      });
+      return undefined;
+    }
+
+    const registration = this._buildRegistration(entry, held.selected);
     this._admitted++;
     this._logger.info('Market admitted to collection', {
       marketId: sourceMarketId,
       question: entry.market.question,
+      rtdsFeeds: held.selected.rtdsFeeds.length,
     });
     return registration;
   }
@@ -231,6 +315,7 @@ export class PolymarketCollectionGate {
       admitted: this._admitted,
       ignoredUnknownMarket: this._ignoredUnknownMarket,
       ignoredByPolicy: this._ignoredByPolicy,
+      ignoredNotHeldByCollector: this._ignoredNotHeldByCollector,
       invalidMarketId: this._invalidMarketId,
     };
   }
@@ -239,7 +324,8 @@ export class PolymarketCollectionGate {
    * Строит recording-регистрацию из canonical рынка universe.
    *
    * @param entry - Запись universe: canonical `Market` + метрики
-   * @returns Регистрация с canonical header и tokenIds исходов
+   * @param prepared - Immutable vendor-подготовка удерживаемого рынка
+   * @returns Регистрация с canonical header, tokenIds исходов и RTDS-фидами
    *
    * @remarks
    * ### Header — canonical, версия 2
@@ -262,12 +348,20 @@ export class PolymarketCollectionGate {
    * `startsAt` начнёт следующий этап lifecycle, когда появится осмысленная
    * граница «до старта торгов не пишем».
    *
-   * ### Без `rtdsFeeds`
+   * ### RTDS-фиды — маршрутизация, а не подписка
    *
-   * Фиды не регистрируются в этой фазе (см. TSDoc класса): RTDS-цены и
-   * settlement-поток — следующий этап вместе с expiry/seal.
+   * Список берётся из подготовки удерживаемого рынка КАК ЕСТЬ: и spot-цены
+   * актива, и settlement-поток TWAP с точным окном. Gate ничего не
+   * открывает — фиды уже подписаны контроллером и разделены между рынками;
+   * здесь решается лишь, в какой market-файл писать наблюдение общего фида.
+   * Бесконечное дописывание чужих цен в датасет истёкшего рынка исключено
+   * lifecycle: на `expiresAt` routing сужается до settlement-потока, а
+   * затем датасет замораживается.
    */
-  private _buildRegistration(entry: MarketDiscoveryEntry): PolymarketRecordingRegistration {
+  private _buildRegistration(
+    entry: MarketDiscoveryEntry,
+    prepared: CollectionMarketPreparation,
+  ): PolymarketRecordingRegistration {
     const { market } = entry;
     const tokenIds = market.outcomes.map((outcome) => String(outcome.instrumentId));
 
@@ -308,6 +402,6 @@ export class PolymarketCollectionGate {
       rawMarket: header,
     };
 
-    return { marketMeta };
+    return { marketMeta, rtdsFeeds: prepared.rtdsFeeds };
   }
 }

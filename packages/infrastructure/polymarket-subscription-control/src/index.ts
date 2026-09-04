@@ -46,6 +46,7 @@
  */
 export { PolymarketSubscriptionController } from './PolymarketSubscriptionController.js';
 export type {
+  HeldPolymarketSubscriptionSnapshot,
   PolymarketAcquireFailureStage,
   PolymarketAcquireRejection,
   PolymarketAcquireResult,

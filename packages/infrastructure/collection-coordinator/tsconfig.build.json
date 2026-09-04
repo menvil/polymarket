@@ -25,6 +25,9 @@
   ],
   "references": [
     {
+      "path": "../collector/tsconfig.build.json"
+    },
+    {
       "path": "../polymarket-v2/tsconfig.build.json"
     },
     {

@@ -8,17 +8,30 @@
  * CONTROL PLANE
  *
  * MarketFinalizer.runOnce()          ← cadence принадлежит composition root
- *   ├── detects due ACTIVE sessions      (coordinator.listSessions)
- *   ├── beginFinalization                (coordinator: seal + teardown realtime)
+ *   ├── detects due ACTIVE sessions      (lifecycle.listSessions)
+ *   ├── beginFinalization                (lifecycle: cutoff → grace → seal)
  *   ├── fetchMarket / fetchEvent         (официальный SDK, query plane)
- *   ├── updateMarketMeta                 (recorder: полный V2 header LINE 1)
+ *   ├── updateMarketMeta                 (recorder: canonical V2 header LINE 1)
  *   ├── finalizeMarket(EXPIRED)          (recorder: flush → gzip)
- *   └── completeFinalization             (coordinator: снять FINALIZING)
+ *   └── completeFinalization             (lifecycle: снять FINALIZING)
  * ```
  *
- * Finalizer НЕ владеет candidate cache, session lifecycle, storage и общим
- * bus; Gamma polling — control/query plane: никаких synthetic
- * ExternalMessages (PART 33), таймеров внутри core-класса нет (PART 13).
+ * ### Граница immutable-датасета
+ *
+ * ```text
+ * expiresAt → cutoff → settlement grace → SEAL → release claim
+ *                                           │
+ *                                           └── ТОЛЬКО ПОСЛЕ ЭТОГО: Gamma polling
+ * ```
+ *
+ * Ни один Gamma-запрос не влияет на поток сырых наблюдений: к моменту первой
+ * попытки enrichment датасет уже заморожен (`awaitSettlementCapture`), а
+ * физический claim коллектора снят.
+ *
+ * Finalizer НЕ владеет candidate cache, session lifecycle, storage, общим bus
+ * и физическими подписками; Gamma polling — control/query plane: никаких
+ * synthetic ExternalMessages (PART 33), таймеров внутри core-класса нет
+ * (PART 13).
  *
  * ### Resolution policy (MR-B)
  *
@@ -83,20 +96,26 @@ import type {
   PolymarketGammaMarket,
 } from '@polymarket/polymarket-v2';
 import {
+  CHAINLINK_TWAP_TOPIC,
   deriveWinnerFromCryptoPrices,
   deriveWinningOutcome,
   extractCryptoFinalization,
   isTwapRtdsFeed,
   mapFinalOutcomes,
 } from '@polymarket/polymarket-v2';
-import type { PolymarketFinalOutcome, PolymarketTwapRtdsFeed } from '@polymarket/polymarket-v2';
+import type {
+  PolymarketFinalOutcome,
+  PolymarketTwapRtdsFeed,
+  SelectedPolymarketMarket,
+} from '@polymarket/polymarket-v2';
 import type {
   CollectionFallbackTrigger,
   CollectionHeaderFinalization,
-  FinalizingMarketSession,
-  MarketCollectionCoordinator,
-} from '@polymarket/collection-coordinator';
-import { buildCollectionHeader } from '@polymarket/collection-coordinator';
+  CollectionSettlementDescriptor,
+  FinalizingCollectionSession,
+  PolymarketCollectionLifecycle,
+} from '@polymarket/collector';
+import { buildFinalizedMarketHeader } from '@polymarket/collector';
 import type { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
 import { deriveWinnerFromRecordedChainlink } from './recordedChainlinkWinner.js';
 import { deriveWinnerFromRecordedTwap } from './recordedTwapSettlement.js';
@@ -115,14 +134,30 @@ export type FinalizationGammaClient = Pick<
 >;
 
 /**
- * Порт координатора, используемый finalizer-ом (PART 37).
+ * Immutable-снимок финализируемой сессии в терминах контура сбора.
  *
  * @remarks
- * Только session-lifecycle операции; private maps координатора недоступны —
- * due-сессии определяются по read-only снимкам `listSessions()`.
+ * Vendor-подготовка рынка здесь конкретная (`SelectedPolymarketMarket`):
+ * финализатору нужны Gamma-идентификаторы, правило расчёта и initial-снапшот.
+ * Пакет коллектора обобщён по этому типу именно затем, чтобы конкретизация
+ * жила ЗДЕСЬ — там, где vendor-модель уже законна.
  */
-export type FinalizationCoordinator = Pick<
-  MarketCollectionCoordinator,
+export type FinalizingMarketSession = FinalizingCollectionSession<SelectedPolymarketMarket>;
+
+/**
+ * Порт lifecycle collection-сессий, используемый finalizer-ом (PART 37).
+ *
+ * @remarks
+ * Только session-lifecycle операции; private state lifecycle недоступен —
+ * due-сессии определяются по read-only снимкам `listSessions()`.
+ *
+ * Canonical зависимость — `PolymarketCollectionLifecycle`
+ * (`@polymarket/collector`), а НЕ legacy `MarketCollectionCoordinator`:
+ * тот сам владел подписками и vendor-подготовкой, и финализатор через него
+ * тянул бы за собой всю снятую с вооружения архитектуру.
+ */
+export type FinalizationLifecycle = Pick<
+  PolymarketCollectionLifecycle<SelectedPolymarketMarket>,
   'listSessions' | 'beginFinalization' | 'awaitSettlementCapture' | 'completeFinalization'
 >;
 
@@ -174,8 +209,8 @@ export type FinalizationOutcome =
  * Зависимости {@link MarketFinalizer}.
  */
 export interface MarketFinalizerDependencies {
-  /** Координатор collection sessions (expiry-переходы/завершение). */
-  readonly coordinator: FinalizationCoordinator;
+  /** Lifecycle collection sessions (expiry-переходы/завершение). */
+  readonly lifecycle: FinalizationLifecycle;
   /** Recording-подписчик (header update + EXPIRED архив). */
   readonly recorder: FinalizationRecorder;
   /** Официальный SDK public client (query plane). */
@@ -299,13 +334,41 @@ interface PendingFinalization {
 }
 
 /**
+ * Нормализует правило расчёта рынка для finalization-раздела header-а.
+ *
+ * @param selected - Vendor-подготовка рынка
+ * @returns Дескриптор settlement либо `undefined`, если правило не распознано
+ *
+ * @remarks
+ * Дескриптор попадает в CORE header-а, чтобы читателю архива не приходилось
+ * ни парсить `resolution.source` URL, ни знать формат стримов Chainlink,
+ * чтобы понять, чем рынок резолвился. Canonical header допуска этих
+ * vendor-подробностей не несёт — он строится из доменного `Market`.
+ */
+function describeSettlement(
+  selected: SelectedPolymarketMarket,
+): CollectionSettlementDescriptor | undefined {
+  const settlement = selected.crypto?.settlement;
+  if (settlement === undefined) {
+    return undefined;
+  }
+  return {
+    kind: settlement.kind,
+    topic: CHAINLINK_TWAP_TOPIC,
+    symbol: settlement.symbol,
+    windowSeconds: settlement.windowSeconds,
+    resolutionSource: settlement.resolutionSource,
+  };
+}
+
+/**
  * Post-expiry finalizer V2-записей: due ACTIVE → FINALIZING → Gamma
  * enrichment → финальный header → EXPIRED gzip → снятие сессии.
  *
  * @example
  * ```typescript
  * const finalizer = new MarketFinalizer(
- *   { coordinator, recorder, gamma: createPublicClient(), clock, logger },
+ *   { lifecycle, recorder, gamma: createPublicClient(), clock, logger },
  *   {},
  * );
  * // composition root cadence:
@@ -317,7 +380,7 @@ interface PendingFinalization {
  * ```
  */
 export class MarketFinalizer {
-  private readonly _coordinator: FinalizationCoordinator;
+  private readonly _lifecycle: FinalizationLifecycle;
   private readonly _recorder: FinalizationRecorder;
   private readonly _gamma: FinalizationGammaClient;
   private readonly _clock: IClock;
@@ -351,7 +414,7 @@ export class MarketFinalizer {
    * @param config - Конфигурация retry/timeout (см. {@link MarketFinalizerConfig})
    */
   constructor(deps: MarketFinalizerDependencies, config: MarketFinalizerConfig = {}) {
-    this._coordinator = deps.coordinator;
+    this._lifecycle = deps.lifecycle;
     this._recorder = deps.recorder;
     this._gamma = deps.gamma;
     this._clock = deps.clock;
@@ -433,7 +496,7 @@ export class MarketFinalizer {
    * 2. НЕ мешает expiry-переходам: ACTIVE-рынок, истёкший во время drain,
    *    входит в FINALIZING и тоже дожидается (данные не теряются);
    *    рынки, НЕ истёкшие к концу drain, остаются ACTIVE — их закроет
-   *    `coordinator.close()` политикой SHUTDOWN;
+   *    `lifecycle.close()` политикой SHUTDOWN;
    * 3. возвращается, когда drainable pending нет (archiveFailed-остатки
    *    не ждутся — их архив терминально отказал, PART 35);
    * 4. {@link MarketFinalizer.close} прерывает ожидание немедленно —
@@ -447,7 +510,7 @@ export class MarketFinalizer {
    * // штатный shutdown composition root:
    * await finalizer.drain();  // дождаться официальных резолюций
    * await finalizer.close();
-   * await coordinator.close();
+   * await lifecycle.close();
    * ```
    */
   public async drain(): Promise<void> {
@@ -525,8 +588,8 @@ export class MarketFinalizer {
    *    Остановка процесса ускоряет fallback (PART 5): ждать оставшиеся
    *    минуты официальной резолюции незачем, когда итог уже выводится из
    *    записанного settlement-потока детерминированно;
-   * 3. ACTIVE/OPENING рынки НЕ трогаются — их закроет
-   *    `coordinator.close()` как SHUTDOWN (incomplete-файлы удалятся).
+   * 3. ACTIVE рынки НЕ трогаются — их закроет `lifecycle.close()` как
+   *    SHUTDOWN (incomplete-файлы удалятся).
    *
    * Архива с неизвестным победителем этот путь больше не производит:
    * незавершаемый датасет удаляется, а не выдаётся за пригодный к replay.
@@ -583,11 +646,10 @@ export class MarketFinalizer {
     const nowMs = this._clock.now().getTime();
 
     // ── 1. Expiry-переходы due ACTIVE-сессий ────────────────────────────────
-    for (const snapshot of this._coordinator.listSessions()) {
-      if (snapshot.state !== 'ACTIVE' || snapshot.expiresAt === undefined) {
-        continue;
-      }
-      if (snapshot.expiresAt.toNumber() > nowMs) {
+    // Штатно границу держит таймер lifecycle; этот проход — safety net и
+    // единственный путь для рынков, истёкших между двумя control-тиками.
+    for (const snapshot of this._lifecycle.listSessions()) {
+      if (snapshot.state !== 'ACTIVE' || snapshot.expiresAt.toNumber() > nowMs) {
         continue;
       }
       const key = String(snapshot.marketId);
@@ -598,7 +660,7 @@ export class MarketFinalizer {
       // seal-пути) не роняет runOnce и не лишает остальные сессии enrichment-а
       let session: FinalizingMarketSession | undefined;
       try {
-        session = await this._coordinator.beginFinalization(snapshot.marketId);
+        session = await this._lifecycle.beginFinalization(snapshot.marketId);
       } catch (error) {
         this._logger.error('beginFinalization failed for expired market, continuing pass', {
           marketId: key,
@@ -783,7 +845,7 @@ export class MarketFinalizer {
     // Датасет обязан быть заморожен ДО чтения/архива: на истёкшем рынке с
     // settlement-фидом координатор ещё несколько секунд дописывает граничное
     // наблюдение (boundary grace). No-op, если grace уже завершён.
-    await this._coordinator.awaitSettlementCapture(entry.session.marketId);
+    await this._lifecycle.awaitSettlementCapture(entry.session.marketId);
 
     const resolution = await this._resolveArchive(entry, fallbackTrigger);
     if (resolution === undefined) {
@@ -826,7 +888,7 @@ export class MarketFinalizer {
       return 'archive-failed';
     }
 
-    this._coordinator.completeFinalization(entry.session.marketId);
+    this._lifecycle.completeFinalization(entry.session.marketId);
     this._pending.delete(key);
     this._archivedTotal++;
     // Классификация идёт по PROVENANCE, а не по статусу: архив без
@@ -1266,7 +1328,7 @@ export class MarketFinalizer {
       });
       return 'discard-failed';
     }
-    this._coordinator.completeFinalization(entry.session.marketId);
+    this._lifecycle.completeFinalization(entry.session.marketId);
     this._pending.delete(key);
     this._discardedUnresolvable++;
     this._logger.warn('Market outcome unresolvable, incomplete dataset discarded', {
@@ -1340,7 +1402,7 @@ export class MarketFinalizer {
   }
 
   /**
-   * Пересобирает ПОЛНЫЙ V2 header (PART 22/23) и пишет его в LINE 1.
+   * ОБОГАЩАЕТ canonical V2 header датасета итогом и пишет его в LINE 1.
    *
    * @param entry - Pending-финализация
    * @param decision - Принятое решение об итоге (статус/победитель/
@@ -1349,6 +1411,12 @@ export class MarketFinalizer {
    * @returns `true`, если header фактически записан storage-ом
    *
    * @remarks
+   * Базой служит ТОТ ЖЕ header, который записал допуск рынка
+   * (`headerVersion: 2`, canonical identity/timing/outcomes/крипто-номинал).
+   * Финализатор добавляет к нему `finalization` и момент начала записи —
+   * и НЕ подменяет его legacy vendor-формой: два несовместимых shape под
+   * разными версиями в одном датасете сделали бы дискриминатор бесполезным.
+   *
    * Общие поля раздела заполняются здесь единообразно, различающие —
    * приходят решением. Промежуточный `pending`-header дополнительно
    * показывает уже известного ОФИЦИАЛЬНОГО победителя (если он появился до
@@ -1370,12 +1438,14 @@ export class MarketFinalizer {
       (isPending ? this._deriveOfficialWinning(entry, outcomes, umaResolutionStatus) : undefined);
     const crypto =
       decision.crypto ?? (selected.crypto !== undefined ? entry.crypto : undefined);
+    const settlement = describeSettlement(selected);
 
     const finalization: CollectionHeaderFinalization = {
       status: decision.status,
       startedAtMs: entry.startedAtMs,
       ...(isPending ? {} : { finalizedAtMs: nowMs }),
       attempts: entry.attempts,
+      ...(settlement !== undefined ? { settlement } : {}),
       resolution: {
         ...(gammaMarket.state.closed !== null && gammaMarket.state.closed !== undefined
           ? { closed: gammaMarket.state.closed }
@@ -1398,11 +1468,19 @@ export class MarketFinalizer {
         : {}),
     };
 
-    const header = buildCollectionHeader({
-      selected,
-      recordingStartsAt: entry.session.recordingStartedAt,
-      ...(entry.freshMarket !== undefined ? { gammaMarket: entry.freshMarket } : {}),
-      ...(entry.freshEvent !== undefined ? { gammaEvent: entry.freshEvent } : {}),
+    const baseHeader = entry.session.marketMeta.rawMarket;
+    if (baseHeader === undefined) {
+      // Датасет без canonical header-а обогащать нечем: допуск рынка обязан
+      // был его записать, и его отсутствие — дефект, а не деградация формата.
+      this._logger.error('Recording session has no canonical header to enrich', {
+        marketId: key,
+      });
+      return false;
+    }
+    const header = buildFinalizedMarketHeader({
+      baseHeader,
+      marketMeta: entry.session.marketMeta,
+      recordingStartsAtMs: entry.session.recordingStartedAt.toNumber(),
       finalization,
     });
     if (header === undefined) {

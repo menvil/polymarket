@@ -44,6 +44,7 @@
   "author": "Ivan Moroz",
   "license": "UNLICENSED",
   "dependencies": {
+    "@polymarket/collector": "0.1.0",
     "@polymarket/external-message-recorder": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",

@@ -16,9 +16,24 @@
  * Рантайм НЕ владеет источниками и не открывает подписки сам: он выражает
  * спрос коллектора (`collector:raw`) через control-plane каждый тик. Collector
  * (recorder + `PolymarketCollectionGate`) — обычный подписчик шины, а не gate
- * перед семантикой. Semantic-конверсий, Domain-концептов, стратегий и
- * финализации здесь нет: рантайм живёт строго ДО semantic boundary, а полный
- * lifecycle истечения/финализации — отдельный этап.
+ * перед семантикой. Semantic-конверсий, Domain-концептов и стратегий здесь
+ * нет: рантайм живёт строго ДО semantic boundary.
+ *
+ * ### Полный жизненный цикл рынка
+ *
+ * ```text
+ * claim collector:raw ДО открытия  (control-plane)
+ *   → первое наблюдение → ACTIVE   (gate + recorder)
+ *   → expiresAt → FINALIZING       (lifecycle: таймер сессии, НЕ тик)
+ *   → settlement grace → seal      (lifecycle)
+ *   → release collector:raw        (lifecycle)
+ *   → Gamma enrichment → header    (finalizer)
+ *   → .jsonl.gz → сессия снята     (finalizer)
+ * ```
+ *
+ * Границу датасета держит ТАЙМЕР сессии, а не каденция control-цикла: тик
+ * ходит раз в секунды-десятки секунд, и ждать его значило бы дописывать в
+ * датасет CLOB истёкшего рынка всё это время.
  *
  * ### Порядок старта (recorder-first)
  *
@@ -32,14 +47,21 @@
  * ### Порядок остановки
  *
  * ```text
- * control-loop → cexController.close → pmController.close → PM source.close
+ * control-loop
+ *   → lifecycle.runOnce            (истёкшие сессии входят в FINALIZING)
+ *   → lifecycle.awaitAllSettlementCaptures  (датасеты заморожены)
+ *   → finalizer.drain → finalizer.close     (официальные резолюции/fallback)
+ *   → lifecycle.close              (ACTIVE → SHUTDOWN, claim-ы сняты)
+ *   → cexController.close → pmController.close → PM source.close
  *   → client.closeSubscriptions → bus.drain → recorder.close → bus.close
  * ```
  *
- * Сначала прекращается спрос, затем контроллеры снимают физические подписки
- * (CEX-контроллер закрывает свои источники, PM-контроллер — свои claim-ы и
- * RTDS-ссылки), затем закрывается общий PM source и его shared realtime, и
- * только потом очередь шины дренируется В recorder. Каждый шаг best-effort.
+ * Порядок продиктован данными, а не удобством: сначала доводятся до конца
+ * УЖЕ начатые записи (иначе истёкший рынок остался бы без архива, а его
+ * незавершённый `.jsonl` забрал бы startup cleanup), и только потом снимаются
+ * физические подписки. Затем закрывается общий PM source и его shared
+ * realtime, и лишь после этого очередь шины дренируется В recorder. Каждый
+ * шаг best-effort.
  */
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
@@ -68,7 +90,15 @@ import type {
   CexSubscriptionControllerStats,
   CexSubscriptionDemand,
 } from '@polymarket/cex-subscription-control';
-import type { PolymarketCollectionGate, PolymarketCollectionGateStats } from '@polymarket/collector';
+import type {
+  CollectionLifecycleListener,
+  PolymarketCollectionGate,
+  PolymarketCollectionGateStats,
+  PolymarketCollectionLifecycle,
+  PolymarketCollectionLifecycleStats,
+} from '@polymarket/collector';
+import type { MarketFinalizer, MarketFinalizerStats } from '@polymarket/market-finalizer';
+import type { SelectedPolymarketMarket } from '@polymarket/polymarket-v2';
 import type { ControlRuntimeConfig } from './DataCollectorConfig.js';
 
 // ───────────────────────────── Порты компонентов ─────────────────────────────
@@ -84,6 +114,23 @@ export interface CollectorBus {
 export type CollectorRecorder = Pick<
   ExternalMessageRecorder,
   'start' | 'close' | 'getStats' | 'getCexStats'
+>;
+
+/** Порт lifecycle collection-сессий (синхронизация, границы, остановка). */
+export type CollectorLifecycle = Pick<
+  PolymarketCollectionLifecycle<SelectedPolymarketMarket>,
+  | 'runOnce'
+  | 'syncSessions'
+  | 'awaitAllSettlementCaptures'
+  | 'onLifecycleEvent'
+  | 'getStats'
+  | 'close'
+>;
+
+/** Порт post-expiry финализатора (проход, дренаж, остановка, диагностика). */
+export type CollectorFinalizer = Pick<
+  MarketFinalizer,
+  'runOnce' | 'drain' | 'close' | 'getStats'
 >;
 
 /** Порт storage-политики Polymarket (startup cleanup). */
@@ -126,6 +173,10 @@ export interface DataCollectorComponents {
   readonly bus: CollectorBus;
   readonly recorder: CollectorRecorder;
   readonly gate: CollectorGate;
+  /** Жизненный цикл начатых записей (граница датасета + снятие claim-ов). */
+  readonly lifecycle: CollectorLifecycle;
+  /** Post-expiry финализация (Gamma → header → архив). */
+  readonly finalizer: CollectorFinalizer;
   readonly polymarketStorage: CollectorPolymarketStorage;
   readonly cexStorage: CollectorCexStorage;
   /** Общий PM source (принадлежит контуру, разделён с контроллером/discovery). */
@@ -163,8 +214,12 @@ export interface DataCollectorStatus {
   readonly polymarket: PolymarketSubscriptionControllerStats;
   /** Claim-ы/пулы CEX-контроллера. */
   readonly cex: CexSubscriptionControllerStats;
-  /** Допуски рынков к записи (universe + policy). */
+  /** Допуски рынков к записи (universe + policy + claim). */
   readonly gate: PolymarketCollectionGateStats;
+  /** Жизненный цикл записей: активные/финализируемые сессии и границы. */
+  readonly collection: PolymarketCollectionLifecycleStats;
+  /** Post-expiry финализация: pending/official/fallback/discard. */
+  readonly finalization: MarketFinalizerStats;
   /** Маршрутизация и запись Polymarket-сообщений. */
   readonly recorder: ExternalMessageRecorderStats;
   /** Маршрутизация и запись CEX-сообщений. */
@@ -254,6 +309,14 @@ export class DataCollector {
         name: 'recorder.close',
         run: async () => this._components.recorder.close(),
       });
+      rollback.push({
+        name: 'finalizer.close',
+        run: async () => this._components.finalizer.close(),
+      });
+      rollback.push({
+        name: 'lifecycle.close',
+        run: async () => this._components.lifecycle.close(),
+      });
 
       this._startedAtMs = this._nowMs();
       this._state = 'running';
@@ -326,6 +389,8 @@ export class DataCollector {
       polymarket: this._components.polymarketController.getStats(),
       cex: this._components.cexController.getStats(),
       gate: this._components.gate.getStats(),
+      collection: this._components.lifecycle.getStats(),
+      finalization: this._components.finalizer.getStats(),
       recorder: this._components.recorder.getStats(),
       recorderCex: this._components.recorder.getCexStats(),
       cexWindows: this._components.cexStorage.getStats(),
@@ -343,11 +408,22 @@ export class DataCollector {
    * @returns Promise завершения тика
    *
    * @remarks
-   * Один тик = один проход спроса: `runOnce` приобретает первые кандидаты
-   * плана Polymarket, `reconcile` сверяет желаемое CEX-состояние. Единый
-   * момент решения тика — `ranAt` из отчёта `runOnce` (часы там читаются
-   * после обхода каталога), он же уходит в CEX-сверку. Если PM-проход
-   * отказал, `ranAt` нет, и CEX-решение принимается по свежим часам.
+   * Один тик = один проход спроса и один проход lifecycle:
+   *
+   * ```text
+   * pmControlRuntime.runOnce   приобрести первые кандидаты плана
+   * cexController.reconcile    сверить желаемое CEX-состояние
+   * lifecycle.runOnce          принять новые записи + safety net истечения
+   * finalizer.runOnce          Gamma enrichment замороженных датасетов
+   * ```
+   *
+   * Единый момент решения тика — `ranAt` из отчёта `runOnce` (часы там
+   * читаются после обхода каталога), он же уходит в CEX-сверку. Если
+   * PM-проход отказал, `ranAt` нет, и CEX-решение принимается по свежим часам.
+   *
+   * Граница датасета от этого тика НЕ зависит: истечение держит собственный
+   * таймер сессии, а `lifecycle.runOnce` здесь — страховка и точка приёма
+   * новых recording-сессий. Отказ любого шага не отменяет остальные.
    */
   public async tick(): Promise<void> {
     const running = this._tick();
@@ -392,6 +468,68 @@ export class DataCollector {
         });
       }
     }
+    try {
+      await this._components.lifecycle.runOnce();
+    } catch (error) {
+      this._logger.error('Collection lifecycle tick failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    try {
+      await this._components.finalizer.runOnce();
+    } catch (error) {
+      this._logger.error('Finalization tick failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Подписывает наблюдателя на переходы collection lifecycle.
+   *
+   * @param listener - Слушатель переходов (`STARTED`/`FINALIZING`/`SEALED`/
+   *   `COMPLETED`/`DROPPED`)
+   * @returns Функция отписки
+   *
+   * @remarks
+   * Passthrough в lifecycle: события эмитит тот, кто переход и совершает,
+   * поэтому переход, уместившийся между двумя control-тиками, не теряется.
+   * Нужен verification-прогонам (заморозка сэмплов ровно на границе рынка).
+   *
+   * @example
+   * ```typescript
+   * collector.onMarketLifecycle((event) => log.push(`${event.kind}:${String(event.marketId)}`));
+   * ```
+   */
+  public onMarketLifecycle(listener: CollectionLifecycleListener): () => void {
+    return this._components.lifecycle.onLifecycleEvent(listener);
+  }
+
+  /**
+   * Graceful wind-down финализаций БЕЗ остановки контура.
+   *
+   * @returns Promise завершения дренажа
+   *
+   * @remarks
+   * Доводит до конца уже начатые финализации: опрос Gamma продолжается
+   * штатным cadence, пока не станет известен официальный итог (или не
+   * исчерпается бюджет). Вызывается ПЕРЕД {@link DataCollector.close},
+   * когда остановку можно себе позволить подождать; сам `close()` дренаж не
+   * навязывает — он прерывает ожидание аварийным best-known путём.
+   *
+   * Перед дренажем истёкшие сессии переводятся в FINALIZING и их датасеты
+   * замораживаются: иначе финализатор дренировал бы неполный набор.
+   */
+  public async drain(): Promise<void> {
+    await this._runStep({
+      name: 'lifecycle.runOnce',
+      run: async () => this._components.lifecycle.runOnce(),
+    });
+    await this._runStep({
+      name: 'lifecycle.awaitAllSettlementCaptures',
+      run: async () => this._components.lifecycle.awaitAllSettlementCaptures(),
+    });
+    await this._runStep({ name: 'finalizer.drain', run: async () => this._components.finalizer.drain() });
   }
 
   // ───────────────────────────── Внутреннее ─────────────────────────────
@@ -414,17 +552,32 @@ export class DataCollector {
     }
 
     const steps: ShutdownStep[] = [
-      // Сначала снимаем спрос-владение: CEX-контроллер закрывает СВОИ источники,
+      // 1. Доводим до конца УЖЕ начатые записи. Истёкшие сессии входят в
+      // FINALIZING, их датасеты замораживаются, claim-ы снимаются — только
+      // после этого имеет смысл дренировать финализатор.
+      { name: 'lifecycle.runOnce', run: async () => this._components.lifecycle.runOnce() },
+      {
+        name: 'lifecycle.awaitAllSettlementCaptures',
+        run: async () => this._components.lifecycle.awaitAllSettlementCaptures(),
+      },
+      { name: 'finalizer.drain', run: async () => this._components.finalizer.drain() },
+      // 2. Финализатор закрывается: официальный итог → архив, иначе
+      // deterministic fallback, иначе discard (собственная policy пакета).
+      { name: 'finalizer.close', run: async () => this._components.finalizer.close() },
+      // 3. Оставшиеся ACTIVE-сессии (рынок ещё не истёк) закрываются как
+      // SHUTDOWN — незавершённый датасет удаляет storage; их claim-ы снимаются.
+      { name: 'lifecycle.close', run: async () => this._components.lifecycle.close() },
+      // 4. Снимаем спрос-владение: CEX-контроллер закрывает СВОИ источники,
       // PM-контроллер снимает claim-ы и RTDS-ссылки (source он НЕ закрывает).
       { name: 'cexController.close', run: async () => this._components.cexController.close() },
       { name: 'polymarketController.close', run: async () => this._components.polymarketController.close() },
-      // Затем общий PM source (принадлежит контуру) и его shared realtime.
+      // 5. Затем общий PM source (принадлежит контуру) и его shared realtime.
       { name: 'polymarketSource.close', run: async () => this._components.polymarketSource.close() },
       {
         name: 'polymarketClient.closeSubscriptions',
         run: async () => this._components.polymarketClient.closeSubscriptions(),
       },
-      // Дренаж очереди В recorder, затем закрытие recorder и самой шины.
+      // 6. Дренаж очереди В recorder, затем закрытие recorder и самой шины.
       {
         name: 'bus.drain',
         run: async () => {

@@ -17,15 +17,17 @@ import { LiveClock } from '@polymarket/time';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
-import { PolymarketCollectionGate } from '../src/index.js';
+import { COLLECTOR_RAW_OWNER_KEY, PolymarketCollectionGate } from '../src/index.js';
 import { CapturingLogger } from './helpers/CapturingLogger.js';
-import type { ContourMessage } from './helpers/fixtures.js';
+import type { ContourMessage, SubscriptionHarness } from './helpers/fixtures.js';
 import {
   FakeCexStorage,
   FakePolymarketStorage,
+  acquireFor,
   bookEvent,
   makeEntry,
   makePolicy,
+  makeSubscriptionHarness,
   makeUniverse,
   orderbookPayload,
   tradePayload,
@@ -44,11 +46,12 @@ interface Contour {
   readonly pmStorage: FakePolymarketStorage;
   readonly cexStorage: FakeCexStorage;
   readonly generator: MessageMetadataGenerator;
+  readonly subscriptions: SubscriptionHarness;
 }
 
 /** Собирает мини-контур с заданным universe и policy коллектора. */
 function makeContour(options: {
-  readonly entries: Parameters<typeof makeUniverse>[0];
+  readonly entries: ReturnType<typeof makeEntry>[];
   readonly assets?: readonly string[];
   readonly durations?: readonly string[];
   readonly cex?: boolean;
@@ -58,7 +61,13 @@ function makeContour(options: {
   const logger = new CapturingLogger();
   const universe = makeUniverse(options.entries);
   const policy = makePolicy(options.assets ?? ['btc'], options.durations ?? ['5m']);
-  const gate = new PolymarketCollectionGate({ universe, policy, logger });
+  const subscriptions = makeSubscriptionHarness();
+  const gate = new PolymarketCollectionGate({
+    universe,
+    policy,
+    subscriptions: subscriptions.controller,
+    logger,
+  });
   const pmStorage = new FakePolymarketStorage();
   const cexStorage = new FakeCexStorage();
   const recorder = new ExternalMessageRecorder({
@@ -74,6 +83,7 @@ function makeContour(options: {
     gate,
     pmStorage,
     cexStorage,
+    subscriptions,
     generator: new MessageMetadataGenerator({ clock: new LiveClock() }),
   };
 }
@@ -88,8 +98,10 @@ async function publishMarket(contour: Contour, sourceMarketId: string): Promise<
 }
 
 describe('A. первое Polymarket-сообщение не теряется', () => {
-  it('нет сессии + рынок в universe + policy подошла → сессия создана и это же сообщение записано', async () => {
-    const contour = makeContour({ entries: [makeEntry({ id: 'btc-5m-1' })] });
+  it('нет сессии + рынок в universe + policy подошла + claim коллектора → сессия создана и это же сообщение записано', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeContour({ entries: [entry] });
+    await acquireFor(contour.subscriptions, entry, COLLECTOR_RAW_OWNER_KEY);
     contour.recorder.start();
 
     await publishMarket(contour, 'btc-5m-1');
@@ -108,17 +120,33 @@ describe('A. первое Polymarket-сообщение не теряется', 
 describe('B. неинтересный рынок игнорируется', () => {
   it('рынок есть в universe, но policy не подошла → сессия не создаётся, запись не идёт', async () => {
     // policy btc/5m; рынок eth/15m в universe, но не подходит.
-    const contour = makeContour({
-      entries: [makeEntry({ id: 'eth-15m-1', asset: 'eth', nominalMs: 15 * 60_000 })],
-      assets: ['btc'],
-      durations: ['5m'],
-    });
+    const entry = makeEntry({ id: 'eth-15m-1', asset: 'eth', nominalMs: 15 * 60_000 });
+    const contour = makeContour({ entries: [entry], assets: ['btc'], durations: ['5m'] });
+    await acquireFor(contour.subscriptions, entry, COLLECTOR_RAW_OWNER_KEY);
     contour.recorder.start();
 
     await publishMarket(contour, 'eth-15m-1');
 
     expect(contour.pmStorage.writes).toHaveLength(0);
     expect(contour.pmStorage.registered).toHaveLength(0);
+    expect(contour.recorder.getStats().marketMessagesIgnoredByPolicy).toBe(1);
+
+    await contour.recorder.close();
+  });
+
+  it('рынок держит ТОЛЬКО другой владелец → сессия не создаётся, ignoredNotHeldByCollector', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeContour({ entries: [entry] });
+    // Physical поток открыт стратегией; policy коллектора совпадает.
+    await acquireFor(contour.subscriptions, entry, 'strategy:A');
+    contour.recorder.start();
+
+    await publishMarket(contour, 'btc-5m-1');
+
+    expect(contour.pmStorage.registered).toHaveLength(0);
+    expect(contour.pmStorage.writes).toHaveLength(0);
+    expect(contour.gate.getStats().ignoredNotHeldByCollector).toBe(1);
+    expect(contour.gate.getStats().ignoredByPolicy).toBe(0);
     expect(contour.recorder.getStats().marketMessagesIgnoredByPolicy).toBe(1);
 
     await contour.recorder.close();
@@ -145,11 +173,19 @@ describe('D. active session не пересчитывает policy', () => {
     const bus = new ExternalMessageBus<ContourMessage>();
     openBuses.push(bus);
     const logger = new CapturingLogger();
-    const universe = makeUniverse([makeEntry({ id: 'btc-5m-1' })]);
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const universe = makeUniverse([entry]);
+    const subscriptions = makeSubscriptionHarness();
+    await acquireFor(subscriptions, entry, COLLECTOR_RAW_OWNER_KEY);
     // Провайдер, который перестанет допускать после первого допуска —
     // моделирует «policy изменилась / matcher теперь false».
     let admitEnabled = true;
-    const gate = new PolymarketCollectionGate({ universe, policy: makePolicy(['btc'], ['5m']), logger });
+    const gate = new PolymarketCollectionGate({
+      universe,
+      policy: makePolicy(['btc'], ['5m']),
+      subscriptions: subscriptions.controller,
+      logger,
+    });
     const pmStorage = new FakePolymarketStorage();
     const recorder = new ExternalMessageRecorder({
       bus,
@@ -176,6 +212,7 @@ describe('D. active session не пересчитывает policy', () => {
     expect(recorder.getStats().marketMessagesIgnoredByPolicy).toBe(0);
 
     await recorder.close();
+    await subscriptions.controller.close();
   });
 });
 
@@ -252,7 +289,9 @@ describe('G. Collector и наблюдатель — независимые по
 
 describe('H. PM + CEX одновременно на одной шине', () => {
   it('один bus разводит Polymarket- и CEX-сообщения по нужным политикам recorder-а', async () => {
-    const contour = makeContour({ entries: [makeEntry({ id: 'btc-5m-1' })], cex: true });
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeContour({ entries: [entry], cex: true });
+    await acquireFor(contour.subscriptions, entry, COLLECTOR_RAW_OWNER_KEY);
     contour.recorder.start();
 
     await publishMarket(contour, 'btc-5m-1');

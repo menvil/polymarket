@@ -11,7 +11,7 @@
  * проверяется управляемым временем, а не реальным часом.
  */
 import { describe, it, expect } from '@jest/globals';
-import type { CollectionHeaderFinalization } from '@polymarket/collection-coordinator';
+import type { CollectionHeaderFinalization } from '@polymarket/collector';
 import {
   BTC_FEEDS,
   BTC_TWAP_FEEDS,
@@ -24,6 +24,7 @@ import {
   createFreshGammaEvent,
   createFreshGammaMarket,
   mid,
+  openMarket,
 } from './helpers/fakes.js';
 
 /** Продвигает фикстурный рынок (истекает через 70 мин) за expiry. */
@@ -91,14 +92,12 @@ async function openExpiredTwapMarket(
   harness: ReturnType<typeof createFinalizerHarness>,
   overrides: { tokenIds?: readonly string[] } = {},
 ): Promise<void> {
-  const { discovery, clock, coordinator, finalizer } = harness;
-  await coordinator.openMarket(
-    discovery.addMarket({
+  const { clock, finalizer } = harness;
+  openMarket(harness, {
       rtdsFeeds: BTC_TWAP_FEEDS,
       settlement: BTC_TWAP_SETTLEMENT,
       ...(overrides.tokenIds !== undefined ? { tokenIds: overrides.tokenIds } : {}),
-    }),
-  );
+    });
   clock.advance(EXPIRE_ADVANCE_MS);
   await finalizer.runOnce(); // begin + первая попытка
 }
@@ -106,7 +105,7 @@ async function openExpiredTwapMarket(
 describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () => {
   it('ПОЛНЫЙ комплект (резолюция + обе цены) архивирует досрочно', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, coordinator, finalizer } = harness;
+    const { recorder, gamma, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket(),
@@ -125,7 +124,7 @@ describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () =>
     });
     expect(finalization.provenance?.fallbackTrigger).toBeUndefined();
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
-    expect(coordinator.listSessions()).toEqual([]);
+    expect(lifecycle.listSessions()).toEqual([]);
     expect(finalizer.getStats()).toMatchObject({
       officialFinalizations: 1,
       fallbackFinalizations: 0,
@@ -141,14 +140,14 @@ describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () =>
       enrichmentRetryMs: 30_000,
       enrichmentMaxWaitMs: MAX_WAIT_MS,
     });
-    const { recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
     armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent({ priceToBeat: 78449.05 }));
 
     await openExpiredTwapMarket(harness);
 
     expect(recorder.finalizations).toEqual([]); // архива НЕТ
     expect(lastFinalization(recorder).status).toBe('pending');
-    expect(coordinator.listSessions()).toHaveLength(1);
+    expect(lifecycle.listSessions()).toHaveLength(1);
 
     // finalPrice приходит позже — вот теперь комплект полон
     armGamma(
@@ -240,7 +239,7 @@ describe('OFFICIAL COMPLETE имеет приоритет (PART 7/44/64)', () =>
 describe('FALLBACK по исчерпанию бюджета (PART 46/65)', () => {
   it('таймаут + пригодный ряд → complete с provenance fallback/official-timeout', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -270,7 +269,7 @@ describe('FALLBACK по исчерпанию бюджета (PART 46/65)', () =>
       finalPrice: 'derived',
     });
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
-    expect(coordinator.listSessions()).toEqual([]);
+    expect(lifecycle.listSessions()).toEqual([]);
     expect(finalizer.getStats()).toMatchObject({
       fallbackFinalizations: 1,
       fallbackByTimeout: 1,
@@ -411,7 +410,7 @@ describe('FALLBACK по исчерпанию бюджета (PART 46/65)', () =>
 describe('DISCARD неразрешимого датасета (PART 4/28/74)', () => {
   it('таймаут без официальных данных и без ряда → НЕТ `.gz`, датасет удалён', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -427,7 +426,7 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
     expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
     expect(recorder.finalizations).not.toContain(`${CID_A}:EXPIRED`);
     // Вечного FINALIZING не осталось
-    expect(coordinator.listSessions()).toEqual([]);
+    expect(lifecycle.listSessions()).toEqual([]);
     expect(finalizer.getStats()).toMatchObject({
       discardedUnresolvable: 1,
       archivedTotal: 0,
@@ -463,7 +462,7 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
     // vendor-домена раньше нашего кода молча дало бы архив с победителем,
     // посчитанным по чужому потоку.
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { discovery, recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -475,13 +474,11 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
       chainlinkSpotLine(MARKET_END_MS - 30_000, '78500.0'),
       chainlinkSpotLine(MARKET_END_MS - 1_000, '78600.0'),
     ];
-    await coordinator.openMarket(
-      discovery.addMarket({
+    openMarket(harness, {
         rtdsFeeds: BTC_FEEDS, // только spot: settlement-фида нет
         unsupportedSettlementSource:
           'https://data.chain.link/streams/btc-usd-twap-45s-streams',
-      }),
-    );
+      });
     clock.advance(EXPIRE_ADVANCE_MS);
     await finalizer.runOnce();
     clock.advance(MAX_WAIT_MS + 1_000);
@@ -494,14 +491,14 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
       discardedUnresolvable: 1,
       archivedTotal: 0,
     });
-    expect(coordinator.listSessions()).toEqual([]);
+    expect(lifecycle.listSessions()).toEqual([]);
   });
 
   it('обычный spot-рынок Chainlink сохраняет прежнюю ступень recorded-rtds', async () => {
     // Контраст к предыдущему тесту: у рынка БЕЗ TWAP-правила источник
     // расчёта нам не объявлен, и verified-поведение до MR-B сохраняется.
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { discovery, recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -512,7 +509,7 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
       chainlinkSpotLine(MARKET_END_MS - 30_000, '78500.0'),
       chainlinkSpotLine(MARKET_END_MS - 1_000, '78600.0'),
     ];
-    await coordinator.openMarket(discovery.addMarket({ rtdsFeeds: BTC_FEEDS }));
+    openMarket(harness, { rtdsFeeds: BTC_FEEDS });
     clock.advance(EXPIRE_ADVANCE_MS);
     await finalizer.runOnce();
     clock.advance(MAX_WAIT_MS + 1_000);
@@ -527,20 +524,18 @@ describe('DISCARD неразрешимого датасета (PART 4/28/74)', (
 
   it('рынок без официального времени старта не резолвится по ряду (PART 32)', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { discovery, recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
       createFreshGammaEvent(),
     );
     recorder.sealedPayloadLines = upSeries();
-    await coordinator.openMarket(
-      discovery.addMarket({
+    openMarket(harness, {
         rtdsFeeds: BTC_TWAP_FEEDS,
         settlement: BTC_TWAP_SETTLEMENT,
         eventStartsAtMs: null, // точного открытия окна нет
-      }),
-    );
+      });
     clock.advance(EXPIRE_ADVANCE_MS);
     await finalizer.runOnce();
     clock.advance(MAX_WAIT_MS + 1_000);
@@ -556,7 +551,7 @@ describe('отказ УДАЛЕНИЯ не выдаётся за успешно�
     // удалённых и написать «dataset discarded» значило бы приписать системе
     // действие, которого не было.
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, clock, coordinator, finalizer, logger } = harness;
+    const { recorder, gamma, clock, lifecycle, finalizer, logger } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -581,12 +576,12 @@ describe('отказ УДАЛЕНИЯ не выдаётся за успешно�
       logger.byLevel('warn').some((e) => e.message.includes('incomplete dataset discarded')),
     ).toBe(false);
     // Сессия НЕ снята: система не считает рынок завершённым
-    expect(coordinator.listSessions()).toHaveLength(1);
+    expect(lifecycle.listSessions()).toHaveLength(1);
   });
 
   it('успешное удаление снимает сессию и растит счётчик', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -600,14 +595,14 @@ describe('отказ УДАЛЕНИЯ не выдаётся за успешно�
 
     expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
     expect(finalizer.getStats()).toMatchObject({ discardedUnresolvable: 1 });
-    expect(coordinator.listSessions()).toEqual([]);
+    expect(lifecycle.listSessions()).toEqual([]);
   });
 });
 
 describe('SHUTDOWN ускоряет fallback (PART 5/47/66/67)', () => {
   it('close(): истёкший рынок с пригодным рядом → fallback/shutdown БЕЗ Gamma-запросов', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, coordinator, finalizer } = harness;
+    const { recorder, gamma, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -634,7 +629,7 @@ describe('SHUTDOWN ускоряет fallback (PART 5/47/66/67)', () => {
       fallbackTrigger: 'shutdown',
     });
     expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
-    expect(coordinator.listSessions()).toEqual([]);
+    expect(lifecycle.listSessions()).toEqual([]);
     expect(finalizer.getStats()).toMatchObject({
       fallbackFinalizations: 1,
       fallbackByShutdown: 1,
@@ -644,7 +639,7 @@ describe('SHUTDOWN ускоряет fallback (PART 5/47/66/67)', () => {
 
   it('close(): истёкший рынок БЕЗ пригодного ряда → датасет удаляется, архива нет', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, coordinator, finalizer } = harness;
+    const { recorder, gamma, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -656,7 +651,7 @@ describe('SHUTDOWN ускоряет fallback (PART 5/47/66/67)', () => {
     await finalizer.close();
 
     expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]);
-    expect(coordinator.listSessions()).toEqual([]);
+    expect(lifecycle.listSessions()).toEqual([]);
     expect(finalizer.getStats()).toMatchObject({ discardedUnresolvable: 1, archivedTotal: 0 });
   });
 
@@ -700,18 +695,16 @@ describe('SHUTDOWN ускоряет fallback (PART 5/47/66/67)', () => {
 
   it('НЕ истёкший рынок при shutdown остаётся координатору (PART 68)', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { discovery, recorder, gamma, coordinator, finalizer } = harness;
+    const { recorder, gamma, lifecycle, finalizer } = harness;
     armGamma(gamma, createFreshGammaMarket(), createFreshGammaEvent());
-    await coordinator.openMarket(
-      discovery.addMarket({ rtdsFeeds: BTC_TWAP_FEEDS, settlement: BTC_TWAP_SETTLEMENT }),
-    );
+    openMarket(harness, { rtdsFeeds: BTC_TWAP_FEEDS, settlement: BTC_TWAP_SETTLEMENT });
 
     await finalizer.close(); // рынок ещё ACTIVE
 
     expect(recorder.finalizations).toEqual([]);
-    expect(coordinator.getStats()).toMatchObject({ activeSessions: 1 });
+    expect(lifecycle.getStats()).toMatchObject({ activeSessions: 1 });
 
-    await coordinator.close();
+    await lifecycle.close();
     expect(recorder.finalizations).toEqual([`${CID_A}:SHUTDOWN`]); // partial удалён
   });
 });
@@ -824,7 +817,7 @@ describe('отказы на терминальном пути не создаю�
 
   it('gzip упал → архив не объявляется успешным (PART 52/73)', async () => {
     const harness = createFinalizerHarness({ enrichmentMaxWaitMs: MAX_WAIT_MS });
-    const { recorder, gamma, clock, coordinator, finalizer } = harness;
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
     armGamma(
       gamma,
       createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
@@ -839,7 +832,7 @@ describe('отказы на терминальном пути не создаю�
 
     expect(finalizer.getStats()).toMatchObject({ archivedTotal: 0, archiveFailures: 1 });
     // Сессия НЕ снята: успех не объявлен
-    expect(coordinator.listSessions()).toEqual([
+    expect(lifecycle.listSessions()).toEqual([
       expect.objectContaining({ marketId: mid(CID_A), state: 'FINALIZING' }),
     ]);
   });

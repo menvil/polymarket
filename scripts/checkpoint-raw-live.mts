@@ -105,9 +105,10 @@ import {
   readCexPartitionHeader,
   toRecordedObservation,
 } from '@polymarket/raw-archive-format';
-import type { CexSourceConfig } from '@polymarket/cex-v2';
+import { parsePolicyConfig } from '@polymarket/policy';
 import { createDataCollector } from '@polymarket/collect-data/runtime';
 import type {
+  CexExchangeConfig,
   ContourMessage,
   DataCollectorConfig,
   DataCollectorStatus,
@@ -120,66 +121,114 @@ import type {
  * (`apps/collect-data/cex-config.json`), валидность символов подтверждена
  * REST-пробой loadMarkets по каждой бирже (2026-08-25).
  */
-const CEX_PLAN: readonly CexSourceConfig[] = [
+const CEX_PLAN: readonly CexExchangeConfig[] = [
   {
+    profileKey: 'binance',
     exchangeId: 'binance',
     marketType: 'spot',
-    symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'],
-    watchOrderbook: true,
-    watchTrades: true,
-    orderbookDepth: 10,
-    orderbookMethod: 'watch',
-    restartIntervalMs: 900_000,
+    policy: {
+      kind: 'CEX',
+      exchangeIds: ['binance'],
+      marketTypes: ['spot'],
+      symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'],
+      orderbook: true,
+      trades: true,
+      orderbookDepth: 10,
+    },
+    streamTransports: [
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ],
   },
   {
+    profileKey: 'coinbase',
     exchangeId: 'coinbase',
     marketType: 'spot',
-    symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'],
-    watchOrderbook: true,
-    watchTrades: true,
-    orderbookDepth: 10,
-    orderbookMethod: 'watch',
-    restartIntervalMs: 900_000,
+    policy: {
+      kind: 'CEX',
+      exchangeIds: ['coinbase'],
+      marketTypes: ['spot'],
+      symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'],
+      orderbook: true,
+      trades: true,
+      orderbookDepth: 10,
+    },
+    streamTransports: [
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ],
   },
   {
+    profileKey: 'kraken',
     exchangeId: 'kraken',
     marketType: 'spot',
-    symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BTC/USDT'],
-    watchOrderbook: true,
-    watchTrades: true,
-    orderbookDepth: 10,
-    orderbookMethod: 'watch',
-    restartIntervalMs: 900_000,
+    policy: {
+      kind: 'CEX',
+      exchangeIds: ['kraken'],
+      marketTypes: ['spot'],
+      symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BTC/USDT'],
+      orderbook: true,
+      trades: true,
+      orderbookDepth: 10,
+    },
+    streamTransports: [
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ],
   },
   {
+    profileKey: 'cryptocom',
     exchangeId: 'cryptocom',
     marketType: 'spot',
-    symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BTC/USDT'],
-    watchOrderbook: true,
-    watchTrades: true,
-    orderbookDepth: 10,
-    orderbookMethod: 'watch',
-    restartIntervalMs: 900_000,
+    policy: {
+      kind: 'CEX',
+      exchangeIds: ['cryptocom'],
+      marketTypes: ['spot'],
+      symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BTC/USDT'],
+      orderbook: true,
+      trades: true,
+      orderbookDepth: 10,
+    },
+    streamTransports: [
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ],
   },
   {
+    profileKey: 'okx',
     exchangeId: 'okx',
     marketType: 'spot',
-    symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'],
-    watchOrderbook: true,
-    watchTrades: true,
-    orderbookDepth: 10,
-    orderbookMethod: 'watch',
-    restartIntervalMs: 900_000,
+    policy: {
+      kind: 'CEX',
+      exchangeIds: ['okx'],
+      marketTypes: ['spot'],
+      symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'],
+      orderbook: true,
+      trades: true,
+      orderbookDepth: 10,
+    },
+    streamTransports: [
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ],
   },
   {
+    profileKey: 'bybit',
     exchangeId: 'bybit',
     marketType: 'spot',
-    symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'],
-    watchOrderbook: true,
-    watchTrades: true,
-    orderbookDepth: 50,
-    orderbookMethod: 'watch',
-    restartIntervalMs: 900_000,
+    policy: {
+      kind: 'CEX',
+      exchangeIds: ['bybit'],
+      marketTypes: ['spot'],
+      symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'],
+      orderbook: true,
+      trades: true,
+      orderbookDepth: 50,
+    },
+    streamTransports: [
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ],
   },
 ];
 
@@ -446,6 +495,15 @@ interface CompositionOptions {
  * Production-значения живут в `.env`/`cex-config.json` приложения.
  */
 function checkpointConfig(runDir: string): DataCollectorConfig {
+  const policy = parsePolicyConfig({
+    kind: 'POLYMARKET',
+    family: 'CRYPTO_UP_DOWN',
+    assets: ['btc', 'eth', 'sol', 'xrp'],
+    durations: ['5m', '15m'],
+  });
+  if (policy.kind !== 'POLYMARKET') {
+    throw new Error('checkpoint policy fixture must produce a Polymarket policy');
+  }
   return {
     outputDir: runDir,
     polymarket: {
@@ -454,26 +512,19 @@ function checkpointConfig(runDir: string): DataCollectorConfig {
       flushIntervalMs: 5_000,
       compression: 'gzip',
     },
-    discovery: {
-      filter: {
-        minTimeToExpiryHours: 0,
-        minSpread: 0,
-        minLiquidity: 0,
-        maxMarketsToReturn: MAX_MARKETS * 3,
-        requiredKeywords: ['up or down'],
-        anyOfKeywords: ['bitcoin', 'ethereum', 'solana', 'xrp'],
-        excludedKeywords: [],
-      },
+    // Owner policy коллектора == policy его спроса: подписываемся и
+    // записываем ОДНО И ТО ЖЕ (иначе gate отклонял бы приобретённые рынки).
+    polymarketPolicy: policy,
+    control: {
+      acquireLimit: MAX_MARKETS,
+      tickMs: 5_000,
     },
-    collection: {
-      maxMarkets: MAX_MARKETS,
-      minTimeToStartMs: 30_000,
-      discoveryRefreshMs: 30_000,
-      runtimeTickMs: 5_000,
-    },
+    // Production-значения границы и резолюции: прогон проверяет ТУ ЖЕ
+    // политику, что работает в бою, а не облегчённую.
+    collection: { settlementGraceMs: 5_000 },
     finalization: { enrichmentRetryMs: 30_000, enrichmentMaxWaitMs: 60 * 60_000 },
     cex: {
-      sources: CEX_PLAN,
+      exchanges: CEX_PLAN,
       bufferSize: 200,
       flushIntervalMs: 2_000,
       compression: 'gzip',
@@ -861,18 +912,16 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
   // ── Финальный снимок статуса ДО shutdown ──────────────────────────────
   const finalStatus: DataCollectorStatus = collector.status();
   evidence.finalStats = {
-    coordinator: finalStatus.collection,
+    collection: finalStatus.collection,
     finalizer: finalStatus.finalization,
+    gate: finalStatus.gate,
     recorder: finalStatus.recorder,
     recorderCex: finalStatus.recorderCex,
     windows: finalStatus.cexWindows,
     bus: finalStatus.bus,
-    lifecycle: finalStatus.lifecycle,
-    cexSources: finalStatus.sources.cex.map((source) => ({
-      exchange: source.exchangeId,
-      stats: source.stats,
-      hasFailed: source.hasFailed,
-    })),
+    polymarket: finalStatus.polymarket,
+    cex: finalStatus.cex,
+    polymarketSource: finalStatus.polymarketSource,
     lifecycleEvents: observedLifecycle,
   };
 
@@ -892,8 +941,13 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
     if (line.startsWith('Shutdown step failed')) evidence.shutdownStepFailures.push(line);
   }
 
-  for (const source of finalStatus.sources.cex) {
-    if (source.hasFailed) evidence.cexSourcesFailed.push(source.exchangeId);
+  // Пофидовой health-сигнал теперь у CEX-контроллера: пул в терминальном
+  // отказе — это `failedPools`, а не флаг на самом источнике.
+  if (finalStatus.cex.failedPools > 0) {
+    evidence.cexSourcesFailed.push(`failedPools=${String(finalStatus.cex.failedPools)}`);
+  }
+  if (finalStatus.polymarketSource.hasFailed) {
+    evidence.cexSourcesFailed.push('polymarketSource.hasFailed');
   }
 
   evidence.finishedAtIso = new Date().toISOString();

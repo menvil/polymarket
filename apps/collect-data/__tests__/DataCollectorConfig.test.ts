@@ -38,6 +38,9 @@ function baseConfig(overrides: Partial<CollectorConfig> = {}): CollectorConfig {
     policyAssets: [],
     policyDurations: [],
     discoveryWindowHours: undefined,
+    settlementGraceMs: undefined,
+    enrichmentRetryMs: undefined,
+    enrichmentMaxWaitMs: undefined,
     controlTickMs: 5_000,
     ...overrides,
   };

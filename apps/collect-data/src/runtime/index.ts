@@ -11,7 +11,9 @@ export type {
   CollectorBus,
   CollectorCexController,
   CollectorCexStorage,
+  CollectorFinalizer,
   CollectorGate,
+  CollectorLifecycle,
   CollectorPolymarketClient,
   CollectorPolymarketController,
   CollectorPolymarketControlRuntime,
@@ -35,9 +37,13 @@ export { cexTransportKey, parseCexExchangeConfigs, toDataCollectorConfig } from 
 export type {
   CexCollectionConfig,
   CexExchangeConfig,
+  CexStreamKey,
+  CexStreamTransport,
   CexTransportConfig,
+  CollectionLifecycleRuntimeConfig,
   ControlRuntimeConfig,
   DataCollectorConfig,
+  FinalizationRuntimeConfig,
   PolymarketRecordingConfig,
 } from './DataCollectorConfig.js';
 export { applyProcessBootstrap, installShutdownHandlers } from './processBootstrap.js';

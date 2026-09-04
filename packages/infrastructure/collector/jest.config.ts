@@ -19,6 +19,9 @@ const config: Config = {
     // polymarket-v2 нужен ТОЛЬКО тестам (типы CEX/PM-сообщений), не src.
     '^@polymarket/polymarket-v2$': '<rootDir>/../polymarket-v2/src/index.ts',
     '^@polymarket/cex-v2$': '<rootDir>/../cex-v2/src/index.ts',
+    // Control-plane подписок нужен ТОЛЬКО тестам (реальный контроллер claim-ов).
+    '^@polymarket/polymarket-subscription-control$':
+      '<rootDir>/../polymarket-subscription-control/src/index.ts',
     // Application-зависимости контура сбора.
     '^@polymarket/policy$': '<rootDir>/../../application/policy/src/index.ts',
     '^@polymarket/market-discovery$': '<rootDir>/../../application/market-discovery/src/index.ts',
