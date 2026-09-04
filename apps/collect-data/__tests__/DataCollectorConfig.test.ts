@@ -1,32 +1,32 @@
 /**
- * Boundary-конверсия внешней конфигурации в конфигурацию V2-рантайма
- * (MR-A PART 24/25).
+ * Граница «внешняя конфигурация → canonical owner policy» коллектора.
  *
  * @remarks
- * Формат `cex-config.json` сохранён от legacy-коллектора, поэтому
- * production-конфигурация не переписывается вместе с рантаймом — но legacy
- * ТИПЫ внутрь V2 не проходят: конверсия имён полей выполняется на границе.
+ * Отдельный акцент — на СОХРАНЕНИИ контракта `cex-config.json`: формат файла
+ * унаследован от прежнего коллектора, поэтому per-exchange транспортные
+ * параметры обязаны доходить до источника, а неверные значения — ронять старт,
+ * а не превращаться в валидные молча.
  */
-import { describe, expect, it } from '@jest/globals';
-import { parseCexSourceConfigs, toDataCollectorConfig } from '../src/runtime/DataCollectorConfig.js';
+import { describe, it, expect } from '@jest/globals';
+import { parseCexExchangeConfigs, toDataCollectorConfig } from '../src/runtime/DataCollectorConfig.js';
 import type { CollectorConfig } from '../src/config.js';
 
-/** Базовая внешняя конфигурация приложения. */
+/** Базовая внешняя конфигурация приложения (валидная). */
 function baseConfig(overrides: Partial<CollectorConfig> = {}): CollectorConfig {
   return {
     dnsOverrideEnabled: false,
     gammaApiBaseUrl: 'https://gamma-api.polymarket.com',
     wsUrl: 'wss://ws-subscriptions-clob.polymarket.com/ws/market',
-    wsReconnectDelayMs: 3_000,
+    wsReconnectDelayMs: 3000,
     minTimeToExpiryHours: 0,
     minSpread: 0,
-    minLiquidity: 50,
-    maxMarkets: 12,
-    requiredKeywords: ['up', 'down'],
-    anyOfKeywords: ['bitcoin', 'ethereum'],
+    minLiquidity: 0,
+    maxMarkets: 50,
+    requiredKeywords: [],
+    anyOfKeywords: [],
     excludedKeywords: [],
     marketScanPauseMs: 30_000,
-    outputDir: './snapshots',
+    outputDir: './data/snapshots',
     sourceSubDir: 'polymarket',
     compression: 'gzip',
     bufferSize: 100,
@@ -35,176 +35,215 @@ function baseConfig(overrides: Partial<CollectorConfig> = {}): CollectorConfig {
     cexWindowMinutes: undefined,
     cexBufferSize: 200,
     cexFlushIntervalMs: 5_000,
+    policyAssets: [],
+    policyDurations: [],
+    discoveryWindowHours: undefined,
+    controlTickMs: 5_000,
     ...overrides,
   };
 }
 
-describe('parseCexSourceConfigs — legacy JSON → CexSourceConfig', () => {
-  it('переводит имена полей на словарь V2', () => {
-    const sources = parseCexSourceConfigs(
+describe('parseCexExchangeConfigs — policy + per-exchange транспорт', () => {
+  it('несколько бирж → по описанию на биржу, у каждой точный список символов', () => {
+    const exchanges = parseCexExchangeConfigs(
+      JSON.stringify({
+        binance: { type: 'spot', symbols: ['BTC/USDT', 'ETH/USDT'], orderbook: true, trades: true, obDepth: 10 },
+        bybit: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: false, obDepth: 50 },
+      }),
+    );
+
+    expect(exchanges).toHaveLength(2);
+    const binance = exchanges.find((exchange) => exchange.exchangeId === 'binance');
+    expect(binance?.policy.symbols).toEqual(['BTC/USDT', 'ETH/USDT']);
+    expect(binance?.policy.orderbookDepth).toBe(10);
+    expect(binance?.policy.trades).toBe(true);
+    const bybit = exchanges.find((exchange) => exchange.exchangeId === 'bybit');
+    // Точный список символов биржи сохранён — без объединения в декартово произведение.
+    expect(bybit?.policy.symbols).toEqual(['BTC/USDT']);
+    expect(bybit?.policy.orderbookDepth).toBe(50);
+    expect(bybit?.policy.trades).toBe(false);
+  });
+
+  it('РАЗНЫЕ obMethod/restartIntervalMs у бирж сохраняются по-биржево', () => {
+    const exchanges = parseCexExchangeConfigs(
       JSON.stringify({
         binance: {
-          type: 'spot',
-          symbols: ['BTC/USDT', 'ETH/USDT'],
-          orderbook: true,
-          trades: true,
-          obDepth: 10,
-          obMethod: 'watch',
-          restartIntervalMs: 900_000,
+          type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true,
+          obMethod: 'watch', restartIntervalMs: 1_800_000,
+        },
+        'some-exchange': {
+          type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true,
+          obMethod: 'fetch', restartIntervalMs: 600_000,
         },
       }),
     );
 
-    expect(sources).toEqual([
-      {
-        exchangeId: 'binance',
-        marketType: 'spot',
-        symbols: ['BTC/USDT', 'ETH/USDT'],
-        watchOrderbook: true,
-        watchTrades: true,
-        orderbookDepth: 10,
-        orderbookMethod: 'watch',
-        restartIntervalMs: 900_000,
-      },
+    const binance = exchanges.find((exchange) => exchange.exchangeId === 'binance');
+    const other = exchanges.find((exchange) => exchange.exchangeId === 'some-exchange');
+    // Профиль просит оба потока: транспорт объявляется по каждому, а obMethod
+    // относится только к стакану.
+    expect(binance?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 1_800_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 1_800_000 } },
+    ]);
+    expect(other?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'fetch', restartIntervalMs: 600_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 600_000 } },
     ]);
   });
 
-  it('ключ словаря служит биржей, явный exchangeId побеждает', () => {
-    const sources = parseCexSourceConfigs(
+  it('не заданный транспорт остаётся пустым (дефолты принадлежат CexSource)', () => {
+    const exchanges = parseCexExchangeConfigs(
+      JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true } }),
+    );
+    expect(exchanges[0]?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: {} },
+      { stream: 'TRADES', transport: {} },
+    ]);
+  });
+
+  it('явный exchangeId записи побеждает ключ словаря', () => {
+    const exchanges = parseCexExchangeConfigs(
       JSON.stringify({
-        alias: { exchangeId: 'bybit', type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: false },
-        okx: { type: 'spot', symbols: ['ETH/USDT'], orderbook: false, trades: true },
+        'binance-profile': { exchangeId: 'binance', type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true },
       }),
     );
-
-    expect(sources.map((source) => source.exchangeId)).toEqual(['bybit', 'okx']);
-    expect(sources[1]?.watchOrderbook).toBe(false);
-    expect(sources[1]?.watchTrades).toBe(true);
+    expect(exchanges[0]?.exchangeId).toBe('binance');
+    expect(exchanges[0]?.policy.exchangeIds).toEqual(['binance']);
   });
 
-  it('legacy futures отображается в canonical future', () => {
-    const sources = parseCexSourceConfigs(
-      JSON.stringify({ binance: { type: 'futures', symbols: ['BTC/USDT'], orderbook: true, trades: true } }),
-    );
+  it('legacy-алиас type "futures" даёт то же описание, что и "future"', () => {
+    const entry = (type: string): string =>
+      JSON.stringify({ binance: { type, symbols: ['BTC/USDT'], orderbook: true, trades: true, obDepth: 10 } });
 
-    expect(sources[0]?.marketType).toBe('future');
+    const legacy = parseCexExchangeConfigs(entry('futures'));
+    const canonical = parseCexExchangeConfigs(entry('future'));
+
+    // Прежний парсер нормализовал этот алиас; рабочий конфиг с "futures"
+    // обязан продолжать стартовать после переезда на owner policy.
+    expect(legacy[0]?.policy.marketTypes).toEqual(['future']);
+    expect(legacy).toEqual(canonical);
   });
 
-  it('опущенные поля не подставляются — дефолты остаются за пакетом source', () => {
-    const sources = parseCexSourceConfigs(
-      JSON.stringify({ kraken: { type: 'spot', symbols: ['BTC/USD'], orderbook: true, trades: true } }),
-    );
-
-    expect(sources[0]).not.toHaveProperty('orderbookDepth');
-    expect(sources[0]).not.toHaveProperty('restartIntervalMs');
-    expect(sources[0]).not.toHaveProperty('orderbookMethod');
+  it('невалидный JSON → ошибка', () => {
+    expect(() => parseCexExchangeConfigs('{ not json')).toThrow('Invalid CEX config JSON');
   });
 
-  it('требует явные булевы флаги потоков', () => {
+  it('неизвестный тип рынка → ошибка (валидирует parseCexPolicyConfig)', () => {
     expect(() =>
-      parseCexSourceConfigs(JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'] } })),
-    ).toThrow('orderbook and trades must be booleans');
+      parseCexExchangeConfigs(JSON.stringify({ binance: { type: 'perp', symbols: ['BTC/USDT'], orderbook: true, trades: true } })),
+    ).toThrow();
   });
 
-  it('отвергает биржу без единого включённого потока', () => {
+  it('биржа без потоков (orderbook=false, trades=false) → ошибка', () => {
     expect(() =>
-      parseCexSourceConfigs(
-        JSON.stringify({
-          binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: false, trades: false },
-        }),
-      ),
-    ).toThrow('at least one of orderbook/trades must be true');
-  });
-
-  it('отвергает невалидную конфигурацию вместо тихой потери биржи', () => {
-    expect(() => parseCexSourceConfigs('{ not json')).toThrow('Invalid CEX config JSON');
-    expect(() => parseCexSourceConfigs('[]')).toThrow('keyed by exchange id');
-    expect(() =>
-      parseCexSourceConfigs(JSON.stringify({ binance: { type: 'perp', symbols: ['BTC/USDT'] } })),
-    ).toThrow("type must be 'spot' | 'future' | 'swap'");
-    expect(() => parseCexSourceConfigs(JSON.stringify({ binance: { type: 'spot', symbols: [] } }))).toThrow(
-      'non-empty array of strings',
-    );
-    expect(() =>
-      parseCexSourceConfigs(
-        JSON.stringify({
-          binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true, obDepth: -1 },
-        }),
-      ),
-    ).toThrow('obDepth must be a finite number > 0');
-    expect(() =>
-      parseCexSourceConfigs(
-        JSON.stringify({
-          binance: {
-            type: 'spot',
-            symbols: ['BTC/USDT'],
-            orderbook: true,
-            trades: true,
-            obMethod: 'poll',
-          },
-        }),
-      ),
-    ).toThrow("obMethod must be 'watch' | 'fetch'");
+      parseCexExchangeConfigs(JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: false, trades: false } })),
+    ).toThrow();
   });
 });
 
-describe('toDataCollectorConfig — внешняя конфигурация → рантайм', () => {
-  it('переносит фильтр discovery целиком', () => {
-    const config = toDataCollectorConfig(baseConfig());
-
-    expect(config.discovery.filter).toEqual({
-      minTimeToExpiryHours: 0,
-      minSpread: 0,
-      minLiquidity: 50,
-      maxMarketsToReturn: 12,
-      requiredKeywords: ['up', 'down'],
-      anyOfKeywords: ['bitcoin', 'ethereum'],
-      excludedKeywords: [],
-    });
+describe('parseCexExchangeConfigs — неверный ввод роняет старт, а не становится валидным', () => {
+  it('строковый orderbook НЕ превращается молча в false', () => {
+    expect(() =>
+      parseCexExchangeConfigs(
+        JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: 'true', trades: true } }),
+      ),
+    ).toThrow('orderbook and trades must be booleans');
   });
 
-  it('обе storage-политики получают ОДИН корень датасетов', () => {
-    const config = toDataCollectorConfig(baseConfig({ outputDir: '/data/snapshots' }));
-
-    expect(config.outputDir).toBe('/data/snapshots');
-    expect(config.polymarket.sourceSubDir).toBe('polymarket');
-    expect(config.cex.compression).toBe('gzip');
+  it('строковый obDepth НЕ отбрасывается молча в дефолт', () => {
+    expect(() =>
+      parseCexExchangeConfigs(
+        JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true, obDepth: '10' } }),
+      ),
+    ).toThrow('obDepth must be a finite number > 0');
   });
 
-  it('без CEX-конфигурации source-ов нет (CEX выключен)', () => {
-    const config = toDataCollectorConfig(baseConfig({ cexConfig: null }));
-
-    expect(config.cex.sources).toEqual([]);
+  it('нулевой/отрицательный restartIntervalMs отвергается', () => {
+    expect(() =>
+      parseCexExchangeConfigs(
+        JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true, restartIntervalMs: 0 } }),
+      ),
+    ).toThrow('restartIntervalMs must be a finite number > 0');
   });
 
-  it('невалидная CEX-конфигурация — отказ старта, а не тихая работа без CEX', () => {
-    expect(() => toDataCollectorConfig(baseConfig({ cexConfig: '{ broken' }))).toThrow(
-      'Invalid CEX config JSON',
+  it('неизвестный obMethod отвергается', () => {
+    expect(() =>
+      parseCexExchangeConfigs(
+        JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true, obMethod: 'poll' } }),
+      ),
+    ).toThrow("obMethod must be 'watch' | 'fetch'");
+  });
+
+  it('symbols не массивом отвергается, а не превращается в пустой список', () => {
+    expect(() =>
+      parseCexExchangeConfigs(
+        JSON.stringify({ binance: { type: 'spot', symbols: 'BTC/USDT', orderbook: true, trades: true } }),
+      ),
+    ).toThrow('symbols must be an array');
+  });
+});
+
+describe('toDataCollectorConfig — env → runtime config', () => {
+  it('строит PolymarketPolicy семейства CRYPTO_UP_DOWN с активами/номиналами', () => {
+    const config = toDataCollectorConfig(baseConfig({ policyAssets: ['btc'], policyDurations: ['5m'] }));
+
+    expect(config.polymarketPolicy.kind).toBe('POLYMARKET');
+    expect(config.polymarketPolicy.family).toBe('CRYPTO_UP_DOWN');
+    expect(config.polymarketPolicy.assets?.map(String)).toEqual(['btc']);
+    expect(config.control.acquireLimit).toBe(50);
+  });
+
+  it('keyword-фильтры discovery переносятся в title-селекторы policy', () => {
+    const config = toDataCollectorConfig(
+      baseConfig({ excludedKeywords: ['testnet'], anyOfKeywords: ['bitcoin'] }),
     );
+    expect(config.polymarketPolicy.title?.excluded).toEqual(['testnet']);
+    expect(config.polymarketPolicy.title?.anyOf).toEqual(['bitcoin']);
   });
 
-  it('дефолты финализации остаются за пакетом финализатора', () => {
-    const config = toDataCollectorConfig(baseConfig());
-
-    expect(config.finalization).toEqual({});
+  it('окно discovery НЕ задаётся, если переменная не выставлена (действует canonical дефолт 6ч)', () => {
+    const config = toDataCollectorConfig(baseConfig({ discoveryWindowHours: undefined }));
+    // Своего дубля дефолта конфигурация не заводит: поле отсутствует, и
+    // PolymarketMarketDiscovery применяет собственные 6 часов.
+    expect(config.discoveryWindowMs).toBeUndefined();
+    expect('discoveryWindowMs' in config).toBe(false);
   });
 
-  it('размер окна не задан — дефолт принадлежит CexWindowRecorder', () => {
-    const config = toDataCollectorConfig(baseConfig());
-
-    expect(config.cex).not.toHaveProperty('windowMinutes');
+  it('окно discovery передаётся как явный override, если переменная задана', () => {
+    const config = toDataCollectorConfig(baseConfig({ discoveryWindowHours: 3 }));
+    expect(config.discoveryWindowMs).toBe(3 * 60 * 60_000);
   });
 
-  it('заданный размер окна пробрасывается', () => {
-    const config = toDataCollectorConfig(baseConfig({ cexWindowMinutes: 15 }));
-
-    expect(config.cex.windowMinutes).toBe(15);
+  it('CEX выключен, если cexConfig не задан (пустой набор бирж)', () => {
+    const config = toDataCollectorConfig(baseConfig({ cexConfig: null }));
+    expect(config.cex.exchanges).toHaveLength(0);
   });
 
-  it('период обновления кандидатов берётся из конфигурации приложения', () => {
-    const config = toDataCollectorConfig(baseConfig({ marketScanPauseMs: 45_000 }));
+  it('CEX-конфиг разбирается в описания бирж с их транспортом', () => {
+    const config = toDataCollectorConfig(
+      baseConfig({
+        cexConfig: JSON.stringify({
+          binance: {
+            type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true,
+            obDepth: 10, obMethod: 'watch', restartIntervalMs: 900_000,
+          },
+        }),
+      }),
+    );
+    expect(config.cex.exchanges).toHaveLength(1);
+    expect(config.cex.exchanges[0]?.exchangeId).toBe('binance');
+    expect(config.cex.exchanges[0]?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ]);
+  });
 
-    expect(config.collection.discoveryRefreshMs).toBe(45_000);
-    expect(config.collection.maxMarkets).toBe(12);
+  it('невалидная CEX-конфигурация не даёт собрать рантайм (fail-fast)', () => {
+    expect(() =>
+      toDataCollectorConfig(
+        baseConfig({ cexConfig: JSON.stringify({ binance: { type: 'spot', symbols: [], orderbook: true, trades: true } }) }),
+      ),
+    ).toThrow();
   });
 });

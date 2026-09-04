@@ -69,10 +69,25 @@
       "path": "../../packages/infrastructure/polymarket-v2/tsconfig.build.json"
     },
     {
-      "path": "../../packages/infrastructure/collection-coordinator/tsconfig.build.json"
+      "path": "../../packages/infrastructure/collector/tsconfig.build.json"
     },
     {
-      "path": "../../packages/infrastructure/market-finalizer/tsconfig.build.json"
+      "path": "../../packages/application/policy/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/application/subscription-planning/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/polymarket-control-runtime/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/polymarket-subscription-control/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/infrastructure/cex-subscription-control/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/domain/entities/market/tsconfig.build.json"
     },
     {
       "path": "../../packages/infrastructure/cex-v2/tsconfig.build.json"

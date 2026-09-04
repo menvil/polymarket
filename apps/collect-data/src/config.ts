@@ -94,6 +94,35 @@ export interface CollectorConfig {
 
   /** Интервал периодического сброса буферов CEX-окон (мс). */
   readonly cexFlushIntervalMs: number;
+
+  /**
+   * Базовые криптоактивы owner policy коллектора (пусто = любой поддержанный).
+   * @remarks
+   * После cutover рынки отбирает owner policy (`family CRYPTO_UP_DOWN`), а не
+   * keyword-фильтр discovery. Пустой список — «любой актив».
+   */
+  readonly policyAssets: readonly string[];
+
+  /**
+   * Номиналы серий owner policy коллектора (пусто = любой).
+   * @remarks Формат `<число><m|h>` (`5m`, `15m`, `1h`), как в `parsePolicyConfig`.
+   */
+  readonly policyDurations: readonly string[];
+
+  /**
+   * Окно обзора каталога discovery в часах (как далеко вперёд искать рынки).
+   * @remarks
+   * Не задано — параметр НЕ передаётся, и действует canonical дефолт самого
+   * `PolymarketMarketDiscovery` (6ч, покрывает серии 5m/15m/1h/4h). Своего
+   * дубля дефолта конфигурация приложения не заводит.
+   */
+  readonly discoveryWindowHours: number | undefined;
+
+  /**
+   * Пауза между control-тиками рантайма (мс): один тик = `runOnce` +
+   * `reconcile`.
+   */
+  readonly controlTickMs: number;
 }
 
 /**
@@ -167,6 +196,16 @@ export function loadConfig(): CollectorConfig {
     return val;
   }
 
+  /** Разбирает список через запятую (пустой/незаданный → []). */
+  function parseList(name: string): readonly string[] {
+    const val = process.env[name];
+    if (!val || val.trim() === '') return [];
+    return val
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
   return {
     dnsOverrideEnabled:   optional('DNS_OVERRIDE_ENABLED', 'false') === 'true',
     gammaApiBaseUrl:      optional('GAMMA_API_BASE_URL', 'https://gamma-api.polymarket.com'),
@@ -191,5 +230,9 @@ export function loadConfig(): CollectorConfig {
     cexWindowMinutes:     optionalNumberOrUndefined('CEX_WINDOW_MINUTES'),
     cexBufferSize:        optionalNumber('CEX_BUFFER_SIZE', 200),
     cexFlushIntervalMs:   optionalNumber('CEX_FLUSH_INTERVAL_MS', 5_000),
+    policyAssets:         parseList('COLLECTOR_POLICY_ASSETS'),
+    policyDurations:      parseList('COLLECTOR_POLICY_DURATIONS'),
+    discoveryWindowHours: optionalNumberOrUndefined('DISCOVERY_WINDOW_HOURS'),
+    controlTickMs:        optionalNumber('COLLECTOR_CONTROL_TICK_MS', 5_000),
   };
 }

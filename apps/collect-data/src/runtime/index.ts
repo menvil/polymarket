@@ -2,21 +2,19 @@
  * Публичный API рантайма коллектора.
  *
  * @remarks
- * Экспортируется для двух потребителей: production-`main.ts` и
- * verification-runner CHECKPOINT-а, которые обязаны поднимать один и тот же
- * контур. Semantic-слой этим API пользоваться НЕ должен: его точка входа —
- * общий `ExternalMessageBus`, а не рантайм сбора.
+ * Экспортируется для production-`main.ts` и verification-runner-ов, которые
+ * обязаны поднимать один и тот же контур. Semantic-слой этим API НЕ
+ * пользуется: его точка входа — общий `ExternalMessageBus`, а не рантайм сбора.
  */
 export { DataCollector } from './DataCollector.js';
 export type {
-  CexSourceHealth,
   CollectorBus,
-  CollectorCexSource,
-  CollectorCexSourceEntry,
+  CollectorCexController,
   CollectorCexStorage,
-  CollectorCoordinator,
-  CollectorDiscovery,
-  CollectorFinalizer,
+  CollectorGate,
+  CollectorPolymarketClient,
+  CollectorPolymarketController,
+  CollectorPolymarketControlRuntime,
   CollectorPolymarketSource,
   CollectorPolymarketStorage,
   CollectorRecorder,
@@ -25,29 +23,22 @@ export type {
   DataCollectorState,
   DataCollectorStatus,
 } from './DataCollector.js';
-export { createDataCollector } from './createDataCollector.js';
+export { buildCexDemands, buildCexTransportIndex, createDataCollector } from './createDataCollector.js';
 export type {
   ContourBus,
   ContourMessage,
+  ContourPolymarketClient,
   CreateDataCollectorOptions,
   CreatedDataCollector,
 } from './createDataCollector.js';
-export { parseCexSourceConfigs, toDataCollectorConfig } from './DataCollectorConfig.js';
+export { cexTransportKey, parseCexExchangeConfigs, toDataCollectorConfig } from './DataCollectorConfig.js';
 export type {
   CexCollectionConfig,
-  CollectionRuntimeConfig,
+  CexExchangeConfig,
+  CexTransportConfig,
+  ControlRuntimeConfig,
   DataCollectorConfig,
-  FinalizationRuntimeConfig,
   PolymarketRecordingConfig,
 } from './DataCollectorConfig.js';
-export { CollectionLifecycleProjection } from './collectionLifecycle.js';
-export type {
-  CollectionDropReason,
-  CollectionFinalizedOutcome,
-  CollectionLifecycleCounts,
-  CollectionLifecycleEvent,
-  CollectionLifecycleKind,
-  CollectionLifecycleListener,
-} from './collectionLifecycle.js';
 export { applyProcessBootstrap, installShutdownHandlers } from './processBootstrap.js';
 export type { ProcessBootstrap, ShutdownTarget } from './processBootstrap.js';
