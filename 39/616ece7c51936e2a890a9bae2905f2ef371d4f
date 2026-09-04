@@ -1,0 +1,43 @@
+packages/infrastructure/collector/src/PolymarketCollectionLifecycle.ts
+  s_c99ec2b699d51d::t_695e334f984491 199-208,280,404-405,410-427,430,436,455-528,775,1007-1012,1014-1036,1042,1044-1045
+  s_c99ec2b699d51d::t_b069a543227d18 219-228,581,600-666,671-672
+packages/infrastructure/collector/src/collectionSession.ts
+  s_c99ec2b699d51d::t_4ebcef4a3d131d 121-132
+apps/collect-data/docs/collect-data.md
+  s_c99ec2b699d51d::t_57c621dad52615 143-144
+packages/infrastructure/market-finalizer/src/MarketFinalizer.ts
+  s_c99ec2b699d51d::t_ff7594d9e16858 161-165,652-667,676-689,692,696-698,708
+packages/infrastructure/market-finalizer/__tests__/MarketFinalizer.test.ts
+  s_c99ec2b699d51d::t_11d13441cfa3d5 726-847
+docs/guides/collector-market-lifecycle.md
+  s_c99ec2b699d51d::t_81df3a8345b14a 105-145,176-217,299-300,308-309
+packages/infrastructure/collector/__tests__/helpers/fixtures.ts
+  s_c99ec2b699d51d::t_f31eb3ae067afe 321
+packages/infrastructure/collector/README.md
+  s_c99ec2b699d51d::t_81df3a8345b14a 174-185
+packages/infrastructure/collector/docs/collector.md
+  s_c99ec2b699d51d::t_855ccd99937666 166-215
+packages/infrastructure/market-finalizer/docs/market-finalization.md
+  s_c99ec2b699d51d::t_729d9036c52756 31-33,54-73
+packages/infrastructure/collector/__tests__/collection-lifecycle.integration.test.ts
+  s_c99ec2b699d51d::t_f31eb3ae067afe 33,38,473-480,482-485,490-494,496-504,506-514,516-562,564-615
+  s_c99ec2b699d51d::t_8fc32f20996dda 481,486-489,495,505,515,563
+apps/collect-data/__tests__/helpers/fakes.ts
+  s_c99ec2b699d51d::t_499fb1134b6363 395
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "39616ece7c51936e2a890a9bae2905f2ef371d4f",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
