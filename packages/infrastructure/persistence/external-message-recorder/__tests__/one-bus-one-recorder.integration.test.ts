@@ -36,6 +36,7 @@ import {
 import type { MarketMeta } from '@polymarket/ports';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import type { CexExternalMessage, CexOrderbookPayload, CexTradePayload } from '@polymarket/cex-v2';
+import { decodeDetachedArchiveLine, decodeRawArchive } from '@polymarket/raw-archive-format';
 import { ExternalMessageRecorder } from '../src/index.js';
 import { CapturingLogger } from './helpers/fakes.js';
 import {
@@ -204,30 +205,51 @@ describe('one bus / one recorder (PART 25)', () => {
     expect(marketFiles).toHaveLength(1);
     expect(marketFiles[0]).toContain(`${path.sep}polymarket${path.sep}`);
     const marketLines = fs.readFileSync(marketFiles[0]!, 'utf8').trimEnd().split('\n');
-    expect(marketLines).toHaveLength(2); // header + событие
-    expect(JSON.parse(marketLines[1]!)).toEqual(JSON.parse(JSON.stringify(sdkEvent)));
+    expect(marketLines).toHaveLength(2); // header + наблюдение
+    expect(decodeDetachedArchiveLine(marketLines[1]!)?.payload).toEqual(
+      JSON.parse(JSON.stringify(sdkEvent)),
+    );
     // CEX-данные в market-файл не утекли
     expect(marketLines[1]).not.toContain('exchangeId');
 
-    // ── CEX оконные партиции: orderbook и trades раздельно, payload-only ──
+    // ── CEX оконные партиции: orderbook и trades раздельно (TEST D/E) ──
     const cexFiles = listTree(cexDir).filter((f) => f.endsWith('.jsonl'));
     expect(cexFiles).toHaveLength(2);
     const obFile = cexFiles.find((f) => f.includes('_orderbook_'))!;
     const tradeFile = cexFiles.find((f) => f.includes('_trades_'))!;
     expect(obFile).toContain(`${path.sep}binance${path.sep}binance_BTC-USDT-USDT_swap_orderbook_`);
 
-    const obLine = fs.readFileSync(obFile, 'utf8').trimEnd();
-    expect(obLine).toBe(JSON.stringify(OB_PAYLOAD));
-    const tradeLine = fs.readFileSync(tradeFile, 'utf8').trimEnd();
-    expect(tradeLine).toBe(JSON.stringify(TRADE_PAYLOAD));
-    // Runtime metadata/envelope в строки не утекли
-    for (const line of [obLine, tradeLine]) {
+    const obLines = fs.readFileSync(obFile, 'utf8').trimEnd().split('\n');
+    const tradeLines = fs.readFileSync(tradeFile, 'utf8').trimEnd().split('\n');
+    const obArchive = decodeRawArchive(obLines);
+    const tradeArchive = decodeRawArchive(tradeLines);
+    // TEST H: каждая партиция объявляет формат и routing identity в LINE 1
+    expect(obArchive.format.formatVersion).toBe(2);
+    expect(obArchive.format.header).toMatchObject({
+      t: 'meta',
+      source: 'CEX',
+      exchangeId: 'binance',
+      marketType: 'swap',
+      symbol: 'BTC/USDT:USDT',
+      stream: 'orderbook',
+    });
+    expect(tradeArchive.format.header).toMatchObject({ stream: 'trades' });
+    // TEST D/E: наблюдение = type + ingress + НЕТРОНУТЫЙ payload
+    expect(obArchive.observations).toHaveLength(1);
+    expect(obArchive.observations[0]!.type).toBe('CEX_ORDERBOOK');
+    expect(obArchive.observations[0]!.payload).toEqual(JSON.parse(JSON.stringify(OB_PAYLOAD)));
+    expect(tradeArchive.observations[0]!.type).toBe('CEX_TRADE');
+    expect(tradeArchive.observations[0]!.payload).toEqual(
+      JSON.parse(JSON.stringify(TRADE_PAYLOAD)),
+    );
+    // Live-only metadata в строки не утекла
+    for (const line of [obLines[1]!, tradeLines[1]!]) {
       expect(line).not.toContain('messageId');
-      expect(line).not.toContain('CEX_ORDERBOOK');
-      expect(line).not.toContain('metadata');
+      expect(line).not.toContain('correlationId');
+      expect(line).not.toContain('"metadata"');
     }
     // Polymarket-данные в CEX-партиции не утекли
-    expect(obLine).not.toContain('"topic":"market"');
+    expect(obLines[1]).not.toContain('"topic":"market"');
 
     // ── Разные lifecycle-политики одного сервиса ──
     // Polymarket: finalize EXPIRED → архив market-датасета
@@ -247,7 +269,11 @@ describe('one bus / one recorder (PART 25)', () => {
       .toString('utf8')
       .trimEnd()
       .split('\n');
-    expect(gzLines).toEqual([JSON.stringify(OB_PAYLOAD)]);
+    const gzArchive = decodeRawArchive(gzLines);
+    expect(gzArchive.format.formatVersion).toBe(2);
+    expect(gzArchive.observations.map((observation) => observation.payload)).toEqual([
+      JSON.parse(JSON.stringify(OB_PAYLOAD)),
+    ]);
 
     // ── Счётчики обеих политик одного сервиса ──
     expect(recorder.getStats().marketMessagesRouted).toBe(1);
@@ -338,14 +364,16 @@ describe('one bus / one recorder (PART 25)', () => {
     }
     const firstLines = byMarket.get(MARKET_CONDITION_ID)!;
     const secondLines = byMarket.get(SECOND_MARKET_ID)!;
-    // Первый рынок: market event + оба RTDS-фида (точные payload-строки)
-    expect(firstLines).toEqual([
-      JSON.stringify(marketEvent),
-      JSON.stringify(binanceEvent),
-      JSON.stringify(chainlinkEvent),
+    // Первый рынок: market event + оба RTDS-фида (нетронутые payload-ы)
+    const payloadsOf = (lines: readonly string[]): unknown[] =>
+      lines.map((line) => decodeDetachedArchiveLine(line)?.payload);
+    expect(payloadsOf(firstLines)).toEqual([
+      JSON.parse(JSON.stringify(marketEvent)),
+      JSON.parse(JSON.stringify(binanceEvent)),
+      JSON.parse(JSON.stringify(chainlinkEvent)),
     ]);
     // Второй рынок: ТОЛЬКО общий binance-фид (fan-out одной строкой)
-    expect(secondLines).toEqual([JSON.stringify(binanceEvent)]);
+    expect(payloadsOf(secondLines)).toEqual([JSON.parse(JSON.stringify(binanceEvent))]);
     for (const line of [...firstLines, ...secondLines]) {
       expect(line).not.toContain('exchangeId');
       expect(line).not.toContain('messageId');
@@ -383,9 +411,11 @@ describe('one bus / one recorder (PART 25)', () => {
     expect(activeFiles).toHaveLength(1);
     const activeLines = fs.readFileSync(activeFiles[0]!, 'utf8').trimEnd().split('\n');
     expect((JSON.parse(activeLines[0]!) as { marketId?: string }).marketId).toBe(SECOND_MARKET_ID);
-    expect(activeLines.slice(1)).toEqual([
-      JSON.stringify(binanceEvent),
-      JSON.stringify(lateBinanceEvent),
+    expect(
+      activeLines.slice(1).map((line) => decodeDetachedArchiveLine(line)?.payload),
+    ).toEqual([
+      JSON.parse(JSON.stringify(binanceEvent)),
+      JSON.parse(JSON.stringify(lateBinanceEvent)),
     ]);
     expect(recorder.getStats().rtdsMessagesRouted).toBe(3);
   });

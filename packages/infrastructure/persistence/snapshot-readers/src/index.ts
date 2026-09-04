@@ -26,6 +26,20 @@
  *   }
  * }
  * ```
+ *
+ * ### Replayable Raw Format V2
+ *
+ * Для архивов V2 (и legacy — тем же вызовом) есть canonical reader,
+ * определяющий формат по header-у и отдающий наблюдения с явной
+ * `timingQuality`:
+ *
+ * ```typescript
+ * const reader = new RawArchiveObservationReader(factory.create(filePath));
+ * for await (const observation of reader.readObservations()) {
+ *   // observation.payload — source-native, как в live
+ * }
+ * await reader.close();
+ * ```
  */
 
 export type { ISnapshotReader } from './ISnapshotReader.js';
@@ -35,3 +49,4 @@ export { JsonlSnapshotReader } from './JsonlSnapshotReader.js';
 export { GzipJsonlSnapshotReader } from './GzipJsonlSnapshotReader.js';
 export { SnapshotReaderFactory } from './SnapshotReaderFactory.js';
 export { SnapshotScanner } from './SnapshotScanner.js';
+export { RawArchiveObservationReader } from './RawArchiveObservationReader.js';

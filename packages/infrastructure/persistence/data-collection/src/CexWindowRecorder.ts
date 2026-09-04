@@ -35,17 +35,30 @@
  * - cleanup незавершённых файлов при старте и close;
  * - детерминированное naming (см. ниже).
  *
+ * ### Формат партиции (Replayable Raw Format V2)
+ *
+ * ```text
+ * LINE 1  {"t":"meta","formatVersion":2,"source":"CEX", ...routing identity...}
+ * LINE 2+ {"type":"CEX_ORDERBOOK","ingress":{...},"payload":{...}}
+ * ```
+ *
+ * Header обязателен: у CCXT-payload-а нет ни биржи, ни типа рынка, а имя
+ * файла контрактом не является — reader обязан узнавать формат и routing
+ * identity из самого файла. Data-строки — {@link RecordedExternalObservationV2}
+ * с НЕИЗМЕНЁННЫМ source-native `payload` внутри конверта.
+ *
  * ### Отличия от legacy (осознанные)
  *
  * 1. **Routing-ключ включает stream** (`orderbook`/`trades`): legacy писал
- *    оба типа записей в один файл, различая их полем `t` — V2 персистит
- *    payload-only строки БЕЗ нашего дискриминатора, поэтому тип потока
- *    обязан жить в ключе партиции и имени файла.
- * 2. **Окно назначается в момент записи** (write-time assignment):
- *    у legacy записи, пришедшие во время асинхронной ротации (gzip),
- *    попадали в буфер уже закрытого writer-а и терялись. Здесь запись
- *    всегда попадает в writer СВОЕГО окна: границу окна определяет clock,
- *    а не момент срабатывания rotation-таймера.
+ *    оба типа записей в один файл, различая их полем `t` — V2 разводит
+ *    потоки по разным физическим партициям, поэтому тип потока обязан жить
+ *    в ключе партиции, имени файла и header-е.
+ * 2. **Окно назначается по времени ingress НАБЛЮДЕНИЯ**: у legacy записи,
+ *    пришедшие во время асинхронной ротации (gzip), попадали в буфер уже
+ *    закрытого writer-а и терялись; write-time wall-clock (первая версия
+ *    V2) отправлял бы наблюдение, увиденное до границы, в следующее окно.
+ *    Здесь окно вычисляется из `observation.ingress` — из того же значения,
+ *    которое уходит на диск.
  * 3. **Символ в имени файла санитизируется** по `[/:]` (swap-символы CCXT
  *    вида `BTC/USDT:USDT`), routing-ключ использует сырой символ.
  *
@@ -62,6 +75,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ILogger } from '@polymarket/logger';
+import {
+  buildCexPartitionHeader,
+  ingressEpochMilliseconds,
+} from '@polymarket/raw-archive-format';
+import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import { GzipCompressor } from './compression/GzipCompressor.js';
 
 /** Тип потока CEX-партиции (часть routing-ключа и имени файла). */
@@ -73,10 +91,12 @@ export type CexStreamKind = 'orderbook' | 'trades';
  * - `'recorded'` — строка сериализована и поставлена в буфер окна;
  * - `'inactive'` — запись сознательно отброшена (до первой границы окна
  *   либо после close) — это policy, а не ошибка;
+ * - `'late'` — окно наблюдения УЖЕ завершено и заархивировано: строку
+ *   некуда положить, не разрушив завершённую партицию (см. `write`);
  * - `'failed'` — запись невозможна и это ошибка (залогирована):
  *   сериализация payload либо разрушенный stream.
  */
-export type CexWindowRecordOutcome = 'recorded' | 'inactive' | 'failed';
+export type CexWindowRecordOutcome = 'recorded' | 'inactive' | 'late' | 'failed';
 
 /**
  * Конфигурация {@link CexWindowRecorder}.
@@ -102,6 +122,23 @@ export interface CexWindowRecorderConfig {
    * остаётся incomplete), а не успех.
    */
   readonly streamCloseTimeoutMs?: number;
+  /**
+   * Отсрочка ротации «тихого» окна после его границы (ms). Default: 250.
+   *
+   * @remarks
+   * Окно партиции выбирается по времени ingress НАБЛЮДЕНИЯ, а не по
+   * wall-clock момента записи, поэтому наблюдение, увиденное источником до
+   * границы, обязано попасть в старое окно, даже если handler исполнился
+   * чуть позже неё. Без отсрочки boundary-таймер мог бы заархивировать
+   * партицию буквально в микросекундах до прихода такого наблюдения, и
+   * законное наблюдение стало бы `'late'`.
+   *
+   * Отсрочка касается ТОЛЬКО таймера «тихих» окон: приход наблюдения
+   * СЛЕДУЮЩЕГО окна по тому же ключу закрывает предыдущее немедленно —
+   * внутри одного ключа поток монотонен, и более раннее наблюдение после
+   * более позднего прийти не может.
+   */
+  readonly boundaryGraceMs?: number;
 }
 
 /**
@@ -122,6 +159,16 @@ export interface CexWindowRecorderStats {
   readonly streamCloseFailures: number;
   /** Отказов gzip-сжатия завершённого окна (`.jsonl` сохранён). */
   readonly compressionFailures: number;
+  /**
+   * Наблюдений, чьё окно ingress уже было завершено (исход `'late'`).
+   *
+   * @remarks
+   * Настоящая потеря, а не policy: строка принадлежала окну, партиция
+   * которого уже заархивирована. Ненулевое значение означает, что
+   * {@link CexWindowRecorderConfig.boundaryGraceMs} мал для наблюдаемых
+   * задержек доставки.
+   */
+  readonly lateObservations: number;
 }
 
 /** Состояние одного оконного writer-а. */
@@ -150,6 +197,7 @@ const DEFAULT_WINDOW_MINUTES = 5;
 const DEFAULT_BUFFER_SIZE = 200;
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
 const DEFAULT_STREAM_CLOSE_TIMEOUT_MS = 5_000;
+const DEFAULT_BOUNDARY_GRACE_MS = 250;
 
 /**
  * Оконный storage-движок CEX-партиций: буферизация, ротация по границе
@@ -196,7 +244,13 @@ const DEFAULT_STREAM_CLOSE_TIMEOUT_MS = 5_000;
  * );
  * await storage.cleanup();
  * storage.start();
- * storage.write('binance', 'BTC/USDT:USDT', 'swap', 'orderbook', payload);
+ * storage.write(
+ *   'binance',
+ *   'BTC/USDT:USDT',
+ *   'swap',
+ *   'orderbook',
+ *   toRecordedObservation(message),
+ * );
  * // ... shutdown:
  * await storage.close();
  * ```
@@ -213,6 +267,17 @@ export class CexWindowRecorder {
 
   /** Активные writer-ы: routingKey → writer ТЕКУЩЕГО окна ключа. */
   private readonly _writers = new Map<string, WindowWriter>();
+  /**
+   * routingKey → самое позднее окно, для которого writer уже открывался.
+   *
+   * @remarks
+   * Партиция завершённого окна уже сжата и удалена как `.jsonl`; повторное
+   * открытие writer-а того же окна создало бы второй `.jsonl`, который при
+   * следующей ротации затёр бы завершённый `.jsonl.gz` данными одной
+   * опоздавшей строки. Поэтому наблюдение более раннего окна отвергается
+   * как `'late'`, а не «дописывается».
+   */
+  private readonly _latestWindowStart = new Map<string, number>();
   /** In-flight ротации (gzip): close() дожидается их завершения. */
   private readonly _pendingRotations = new Set<Promise<void>>();
   private _boundaryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -223,6 +288,8 @@ export class CexWindowRecorder {
   private _closed = false;
   private _closePromise: Promise<void> | null = null;
   private readonly _streamCloseTimeoutMs: number;
+  /** Отсрочка ротации «тихого» окна после его границы (ms). */
+  private readonly _boundaryGraceMs: number;
   /** Фабрика writable stream партиции (test hook). */
   private readonly _createStream: (filePath: string) => fs.WriteStream;
 
@@ -231,6 +298,7 @@ export class CexWindowRecorder {
   private _rotationFailures = 0;
   private _streamCloseFailures = 0;
   private _compressionFailures = 0;
+  private _lateObservations = 0;
 
   /**
    * @param config - Конфигурация оконной политики
@@ -254,6 +322,7 @@ export class CexWindowRecorder {
     this._flushIntervalMs = config.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
     this._compressor = config.compression === 'gzip' ? new GzipCompressor() : null;
     this._streamCloseTimeoutMs = config.streamCloseTimeoutMs ?? DEFAULT_STREAM_CLOSE_TIMEOUT_MS;
+    this._boundaryGraceMs = Math.max(0, config.boundaryGraceMs ?? DEFAULT_BOUNDARY_GRACE_MS);
     this._now = now;
     this._outputDir = config.outputDir;
   }
@@ -269,6 +338,7 @@ export class CexWindowRecorder {
       rotationFailures: this._rotationFailures,
       streamCloseFailures: this._streamCloseFailures,
       compressionFailures: this._compressionFailures,
+      lateObservations: this._lateObservations,
     };
   }
 
@@ -308,43 +378,57 @@ export class CexWindowRecorder {
   }
 
   /**
-   * Записывает payload-строку в партицию окна (payload-only инвариант:
-   * сериализуется РОВНО переданный payload, без envelope-полей).
+   * Записывает V2-наблюдение в партицию ЕГО окна ingress.
    *
    * @param exchangeId - Идентификатор биржи (routing)
    * @param symbol - Сырой unified-символ (routing; в имени файла
    *   санитизируется)
    * @param marketType - Тип рынка (routing)
    * @param stream - Тип потока (routing: партиции стакана и сделок раздельны)
-   * @param payload - Source-native payload сообщения (JSON-сериализуемый)
+   * @param observation - V2-наблюдение (`{type, ingress, payload}`);
+   *   `payload` внутри — НЕИЗМЕНЁННЫЙ source-native объект
    * @returns Исход записи (см. {@link CexWindowRecordOutcome})
    *
    * @remarks
-   * Окно назначается по ТЕКУЩЕМУ времени записи: запись, пришедшая во
-   * время асинхронной ротации предыдущего окна, попадает в writer нового
-   * окна (у legacy такие строки терялись в буфере закрытого writer-а).
+   * ### Окно выбирается по времени ingress, а не по времени записи
+   *
+   * Между наблюдением источника и исполнением storage-handler-а лежат bus и
+   * планировщик. Наблюдение, увиденное ДО границы окна, обязано попасть в
+   * СТАРОЕ окно, даже если handler исполнился уже после неё: wall-clock
+   * момента записи — это время нашей обработки, а не время наблюдения.
+   * Поэтому окно вычисляется из `observation.ingress` — из того же значения,
+   * которое уходит на диск.
+   *
+   * ### Смена окна и опоздания
+   *
+   * Наблюдение СЛЕДУЮЩЕГО окна по тому же ключу немедленно отправляет
+   * предыдущее окно в ротацию, а само пишется в writer нового окна (у legacy
+   * такие строки терялись в буфере закрытого writer-а). Наблюдение окна,
+   * которое для этого ключа уже завершено, возвращает `'late'`: воскрешать
+   * заархивированную партицию нельзя — новая ротация затёрла бы `.jsonl.gz`
+   * полного окна одной опоздавшей строкой.
    */
   public write(
     exchangeId: string,
     symbol: string,
     marketType: string,
     stream: CexStreamKind,
-    payload: unknown,
+    observation: RecordedExternalObservationV2,
   ): CexWindowRecordOutcome {
     if (this._closed || !this._started) {
       return 'inactive';
     }
-    const now = this._now();
-    const windowStart = this._windowStartOf(now);
+    const observedAtMs = ingressEpochMilliseconds(observation.ingress);
+    const windowStart = this._windowStartOf(observedAtMs);
     if (windowStart < this._firstWindowStart) {
       return 'inactive';
     }
 
     let line: string;
     try {
-      line = `${JSON.stringify(payload)}\n`;
+      line = `${JSON.stringify(observation)}\n`;
     } catch (error) {
-      this._logger.error('Failed to serialize CEX payload line', {
+      this._logger.error('Failed to serialize CEX observation line', {
         exchangeId,
         symbol,
         stream,
@@ -355,6 +439,20 @@ export class CexWindowRecorder {
 
     const routingKey = this._routingKey(exchangeId, symbol, marketType, stream);
     let writer = this._writers.get(routingKey);
+    const latestWindowStart = this._latestWindowStart.get(routingKey);
+    if (latestWindowStart !== undefined && windowStart < latestWindowStart) {
+      // Окно наблюдения уже завершено для этого ключа — писать некуда
+      this._lateObservations++;
+      this._logger.warn('CEX observation arrived after its window was archived', {
+        exchangeId,
+        symbol,
+        marketType,
+        stream,
+        observationWindowUTC: new Date(windowStart).toISOString(),
+        latestWindowUTC: new Date(latestWindowStart).toISOString(),
+      });
+      return 'late';
+    }
     if (writer && writer.windowStart !== windowStart) {
       // Ключ пересёк границу: прежнее окно уходит в ротацию, новое — сразу
       // принимает запись (без гонки с асинхронным gzip)
@@ -375,6 +473,7 @@ export class CexWindowRecorder {
         return 'failed';
       }
       this._writers.set(routingKey, writer);
+      this._latestWindowStart.set(routingKey, windowStart);
     }
     if (writer.failed || !writer.stream) {
       return 'failed';
@@ -509,11 +608,18 @@ export class CexWindowRecorder {
 
   // ───────────────────────── Ротация окон ─────────────────────────
 
-  /** Планирует sweep «тихих» writer-ов на следующей границе окна. */
+  /**
+   * Планирует sweep «тихих» writer-ов на следующую границу окна + grace.
+   *
+   * @remarks
+   * Grace даёт наблюдениям, увиденным до границы, но доставленным чуть
+   * позже неё, попасть в СВОЁ окно до его архивации
+   * ({@link CexWindowRecorderConfig.boundaryGraceMs}).
+   */
   private _scheduleBoundarySweep(): void {
     if (this._closed) return;
     const now = this._now();
-    const delay = Math.max(0, this._nextBoundary(now) - now);
+    const delay = Math.max(0, this._nextBoundary(now) + this._boundaryGraceMs - now);
     this._boundaryTimer = setTimeout(() => {
       this._sweepExpiredWindows();
       this._scheduleBoundarySweep();
@@ -521,11 +627,17 @@ export class CexWindowRecorder {
     this._boundaryTimer.unref?.();
   }
 
-  /** Ротирует все writer-ы, чьё окно уже закончилось (без новых записей). */
+  /**
+   * Ротирует writer-ы, чьё окно закончилось более чем grace назад.
+   *
+   * @remarks
+   * Условие — по абсолютному времени конца окна, а не по номеру текущего
+   * окна: только так grace фактически защищает граничные наблюдения.
+   */
   private _sweepExpiredWindows(): void {
-    const currentWindow = this._windowStartOf(this._now());
+    const now = this._now();
     for (const [routingKey, writer] of [...this._writers]) {
-      if (writer.windowStart < currentWindow) {
+      if (writer.windowStart + this._windowMs + this._boundaryGraceMs <= now) {
         this._writers.delete(routingKey);
         this._trackRotation(this._rotateWriter(writer));
       }
@@ -611,6 +723,17 @@ export class CexWindowRecorder {
 
   // ───────────────────────── Writer-ы и запись ─────────────────────────
 
+  /**
+   * Открывает writer окна и ставит в его буфер header-строку партиции.
+   *
+   * @remarks
+   * Header — LINE 1 партиции: он объявляет `formatVersion` и полную routing
+   * identity (`exchangeId + marketType + stream` + `symbol` + границы окна).
+   * Reader не обязан выводить формат из имени файла или из формы первой
+   * data-строки. Header кладётся в тот же FIFO-буфер, что и наблюдения,
+   * поэтому он гарантированно уходит на диск первым; партиция без единого
+   * наблюдения не создаётся вовсе (writer открывается лениво).
+   */
   private _createWriter(
     routingKey: string,
     exchangeId: string,
@@ -627,11 +750,20 @@ export class CexWindowRecorder {
       this._logger.warn('Deleted leftover incomplete CEX window file', { filePath });
     }
 
+    const header = buildCexPartitionHeader({
+      exchangeId,
+      marketType,
+      symbol,
+      stream,
+      windowStartMs: windowStart,
+      windowEndMs: windowStart + this._windowMs,
+    });
+
     const writer: WindowWriter = {
       routingKey,
       windowStart,
       filePath,
-      buffer: [],
+      buffer: [`${JSON.stringify(header)}\n`],
       stream: this._createStream(filePath),
       linesAccepted: 0,
       failed: false,

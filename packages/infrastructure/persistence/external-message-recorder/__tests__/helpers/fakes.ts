@@ -10,12 +10,20 @@
 import type { ILogger } from '@polymarket/logger';
 import type { MarketId } from '@polymarket/ids';
 import type { MarketMeta } from '@polymarket/ports';
-import type { DelayedActivationFailureCallback, RecordOutcome } from '@polymarket/data-collection';
+import type {
+  CexWindowRecordOutcome,
+  DelayedActivationFailureCallback,
+  RecordOutcome,
+} from '@polymarket/data-collection';
+import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import type { PolymarketRecordingStorage } from '../../src/index.js';
 
 /** Захваченный вызов recordMarketEvent. */
 export interface RecordedWrite {
   readonly marketId: MarketId;
+  /** Конверт V2, который recorder передал storage. */
+  readonly observation: RecordedExternalObservationV2;
+  /** Source-native payload внутри конверта (та же ссылка, что на шине). */
   readonly payload: unknown;
 }
 
@@ -74,14 +82,17 @@ export class FakeRecordingStorage implements PolymarketRecordingStorage {
     hook?.(marketId);
   }
 
-  public recordMarketEvent(marketId: MarketId, rawEvent: unknown): RecordOutcome {
+  public recordMarketEvent(
+    marketId: MarketId,
+    observation: RecordedExternalObservationV2,
+  ): RecordOutcome {
     if (this.throwOnRecord !== undefined) {
       throw this.throwOnRecord;
     }
     if (this.throwOnRecordForMarketId === String(marketId)) {
       throw new Error(`storage failure for ${String(marketId)}`);
     }
-    this.writes.push({ marketId, payload: rawEvent });
+    this.writes.push({ marketId, observation, payload: observation.payload });
     return this.outcomeOverride ?? 'recorded';
   }
 
@@ -209,6 +220,9 @@ export interface CexRecordedWrite {
   readonly symbol: string;
   readonly marketType: string;
   readonly stream: 'orderbook' | 'trades';
+  /** Конверт V2, который recorder передал оконному storage. */
+  readonly observation: RecordedExternalObservationV2;
+  /** Source-native payload внутри конверта (та же ссылка, что на шине). */
   readonly payload: unknown;
 }
 
@@ -227,7 +241,7 @@ export class FakeCexWindowStorage {
   public flushCalls = 0;
   public closeCalls = 0;
   /** Постоянное переопределение исхода записи (default 'recorded'). */
-  public outcomeOverride: 'recorded' | 'inactive' | 'failed' | undefined;
+  public outcomeOverride: CexWindowRecordOutcome | undefined;
   /** Если задана — write бросает (проверка защитного контура handler-ов). */
   public throwOnWrite: Error | undefined;
 
@@ -240,12 +254,19 @@ export class FakeCexWindowStorage {
     symbol: string,
     marketType: string,
     stream: 'orderbook' | 'trades',
-    payload: unknown,
-  ): 'recorded' | 'inactive' | 'failed' {
+    observation: RecordedExternalObservationV2,
+  ): CexWindowRecordOutcome {
     if (this.throwOnWrite !== undefined) {
       throw this.throwOnWrite;
     }
-    this.writes.push({ exchangeId, symbol, marketType, stream, payload });
+    this.writes.push({
+      exchangeId,
+      symbol,
+      marketType,
+      stream,
+      observation,
+      payload: observation.payload,
+    });
     return this.outcomeOverride ?? 'recorded';
   }
 

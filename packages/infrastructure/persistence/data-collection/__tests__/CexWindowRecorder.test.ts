@@ -12,9 +12,48 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import type { ILogger } from '@polymarket/logger';
+import { decodeRawArchive } from '@polymarket/raw-archive-format';
+import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import { CexWindowRecorder } from '../src/CexWindowRecorder.js';
 import type { CexWindowRecorderConfig } from '../src/CexWindowRecorder.js';
 import { GzipCompressor } from '../src/compression/GzipCompressor.js';
+
+/** RunId одного тестового runtime (пара `(runId, sequence)` — ключ порядка). */
+const RUN_ID = 'testrun1';
+let nextSequence = 0;
+
+/**
+ * Строит V2-наблюдение с заданным моментом ingress.
+ *
+ * @param payload - Source-native payload (уйдёт на диск неизменённым)
+ * @param atMs - Момент ingress наблюдения (по нему выбирается окно партиции)
+ * @returns Наблюдение для `CexWindowRecorder.write`
+ */
+function obs(payload: unknown, atMs: number): RecordedExternalObservationV2 {
+  nextSequence += 1;
+  return {
+    type: 'CEX_ORDERBOOK',
+    ingress: {
+      runId: RUN_ID,
+      sequence: nextSequence,
+      createdAtUnixSeconds: Math.floor(atMs / 1000),
+      millisecondOfSecond: atMs % 1000,
+      microsecondOfMillisecond: 0,
+      nanosecondOfMicrosecond: 0,
+    },
+    payload,
+  };
+}
+
+/** Payload-ы data-строк партиции (header отброшен, порядок сохранён). */
+function payloadsOf(lines: readonly string[]): unknown[] {
+  return decodeRawArchive(lines).observations.map((observation) => observation.payload);
+}
+
+/** Header партиции (LINE 1). */
+function headerOf(lines: readonly string[]): Record<string, unknown> {
+  return JSON.parse(lines[0]!) as Record<string, unknown>;
+}
 
 function makeLogger(): ILogger {
   return {
@@ -104,6 +143,7 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     );
 
   beforeEach(() => {
+    nextSequence = 0;
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cex-window-'));
     // Старт в середине окна: первая граница = ALIGNED_T0 + WINDOW_MS
     now = ALIGNED_T0 + 90_000;
@@ -118,35 +158,35 @@ describe('CexWindowRecorder (инъецированное время)', () => {
   it('записи до первой границы окна отбрасываются (aligned start)', async () => {
     recorder.start();
 
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { a: 1 })).toBe('inactive');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ a: 1 }, now))).toBe('inactive');
 
     // Первая граница достигнута — приём начался
     now = ALIGNED_T0 + WINDOW_MS + 1_000;
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { a: 2 })).toBe('recorded');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ a: 2 }, now))).toBe('recorded');
     await recorder.flush();
 
     const files = listFiles(dir);
     expect(files).toHaveLength(1);
-    const content = fs.readFileSync(path.join(dir, files[0]!), 'utf8');
-    expect(content.trim().split('\n')).toEqual([JSON.stringify({ a: 2 })]);
+    const lines = fs.readFileSync(path.join(dir, files[0]!), 'utf8').trim().split('\n');
+    expect(payloadsOf(lines)).toEqual([{ a: 2 }]);
   });
 
   it('write до start() и после close() → inactive', async () => {
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { a: 1 })).toBe('inactive');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ a: 1 }, now))).toBe('inactive');
     recorder.start();
     await recorder.close();
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { a: 1 })).toBe('inactive');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ a: 1 }, now))).toBe('inactive');
   });
 
-  it('одно окно → одна партиция; строки payload-only', async () => {
+  it('одно окно → одна партиция; header + V2-наблюдения с нетронутым payload', async () => {
     recorder.start();
     now = ALIGNED_T0 + WINDOW_MS + 1_000;
 
     const payloadA = { exchangeId: 'binance', symbol: 'BTC/USDT', orderBook: { bids: [[1, 2]] } };
     const payloadB = { exchangeId: 'binance', symbol: 'BTC/USDT', orderBook: { bids: [[3, 4]] } };
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', payloadA);
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs(payloadA, now));
     now += 60_000; // то же окно
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', payloadB);
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs(payloadB, now));
     await recorder.flush();
 
     const files = listFiles(dir);
@@ -155,19 +195,36 @@ describe('CexWindowRecorder (инъецированное время)', () => {
       .readFileSync(path.join(dir, files[0]!), 'utf8')
       .trim()
       .split('\n');
-    // Payload-only инвариант: строка === JSON.stringify(payload), без envelope
-    expect(lines).toEqual([JSON.stringify(payloadA), JSON.stringify(payloadB)]);
+    // LINE 1 — header партиции с объявленным форматом и routing identity
+    expect(headerOf(lines)).toEqual({
+      t: 'meta',
+      formatVersion: 2,
+      source: 'CEX',
+      exchangeId: 'binance',
+      marketType: 'spot',
+      symbol: 'BTC/USDT',
+      stream: 'orderbook',
+      windowStartMs: ALIGNED_T0 + WINDOW_MS,
+      windowEndMs: ALIGNED_T0 + 2 * WINDOW_MS,
+      windowStartUTC: new Date(ALIGNED_T0 + WINDOW_MS).toISOString(),
+      windowEndUTC: new Date(ALIGNED_T0 + 2 * WINDOW_MS).toISOString(),
+    });
+    // Конверт добавлен СНАРУЖИ: payload не нормализован и не переставлен
+    expect(payloadsOf(lines)).toEqual([payloadA, payloadB]);
+    const decoded = decodeRawArchive(lines);
+    expect(decoded.format.timingQuality).toBe('EXACT_INGRESS');
+    expect(decoded.observations.map((o) => o.ingress?.sequence)).toEqual([1, 2]);
   });
 
   it('пересечение границы: старая партиция закрывается и сжимается, новая открывается', async () => {
     recorder.start();
     const window1 = ALIGNED_T0 + WINDOW_MS;
     now = window1 + 1_000;
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { w: 1 });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 1 }, now));
 
     // Следующее окно: запись немедленно принимается в НОВУЮ партицию
     now = window1 + WINDOW_MS + 1_000;
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { w: 2 })).toBe('recorded');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 2 }, now))).toBe('recorded');
 
     // Старая партиция завершена: .jsonl.gz появился, .jsonl удалён
     await waitForCompletedPartitions(dir, 1);
@@ -177,22 +234,22 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     expect(open).toHaveLength(1);
     expect(gz).not.toBe(open[0]);
 
-    expect(gunzipLines(path.join(dir, gz))).toEqual([JSON.stringify({ w: 1 })]);
+    expect(payloadsOf(gunzipLines(path.join(dir, gz)))).toEqual([{ w: 1 }]);
 
     await recorder.flush();
-    const openContent = fs.readFileSync(path.join(dir, open[0]!), 'utf8').trim();
-    expect(openContent).toBe(JSON.stringify({ w: 2 }));
+    const openLines = fs.readFileSync(path.join(dir, open[0]!), 'utf8').trim().split('\n');
+    expect(payloadsOf(openLines)).toEqual([{ w: 2 }]);
   });
 
   it('routing: биржа/символ/тип рынка/поток не смешиваются', async () => {
     recorder.start();
     now = ALIGNED_T0 + WINDOW_MS + 1_000;
 
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { id: 'binance-ob' });
-    recorder.write('bybit', 'BTC/USDT', 'spot', 'orderbook', { id: 'bybit-ob' });
-    recorder.write('binance', 'ETH/USDT', 'spot', 'orderbook', { id: 'eth-ob' });
-    recorder.write('binance', 'BTC/USDT', 'swap', 'orderbook', { id: 'swap-ob' });
-    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { id: 'binance-trade' });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ id: 'binance-ob' }, now));
+    recorder.write('bybit', 'BTC/USDT', 'spot', 'orderbook', obs({ id: 'bybit-ob' }, now));
+    recorder.write('binance', 'ETH/USDT', 'spot', 'orderbook', obs({ id: 'eth-ob' }, now));
+    recorder.write('binance', 'BTC/USDT', 'swap', 'orderbook', obs({ id: 'swap-ob' }, now));
+    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', obs({ id: 'binance-trade' }, now));
     await recorder.flush();
 
     const files = listFiles(dir);
@@ -226,7 +283,7 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     recorder.start();
     now = ALIGNED_T0 + WINDOW_MS + 1_000; // окно 14:00–14:05 UTC = 1000AM–1005AM ET
 
-    recorder.write('binance', 'BTC/USDT:USDT', 'swap', 'trades', { x: 1 });
+    recorder.write('binance', 'BTC/USDT:USDT', 'swap', 'trades', obs({ x: 1 }, now));
     await recorder.flush();
 
     const files = listFiles(dir);
@@ -249,9 +306,9 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     const firstWindow = Math.floor(now / windowMs) * windowMs + windowMs;
 
     now = firstWindow + 1_000;
-    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { w: 1 });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', obs({ w: 1 }, now));
     now = firstWindow + windowMs + 1_000;
-    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { w: 2 });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'trades', obs({ w: 2 }, now));
     await waitForCompletedPartitions(dir, 1);
     await recorder.flush();
 
@@ -272,7 +329,7 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     morningRecorder.start();
     now = morning + 5 * 60_000 + 1_000; // внутри окна 12:35–12:40 UTC
     expect(
-      morningRecorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { h: 1 }),
+      morningRecorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ h: 1 }, now)),
     ).toBe('recorded');
     await morningRecorder.flush();
 
@@ -286,13 +343,16 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     recorder.start();
     now = ALIGNED_T0 + WINDOW_MS + 1_000;
 
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { n: 1 });
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { n: 2 });
+    // Header занимает первую позицию буфера партиции, поэтому порог достигают
+    // пары «header + n1» и «n2 + n3» — обе уходят на диск без явного flush()
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ n: 1 }, now));
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ n: 2 }, now));
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ n: 3 }, now));
 
     await waitFor(() => {
       const files = listFiles(dir);
       if (files.length !== 1) return false;
-      return fs.readFileSync(path.join(dir, files[0]!), 'utf8').includes('"n":2');
+      return fs.readFileSync(path.join(dir, files[0]!), 'utf8').includes('"n":3');
     });
   });
 
@@ -301,7 +361,7 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     recorder.start();
     now = ALIGNED_T0 + WINDOW_MS + 1_000;
 
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { timer: true });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ timer: true }, now));
 
     await waitFor(() => {
       const files = listFiles(dir);
@@ -314,10 +374,10 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     recorder.start();
     const window1 = ALIGNED_T0 + WINDOW_MS;
     now = window1 + 1_000;
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { done: 1 });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ done: 1 }, now));
 
     now = window1 + WINDOW_MS + 1_000;
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { incomplete: 1 });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ incomplete: 1 }, now));
     await waitFor(() => listFiles(dir).some((file) => file.endsWith('.jsonl.gz')));
 
     await recorder.close();
@@ -325,7 +385,7 @@ describe('CexWindowRecorder (инъецированное время)', () => {
     const files = listFiles(dir);
     expect(files).toHaveLength(1);
     expect(files[0]!.endsWith('.jsonl.gz')).toBe(true);
-    expect(gunzipLines(path.join(dir, files[0]!))).toEqual([JSON.stringify({ done: 1 })]);
+    expect(payloadsOf(gunzipLines(path.join(dir, files[0]!)))).toEqual([{ done: 1 }]);
   });
 
   it('несериализуемый payload → failed, остальные записи не страдают', async () => {
@@ -334,13 +394,78 @@ describe('CexWindowRecorder (инъецированное время)', () => {
 
     const circular: Record<string, unknown> = {};
     circular['self'] = circular;
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', circular)).toBe('failed');
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { ok: 1 })).toBe('recorded');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs(circular, now))).toBe('failed');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ ok: 1 }, now))).toBe('recorded');
     await recorder.flush();
 
     const files = listFiles(dir);
     const lines = fs.readFileSync(path.join(dir, files[0]!), 'utf8').trim().split('\n');
-    expect(lines).toEqual([JSON.stringify({ ok: 1 })]);
+    expect(payloadsOf(lines)).toEqual([{ ok: 1 }]);
+  });
+
+  it('TEST I: окно выбирается по ingress наблюдения, а не по времени записи', async () => {
+    recorder.start();
+    const window1 = ALIGNED_T0 + WINDOW_MS;
+    const window2 = window1 + WINDOW_MS;
+
+    // Наблюдение УВИДЕНО за 1 мс до границы, а handler исполняется уже ПОСЛЕ неё
+    now = window2 + 5_000;
+    expect(
+      recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ side: 'before' }, window2 - 1)),
+    ).toBe('recorded');
+    await recorder.flush();
+
+    // Строка легла в СТАРОЕ окно (по имени файла), а не в текущее
+    const files = listFiles(dir);
+    expect(files).toHaveLength(1);
+    const oldWindowFile = files[0]!;
+    expect(payloadsOf(fs.readFileSync(path.join(dir, oldWindowFile), 'utf8').trim().split('\n'))).toEqual(
+      [{ side: 'before' }],
+    );
+    expect(headerOf(fs.readFileSync(path.join(dir, oldWindowFile), 'utf8').trim().split('\n'))).toMatchObject({
+      windowStartMs: window1,
+      windowEndMs: window2,
+    });
+
+    // Наблюдение следующего окна открывает НОВУЮ партицию и закрывает старую
+    expect(
+      recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ side: 'after' }, window2 + 1)),
+    ).toBe('recorded');
+    await waitForCompletedPartitions(dir, 1);
+    await recorder.flush();
+
+    const allFiles = listFiles(dir);
+    expect(allFiles).toHaveLength(2);
+    const openFile = allFiles.find((file) => file.endsWith('.jsonl'))!;
+    expect(openFile).not.toBe(oldWindowFile);
+    expect(headerOf(fs.readFileSync(path.join(dir, openFile), 'utf8').trim().split('\n'))).toMatchObject({
+      windowStartMs: window2,
+    });
+  });
+
+  it('наблюдение уже заархивированного окна отвергается как late, а не воскрешает партицию', async () => {
+    recorder.start();
+    const window1 = ALIGNED_T0 + WINDOW_MS;
+    const window2 = window1 + WINDOW_MS;
+
+    now = window1 + 1_000;
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 1 }, window1 + 1_000));
+    // Наблюдение следующего окна отправляет партицию окна 1 в ротацию
+    now = window2 + 1_000;
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 2 }, window2 + 1_000));
+    await waitForCompletedPartitions(dir, 1);
+
+    // Опоздавшее наблюдение окна 1: завершённый .gz не должен быть затёрт
+    expect(
+      recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 'late' }, window1 + 2_000)),
+    ).toBe('late');
+    expect(recorder.getStats().lateObservations).toBe(1);
+    await recorder.flush();
+
+    const files = listFiles(dir);
+    expect(files.filter((file) => file.endsWith('.jsonl.gz'))).toHaveLength(1);
+    const gz = files.find((file) => file.endsWith('.jsonl.gz'))!;
+    expect(payloadsOf(gunzipLines(path.join(dir, gz)))).toEqual([{ w: 1 }]);
   });
 
   it('cleanup: удаляет незавершённые .jsonl, не трогая .jsonl.gz', async () => {
@@ -504,9 +629,9 @@ describe('CexWindowRecorder: строгая completion-семантика (failu
     recorder.start();
     const window1 = ALIGNED_T0 + WINDOW_MS;
     now = window1 + 1_000;
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { w: 1 })).toBe('recorded');
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 1 }, now))).toBe('recorded');
     now = window1 + WINDOW_MS + 1_000;
-    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { w: 2 });
+    recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 2 }, now));
     // Ротация первого writer-а начата write-ом выше; дожидаемся её исхода
     await waitFor(() => recorder.getStats().rotationFailures + recorder.getStats().partitionsCompleted > 0);
   }
@@ -624,7 +749,7 @@ describe('CexWindowRecorder: строгая completion-семантика (failu
     );
     recorder.start();
     now = ALIGNED_T0 + WINDOW_MS + 1_000;
-    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { race: 1 })).toBe(
+    expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ race: 1 }, now))).toBe(
       'recorded',
     );
 
@@ -644,7 +769,7 @@ describe('CexWindowRecorder: строгая completion-семантика (failu
     streams[0]!.pendingWrites.shift()!();
     await Promise.all([first, second]);
     expect(secondSettled).toBe(true);
-    expect(streams[0]!.written).toBe(`${JSON.stringify({ race: 1 })}\n`);
+    expect(payloadsOf(streams[0]!.written.trim().split('\n'))).toEqual([{ race: 1 }]);
 
     await recorder.close();
   });
@@ -674,14 +799,14 @@ describe('CexWindowRecorder: строгая completion-семантика (failu
       now = window1 + 1_000;
 
       // Hot path: threshold-flush падает синхронным throw → поглощён
-      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { t: 1 })).toBe('recorded');
+      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ t: 1 }, now))).toBe('recorded');
       await waitFor(() => recorder.getStats().streamCloseFailures >= 1);
       // Writer помечен failed — последующие записи отклоняются наблюдаемо
-      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { t: 2 })).toBe('failed');
+      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ t: 2 }, now))).toBe('failed');
 
       // Ротация failed-writer-а тоже не оставляет невыловленных отказов
       now = window1 + WINDOW_MS + 1_000;
-      recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', { t: 3 });
+      recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ t: 3 }, now));
       await waitFor(() => recorder.getStats().rotationFailures >= 1);
       await recorder.close();
 
@@ -707,10 +832,11 @@ describe('CexWindowRecorder: строгая completion-семантика (failu
       rotationFailures: 0,
       streamCloseFailures: 0,
       compressionFailures: 0,
+      lateObservations: 0,
     });
     const gz = listFiles(dir).find((file) => file.endsWith('.jsonl.gz'));
     expect(gz).toBeDefined();
-    expect(gunzipLines(path.join(dir, gz!))).toEqual([JSON.stringify({ w: 1 })]);
+    expect(payloadsOf(gunzipLines(path.join(dir, gz!)))).toEqual([{ w: 1 }]);
     await recorder.close();
   });
 
@@ -758,14 +884,14 @@ describe('CexWindowRecorder (реальное время, короткое ок�
       // Дожидаемся первой границы и пишем одну строку в текущее окно
       const firstBoundary = Math.floor(Date.now() / windowMs) * windowMs + windowMs;
       await waitFor(() => Date.now() >= firstBoundary + 20, 2_000);
-      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'trades', { sweep: 1 })).toBe(
+      expect(recorder.write('binance', 'BTC/USDT', 'spot', 'trades', obs({ sweep: 1 }, Date.now()))).toBe(
         'recorded',
       );
 
       // Без единой новой записи партиция должна завершиться по границе
       await waitFor(() => listFiles(dir).some((file) => file.endsWith('.jsonl.gz')), 4_000);
       const gz = listFiles(dir).find((file) => file.endsWith('.jsonl.gz'))!;
-      expect(gunzipLines(path.join(dir, gz))).toEqual([JSON.stringify({ sweep: 1 })]);
+      expect(payloadsOf(gunzipLines(path.join(dir, gz)))).toEqual([{ sweep: 1 }]);
     } finally {
       await recorder.close();
     }

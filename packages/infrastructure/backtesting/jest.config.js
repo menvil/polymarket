@@ -16,6 +16,7 @@ export default {
     '^@polymarket/ports$':         '<rootDir>/../../application/ports/src/index.ts',
     '^@polymarket/handlers$':      '<rootDir>/../../application/handlers/src/index.ts',
     '^@polymarket/snapshot-readers$': '<rootDir>/../persistence/snapshot-readers/src/index.ts',
+    '^@polymarket/raw-archive-format$': '<rootDir>/../persistence/raw-archive-format/src/index.ts',
     '^@polymarket/order$':         '<rootDir>/../../domain/entities/order/src/index.ts',
     '^@polymarket/portfolio$':     '<rootDir>/../../domain/entities/portfolio/src/index.ts',
     '^@polymarket/orderbook$':     '<rootDir>/../../domain/entities/orderbook/src/index.ts',

@@ -22,6 +22,7 @@
  * Точность — Decimal-helpers vendor-boundary (`Number()` не используется).
  */
 import { compareDecimalStrings, meanOfDecimalStrings } from '@polymarket/polymarket-v2';
+import { decodeDetachedArchiveLine } from '@polymarket/raw-archive-format';
 
 /** Длина финального окна аппроксимации TWAP (мс). */
 const END_TWAP_WINDOW_MS = 60_000;
@@ -53,23 +54,26 @@ interface ChainlinkObservation {
 function parseObservations(lines: readonly string[]): ChainlinkObservation[] {
   const observations: ChainlinkObservation[] = [];
   for (const line of lines) {
-    try {
-      const parsed = JSON.parse(line) as {
-        topic?: unknown;
-        payload?: { timestamp?: unknown; value?: unknown };
-      };
-      if (parsed.topic !== 'prices.crypto.chainlink') {
-        continue;
-      }
-      const timestampMs = parsed.payload?.timestamp;
-      const value = parsed.payload?.value;
-      if (typeof timestampMs !== 'number' || typeof value !== 'string' || value.length === 0) {
-        continue;
-      }
-      observations.push({ timestampMs, value });
-    } catch {
-      // Малформированная строка пропускается: деривация best-effort
+    // Строки приходят из sealed-датасета УЖЕ без header-а, поэтому объявленный
+    // формат недоступен: декодер снимает конверт V2 структурно, а legacy-строку
+    // отдаёт как есть (см. decodeDetachedArchiveLine)
+    const decoded = decodeDetachedArchiveLine(line);
+    if (decoded === undefined) {
+      continue; // малформированная строка: деривация best-effort
     }
+    const parsed = decoded.payload as {
+      topic?: unknown;
+      payload?: { timestamp?: unknown; value?: unknown };
+    } | null;
+    if (parsed === null || parsed.topic !== 'prices.crypto.chainlink') {
+      continue;
+    }
+    const timestampMs = parsed.payload?.timestamp;
+    const value = parsed.payload?.value;
+    if (typeof timestampMs !== 'number' || typeof value !== 'string' || value.length === 0) {
+      continue;
+    }
+    observations.push({ timestampMs, value });
   }
   observations.sort((left, right) => left.timestampMs - right.timestampMs);
   return observations;

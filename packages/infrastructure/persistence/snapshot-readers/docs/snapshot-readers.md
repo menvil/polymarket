@@ -16,6 +16,7 @@
 | `GzipJsonlSnapshotReader` | Читает `.jsonl.gz`: распаковывает во временный файл, читает, удаляет при `close()` |
 | `SnapshotFileInfo` | Метаданные найденного файла (путь, дата, размер) |
 | `ScanOptions`/`ScanResult` | Параметры/результат `SnapshotScanner.scan()` |
+| `RawArchiveObservationReader` | Canonical file-level reader Replayable Raw Format V2: формат по header-у (LINE 1), наблюдения с явной `timingQuality` |
 
 ```typescript
 import { SnapshotScanner, SnapshotReaderFactory } from '@polymarket/snapshot-readers';
@@ -36,6 +37,34 @@ for (const file of files) {
   }
 }
 ```
+
+## Чтение raw-архивов: формат объявлен header-ом
+
+`ISnapshotReader` отдаёт СТРОКИ и ничего не знает о формате. Для архивов
+Replayable Raw Format V2 (и legacy — тем же вызовом) есть canonical
+file-level reader:
+
+```typescript
+import { RawArchiveObservationReader, SnapshotReaderFactory } from '@polymarket/snapshot-readers';
+
+const reader = new RawArchiveObservationReader(factory.create(file.filePath));
+try {
+  const header = await reader.readHeader();   // meta-строка либо undefined
+  for await (const observation of reader.readObservations()) {
+    // observation.payload — source-native, ровно как в live
+    // observation.timingQuality — 'EXACT_INGRESS' | 'LEGACY_APPROXIMATE'
+  }
+} finally {
+  await reader.close();
+}
+```
+
+Формат определяется ПО HEADER-у файла, а не по имени файла и не по форме
+первой data-строки. Legacy-архивы читаются тем же вызовом и честно
+помечаются `LEGACY_APPROXIMATE`; порядок строк файла сохраняется строго —
+никакой пересортировки по vendor-timestamp и никакого фиктивного `sequence`.
+Контракт формата — `@polymarket/raw-archive-format`, подробности —
+`docs/guides/replayable-raw-format-v2.md`.
 
 ## Почему async generator, а не загрузка файла целиком
 

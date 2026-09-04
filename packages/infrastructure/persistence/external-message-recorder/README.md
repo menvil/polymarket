@@ -1,8 +1,10 @@
 # @polymarket/external-message-recorder
 
-Recording-подписчик общего `ExternalMessageBus`: персистит source-native
-`message.payload` Polymarket-сообщений в market JSONL-файлы через
-существующий storage-движок `@polymarket/data-collection`.
+Recording-подписчик общего `ExternalMessageBus`: персистит наблюдения
+Polymarket и CEX в JSONL-архивы Replayable Raw Format V2 через существующий
+storage-движок `@polymarket/data-collection`. Source-native `message.payload`
+уходит на диск неизменённым — внутри archive envelope
+`{type, ingress, payload}`.
 
 ## 1. Recorder — consumer bus, а не callback source
 
@@ -16,7 +18,7 @@ ExternalMessage {type, payload, metadata}
 общий ExternalMessageBus         ← принадлежит composition root
         ↓ subscribe('POLYMARKET_MARKET' | 'POLYMARKET_CRYPTO_BINANCE' | 'POLYMARKET_CRYPTO_CHAINLINK')
 ExternalMessageRecorder          ← этот пакет
-        ↓ message.payload
+        ↓ toRecordedExternalObservationV2(message)
 DataRecorder (@polymarket/data-collection)
         ↓
 market JSONL file (.jsonl → .jsonl.gz)
@@ -26,27 +28,48 @@ Source не импортирует recorder; recorder не получает да
 source. Единственный путь данных — общий bus (закреплено
 `__tests__/contour-boundary.test.ts`).
 
-## 2. Payload-only: canonical metadata — runtime-only
+## 2. Archive envelope ВОКРУГ payload (Replayable Raw Format V2)
 
-Recorder получает весь `ExternalMessage`, но на диск пишет ТОЛЬКО
-`message.payload` — decoded SDK-событие как есть, без clone / rename /
-flatten / normalize / VO-конверсии:
+Recorder получает весь `ExternalMessage` и пишет на диск
+`RecordedExternalObservationV2` — конверт, добавленный СНАРУЖИ
+source-native payload:
 
 ```jsonc
 // строка файла (2+):
-{"topic":"market","type":"book","payload":{"market":"0x...","tokenId":"...","bids":[...],"asks":[...]}}
+{
+  "type": "POLYMARKET_MARKET",
+  "ingress": {
+    "runId": "k8f3pz7q", "sequence": 100,
+    "createdAtUnixSeconds": 1786668087, "millisecondOfSecond": 123,
+    "microsecondOfMillisecond": 456, "nanosecondOfMicrosecond": 789
+  },
+  "payload": {"topic":"market","type":"book","payload":{"market":"0x...","bids":[...]}}
+}
 ```
 
-НЕ записываются: `ExternalMessage.type` (`POLYMARKET_MARKET`), `messageId`,
-`runId`, `sequence`, `createdAt`, `correlationId`, `causationId`. Canonical
-runtime metadata принадлежит live execution; recording dataset содержит
-source-native observation. Vendor-поля payload (`topic`, `type`) при этом
-сохраняются — это дискриминаторы самого SDK.
+`payload` — decoded SDK-событие как есть: без clone / rename / flatten /
+normalize / VO-конверсии (та же ссылка, что пришла на шину). Никакой
+semantic normalization до записи не выполняется — replay обязан отдать
+Semantic Adapter-у ровно то, что тот видел бы live.
 
-Инвариант replay: payload, записанный в файл, — тот же source-native payload,
-который получает Semantic Adapter в live. Будущий Reader создаст НОВЫЙ
-`ExternalMessage` вокруг того же payload и опубликует в ТОТ ЖЕ bus для ТОГО ЖЕ
-adapter-а.
+`ingress` копируется НАПРЯМУЮ из `message.metadata` (`Date.now()` в момент
+записи не используется — это время нашей обработки, а не наблюдения). Без
+него после записи терялся бы точный порядок наблюдений МЕЖДУ
+Polymarket-файлом и CEX-партициями: физически это разные файлы, а
+vendor-timestamp-ы у них из разных часов и разной точности.
+
+Ключ исторического порядка — пара `(runId, sequence)`. `sequence` без
+`runId` глобальной identity НЕ образует: после рестарта процесса нумерация
+начинается заново.
+
+НЕ записываются live-only поля metadata: `messageId`, `correlationId`,
+`causationId`, `createdAt`. Они принадлежат execution конкретного процесса.
+При replay сообщение получит СВОЮ runtime metadata, а записанный `ingress` —
+вход для replay scheduler-а, воспроизводящего историческую временную линию;
+выдавать одно за другое нельзя.
+
+Формат и его decoder живут в `@polymarket/raw-archive-format` — одном месте
+на весь репозиторий (writer и reader-ы говорят одними типами).
 
 ## 3. Формат market-файла
 
@@ -54,13 +77,31 @@ adapter-а.
   `\n` на последнем байте): `{"t":"meta","formatVersion":2,"ts":...,
   "marketId":...,"question":...,"tokenIds":[...],"m":{...}}`. Переписывается
   in-place через `updateMarketMeta()` без переписывания payload-строк.
-- **LINE 2+** — source-native события в порядке фактического поступления
-  recorder-у (arrival order, БЕЗ сортировки по source-timestamp — replay
-  обязан видеть ту же последовательность, что live-консюмеры).
+- **LINE 2+** — `RecordedExternalObservationV2` в порядке фактического
+  поступления recorder-у (arrival order, БЕЗ сортировки по source-timestamp —
+  replay обязан видеть ту же последовательность, что live-консюмеры; тот же
+  порядок независимо закреплён `ingress.sequence` каждой строки).
 
-`formatVersion: 2` — дискриминатор V2-формата: строки 2+ содержат
-SDK-decoded события, а не legacy raw wire-фреймы. Legacy-файлы старого
-коллектора поля `formatVersion` не имеют.
+`formatVersion: 2` — дискриминатор Replayable Raw Format V2: строки 2+
+содержат `RecordedExternalObservationV2`, а не bare payload и не legacy raw
+wire-фреймы. Legacy-файлы старого коллектора поля `formatVersion` не имеют и
+читаются с `timingQuality: 'LEGACY_APPROXIMATE'`.
+
+### CEX-партиции
+
+У CEX-партиции свой header (LINE 1), потому что у CCXT-payload-а нет ни
+биржи, ни типа рынка, а имя файла контрактом не является:
+
+```jsonc
+{"t":"meta","formatVersion":2,"source":"CEX","exchangeId":"binance",
+ "marketType":"swap","symbol":"BTC/USDT:USDT","stream":"orderbook",
+ "windowStartMs":…,"windowEndMs":…}
+```
+
+Окно партиции выбирается по времени INGRESS наблюдения, а не по wall-clock
+момента записи: наблюдение, увиденное до границы окна, но доставленное чуть
+позже неё, обязано попасть в СТАРОЕ окно (подробности —
+`docs/guides/replayable-raw-format-v2.md`).
 
 ## 4. Маршрутизация
 

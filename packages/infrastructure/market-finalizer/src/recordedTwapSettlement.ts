@@ -43,6 +43,7 @@
  */
 import { compareDecimalStrings, isFiniteDecimalString } from '@polymarket/polymarket-v2';
 import type { PolymarketTwapRtdsFeed } from '@polymarket/polymarket-v2';
+import { decodeDetachedArchiveLine } from '@polymarket/raw-archive-format';
 
 /**
  * Наблюдение settlement-потока, использованное как основание итога.
@@ -97,33 +98,35 @@ function parseSettlementObservations(
 ): TwapSettlementObservation[] {
   const observations: TwapSettlementObservation[] = [];
   for (const line of lines) {
-    try {
-      const parsed = JSON.parse(line) as {
-        topic?: unknown;
-        payload?: {
-          symbol?: unknown;
-          timestamp?: unknown;
-          value?: unknown;
-          windowSeconds?: unknown;
-        };
-      };
-      if (parsed.topic !== feed.topic) {
-        continue;
-      }
-      const payload = parsed.payload;
-      if (
-        payload?.symbol !== feed.symbol ||
-        payload.windowSeconds !== feed.windowSeconds ||
-        typeof payload.timestamp !== 'number' ||
-        typeof payload.value !== 'string' ||
-        payload.value.length === 0
-      ) {
-        continue;
-      }
-      observations.push({ timestampMs: payload.timestamp, value: payload.value });
-    } catch {
-      // Малформированная строка пропускается: она не может быть основанием
+    // Строки приходят из sealed-датасета УЖЕ без header-а: конверт V2 снимается
+    // структурно, legacy-строка отдаётся как есть (decodeDetachedArchiveLine)
+    const decoded = decodeDetachedArchiveLine(line);
+    if (decoded === undefined) {
+      continue; // малформированная строка не может быть основанием
     }
+    const parsed = decoded.payload as {
+      topic?: unknown;
+      payload?: {
+        symbol?: unknown;
+        timestamp?: unknown;
+        value?: unknown;
+        windowSeconds?: unknown;
+      };
+    } | null;
+    if (parsed === null || parsed.topic !== feed.topic) {
+      continue;
+    }
+    const payload = parsed.payload;
+    if (
+      payload?.symbol !== feed.symbol ||
+      payload.windowSeconds !== feed.windowSeconds ||
+      typeof payload.timestamp !== 'number' ||
+      typeof payload.value !== 'string' ||
+      payload.value.length === 0
+    ) {
+      continue;
+    }
+    observations.push({ timestampMs: payload.timestamp, value: payload.value });
   }
   observations.sort((left, right) => left.timestampMs - right.timestampMs);
   return observations;

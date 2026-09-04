@@ -3,8 +3,16 @@
  *
  * @remarks
  * ### Назначение
- * Проверяет качество данных в снапшотах CEX-бирж, собранных коллектором
- * (`CexSource` → общий bus → `CexWindowRecorder`).
+ * Проверяет качество данных в LEGACY CEX-снапшотах старого коллектора
+ * (записи вида `{t:'ob'|'trade', ts, …}` без header-а).
+ *
+ * ВНИМАНИЕ: партиции нового контура (`CexSource` → общий bus →
+ * `CexWindowRecorder`) пишутся в Replayable Raw Format V2 —
+ * `formatVersion: 2` header + строки `{type, ingress, payload}` — и этим
+ * инструментом НЕ читаются. Их формат описан в
+ * `docs/guides/replayable-raw-format-v2.md`, decoder —
+ * `@polymarket/raw-archive-format`.
+ *
  * Используется для:
  * - Обнаружения проблем после сбора данных (gap'ы, frozen book, crossed book).
  * - Оценки покрытия символа сделками (zero-trade files).

@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@polymarket/logger": "0.1.0"
+    "@polymarket/logger": "0.1.0",
+    "@polymarket/raw-archive-format": "0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.0.0"

@@ -5,8 +5,6 @@ export default {
   moduleFileExtensions: ['ts', 'js'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
-    '^@polymarket/logger$': '<rootDir>/../../../foundation/logger/src/index.ts',
-    '^@polymarket/raw-archive-format$': '<rootDir>/../raw-archive-format/src/index.ts',
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {

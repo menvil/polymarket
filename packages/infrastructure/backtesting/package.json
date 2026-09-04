@@ -23,6 +23,7 @@
     "@polymarket/messages": "0.1.0",
     "@polymarket/orderbook": "0.1.0",
     "@polymarket/ports": "0.1.0",
+    "@polymarket/raw-archive-format": "0.1.0",
     "@polymarket/result": "0.1.0",
     "@polymarket/snapshot-readers": "0.1.0",
     "@polymarket/timestamp": "^0.1.0",

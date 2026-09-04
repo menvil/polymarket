@@ -46,8 +46,10 @@ CexSubscriptionController → CexSource generations ─────────�
 ```
 
 Два жёстких инварианта процесса: **один bus** и **один recorder**. На диск
-попадает исключительно source-native `message.payload`. Collector — sibling
-consumer, а не gate перед семантикой.
+попадает archive envelope `{type, ingress, payload}` с НЕИЗМЕНЁННЫМ
+source-native `message.payload` внутри (Replayable Raw Format V2, см.
+`docs/guides/replayable-raw-format-v2.md`). Collector — sibling consumer, а
+не gate перед семантикой.
 
 Управление сбором — прямые вызовы control-plane каждый control-тик:
 

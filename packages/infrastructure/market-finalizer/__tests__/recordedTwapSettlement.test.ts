@@ -20,13 +20,13 @@ const FEED: PolymarketTwapRtdsFeed = {
 const START_MS = Date.parse('2026-08-26T13:45:00.000Z');
 const END_MS = Date.parse('2026-08-26T13:50:00.000Z');
 
-/** Строка записанного датасета: payload-only SDK-событие settlement-потока. */
-function twapLine(
+/** Source-native SDK-событие settlement-потока. */
+function twapEvent(
   timestampMs: number,
   value: string,
   overrides: { symbol?: string; windowSeconds?: number; topic?: string } = {},
-): string {
-  return JSON.stringify({
+): unknown {
+  return {
     topic: overrides.topic ?? FEED.topic,
     type: 'update',
     timestamp: timestampMs + 1_895, // vendor publish-время (замеренная задержка)
@@ -36,6 +36,36 @@ function twapLine(
       value,
       windowSeconds: overrides.windowSeconds ?? FEED.windowSeconds,
     },
+  };
+}
+
+/** Строка LEGACY-датасета: bare payload без archive envelope. */
+function twapLine(
+  timestampMs: number,
+  value: string,
+  overrides: { symbol?: string; windowSeconds?: number; topic?: string } = {},
+): string {
+  return JSON.stringify(twapEvent(timestampMs, value, overrides));
+}
+
+/** Строка V2-датасета: тот же payload внутри конверта `{type, ingress, payload}`. */
+function twapLineV2(
+  timestampMs: number,
+  value: string,
+  sequence: number,
+  overrides: { symbol?: string; windowSeconds?: number; topic?: string } = {},
+): string {
+  return JSON.stringify({
+    type: 'POLYMARKET_CRYPTO_CHAINLINK_TWAP',
+    ingress: {
+      runId: 'testrun1',
+      sequence,
+      createdAtUnixSeconds: Math.floor((timestampMs + 1_895) / 1000),
+      millisecondOfSecond: (timestampMs + 1_895) % 1000,
+      microsecondOfMillisecond: 0,
+      nanosecondOfMicrosecond: 0,
+    },
+    payload: twapEvent(timestampMs, value, overrides),
   });
 }
 
@@ -218,5 +248,26 @@ describe('официальный priceToBeat имеет приоритет на�
     expect(
       deriveWinnerFromRecordedTwap(lines, FEED, START_MS, END_MS, '100.0'),
     ).toBeUndefined();
+  });
+});
+
+describe('деривация читает обе формы датасета', () => {
+  it('V2-конверт даёт ТОТ ЖЕ итог, что legacy bare payload', () => {
+    const legacy = realSeries();
+    const v2 = [
+      twapLineV2(START_MS - 1_000, '78448.77726972446244864', 1),
+      twapLineV2(START_MS, '78449.05813530705395712', 2),
+      twapLineV2(START_MS + 1_000, '78450.033058151321829376', 3),
+      twapLineV2(END_MS - 2_000, '78402.25986652135227392', 4),
+      twapLineV2(END_MS - 1_000, '78401.533385091772841984', 5),
+      twapLineV2(END_MS, '78400.701754893592952832', 6),
+      twapLineV2(END_MS + 1_000, '78400.701754893592952832', 7),
+      twapLineV2(END_MS + 2_000, '78399.868852080044146688', 8),
+    ];
+
+    expect(deriveWinnerFromRecordedTwap(v2, FEED, START_MS, END_MS)).toEqual(
+      deriveWinnerFromRecordedTwap(legacy, FEED, START_MS, END_MS),
+    );
+    expect(deriveWinnerFromRecordedTwap(v2, FEED, START_MS, END_MS)?.label).toBe('Down');
   });
 });

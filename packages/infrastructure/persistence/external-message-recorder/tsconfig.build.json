@@ -28,6 +28,9 @@
       "path": "../data-collection/tsconfig.build.json"
     },
     {
+      "path": "../raw-archive-format/tsconfig.build.json"
+    },
+    {
       "path": "../../polymarket-v2/tsconfig.build.json"
     },
     {

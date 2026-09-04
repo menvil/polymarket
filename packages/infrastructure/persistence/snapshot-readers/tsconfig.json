@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "./dist",
     "paths": {
-      "@polymarket/logger": ["../../../foundation/logger/src/index.ts"]
+      "@polymarket/logger": ["../../../foundation/logger/src/index.ts"],
+      "@polymarket/raw-archive-format": ["../raw-archive-format/src/index.ts"]
     }
   },
   "include": ["src/**/*", "__tests__/**/*"],

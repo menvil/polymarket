@@ -4,10 +4,11 @@
  *
  * @remarks
  * Главные регрессии N-002:
- * - PART 31 exact payload parity: строка файла deepEqual
+ * - PART 31 exact payload parity: `payload` строки deepEqual
  *   `JSON.parse(JSON.stringify(sdkEvent))` — source-native representation;
- * - PART 14: строки 2+ НЕ содержат outer envelope
- *   (`POLYMARKET_MARKET`/messageId/runId/sequence/correlationId/causationId);
+ * - Replayable Raw Format V2: строки 2+ — `{type, ingress, payload}`, где
+ *   `ingress` скопирован из metadata ТОГО сообщения, а live-only поля
+ *   (messageId/correlationId/causationId/createdAt) не записываются;
  * - PART 15 arrival order: порядок строк = порядок публикации, не timestamp;
  * - PART 24 RTDS duplication: одно событие → по одной строке в каждый файл;
  * - PART 32 header update: in-place без изменения payload-строк;
@@ -32,6 +33,8 @@ import type {
   CryptoPricesBinanceEvent,
   CryptoPricesChainlinkEvent,
 } from '@polymarket/polymarket-v2';
+import { decodeDetachedArchiveLine } from '@polymarket/raw-archive-format';
+import type { DecodedObservation } from '@polymarket/raw-archive-format';
 import { ExternalMessageRecorder } from '../src/index.js';
 import { CapturingLogger } from './helpers/fakes.js';
 import {
@@ -120,6 +123,18 @@ function listFiles(): string[] {
   return fs.readdirSync(dir).map((name) => path.join(dir, name));
 }
 
+/** Декодированное наблюдение одной data-строки архива. */
+function observationOf(line: string): DecodedObservation {
+  const decoded = decodeDetachedArchiveLine(line);
+  expect(decoded).toBeDefined();
+  return decoded!;
+}
+
+/** Source-native payload одной data-строки архива. */
+function payloadOf(line: string): unknown {
+  return observationOf(line).payload;
+}
+
 /** Строки .jsonl-файла рынка (по подстроке marketId в имени). */
 function readLines(marketIdPart: string): string[] {
   const file = listFiles().find((f) => f.includes(marketIdPart.slice(0, 40)) && f.endsWith('.jsonl'));
@@ -145,10 +160,33 @@ describe('exact payload parity (PART 31)', () => {
     const lines = readLines(MARKET_CONDITION_ID);
     expect(lines).toHaveLength(2);
     // Именно source-native representation, не "semantically similar"
-    expect(JSON.parse(lines[1]!)).toEqual(JSON.parse(JSON.stringify(sdkEvent)));
+    expect(payloadOf(lines[1]!)).toEqual(JSON.parse(JSON.stringify(sdkEvent)));
   });
 
-  it('строки 2+ не содержат outer envelope: type/metadata остаются runtime-only (PART 14)', async () => {
+  it('ingress строки = metadata ТОГО сообщения (TEST A: exact ingress)', async () => {
+    recorder = new ExternalMessageRecorder({ bus, storage: makeStorage(), logger });
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID, 'Will BTC go up?') });
+
+    const message = marketMessage(createBookEvent());
+    await publish(message);
+    await storage.flush();
+
+    const decoded = observationOf(readLines(MARKET_CONDITION_ID)[1]!);
+    expect(decoded.timingQuality).toBe('EXACT_INGRESS');
+    expect(decoded.type).toBe('POLYMARKET_MARKET');
+    // Значения скопированы из metadata сообщения, а не пересчитаны на записи
+    expect(decoded.ingress).toEqual({
+      runId: message.metadata.runId,
+      sequence: message.metadata.sequence,
+      createdAtUnixSeconds: message.metadata.createdAtUnixSeconds,
+      millisecondOfSecond: message.metadata.millisecondOfSecond,
+      microsecondOfMillisecond: message.metadata.microsecondOfMillisecond,
+      nanosecondOfMicrosecond: message.metadata.nanosecondOfMicrosecond,
+    });
+  });
+
+  it('строка 2+ = {type, ingress, payload}; live-only metadata не записана (TEST C)', async () => {
     recorder = new ExternalMessageRecorder({ bus, storage: makeStorage(), logger });
     recorder.start();
     recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID, 'Will BTC go up?') });
@@ -158,13 +196,13 @@ describe('exact payload parity (PART 31)', () => {
     await storage.flush();
 
     const rawLine = readLines(MARKET_CONDITION_ID)[1]!;
-    // Outer routing discriminator НЕ записан
-    expect(rawLine).not.toContain('POLYMARKET_MARKET');
-    // Canonical runtime metadata НЕ записана (ни ключи, ни значения)
+    const parsed = JSON.parse(rawLine) as Record<string, unknown>;
+    // Конверт архива: ровно три поля, ничего сверх
+    expect(Object.keys(parsed).sort()).toEqual(['ingress', 'payload', 'type']);
+
+    // Live-only metadata НЕ записана (ни ключи, ни значения)
     for (const forbiddenKey of [
       '"messageId"',
-      '"runId"',
-      '"sequence"',
       '"createdAt"',
       '"correlationId"',
       '"causationId"',
@@ -174,11 +212,12 @@ describe('exact payload parity (PART 31)', () => {
     }
     expect(rawLine).not.toContain(String(message.metadata.messageId));
 
-    // Vendor discriminators payload-а при этом СОХРАНЕНЫ
-    const parsed = JSON.parse(rawLine) as { topic: string; type: string };
-    expect(parsed.topic).toBe('market');
-    expect(parsed.type).toBe('book');
-    expect(Object.keys(parsed).sort()).toEqual(['payload', 'topic', 'type']);
+    // Payload НЕ нормализован: vendor discriminators на местах, ключей не больше
+    const payload = parsed['payload'] as { topic: string; type: string };
+    expect(payload.topic).toBe('market');
+    expect(payload.type).toBe('book');
+    expect(Object.keys(payload).sort()).toEqual(['payload', 'topic', 'type']);
+    expect(payload).toEqual(JSON.parse(JSON.stringify(message.payload)));
   });
 });
 
@@ -241,7 +280,9 @@ describe('first-line header (PART 32)', () => {
     await storage.flush();
     const lines = readLines(MARKET_CONDITION_ID);
     expect(lines).toHaveLength(4);
-    expect((JSON.parse(lines[3]!) as { payload: { hash: string } }).payload.hash).toBe('0xafter-update');
+    expect((payloadOf(lines[3]!) as { payload: { hash: string } }).payload.hash).toBe(
+      '0xafter-update',
+    );
   });
 
   it('oversize meta не помещается в reserved block → warn, header не тронут', async () => {
@@ -284,7 +325,7 @@ describe('arrival order (PART 15)', () => {
     const kinds = readLines(MARKET_CONDITION_ID)
       .slice(1)
       .map((line) => {
-        const parsed = JSON.parse(line) as { topic: string; payload: { hash?: string } };
+        const parsed = payloadOf(line) as { topic: string; payload: { hash?: string } };
         return parsed.topic === 'market' ? `market:${parsed.payload.hash}` : parsed.topic;
       });
     expect(kinds).toEqual(['market:h-late', 'prices.crypto.binance', 'market:h-mid']);
@@ -313,7 +354,9 @@ describe('RTDS duplication (PART 24)', () => {
     for (const marketId of [MARKET_CONDITION_ID, MARKET_CONDITION_ID_B]) {
       const lines = readLines(marketId);
       expect(lines).toHaveLength(2);
-      expect(JSON.parse(lines[1]!)).toEqual(JSON.parse(JSON.stringify(event)));
+      expect(payloadOf(lines[1]!)).toEqual(JSON.parse(JSON.stringify(event)));
+      // Одно наблюдение, размноженное по файлам, несёт ОДИН ключ порядка
+      expect(observationOf(lines[1]!).ingress?.sequence).toBe(1);
     }
   });
 });
@@ -368,7 +411,7 @@ describe('delayed activation failure (two-layer consistency)', () => {
 
     const lines = readLines(MARKET_CONDITION_ID);
     expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[1]!)).toEqual(JSON.parse(JSON.stringify(message.payload)));
+    expect(payloadOf(lines[1]!)).toEqual(JSON.parse(JSON.stringify(message.payload)));
     expect((JSON.parse(lines[0]!) as { formatVersion: number }).formatVersion).toBe(2);
   });
 });
@@ -399,7 +442,7 @@ describe('finalize and shutdown (PART 19/20)', () => {
     const lines = zlib.gunzipSync(fs.readFileSync(gz!)).toString('utf-8').trimEnd().split('\n');
     expect(lines).toHaveLength(2);
     expect((JSON.parse(lines[0]!) as { formatVersion: number }).formatVersion).toBe(2);
-    expect(JSON.parse(lines[1]!)).toEqual(JSON.parse(JSON.stringify(sdkEvent)));
+    expect(payloadOf(lines[1]!)).toEqual(JSON.parse(JSON.stringify(sdkEvent)));
   });
 
   it('finalizeMarket(SHUTDOWN) не создаёт архив: файл удалён, EXPIRED-архив соседа остаётся', async () => {

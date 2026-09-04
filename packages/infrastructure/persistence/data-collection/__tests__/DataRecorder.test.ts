@@ -10,8 +10,41 @@ import type { ILogger } from '@polymarket/logger';
 import { unsafeInstrumentId } from '@polymarket/ids';
 import type { MarketId } from '@polymarket/ids';
 import type { MarketMeta } from '@polymarket/ports';
+import { decodeDetachedArchiveLine } from '@polymarket/raw-archive-format';
+import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** RunId одного тестового runtime (пара `(runId, sequence)` — ключ порядка). */
+const RUN_ID = 'testrun1';
+let nextSequence = 0;
+
+/**
+ * Оборачивает source-native payload в V2-наблюдение.
+ *
+ * @param payload - Payload, который обязан дойти до диска неизменённым
+ * @returns Наблюдение для `DataRecorder.recordMarketEvent`
+ */
+function obs(payload: unknown): RecordedExternalObservationV2 {
+  nextSequence += 1;
+  return {
+    type: 'POLYMARKET_MARKET',
+    ingress: {
+      runId: RUN_ID,
+      sequence: nextSequence,
+      createdAtUnixSeconds: 1_786_668_087,
+      millisecondOfSecond: 123,
+      microsecondOfMillisecond: 456,
+      nanosecondOfMicrosecond: 789,
+    },
+    payload,
+  };
+}
+
+/** Source-native payload одной data-строки архива. */
+function payloadOf(line: string): unknown {
+  return decodeDetachedArchiveLine(line)?.payload;
+}
 
 function makeLogger(): ILogger {
   return {
@@ -285,17 +318,17 @@ describe('DataRecorder V2 storage (N-002)', () => {
     const meta = makeMeta();
     recorder.registerMarket(meta);
 
-    const outcome = recorder.recordMarketEvent(meta.marketId, {
+    const outcome = recorder.recordMarketEvent(meta.marketId, obs({
       topic: 'market',
       type: 'book',
       payload: { market: 'mkt-001', tokenId: 'tok-yes', bids: [], asks: [] },
-    });
+    }));
     expect(outcome).toBe('recorded');
     await recorder.flush();
 
     const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
     expect(lines.length).toBe(2);
-    const event = JSON.parse(lines[1]);
+    const event = payloadOf(lines[1]!) as { topic: string; type: string };
     expect(event.topic).toBe('market');
     expect(event.type).toBe('book');
   });
@@ -303,7 +336,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
   it('recordMarketEvent для незарегистрированного рынка возвращает unregistered и не создаёт файл', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
 
-    const outcome = recorder.recordMarketEvent('unknown-mkt' as unknown as MarketId, { type: 'book' });
+    const outcome = recorder.recordMarketEvent('unknown-mkt' as unknown as MarketId, obs({ type: 'book' }));
 
     expect(outcome).toBe('unregistered');
     expect(fs.readdirSync(tmpDir)).toEqual([]);
@@ -317,7 +350,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
     };
     recorder.registerMarket(meta);
 
-    const outcome = recorder.recordMarketEvent(meta.marketId, { type: 'book' });
+    const outcome = recorder.recordMarketEvent(meta.marketId, obs({ type: 'book' }));
 
     expect(outcome).toBe('inactive');
     // Файл создаётся только при активации — до startsAt его нет
@@ -330,7 +363,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
     recorder.registerMarket(meta);
 
     // BigInt не сериализуется JSON.stringify — TypeError внутри formatter
-    const outcome = recorder.recordMarketEvent(meta.marketId, { value: BigInt(1) });
+    const outcome = recorder.recordMarketEvent(meta.marketId, obs({ value: BigInt(1) }));
 
     expect(outcome).toBe('failed');
     expect(logger.error).toHaveBeenCalledWith(
@@ -345,7 +378,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
     recorder.registerMarket(meta);
     await recorder.finalizeMarket(meta.marketId, 'EXPIRED');
 
-    expect(recorder.recordMarketEvent(meta.marketId, { type: 'book' })).toBe('unregistered');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ type: 'book' }))).toBe('unregistered');
   });
 
   it('formatVersion из config попадает в первую строку', async () => {
@@ -397,13 +430,13 @@ describe('DataRecorder V2 storage (N-002)', () => {
     recorder.registerMarket(meta);
 
     // Порядок прихода намеренно противоречит source-timestamp
-    recorder.recordMarketEvent(meta.marketId, { seq: 'first',  timestamp: 3000 });
-    recorder.recordMarketEvent(meta.marketId, { seq: 'second', timestamp: 1000 });
-    recorder.recordMarketEvent(meta.marketId, { seq: 'third',  timestamp: 2000 });
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'first',  timestamp: 3000 }));
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'second', timestamp: 1000 }));
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'third',  timestamp: 2000 }));
     await recorder.flush();
 
     const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
-    const order = lines.slice(1).map((line) => (JSON.parse(line) as { seq: string }).seq);
+    const order = lines.slice(1).map((line) => (payloadOf(line) as { seq: string }).seq);
     expect(order).toEqual(['first', 'second', 'third']);
   });
 
@@ -418,7 +451,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
     recorder.registerMarket(meta);
 
     // Событие уходит в буфер при живом stream
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('recorded');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 1 }))).toBe('recorded');
 
     // Ломаем stream с непустым буфером: таймерный flush упрётся в разрушенный поток
     const writers = (recorder as unknown as {
@@ -438,7 +471,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
       expect(unhandled).toEqual([]);
       expect(logger.error).toHaveBeenCalledWith('Stream write error', expect.any(Object));
       // Запись на разрушенный stream наблюдаемо отказывает, а не копится в буфере
-      expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('failed');
+      expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 2 }))).toBe('failed');
     } finally {
       process.removeListener('unhandledRejection', onUnhandled);
     }
@@ -459,12 +492,12 @@ describe('DataRecorder V2 storage (N-002)', () => {
       expect.any(Object),
     );
     // Routing-состояние НЕ создано — записи адресуют незарегистрированный рынок
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('unregistered');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 1 }))).toBe('unregistered');
 
     // Причина устранена → повторная регистрация успешна (retryable)
     fs.unlinkSync(blockingFile);
     expect(recorder.registerMarket(meta)).toBe(true);
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('recorded');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 2 }))).toBe('recorded');
   });
 
   it('registerMarket идемпотентен и возвращает true для уже зарегистрированного рынка', () => {
@@ -493,14 +526,14 @@ describe('DataRecorder V2 storage (N-002)', () => {
     expect(
       recorder.registerMarket(meta, (marketId) => failures.push(String(marketId))),
     ).toBe(true);
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 1 })).toBe('inactive');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 1 }))).toBe('inactive');
 
     // TEST 1: отказ таймерной активации ОСВОБОЖДАЕТ регистрацию (не failed-зомби)
     await waitFor(() =>
       loggedError(logger, 'Market registration released after failed delayed activation'),
     );
     expect(failures).toEqual(['mkt-001']);
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('unregistered');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 2 }))).toBe('unregistered');
     // TEST 5: legacy token-index не находит старый failed writer (тихий no-op)
     expect(() => {
       recorder.recordEvent(unsafeInstrumentId('tok-yes'), { seq: 3 });
@@ -512,7 +545,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
     expect(logger.info).toHaveBeenCalledWith('Market recording activated', expect.any(Object));
 
     expect(
-      recorder.recordMarketEvent(meta.marketId, { topic: 'market', type: 'book' }),
+      recorder.recordMarketEvent(meta.marketId, obs({ topic: 'market', type: 'book' })),
     ).toBe('recorded');
     // Legacy token-index указывает на НОВЫЙ writer
     recorder.recordEvent(unsafeInstrumentId('tok-yes'), { legacy: true });
@@ -520,7 +553,8 @@ describe('DataRecorder V2 storage (N-002)', () => {
 
     const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(3);
-    expect((JSON.parse(lines[1]!) as { type: string }).type).toBe('book');
+    expect((payloadOf(lines[1]!) as { type: string }).type).toBe('book');
+    // Legacy-путь recordEvent пишет bare payload — конверт V2 его не касается
     expect((JSON.parse(lines[2]!) as { legacy: boolean }).legacy).toBe(true);
   });
 
@@ -578,7 +612,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
     );
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordMarketEvent(meta.marketId, { seq: 1 });
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 1 }));
 
     await recorder.finalizeMarket(meta.marketId, 'SHUTDOWN');
 
@@ -591,7 +625,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
       expect.any(Object),
     );
     // Рынок снят с регистрации
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 2 })).toBe('unregistered');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 2 }))).toBe('unregistered');
   });
 });
 
@@ -624,21 +658,21 @@ describe('DataRecorder sealed markets (N-004)', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'A' })).toBe('recorded');
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'B' })).toBe('recorded');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 'A' }))).toBe('recorded');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 'B' }))).toBe('recorded');
 
     expect(await recorder.sealMarket(meta.marketId)).toBe(true);
 
     // Новые записи отвергаются обоими путями маршрутизации
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'D' })).toBe('sealed');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 'D' }))).toBe('sealed');
     recorder.recordEvent(unsafeInstrumentId('tok-yes'), { seq: 'D-legacy' });
 
     // Буфер сброшен seal-ом: датасет уже на диске и заморожен
     const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(3); // header + A + B
-    expect(JSON.parse(lines[1]).seq).toBe('A');
-    expect(JSON.parse(lines[2]).seq).toBe('B');
-    expect(lines.some((line) => line.includes('D'))).toBe(false);
+    expect((payloadOf(lines[1]!) as { seq: string }).seq).toBe('A');
+    expect((payloadOf(lines[2]!) as { seq: string }).seq).toBe('B');
+    expect(lines.some((line) => line.includes('"seq":"D"'))).toBe(false);
   });
 
   it('seal идемпотентен; для незарегистрированного рынка возвращает false', async () => {
@@ -655,7 +689,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'A' }));
     await recorder.sealMarket(meta.marketId);
 
     const updated = await recorder.updateMarketMeta(meta.marketId, { finalization: 'done' });
@@ -665,7 +699,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     const header = JSON.parse(lines[0]);
     expect(header.m).toEqual({ finalization: 'done' });
     // Payload не пострадал от перезаписи header-а
-    expect(JSON.parse(lines[1]).seq).toBe('A');
+    expect((payloadOf(lines[1]!) as { seq: string }).seq).toBe('A');
   });
 
   it('updateMarketMeta наблюдаем: false для неизвестного рынка и oversized meta', async () => {
@@ -690,8 +724,8 @@ describe('DataRecorder sealed markets (N-004)', () => {
     );
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
-    recorder.recordMarketEvent(meta.marketId, { seq: 'B' });
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'A' }));
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'B' }));
     await recorder.sealMarket(meta.marketId);
     const sealedPath = marketFilePath();
 
@@ -702,15 +736,15 @@ describe('DataRecorder sealed markets (N-004)', () => {
     expect(fs.existsSync(gzPath)).toBe(true);
     const lines = zlib.gunzipSync(fs.readFileSync(gzPath)).toString('utf-8').trim().split('\n');
     expect(lines).toHaveLength(3);
-    expect(JSON.parse(lines[1]).seq).toBe('A');
-    expect(JSON.parse(lines[2]).seq).toBe('B');
+    expect((payloadOf(lines[1]!) as { seq: string }).seq).toBe('A');
+    expect((payloadOf(lines[2]!) as { seq: string }).seq).toBe('B');
   });
 
   it('seal с упавшим flush: строки сохранены в буфере, EXPIRED-архив отклонён', async () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'A' })).toBe('recorded');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 'A' }))).toBe('recorded');
 
     // Fault injection: стрим закрывается «из-под» writer-а — flush внутри
     // seal получает write-after-end от реального fs.WriteStream
@@ -733,7 +767,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    expect(recorder.recordMarketEvent(meta.marketId, { seq: 'A' })).toBe('recorded');
+    expect(recorder.recordMarketEvent(meta.marketId, obs({ seq: 'A' }))).toBe('recorded');
     await recorder.flush();
 
     // Fault injection: терминальная I/O-ошибка стрима посреди записи
@@ -761,7 +795,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     );
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'A' }));
     await recorder.sealMarket(meta.marketId);
     const sealedPath = marketFilePath();
 
@@ -779,7 +813,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordMarketEvent(meta.marketId, { seq: 'A' });
+    recorder.recordMarketEvent(meta.marketId, obs({ seq: 'A' }));
     await recorder.sealMarket(meta.marketId);
     const sealedPath = marketFilePath();
 
@@ -792,9 +826,9 @@ describe('DataRecorder sealed markets (N-004)', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordMarketEvent(meta.marketId, { topic: 'prices.crypto.chainlink', v: 1 });
-    recorder.recordMarketEvent(meta.marketId, { topic: 'market', v: 2 });
-    recorder.recordMarketEvent(meta.marketId, { topic: 'prices.crypto.chainlink', v: 3 });
+    recorder.recordMarketEvent(meta.marketId, obs({ topic: 'prices.crypto.chainlink', v: 1 }));
+    recorder.recordMarketEvent(meta.marketId, obs({ topic: 'market', v: 2 }));
+    recorder.recordMarketEvent(meta.marketId, obs({ topic: 'prices.crypto.chainlink', v: 3 }));
     await recorder.sealMarket(meta.marketId);
 
     const lines = await recorder.readSealedPayloadLines(meta.marketId, (line) =>
@@ -802,7 +836,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     );
 
     expect(lines).toHaveLength(2);
-    expect(lines!.map((line) => (JSON.parse(line) as { v: number }).v)).toEqual([1, 3]);
+    expect(lines!.map((line) => (payloadOf(line) as { v: number }).v)).toEqual([1, 3]);
     // Meta-header (LINE 1) не попадает в выдачу даже при пропускающем фильтре
     const all = await recorder.readSealedPayloadLines(meta.marketId, () => true);
     expect(all).toHaveLength(3);
@@ -814,14 +848,14 @@ describe('DataRecorder sealed markets (N-004)', () => {
     const meta = makeMeta();
     recorder.registerMarket(meta);
     for (let index = 0; index < 5; index++) {
-      recorder.recordMarketEvent(meta.marketId, { v: index });
+      recorder.recordMarketEvent(meta.marketId, obs({ v: index }));
     }
     await recorder.sealMarket(meta.marketId);
 
     const lines = await recorder.readSealedPayloadLines(meta.marketId, () => true, 2);
     expect(lines).toHaveLength(2);
     // Ровно первые n совпадений — как slice(0, n) в тестовых fake-хранилищах
-    expect(lines!.map((line) => (JSON.parse(line) as { v: number }).v)).toEqual([0, 1]);
+    expect(lines!.map((line) => (payloadOf(line) as { v: number }).v)).toEqual([0, 1]);
 
     // Значения, на которых break-семантика разошлась бы со slice, отвергаются
     for (const invalid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
@@ -835,7 +869,7 @@ describe('DataRecorder sealed markets (N-004)', () => {
     recorder = new DataRecorder(makeConfig(tmpDir), new NDJSONFormatter(), null, logger);
     const meta = makeMeta();
     recorder.registerMarket(meta);
-    recorder.recordMarketEvent(meta.marketId, { v: 1 });
+    recorder.recordMarketEvent(meta.marketId, obs({ v: 1 }));
 
     // ACTIVE writer: payload ещё не заморожен — чтение запрещено
     expect(await recorder.readSealedPayloadLines(meta.marketId, () => true)).toBeUndefined();

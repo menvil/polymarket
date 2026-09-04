@@ -13,6 +13,8 @@ const config: Config = {
     '^@polymarket/polymarket-v2$': '<rootDir>/../polymarket-v2/src/index.ts',
     '^@polymarket/external-message-bus$': '<rootDir>/../external-message-bus/src/index.ts',
     '^@polymarket/external-messages$': '<rootDir>/../external-messages/src/index.ts',
+    '^@polymarket/raw-archive-format$':
+      '<rootDir>/../persistence/raw-archive-format/src/index.ts',
     // Foundation-движок и canonical message contract. Пакет живёт в
     // infrastructure — foundation-пути на два уровня выше.
     '^@polymarket/message-bus$': '<rootDir>/../../foundation/message-bus/src/index.ts',
