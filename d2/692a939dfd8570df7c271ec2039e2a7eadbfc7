@@ -1,0 +1,187 @@
+packages/infrastructure/market-finalizer/package.json
+  s_bd92deaff51b1b::t_6cf0620ad3d68a 53
+packages/infrastructure/persistence/snapshot-readers/src/RawArchiveObservationReader.ts
+  s_bd92deaff51b1b::t_0ab0cea197bc20 1-186
+packages/infrastructure/persistence/data-collection/docs/data-collection.md
+  s_bd92deaff51b1b::t_5ceda9fc1d8af5 49,56-61,63-65,71-77
+packages/infrastructure/persistence/raw-archive-format/.eslintrc.json
+  s_bd92deaff51b1b::t_9ee5b12c021414 1-8
+packages/infrastructure/market-finalizer/src/recordedChainlinkWinner.ts
+  s_bd92deaff51b1b::t_02b502e33b5821 57-62,64-76
+  s_bd92deaff51b1b::t_b735eaf7191570 25
+packages/infrastructure/persistence/snapshot-readers/jest.config.js
+  s_bd92deaff51b1b::t_606fa1dbc51a59 9
+packages/infrastructure/persistence/raw-archive-format/src/decodeRawArchive.ts
+  s_bd92deaff51b1b::t_7cd3fb18d795d8 257-261
+  s_bd92deaff51b1b::t_60a8bd83fa2a78 265-266
+  s_bd92deaff51b1b::t_a86a5d55c1df45 38,45-47
+  s_bd92deaff51b1b::t_e479bb490b546d 1-37,39-44,48-256,262-264,267-281
+packages/infrastructure/persistence/external-message-recorder/jest.config.ts
+  s_bd92deaff51b1b::t_dfe38c1210f05f 14
+packages/infrastructure/persistence/data-collection/package.json
+  s_bd92deaff51b1b::t_04a3947935e592 21
+docs/guides/collector-cutover.md
+  s_bd92deaff51b1b::t_e5d39c04c8f812 118-122
+packages/infrastructure/persistence/external-message-recorder/docs/cex-compatibility-audit.md
+  s_bd92deaff51b1b::t_ed51cdb7c5592a 17,39,41,60,62-74,76-83
+packages/infrastructure/persistence/data-collection/src/DataRecorder.ts
+  s_bd92deaff51b1b::t_736e70682fb9e8 668,671-672,682-686,694,698-701,722
+  s_bd92deaff51b1b::t_551335a023c8b3 19,21,24-27,47,58
+packages/infrastructure/persistence/data-collection/__tests__/DataRecorder.test.ts
+  s_bd92deaff51b1b::t_052a15b21f833d 13-14,18-48,331,439,556-557,673-675,702,739-740,839,858
+  s_bd92deaff51b1b::t_1f596fefb7b54e 321,325,339,353,366,381,433-435,454,474,495,500,529,536,548,615,628,661-662,667,692,727-728,747,770,798,816,829-831,851,872
+packages/infrastructure/persistence/raw-archive-format/src/RecordedExternalObservation.ts
+  s_bd92deaff51b1b::t_71c3f543ca454d 1-287
+packages/infrastructure/persistence/raw-archive-format/tsconfig.build.json
+  s_bd92deaff51b1b::t_9ee5b12c021414 1-25
+packages/infrastructure/persistence/external-message-recorder/src/ExternalMessageRecorder.ts
+  s_bd92deaff51b1b::t_5e29e3aa4d556f 17,33-34,39,41-55,73-74
+  s_bd92deaff51b1b::t_dbf8bf9a1877dc 1133,1137-1141,1147,1149,1159,1171,1174,1177-1180,1182,1184,1186
+  s_bd92deaff51b1b::t_f899dc83e7aac6 513,916
+  s_bd92deaff51b1b::t_f9ccd78ab01200 68-72,364-372,1218-1224,1239,1268,1280,1288-1290
+  s_bd92deaff51b1b::t_045cb14e708a78 1058,1084,1086,1113,1119
+packages/infrastructure/persistence/raw-archive-format/src/index.ts
+  s_bd92deaff51b1b::t_0b94a284bb7bb8 1-75
+packages/infrastructure/persistence/external-message-recorder/__tests__/recording-persistence.integration.test.ts
+  s_bd92deaff51b1b::t_3deb9e9ea6e64b 7,9-11,36-37,126-137,163,166-189,199-203,215-220,283-285,328,357-359,414,445
+packages/infrastructure/persistence/snapshot-readers/docs/snapshot-readers.md
+  s_bd92deaff51b1b::t_5ceda9fc1d8af5 19,41-67
+packages/infrastructure/persistence/raw-archive-format/src/archiveHeader.ts
+  s_bd92deaff51b1b::t_8d86ade8291254 1-257
+docs/guides/checkpoint-1-raw-live.md
+  s_bd92deaff51b1b::t_0d67bc2d93eb4e 88,90-99,108-113
+packages/infrastructure/polymarket-semantic-adapter/jest.config.ts
+  s_bd92deaff51b1b::t_203cb5cbff624b 16-17
+packages/infrastructure/persistence/data-collection/__tests__/CexWindowRecorder.test.ts
+  s_bd92deaff51b1b::t_59259b2c4a27dc 346-347,350,355
+  s_bd92deaff51b1b::t_e18f1d81802f32 406-468
+  s_bd92deaff51b1b::t_4f9826ee309717 15-16,21-57,161,165,175,178,187,189,223,227,248-252,286,309,311,332,348-349,364,377,380,397-398,632,634,752,802,805,809,887
+  s_bd92deaff51b1b::t_d1aa61b493fbe9 146,170-171,181,198-216,237,240-241,388,403,772,835,839,894
+apps/collect-data/tsconfig.json
+  s_bd92deaff51b1b::t_6e13a51da78508 31
+packages/infrastructure/collector/package.json
+  s_bd92deaff51b1b::t_465a6fe8ecab81 57
+packages/infrastructure/persistence/snapshot-readers/src/index.ts
+  s_bd92deaff51b1b::t_606fa1dbc51a59 29-42,52
+apps/collect-data/docs/collect-data.md
+  s_bd92deaff51b1b::t_e5d39c04c8f812 49-52
+packages/infrastructure/market-finalizer/tsconfig.build.json
+  s_bd92deaff51b1b::t_6cf0620ad3d68a 47-49
+packages/infrastructure/persistence/raw-archive-format/package.json
+  s_bd92deaff51b1b::t_9ee5b12c021414 1-44
+packages/infrastructure/persistence/external-message-recorder/__tests__/helpers/fakes.ts
+  s_bd92deaff51b1b::t_aaaf787ca53b7f 13-18,24-26,85-88,95,223-225,244,257-258,262-269
+scripts/checkpoint-raw-live.mts
+  s_bd92deaff51b1b::t_6d2bd00be2fcfe 101-107,186-196,201,204-205,1074-1084,1086-1088
+  s_bd92deaff51b1b::t_28e1c2505c698a 1525-1530
+  s_bd92deaff51b1b::t_3866fe82260026 1470-1496,1500,1502,1507,1511-1516
+  s_bd92deaff51b1b::t_d7b0e745efee10 571,583,595,609,1204,1206,1211,1215-1221
+packages/infrastructure/persistence/data-collection/tsconfig.build.json
+  s_bd92deaff51b1b::t_04a3947935e592 37-39
+packages/infrastructure/persistence/raw-archive-format/README.md
+  s_bd92deaff51b1b::t_3f7fbe03fd8a9b 1-151
+packages/infrastructure/persistence/raw-archive-format/tsconfig.json
+  s_bd92deaff51b1b::t_9ee5b12c021414 1-8
+apps/collect-data/__tests__/helpers/fakes.ts
+  s_bd92deaff51b1b::t_1011c80cab4976 218
+  s_bd92deaff51b1b::t_8e39c6341ffb55 165
+packages/infrastructure/persistence/data-collection/src/CexWindowRecorder.ts
+  s_bd92deaff51b1b::t_0dd4fbf1af9c32 247-253
+  s_bd92deaff51b1b::t_afff1c1f680a44 291-292
+  s_bd92deaff51b1b::t_aca0791d77c7b4 726-736,753-761,766
+  s_bd92deaff51b1b::t_2144397eaf4553 341
+  s_bd92deaff51b1b::t_c7375926b9da80 301
+  s_bd92deaff51b1b::t_6bb443ff982e29 381,388-389,393-409,416,421-422,429,431,442-455
+  s_bd92deaff51b1b::t_59240909ac38fd 325
+  s_bd92deaff51b1b::t_b5c25e53f86ff5 270-280
+  s_bd92deaff51b1b::t_e0d93abd12510d 611-618,622,630-636,638,640
+  s_bd92deaff51b1b::t_4f0f8515c0ef1c 125-141
+  s_bd92deaff51b1b::t_279222ecf6b9ae 200
+  s_bd92deaff51b1b::t_067136917d827d 78-82,94-95,99
+  s_bd92deaff51b1b::t_ef9e284009227b 162-171
+  s_bd92deaff51b1b::t_5728f0b32c80b9 476
+  s_bd92deaff51b1b::t_e36f7ccb1a7681 38-49,53-61
+packages/infrastructure/backtesting/jest.config.js
+  s_bd92deaff51b1b::t_cf292041a448f1 19
+packages/infrastructure/persistence/data-collection/tsconfig.json
+  s_bd92deaff51b1b::t_04a3947935e592 10
+packages/infrastructure/market-finalizer/src/recordedTwapSettlement.ts
+  s_bd92deaff51b1b::t_b735eaf7191570 46
+  s_bd92deaff51b1b::t_02b502e33b5821 101-113,115-127,129
+packages/infrastructure/backtesting/package.json
+  s_bd92deaff51b1b::t_cc598fc224223e 26
+packages/infrastructure/persistence/external-message-recorder/package.json
+  s_bd92deaff51b1b::t_f899dc83e7aac6 52-53
+packages/infrastructure/persistence/snapshot-readers/package.json
+  s_bd92deaff51b1b::t_606fa1dbc51a59 18-19
+packages/infrastructure/market-finalizer/__tests__/recordedTwapSettlement.test.ts
+  s_bd92deaff51b1b::t_1c4d96c6e84148 23-24,28-29,39-68,253-271
+apps/collect-data/src/runtime/DataCollectorConfig.ts
+  s_bd92deaff51b1b::t_4866c9c7eb9614 19,50-52,94-95
+packages/infrastructure/polymarket-semantic-adapter/package.json
+  s_bd92deaff51b1b::t_f651fc2d0b8bdf 63,68
+packages/infrastructure/persistence/external-message-recorder/README.md
+  s_bd92deaff51b1b::t_91ed8b8f0bac04 3-7,21,31,33-35,39-47,50-53,55-72,85-88
+  s_bd92deaff51b1b::t_cff47bda16998f 80-83,89-99,101-104
+packages/infrastructure/persistence/raw-archive-format/jest.config.js
+  s_bd92deaff51b1b::t_9ee5b12c021414 1-18
+packages/infrastructure/persistence/data-collection/jest.config.js
+  s_bd92deaff51b1b::t_1bce1b50ec057f 13
+apps/collect-data/src/runtime/createDataCollector.ts
+  s_bd92deaff51b1b::t_4866c9c7eb9614 282-285
+packages/infrastructure/collector/jest.config.ts
+  s_bd92deaff51b1b::t_6e13a51da78508 18
+docs/guides/replayable-raw-format-v2.md
+  s_bd92deaff51b1b::t_6c7dea28c9ee7e 1-231
+packages/infrastructure/market-finalizer/jest.config.ts
+  s_bd92deaff51b1b::t_6cf0620ad3d68a 18-19
+apps/collect-data/package.json
+  s_bd92deaff51b1b::t_465a6fe8ecab81 46
+apps/collect-data/src/checkCexSnapshot.ts
+  s_bd92deaff51b1b::t_3e131e4bff220a 6-15
+packages/infrastructure/persistence/external-message-recorder/__tests__/cex-recording.test.ts
+  s_bd92deaff51b1b::t_10786ee4c1fb85 209,223-224,229,232
+  s_bd92deaff51b1b::t_db7ebd23283433 12,66-68,70,73-75,77-89,93,96,100-101,106-108,110,113,116,119-123
+packages/infrastructure/persistence/snapshot-readers/tsconfig.json
+  s_bd92deaff51b1b::t_9847e1a6246552 6-7
+apps/collect-data/__tests__/helpers/recordingFakes.ts
+  s_bd92deaff51b1b::t_170e5d1f9d33bb 13,25-27,46,48-55,71-73,88-92
+packages/infrastructure/persistence/external-message-recorder/tsconfig.build.json
+  s_bd92deaff51b1b::t_dfe38c1210f05f 31-32
+packages/infrastructure/persistence/raw-archive-format/__tests__/rawArchiveFormat.test.ts
+  s_bd92deaff51b1b::t_4fd5b139258a03 1-149,152-291
+  s_bd92deaff51b1b::t_520936236df7eb 150-151
+packages/infrastructure/persistence/snapshot-readers/tsconfig.build.json
+  s_bd92deaff51b1b::t_606fa1dbc51a59 28-30
+packages/infrastructure/polymarket-semantic-adapter/__tests__/PolymarketSemanticAdapter.replay-parity.test.ts
+  s_bd92deaff51b1b::t_654135edb4459d 268,270-271,294-296,298-302
+  s_bd92deaff51b1b::t_cb1f76ace9f241 16,109,111,115-118,120,122-124,126-127,137,140-145,147-148
+packages/infrastructure/persistence/snapshot-readers/__tests__/RawArchiveObservationReader.test.ts
+  s_bd92deaff51b1b::t_9fc59e84804d29 1-285
+packages/infrastructure/polymarket-v2/README.md
+  s_bd92deaff51b1b::t_e5d39c04c8f812 107-113
+packages/infrastructure/persistence/external-message-recorder/__tests__/shared-ordering.integration.test.ts
+  s_bd92deaff51b1b::t_17438090313a3f 1-25,27-52,54-233
+  s_bd92deaff51b1b::t_a3c7ff35a16839 26,53
+packages/infrastructure/persistence/external-message-recorder/__tests__/one-bus-one-recorder.integration.test.ts
+  s_bd92deaff51b1b::t_cca66827246d15 39,208-211,215,222-246,248-249,252,367-373,376
+  s_bd92deaff51b1b::t_aff114eba6cd2a 272-276,414-418
+packages/infrastructure/persistence/external-message-recorder/__tests__/contour-boundary.test.ts
+  s_bd92deaff51b1b::t_fb0fc3aec943e1 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d2692a939dfd8570df7c271ec2039e2a7eadbfc7",
+  "prompts": {},
+  "sessions": {
+    "s_bd92deaff51b1b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0263ec46-eece-4c8a-9775-dd2837be53e3",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
