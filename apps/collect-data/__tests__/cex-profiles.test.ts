@@ -103,7 +103,7 @@ describe('два профиля одной биржи с разными marketTy
   });
 });
 
-describe('транспорт адресуется парой exchangeId + marketType', () => {
+describe('транспорт адресуется тройкой exchangeId + marketType + stream', () => {
   it('spot и future одной биржи получают КАЖДЫЙ свой транспорт', async () => {
     const exchanges = parseCexExchangeConfigs(
       JSON.stringify({
@@ -121,11 +121,11 @@ describe('транспорт адресуется парой exchangeId + market
     const index = buildCexTransportIndex(exchanges);
 
     // Индекс по одной бирже схлопнул бы эти два значения в одно.
-    expect(index.get(cexTransportKey('binance', 'spot'))).toEqual({
+    expect(index.get(cexTransportKey('binance', 'spot', 'ORDERBOOK'))).toEqual({
       orderbookMethod: 'watch',
       restartIntervalMs: 1_800_000,
     });
-    expect(index.get(cexTransportKey('binance', 'future'))).toEqual({
+    expect(index.get(cexTransportKey('binance', 'future', 'ORDERBOOK'))).toEqual({
       orderbookMethod: 'fetch',
       restartIntervalMs: 600_000,
     });
@@ -150,7 +150,13 @@ describe('транспорт адресуется парой exchangeId + market
     const controller = new CexSubscriptionController({
       // Та же логика наложения транспорта, что и в composition root.
       sourceFactory: (config) => {
-        const transport = transportIndex.get(cexTransportKey(config.exchangeId, config.marketType));
+        const transport = transportIndex.get(
+          cexTransportKey(
+            config.exchangeId,
+            config.marketType,
+            config.watchOrderbook ? 'ORDERBOOK' : 'TRADES',
+          ),
+        );
         const source = new RecordingSource({ ...config, ...transport });
         created.push(source);
         return source;
@@ -171,6 +177,90 @@ describe('транспорт адресуется парой exchangeId + market
   });
 });
 
+describe('стакан и сделки одной биржи разнесены по разным профилям', () => {
+  /** Конфигурация из ревью: два РАЗНЫХ физических потока одной пары. */
+  const SPLIT_STREAMS = JSON.stringify({
+    'binance-books': {
+      exchangeId: 'binance', type: 'spot', symbols: ['BTC/USDT'],
+      orderbook: true, trades: false, obMethod: 'fetch', restartIntervalMs: 600_000,
+    },
+    'binance-trades': {
+      exchangeId: 'binance', type: 'spot', symbols: ['BTC/USDT'],
+      orderbook: false, trades: true, restartIntervalMs: 900_000,
+    },
+  });
+
+  it('РАЗНЫЕ restartIntervalMs у стакана и сделок конфликтом НЕ являются', () => {
+    // `binance|spot|ORDERBOOK` и `binance|spot|TRADES` — разные ресурсы,
+    // ключ-пара объявлял бы эту законную конфигурацию конфликтом.
+    const exchanges = parseCexExchangeConfigs(SPLIT_STREAMS);
+    expect(exchanges).toHaveLength(2);
+
+    const index = buildCexTransportIndex(exchanges);
+    expect(index.get(cexTransportKey('binance', 'spot', 'ORDERBOOK'))).toEqual({
+      orderbookMethod: 'fetch',
+      restartIntervalMs: 600_000,
+    });
+    // obMethod к потоку сделок отношения не имеет и туда не переносится.
+    expect(index.get(cexTransportKey('binance', 'spot', 'TRADES'))).toEqual({
+      restartIntervalMs: 900_000,
+    });
+  });
+
+  it('каждый физический поток поднимается со СВОИМ транспортом', async () => {
+    const exchanges = parseCexExchangeConfigs(SPLIT_STREAMS);
+    const transportIndex = buildCexTransportIndex(exchanges);
+    const created: RecordingSource[] = [];
+    const controller = new CexSubscriptionController({
+      sourceFactory: (config) => {
+        const transport = transportIndex.get(
+          cexTransportKey(
+            config.exchangeId,
+            config.marketType,
+            config.watchOrderbook ? 'ORDERBOOK' : 'TRADES',
+          ),
+        );
+        const source = new RecordingSource({ ...config, ...transport });
+        created.push(source);
+        return source;
+      },
+      logger: new CapturingLogger(),
+    });
+
+    const result = await controller.reconcile(buildCexDemands(exchanges), now());
+    expect(result.failures).toEqual([]);
+
+    const books = created.find((source) => source.config.watchOrderbook);
+    const trades = created.find((source) => source.config.watchTrades);
+    expect(books?.config.orderbookMethod).toBe('fetch');
+    expect(books?.config.restartIntervalMs).toBe(600_000);
+    expect(trades?.config.restartIntervalMs).toBe(900_000);
+    // У потока сделок способа получения стакана нет вовсе.
+    expect(trades?.config.orderbookMethod).toBeUndefined();
+
+    await controller.close();
+  });
+
+  it('профиль с обоими потоками даёт транспорт обоим, obMethod только стакану', () => {
+    const exchanges = parseCexExchangeConfigs(
+      JSON.stringify({
+        binance: {
+          type: 'spot', symbols: ['BTC/USDT'],
+          orderbook: true, trades: true, obMethod: 'watch', restartIntervalMs: 900_000,
+        },
+      }),
+    );
+    const index = buildCexTransportIndex(exchanges);
+    expect(index.get(cexTransportKey('binance', 'spot', 'ORDERBOOK'))).toEqual({
+      orderbookMethod: 'watch',
+      restartIntervalMs: 900_000,
+    });
+    expect(index.get(cexTransportKey('binance', 'spot', 'TRADES'))).toEqual({
+      restartIntervalMs: 900_000,
+    });
+  });
+});
+
 describe('конфликт транспорта на один физический пул', () => {
   it('два профиля одного exchangeId+marketType с РАЗНЫМ транспортом → fail-fast', () => {
     expect(() =>
@@ -178,11 +268,11 @@ describe('конфликт транспорта на один физически
         JSON.stringify({
           'binance-a': {
             exchangeId: 'binance', type: 'spot', symbols: ['BTC/USDT'],
-            orderbook: true, trades: true, obMethod: 'watch',
+            orderbook: true, trades: false, obMethod: 'watch',
           },
           'binance-b': {
             exchangeId: 'binance', type: 'spot', symbols: ['ETH/USDT'],
-            orderbook: true, trades: true, obMethod: 'fetch',
+            orderbook: true, trades: false, obMethod: 'fetch',
           },
         }),
       ),
@@ -195,11 +285,11 @@ describe('конфликт транспорта на один физически
         JSON.stringify({
           'binance-a': {
             exchangeId: 'binance', type: 'spot', symbols: ['BTC/USDT'],
-            orderbook: true, trades: true, restartIntervalMs: 600_000,
+            orderbook: true, trades: false, restartIntervalMs: 600_000,
           },
           'binance-b': {
             exchangeId: 'binance', type: 'spot', symbols: ['ETH/USDT'],
-            orderbook: true, trades: true, restartIntervalMs: 900_000,
+            orderbook: true, trades: false, restartIntervalMs: 900_000,
           },
         }),
       ),
@@ -221,6 +311,7 @@ describe('конфликт транспорта на один физически
     );
     // Контроллер объединит символы этих профилей в один пул — это законно.
     expect(exchanges).toHaveLength(2);
-    expect(buildCexTransportIndex(exchanges).size).toBe(1);
+    // Два потока (ORDERBOOK + TRADES) при одинаковом транспорте.
+    expect(buildCexTransportIndex(exchanges).size).toBe(2);
   });
 });

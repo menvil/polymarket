@@ -80,15 +80,26 @@ describe('parseCexExchangeConfigs — policy + per-exchange транспорт',
 
     const binance = exchanges.find((exchange) => exchange.exchangeId === 'binance');
     const other = exchanges.find((exchange) => exchange.exchangeId === 'some-exchange');
-    expect(binance?.transport).toEqual({ orderbookMethod: 'watch', restartIntervalMs: 1_800_000 });
-    expect(other?.transport).toEqual({ orderbookMethod: 'fetch', restartIntervalMs: 600_000 });
+    // Профиль просит оба потока: транспорт объявляется по каждому, а obMethod
+    // относится только к стакану.
+    expect(binance?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 1_800_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 1_800_000 } },
+    ]);
+    expect(other?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'fetch', restartIntervalMs: 600_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 600_000 } },
+    ]);
   });
 
   it('не заданный транспорт остаётся пустым (дефолты принадлежат CexSource)', () => {
     const exchanges = parseCexExchangeConfigs(
       JSON.stringify({ binance: { type: 'spot', symbols: ['BTC/USDT'], orderbook: true, trades: true } }),
     );
-    expect(exchanges[0]?.transport).toEqual({});
+    expect(exchanges[0]?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: {} },
+      { stream: 'TRADES', transport: {} },
+    ]);
   });
 
   it('явный exchangeId записи побеждает ключ словаря', () => {
@@ -222,10 +233,10 @@ describe('toDataCollectorConfig — env → runtime config', () => {
     );
     expect(config.cex.exchanges).toHaveLength(1);
     expect(config.cex.exchanges[0]?.exchangeId).toBe('binance');
-    expect(config.cex.exchanges[0]?.transport).toEqual({
-      orderbookMethod: 'watch',
-      restartIntervalMs: 900_000,
-    });
+    expect(config.cex.exchanges[0]?.streamTransports).toEqual([
+      { stream: 'ORDERBOOK', transport: { orderbookMethod: 'watch', restartIntervalMs: 900_000 } },
+      { stream: 'TRADES', transport: { restartIntervalMs: 900_000 } },
+    ]);
   });
 
   it('невалидная CEX-конфигурация не даёт собрать рантайм (fail-fast)', () => {

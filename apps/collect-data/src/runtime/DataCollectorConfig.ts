@@ -97,25 +97,56 @@ export interface CexExchangeConfig {
   readonly marketType: CexPolicyMarketType;
   /** Owner policy ровно этого профиля. */
   readonly policy: CexPolicy;
-  /** Транспортные параметры физического пула этого профиля. */
-  readonly transport: CexTransportConfig;
+  /**
+   * Транспорт по каждому потоку, который запрашивает профиль.
+   *
+   * @remarks
+   * Профиль с `orderbook: true, trades: true` описывает ДВА физических пула, и
+   * транспорт у них независимый: `obMethod` относится только к стакану и в
+   * поток сделок не переносится вовсе.
+   */
+  readonly streamTransports: readonly CexStreamTransport[];
 }
 
 /**
- * Строит ключ адресации транспорта: биржа + вид рынка.
+ * Поток физического CEX-пула.
+ *
+ * @remarks
+ * Словарь совпадает по значениям с `CexStreamKind` контроллера, но объявлен
+ * локально: конфигурация приложения не должна зависеть от control-пакета ради
+ * строкового union-а.
+ */
+export type CexStreamKey = 'ORDERBOOK' | 'TRADES';
+
+/**
+ * Строит ключ адресации транспорта: биржа + вид рынка + ПОТОК.
  *
  * @param exchangeId - Идентификатор биржи
  * @param marketType - Вид рынка
- * @returns Составной ключ physical-пула в части, определяющей транспорт
+ * @param stream - Поток пула (`ORDERBOOK` либо `TRADES`)
+ * @returns Ключ физического пула — та же тройка, которой ключует контроллер
  *
  * @remarks
- * Контроллер ключует физический пул тройкой `exchangeId + marketType + stream`.
- * Транспорт (`obMethod`/`restartIntervalMs`) от потока не зависит, поэтому
- * ключ здесь — пара. Адресация ОДНОЙ биржей схлопывала бы spot и future
- * одного экземпляра биржи, и один транспорт молча затирал бы другой.
+ * Ровно `exchangeId + marketType + stream`: именно так контроллер ключует
+ * физический пул, и `binance|spot|ORDERBOOK` с `binance|spot|TRADES` — РАЗНЫЕ
+ * ресурсы с независимыми транспортными параметрами. Ключ-пара (без потока)
+ * объявлял бы конфликтом законную конфигурацию, где стакан и сделки одной
+ * биржи разнесены по отдельным записям с разными `restartIntervalMs`.
  */
-export function cexTransportKey(exchangeId: string, marketType: string): string {
-  return `${exchangeId}|${marketType}`;
+export function cexTransportKey(
+  exchangeId: string,
+  marketType: string,
+  stream: CexStreamKey,
+): string {
+  return `${exchangeId}|${marketType}|${stream}`;
+}
+
+/** Транспорт одного потока профиля. */
+export interface CexStreamTransport {
+  /** Поток, к которому относится транспорт. */
+  readonly stream: CexStreamKey;
+  /** Параметры транспорта этого потока. */
+  readonly transport: CexTransportConfig;
 }
 
 /**
@@ -346,33 +377,58 @@ export function parseCexExchangeConfigs(json: string): readonly CexExchangeConfi
     if (marketType === undefined) {
       throw new Error(`Invalid CEX config for '${exchangeKey}': market type is missing`);
     }
-    const transport: CexTransportConfig = {
-      ...(entry.obMethod !== undefined ? { orderbookMethod: entry.obMethod } : {}),
-      ...(restartIntervalMs !== undefined ? { restartIntervalMs } : {}),
-    };
-
-    // Один физический пул — один транспорт. Два профиля одной пары
-    // `exchangeId + marketType` законны (контроллер объединит их символы), но
-    // ДВА РАЗНЫХ `obMethod`/`restartIntervalMs` на один пул неразрешимы:
-    // источник поднимается один. Молчаливый выбор одного из них означал бы,
-    // что настройки профиля зависят от порядка ключей в JSON.
-    const poolKey = cexTransportKey(exchangeId, marketType);
-    const declared = transportByPool.get(poolKey);
-    if (declared !== undefined && !sameTransport(declared.transport, transport)) {
-      throw new Error(
-        `Invalid CEX config: profiles '${declared.profileKey}' and '${exchangeKey}' both target ` +
-          `${exchangeId}/${marketType} but declare different transport settings ` +
-          `(obMethod/restartIntervalMs); one physical pool cannot have two`,
-      );
+    // Транспорт объявляется ПО ПОТОКАМ, потому что физический пул — это
+    // `exchangeId + marketType + stream`. `obMethod` относится только к
+    // стакану: у потока сделок способа получения стакана нет вовсе, и
+    // переносить его туда значило бы выдумывать параметр.
+    const streamTransports: CexStreamTransport[] = [];
+    if (entry.orderbook) {
+      streamTransports.push({
+        stream: 'ORDERBOOK',
+        transport: {
+          ...(entry.obMethod !== undefined ? { orderbookMethod: entry.obMethod } : {}),
+          ...(restartIntervalMs !== undefined ? { restartIntervalMs } : {}),
+        },
+      });
     }
-    transportByPool.set(poolKey, { profileKey: exchangeKey, transport });
+    if (entry.trades) {
+      streamTransports.push({
+        stream: 'TRADES',
+        transport: {
+          ...(restartIntervalMs !== undefined ? { restartIntervalMs } : {}),
+        },
+      });
+    }
+
+    // Один физический ПОТОК — один транспорт. Два профиля одной пары
+    // `exchangeId + marketType` законны и конфликтом НЕ являются, пока их
+    // потоки не пересекаются: стакан и сделки одной биржи спокойно живут в
+    // разных записях с разными `restartIntervalMs`. Конфликт — только когда
+    // два профиля хотят ОДИН И ТОТ ЖЕ поток с разными параметрами: источник
+    // поднимается один, и молчаливый выбор сделал бы результат зависящим от
+    // порядка ключей в JSON.
+    for (const streamTransport of streamTransports) {
+      const poolKey = cexTransportKey(exchangeId, marketType, streamTransport.stream);
+      const declared = transportByPool.get(poolKey);
+      if (declared !== undefined && !sameTransport(declared.transport, streamTransport.transport)) {
+        throw new Error(
+          `Invalid CEX config: profiles '${declared.profileKey}' and '${exchangeKey}' both target ` +
+            `${exchangeId}/${marketType}/${streamTransport.stream} but declare different transport ` +
+            `settings; one physical pool cannot have two`,
+        );
+      }
+      transportByPool.set(poolKey, {
+        profileKey: exchangeKey,
+        transport: streamTransport.transport,
+      });
+    }
 
     exchanges.push({
       profileKey: exchangeKey,
       exchangeId,
       marketType,
       policy,
-      transport,
+      streamTransports,
     });
   }
   return exchanges;

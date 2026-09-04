@@ -157,21 +157,25 @@ export function buildCexDemands(
  * @returns Индекс, из которого фабрика источников берёт транспорт пула
  *
  * @remarks
- * Ключ — {@link cexTransportKey}, а не один `exchangeId`: контроллер ключует
- * физический пул тройкой `exchangeId + marketType + stream`, и адресация одной
- * биржей схлопнула бы spot и future одного экземпляра биржи. Конфликт двух
- * профилей на один пул уже отвергнут при разборе конфигурации, поэтому
- * перезаписи здесь быть не может.
+ * Ключ — {@link cexTransportKey}, ТА ЖЕ тройка `exchangeId + marketType +
+ * stream`, которой контроллер ключует физический пул. Более грубый ключ
+ * схлопывал бы либо spot с future, либо стакан со сделками одной биржи, и один
+ * транспорт молча затирал бы другой. Конфликт двух профилей на ОДИН поток уже
+ * отвергнут при разборе конфигурации, поэтому перезаписи здесь быть не может.
  */
 export function buildCexTransportIndex(
   exchanges: readonly CexExchangeConfig[],
 ): ReadonlyMap<string, CexTransportConfig> {
-  return new Map(
-    exchanges.map((exchange) => [
-      cexTransportKey(exchange.exchangeId, exchange.marketType),
-      exchange.transport,
-    ]),
-  );
+  const index = new Map<string, CexTransportConfig>();
+  for (const exchange of exchanges) {
+    for (const streamTransport of exchange.streamTransports) {
+      index.set(
+        cexTransportKey(exchange.exchangeId, exchange.marketType, streamTransport.stream),
+        streamTransport.transport,
+      );
+    }
+  }
+  return index;
 }
 
 /**
@@ -282,8 +286,14 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
   const cexTransportByPool = buildCexTransportIndex(config.cex.exchanges);
   const cexController = new CexSubscriptionController({
     sourceFactory: (sourceConfig) => {
+      // Контроллер поднимает по источнику на ПОТОК: у ORDERBOOK-пула включён
+      // только стакан, у TRADES-пула — только сделки. Отсюда и поток пула.
       const transport = cexTransportByPool.get(
-        cexTransportKey(sourceConfig.exchangeId, sourceConfig.marketType),
+        cexTransportKey(
+          sourceConfig.exchangeId,
+          sourceConfig.marketType,
+          sourceConfig.watchOrderbook ? 'ORDERBOOK' : 'TRADES',
+        ),
       );
       return new CexSource({
         config: {
