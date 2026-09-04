@@ -623,7 +623,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         const key = `${payload.exchangeId}\n${payload.symbol}\norderbook`;
         const store = cexSampleStore.get(key) ?? [];
         if (store.length < 3) {
-          store.push(JSON.stringify(payload));
+          store.push(JSON.stringify(toRecordedObservation(message)));
           cexSampleStore.set(key, store);
         }
       }
@@ -643,7 +643,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         const key = `${payload.exchangeId}\n${payload.symbol}\ntrades`;
         const store = cexSampleStore.get(key) ?? [];
         if (store.length < 3) {
-          store.push(JSON.stringify(payload));
+          store.push(JSON.stringify(toRecordedObservation(message)));
           cexSampleStore.set(key, store);
         }
       }
@@ -1591,6 +1591,7 @@ function validateArtifacts(
       rotationFailures?: number;
       streamCloseFailures?: number;
       compressionFailures?: number;
+      lateObservations?: number;
     };
     bus?: { handlerErrorsTotal?: number; rejectedPublicationsTotal?: number; queueSize?: number };
     cexSources?: Array<{
@@ -1616,6 +1617,11 @@ function validateArtifacts(
   }
   if ((finalStats.windows?.compressionFailures ?? 0) > 0) {
     report.violations.push('CEX window compression failures > 0');
+  }
+  if ((finalStats.windows?.lateObservations ?? 0) > 0) {
+    // Наблюдение, чьё окно ingress уже заархивировано, — настоящая потеря
+    // данных, а не policy: партиция закрылась раньше, чем дошла строка
+    report.violations.push('CEX window late observations > 0 (partition closed before ingress)');
   }
   if ((finalStats.bus?.rejectedPublicationsTotal ?? 0) > 0) {
     report.violations.push('bus rejected publications > 0');

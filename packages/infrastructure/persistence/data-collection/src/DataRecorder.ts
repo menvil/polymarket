@@ -55,6 +55,7 @@ import * as readline from 'node:readline';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IMarketDataRecorder, MarketMeta } from '@polymarket/ports';
+import { RAW_ARCHIVE_FORMAT_VERSION } from '@polymarket/raw-archive-format';
 import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import type { DataRecorderConfig } from './config/DataRecorderConfig.js';
 import type { IFormatter } from './formatters/IFormatter.js';
@@ -645,8 +646,22 @@ export class DataRecorder implements IMarketDataRecorder {
    * Никогда не бросает. O(1) поиск через tokenIndex.
    * Строка попадает в буфер в порядке прихода — flush не пересортировывает.
    * Если рынок ещё не достиг `startsAt` — события игнорируются (не записываются).
+   *
+   * LEGACY-путь: пишет bare `rawEvent`, БЕЗ ingress-конверта. В экземпляре,
+   * объявившем `formatVersion: 2`, такая строка недопустима — header обещает
+   * читателю {@link RecordedExternalObservationV2}, и bare-строка стала бы
+   * для V2-decoder-а повреждением. Поэтому в V2-режиме вызов игнорируется:
+   * V2-датасеты наполняются только через
+   * {@link DataRecorder.recordMarketEvent}.
    */
   public recordEvent(tokenId: InstrumentId, rawEvent: unknown): void {
+    // Формат — свойство экземпляра: смешивать legacy-строки с V2-датасетом
+    // нельзя. Проверка идёт ДО поиска writer-а: это policy пайплайна, а не
+    // состояние конкретного рынка
+    if (this._config.formatVersion === RAW_ARCHIVE_FORMAT_VERSION) {
+      return;
+    }
+
     const writer = this._tokenIndex.get(tokenId);
     if (!writer) return;
 

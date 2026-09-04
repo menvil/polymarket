@@ -47,6 +47,7 @@ file-level reader:
 ```typescript
 import { RawArchiveObservationReader, SnapshotReaderFactory } from '@polymarket/snapshot-readers';
 
+const factory = new SnapshotReaderFactory(logger);
 const reader = new RawArchiveObservationReader(factory.create(file.filePath));
 try {
   const header = await reader.readHeader();   // meta-строка либо undefined

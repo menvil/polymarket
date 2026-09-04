@@ -200,15 +200,17 @@ describe('one bus / one recorder (PART 25)', () => {
     await marketStorage.flush();
     await cexStorage.flush();
 
-    // ── Polymarket market-session файл: только SDK payload ──
+    // ── Polymarket market-session файл: V2-наблюдение SDK-события ──
     const marketFiles = listTree(polymarketDir).filter((f) => f.endsWith('.jsonl'));
     expect(marketFiles).toHaveLength(1);
     expect(marketFiles[0]).toContain(`${path.sep}polymarket${path.sep}`);
     const marketLines = fs.readFileSync(marketFiles[0]!, 'utf8').trimEnd().split('\n');
     expect(marketLines).toHaveLength(2); // header + наблюдение
-    expect(decodeDetachedArchiveLine(marketLines[1]!)?.payload).toEqual(
-      JSON.parse(JSON.stringify(sdkEvent)),
-    );
+    const marketObservation = decodeDetachedArchiveLine(marketLines[1]!);
+    expect(marketObservation?.timingQuality).toBe('EXACT_INGRESS');
+    expect(marketObservation?.type).toBe('POLYMARKET_MARKET');
+    expect(marketObservation?.ingress?.runId).toBe(generator.runId);
+    expect(marketObservation?.payload).toEqual(JSON.parse(JSON.stringify(sdkEvent)));
     // CEX-данные в market-файл не утекли
     expect(marketLines[1]).not.toContain('exchangeId');
 

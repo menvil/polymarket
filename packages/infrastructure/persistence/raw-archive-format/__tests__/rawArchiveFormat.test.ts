@@ -152,6 +152,7 @@ describe('header: формат объявлен, а не угадан', () => {
     });
 
     const format = detectRawArchiveFormat(JSON.stringify(header));
+    expect(format.kind).toBe('V2');
     expect(format.formatVersion).toBe(2);
     expect(format.headerConsumedFirstLine).toBe(true);
     expect(format.timingQuality).toBe('EXACT_INGRESS');
@@ -172,6 +173,7 @@ describe('header: формат объявлен, а не угадан', () => {
       JSON.stringify({ t: 'meta', ts: 1, marketId: '0xabc', tokenIds: [] }),
     );
 
+    expect(format.kind).toBe('LEGACY');
     expect(format.formatVersion).toBeUndefined();
     expect(format.headerConsumedFirstLine).toBe(true);
     expect(format.timingQuality).toBe('LEGACY_APPROXIMATE');
@@ -180,9 +182,61 @@ describe('header: формат объявлен, а не угадан', () => {
   it('первая строка НЕ meta — legacy без header-а: строка 1 является данными', () => {
     const format = detectRawArchiveFormat(JSON.stringify({ t: 'ob', ts: 1, bids: [] }));
 
+    expect(format.kind).toBe('LEGACY');
     expect(format.formatVersion).toBeUndefined();
     expect(format.headerConsumedFirstLine).toBe(false);
     expect(format.header).toBeUndefined();
+  });
+
+  it('объявленная, но неизвестная версия — UNSUPPORTED, а НЕ legacy', () => {
+    const format = detectRawArchiveFormat(
+      JSON.stringify({ t: 'meta', formatVersion: 3, marketId: '0xabc' }),
+    );
+
+    expect(format.kind).toBe('UNSUPPORTED');
+    expect(format.formatVersion).toBe(3);
+    // У архива, который мы не умеем читать, нет и качества тайминга
+    expect(format.timingQuality).toBeUndefined();
+    // Header доступен для диагностики, но CEX-партицией не считается
+    expect(format.header).toMatchObject({ formatVersion: 3 });
+    expect(readCexPartitionHeader(format)).toBeUndefined();
+  });
+
+  it('нечисловой formatVersion — испорченный header, тоже UNSUPPORTED', () => {
+    const format = detectRawArchiveFormat(
+      JSON.stringify({ t: 'meta', formatVersion: '2', marketId: '0xabc' }),
+    );
+
+    expect(format.kind).toBe('UNSUPPORTED');
+    expect(format.formatVersion).toBeUndefined();
+    expect(format.timingQuality).toBeUndefined();
+  });
+
+  it('битые границы окна не бросают RangeError, а дают undefined', () => {
+    const base = {
+      t: 'meta',
+      formatVersion: 2,
+      source: 'CEX',
+      exchangeId: 'binance',
+      marketType: 'swap',
+      symbol: 'BTC/USDT:USDT',
+      stream: 'orderbook',
+    };
+    const broken = [
+      { ...base, windowStartMs: Number.NaN, windowEndMs: 1 },
+      { ...base, windowStartMs: 0, windowEndMs: Number.POSITIVE_INFINITY },
+      // За пределами time-value range Date: toISOString() бросил бы RangeError
+      { ...base, windowStartMs: 1e16, windowEndMs: 1e16 + 1 },
+      // Окно нулевой/отрицательной длины окном не является
+      { ...base, windowStartMs: 1_786_668_000_000, windowEndMs: 1_786_668_000_000 },
+      { ...base, windowStartMs: 1_786_668_300_000, windowEndMs: 1_786_668_000_000 },
+    ];
+
+    for (const header of broken) {
+      const format = detectRawArchiveFormat(JSON.stringify(header));
+      expect(() => readCexPartitionHeader(format)).not.toThrow();
+      expect(readCexPartitionHeader(format)).toBeUndefined();
+    }
   });
 });
 
@@ -201,6 +255,25 @@ describe('decode: строгий формат по header-у', () => {
         format,
       ),
     ).toBeUndefined();
+  });
+
+  it('UNSUPPORTED: строки не декодируются и НЕ выдаются за legacy', () => {
+    const format = detectRawArchiveFormat(
+      JSON.stringify({ t: 'meta', formatVersion: 3, marketId: '0xabc' }),
+    );
+
+    // Даже валидный JSON чужого формата не превращается в legacy-наблюдение
+    expect(decodeRawArchiveLine(JSON.stringify({ anything: 1 }), format)).toBeUndefined();
+
+    const archive = decodeRawArchive([
+      JSON.stringify({ t: 'meta', formatVersion: 3, marketId: '0xabc' }),
+      JSON.stringify({ v3Shape: true }),
+      JSON.stringify({ v3Shape: true }),
+    ]);
+    expect(archive.format.kind).toBe('UNSUPPORTED');
+    expect(archive.observations).toHaveLength(0);
+    // Строки не повреждены — мы просто не умеем их читать
+    expect(archive.malformedLines).toBe(0);
   });
 
   it('V2-архив читается целиком: формат, порядок строк, счётчик повреждений', () => {
@@ -225,6 +298,52 @@ describe('decode: строгий формат по header-у', () => {
       { n: 2 },
     ]);
     expect(archive.observations.map((observation) => observation.type)).toEqual(['A', 'B']);
+  });
+});
+
+describe('ingress вне контракта — повреждение, а не EXACT_INGRESS', () => {
+  const format = detectRawArchiveFormat(
+    JSON.stringify({ t: 'meta', formatVersion: 2, marketId: '0xabc' }),
+  );
+
+  /** Строка V2 с подменённым полем ingress. */
+  function lineWith(overrides: Record<string, unknown>): string {
+    const observation = toRecordedObservation({
+      type: 'POLYMARKET_MARKET',
+      payload: { n: 1 },
+      metadata: metadata(),
+    });
+    return JSON.stringify({
+      ...observation,
+      ingress: { ...observation.ingress, ...overrides },
+    });
+  }
+
+  it.each([
+    ['sequence = 0 (нумерация начинается с 1)', { sequence: 0 }],
+    ['sequence отрицателен', { sequence: -5 }],
+    ['sequence вне безопасного диапазона', { sequence: Number.MAX_SAFE_INTEGER + 2 }],
+    ['createdAtUnixSeconds вне безопасного диапазона', {
+      createdAtUnixSeconds: Number.MAX_SAFE_INTEGER + 2,
+    }],
+    ['millisecondOfSecond > 999', { millisecondOfSecond: 5_000 }],
+    ['microsecondOfMillisecond отрицателен', { microsecondOfMillisecond: -20 }],
+    ['nanosecondOfMicrosecond > 999', { nanosecondOfMicrosecond: 999_999 }],
+  ])('%s → строка не читается', (_label, overrides) => {
+    expect(decodeRawArchiveLine(lineWith(overrides), format)).toBeUndefined();
+    expect(decodeDetachedArchiveLine(lineWith(overrides))?.timingQuality).toBe(
+      'LEGACY_APPROXIMATE',
+    );
+  });
+
+  it('границы диапазонов допустимы: sequence 1 и компоненты 0/999', () => {
+    const ok = lineWith({
+      sequence: 1,
+      millisecondOfSecond: 0,
+      microsecondOfMillisecond: 999,
+      nanosecondOfMicrosecond: 0,
+    });
+    expect(decodeRawArchiveLine(ok, format)?.timingQuality).toBe('EXACT_INGRESS');
   });
 });
 

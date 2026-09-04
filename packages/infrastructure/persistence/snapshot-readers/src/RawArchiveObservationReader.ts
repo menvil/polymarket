@@ -26,6 +26,16 @@
  * `sequence`, никакой latency-модели. Файлы не переписываются и не
  * мигрируются.
  *
+ * ### Что делает с неизвестной версией (fail closed)
+ *
+ * Legacy — это ОТСУТСТВИЕ версии, а не «любая версия, кроме нашей». Архив,
+ * объявивший неизвестный `formatVersion`, {@link readObservations}
+ * ОТВЕРГАЕТ исключением, а не отдаёт как legacy и не возвращает молча
+ * пустую выборку: разбор чужого формата наугад подменил бы данные, а тихий
+ * ноль наблюдений дал бы бэктесту «чистый» результат на пустоте.
+ * {@link readFormat}/{@link readHeader} при этом продолжают работать —
+ * вызывающий может узнать версию, не ловя исключение.
+ *
  * ### Чего НЕ делает
  *
  * Не создаёт `ExternalMessage` и не выдаёт исторический `ingress` за
@@ -48,6 +58,7 @@
  * ```
  */
 import {
+  RAW_ARCHIVE_FORMAT_VERSION,
   decodeRawArchiveLine,
   detectRawArchiveFormat,
 } from '@polymarket/raw-archive-format';
@@ -133,6 +144,9 @@ export class RawArchiveObservationReader {
    * Итерирует наблюдения архива В ФАЙЛОВОМ ПОРЯДКЕ строк.
    *
    * @returns Async-генератор прочитанных наблюдений
+   * @throws {Error} Если архив объявил неподдерживаемый `formatVersion`:
+   *   его строки имеют неизвестную структуру, и отдать их (как legacy либо
+   *   как пустую выборку) значило бы подменить данные
    *
    * @remarks
    * Нечитаемые строки пропускаются и считаются в {@link malformedLines} —
@@ -141,6 +155,12 @@ export class RawArchiveObservationReader {
    */
   public async *readObservations(): AsyncGenerator<DecodedObservation, void, undefined> {
     const format = await this.readFormat();
+    if (format.kind === 'UNSUPPORTED') {
+      throw new Error(
+        `Unsupported raw archive formatVersion ${String(format.formatVersion)} ` +
+          `(this reader supports ${String(RAW_ARCHIVE_FORMAT_VERSION)}): ${this.filePath}`,
+      );
+    }
 
     const pending = this._pendingFirstLine;
     if (pending !== undefined) {

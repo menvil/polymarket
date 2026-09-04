@@ -381,6 +381,28 @@ describe('DataRecorder V2 storage (N-002)', () => {
     expect(recorder.recordMarketEvent(meta.marketId, obs({ type: 'book' }))).toBe('unregistered');
   });
 
+  it('recordEvent игнорируется в V2-экземпляре: bare-строк в V2-датасете нет', async () => {
+    recorder = new DataRecorder(
+      makeConfig(tmpDir, { formatVersion: 2 }),
+      new NDJSONFormatter(),
+      null,
+      logger,
+    );
+    const meta = makeMeta();
+    recorder.registerMarket(meta);
+
+    recorder.recordMarketEvent(meta.marketId, obs({ topic: 'market', type: 'book' }));
+    // Legacy-путь в V2-датасете запрещён: его строка не имела бы ingress и
+    // стала бы для V2-decoder-а повреждением
+    recorder.recordEvent(unsafeInstrumentId('tok-yes'), { legacy: true });
+    await recorder.flush();
+
+    const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
+    expect(lines).toHaveLength(2); // header + ОДНО V2-наблюдение
+    expect(lines.some((line) => line.includes('"legacy"'))).toBe(false);
+    expect(payloadOf(lines[1]!)).toEqual({ topic: 'market', type: 'book' });
+  });
+
   it('formatVersion из config попадает в первую строку', async () => {
     recorder = new DataRecorder(
       makeConfig(tmpDir, { formatVersion: 2 }),
@@ -554,7 +576,7 @@ describe('DataRecorder V2 storage (N-002)', () => {
     const lines = fs.readFileSync(marketFilePath(), 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(3);
     expect((payloadOf(lines[1]!) as { type: string }).type).toBe('book');
-    // Legacy-путь recordEvent пишет bare payload — конверт V2 его не касается
+    // Экземпляр БЕЗ formatVersion: legacy-путь recordEvent пишет bare payload
     expect((JSON.parse(lines[2]!) as { legacy: boolean }).legacy).toBe(true);
   });
 

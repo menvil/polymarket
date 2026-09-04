@@ -156,6 +156,53 @@ describe('V2-архив: формат объявлен header-ом', () => {
   });
 });
 
+describe('неизвестная версия: fail closed, а не legacy', () => {
+  it('readObservations отвергает архив с чужим formatVersion', async () => {
+    const filePath = writeArchive('future', [
+      JSON.stringify({ t: 'meta', formatVersion: 3, marketId: '0xabc' }),
+      JSON.stringify({ someV3Shape: true }),
+    ]);
+
+    const reader = new RawArchiveObservationReader(factory.create(filePath));
+    try {
+      // Формат прочитать МОЖНО — исключение бросает только чтение наблюдений
+      const format = await reader.readFormat();
+      expect(format.kind).toBe('UNSUPPORTED');
+      expect(format.formatVersion).toBe(3);
+      expect(await reader.readHeader()).toMatchObject({ formatVersion: 3 });
+
+      await expect(async () => {
+        for await (const _ of reader.readObservations()) {
+          // недостижимо: генератор обязан бросить до первой выдачи
+        }
+      }).rejects.toThrow('Unsupported raw archive formatVersion 3');
+    } finally {
+      await reader.close();
+    }
+  });
+
+  it('строки чужого формата НЕ выдаются как legacy-наблюдения', async () => {
+    const filePath = writeArchive('future-silent', [
+      JSON.stringify({ t: 'meta', formatVersion: 99 }),
+      JSON.stringify({ v99: 'payload' }),
+    ]);
+
+    const reader = new RawArchiveObservationReader(factory.create(filePath));
+    try {
+      const collected: DecodedObservation[] = [];
+      await expect(async () => {
+        for await (const item of reader.readObservations()) {
+          collected.push(item);
+        }
+      }).rejects.toThrow(/Unsupported raw archive formatVersion/);
+      // Ни одного наблюдения не выдано — молчаливой пустоты тоже нет
+      expect(collected).toHaveLength(0);
+    } finally {
+      await reader.close();
+    }
+  });
+});
+
 describe('TEST J: legacy-архивы читаются как есть', () => {
   it('legacy market-файл: LEGACY_APPROXIMATE, header пропущен, порядок строк сохранён', async () => {
     const lines = [

@@ -64,6 +64,7 @@ export type {
   CexArchiveStream,
   CexPartitionHeaderV2,
   RawArchiveFormat,
+  RawArchiveFormatKind,
 } from './archiveHeader.js';
 
 export {

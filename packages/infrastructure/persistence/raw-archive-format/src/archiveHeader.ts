@@ -16,6 +16,9 @@
  * Legacy-архивы старого коллектора header-а либо не имеют вовсе
  * (CEX-партиции), либо имеют meta-строку БЕЗ `formatVersion` (Polymarket).
  * Оба случая читаются как legacy — см. {@link detectRawArchiveFormat}.
+ *
+ * Legacy — это именно ОТСУТСТВИЕ версии. Объявленная, но неизвестная версия
+ * (архив будущего коллектора) legacy НЕ является и читаться не должна.
  */
 import { RAW_ARCHIVE_FORMAT_VERSION } from './RecordedExternalObservation.js';
 import type { RawArchiveTimingQuality } from './RecordedExternalObservation.js';
@@ -105,9 +108,27 @@ export function buildCexPartitionHeader(identity: {
 }
 
 /**
+ * Читаемость архива, объявленная его header-ом.
+ *
+ * - `'V2'` — объявлен поддерживаемый {@link RAW_ARCHIVE_FORMAT_VERSION};
+ * - `'LEGACY'` — версия НЕ объявлена вовсе (архив старого коллектора);
+ * - `'UNSUPPORTED'` — версия объявлена, но этот decoder её не знает.
+ *
+ * @remarks
+ * Legacy — это ОТСУТСТВИЕ версии, а не «любая версия, кроме нашей». Архив
+ * будущего коллектора (`formatVersion: 3`) нельзя интерпретировать как
+ * старый формат: его строки имеют неизвестную нам структуру, и выдача их за
+ * legacy-наблюдения молча подменила бы данные. Такой архив читатель обязан
+ * отвергнуть (fail closed), а не разбирать наугад.
+ */
+export type RawArchiveFormatKind = 'V2' | 'LEGACY' | 'UNSUPPORTED';
+
+/**
  * Объявленный формат архива, определённый по его первой строке.
  */
 export interface RawArchiveFormat {
+  /** Читаемость архива по объявленной версии. */
+  readonly kind: RawArchiveFormatKind;
   /**
    * Объявленная версия формата data-строк либо `undefined` — версия не
    * объявлена (legacy-архив).
@@ -124,8 +145,29 @@ export interface RawArchiveFormat {
   readonly headerConsumedFirstLine: boolean;
   /** Разобранная meta-строка (если она была) — как есть, без интерпретации. */
   readonly header: Readonly<Record<string, unknown>> | undefined;
-  /** Точность тайминга, которую даёт этот формат. */
-  readonly timingQuality: RawArchiveTimingQuality;
+  /**
+   * Точность тайминга, которую даёт этот формат.
+   *
+   * @remarks
+   * `undefined` при `kind: 'UNSUPPORTED'`: у архива, который мы не умеем
+   * читать, нет и качества тайминга — обещать `LEGACY_APPROXIMATE` значило бы
+   * утверждать, что его строки прочитаны хотя бы приблизительно.
+   */
+  readonly timingQuality: RawArchiveTimingQuality | undefined;
+}
+
+/** Максимальный epoch-ms, представимый в `Date` (ECMA-262 time-value range). */
+const MAX_EPOCH_MS = 8.64e15;
+
+/**
+ * Представимо ли значение как epoch-ms внутри диапазона `Date`.
+ *
+ * @param value - Кандидат на метку времени
+ * @returns `true` — целое число, которое `new Date(value).toISOString()`
+ *   переведёт в ISO без RangeError
+ */
+function isRepresentableEpochMs(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Math.abs(value as number) <= MAX_EPOCH_MS;
 }
 
 /**
@@ -153,14 +195,17 @@ function isMetaRecord(value: unknown): value is Record<string, unknown> {
  * Единственная санкционированная точка определения формата. Правило:
  *
  * ```text
- * первая строка — meta с formatVersion 2 → V2, EXACT_INGRESS
- * первая строка — meta без formatVersion  → legacy (старый коллектор)
- * первая строка — НЕ meta                 → legacy без header (data с LINE 1)
+ * первая строка — meta с formatVersion 2  → V2, EXACT_INGRESS
+ * первая строка — meta без formatVersion  → LEGACY (старый коллектор)
+ * первая строка — НЕ meta                 → LEGACY без header (data с LINE 1)
+ * первая строка — meta с иной версией     → UNSUPPORTED (читать нельзя)
  * ```
  *
  * Никакого распознавания по имени файла и никакого вывода формата из формы
  * data-строки: это ровно те догадки, ради устранения которых header и
- * добавлен.
+ * добавлен. Неизвестная объявленная версия — не legacy: её строки имеют
+ * неизвестную нам структуру, и разбирать их наугад значило бы подменить
+ * данные.
  *
  * @example
  * ```typescript
@@ -171,45 +216,62 @@ function isMetaRecord(value: unknown): value is Record<string, unknown> {
  * ```
  */
 export function detectRawArchiveFormat(firstLine: string | undefined): RawArchiveFormat {
+  /** Архив без meta-строки: LINE 1 (если есть) — уже данные legacy-формата. */
+  const headerless: RawArchiveFormat = {
+    kind: 'LEGACY',
+    formatVersion: undefined,
+    headerConsumedFirstLine: false,
+    header: undefined,
+    timingQuality: 'LEGACY_APPROXIMATE',
+  };
+
   if (firstLine === undefined || firstLine.length === 0) {
-    return {
-      formatVersion: undefined,
-      headerConsumedFirstLine: false,
-      header: undefined,
-      timingQuality: 'LEGACY_APPROXIMATE',
-    };
+    return headerless;
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(firstLine);
   } catch {
-    return {
-      formatVersion: undefined,
-      headerConsumedFirstLine: false,
-      header: undefined,
-      timingQuality: 'LEGACY_APPROXIMATE',
-    };
+    return headerless;
   }
 
   if (!isMetaRecord(parsed)) {
     // Legacy CEX-партиция: header-а нет вовсе, LINE 1 — уже наблюдение
+    return headerless;
+  }
+
+  const declared = parsed['formatVersion'];
+  if (declared === undefined) {
+    // Legacy market-файл старого коллектора: meta есть, версии нет
     return {
+      kind: 'LEGACY',
       formatVersion: undefined,
-      headerConsumedFirstLine: false,
-      header: undefined,
+      headerConsumedFirstLine: true,
+      header: parsed,
       timingQuality: 'LEGACY_APPROXIMATE',
     };
   }
 
-  const declared = parsed['formatVersion'];
-  const formatVersion = typeof declared === 'number' ? declared : undefined;
+  if (declared === RAW_ARCHIVE_FORMAT_VERSION) {
+    return {
+      kind: 'V2',
+      formatVersion: RAW_ARCHIVE_FORMAT_VERSION,
+      headerConsumedFirstLine: true,
+      header: parsed,
+      timingQuality: 'EXACT_INGRESS',
+    };
+  }
+
+  // Версия объявлена, но неизвестна (либо объявлена не числом — испорченный
+  // header): строки имеют неизвестную нам структуру. Читать их как legacy —
+  // значит молча подменить данные.
   return {
-    formatVersion,
+    kind: 'UNSUPPORTED',
+    formatVersion: typeof declared === 'number' ? declared : undefined,
     headerConsumedFirstLine: true,
     header: parsed,
-    timingQuality:
-      formatVersion === RAW_ARCHIVE_FORMAT_VERSION ? 'EXACT_INGRESS' : 'LEGACY_APPROXIMATE',
+    timingQuality: undefined,
   };
 }
 
@@ -229,7 +291,7 @@ export function readCexPartitionHeader(
   format: RawArchiveFormat,
 ): CexPartitionHeaderV2 | undefined {
   const header = format.header;
-  if (header === undefined || format.formatVersion !== RAW_ARCHIVE_FORMAT_VERSION) {
+  if (header === undefined || format.kind !== 'V2') {
     return undefined;
   }
   if (header['source'] !== CEX_ARCHIVE_SOURCE) {
@@ -241,9 +303,15 @@ export function readCexPartitionHeader(
     typeof marketType !== 'string' ||
     typeof symbol !== 'string' ||
     (stream !== 'orderbook' && stream !== 'trades') ||
-    typeof windowStartMs !== 'number' ||
-    typeof windowEndMs !== 'number'
+    !isRepresentableEpochMs(windowStartMs) ||
+    !isRepresentableEpochMs(windowEndMs) ||
+    windowEndMs <= windowStartMs
   ) {
+    // Испорченный header — не исключение, а «это не V2-header CEX-партиции».
+    // Проверка границ обязана быть ЗДЕСЬ: buildCexPartitionHeader строит
+    // ISO-дубли через `new Date(...).toISOString()`, который на NaN и на
+    // выходящих за диапазон Date значениях бросает RangeError — читатель
+    // архива получил бы исключение вместо `undefined`.
     return undefined;
   }
   return buildCexPartitionHeader({

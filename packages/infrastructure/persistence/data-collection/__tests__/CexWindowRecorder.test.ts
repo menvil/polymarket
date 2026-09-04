@@ -867,6 +867,65 @@ describe('CexWindowRecorder (реальное время, короткое ок�
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('late после boundary-sweep: окно НЕ воскресает, готовый .gz не подменяется', async () => {
+    // Регрессия: sweep снимает writer, не дожидаясь наблюдения следующего
+    // окна. Если считать закрытым только окно СТАРШЕ последнего открытого,
+    // запоздавшее наблюдение ТОГО ЖЕ окна открыло бы второй `.jsonl`, а его
+    // ротация заменила бы (rename) готовый `.jsonl.gz` полного окна архивом
+    // из одной строки.
+    const windowMs = 500;
+    const recorder = new CexWindowRecorder(
+      {
+        outputDir: dir,
+        compression: 'gzip',
+        windowMinutes: windowMs / 60_000,
+        flushIntervalMs: 50,
+        boundaryGraceMs: 20,
+      },
+      makeLogger(),
+    );
+    recorder.start();
+
+    try {
+      // Пишем одну строку в текущее окно и запоминаем ЕГО границу
+      const firstBoundary = Math.floor(Date.now() / windowMs) * windowMs + windowMs;
+      await waitFor(() => Date.now() >= firstBoundary + 20, 2_000);
+      const observedAt = Date.now();
+      const closedWindowStart = Math.floor(observedAt / windowMs) * windowMs;
+      expect(
+        recorder.write('binance', 'BTC/USDT', 'spot', 'orderbook', obs({ w: 1 }, observedAt)),
+      ).toBe('recorded');
+
+      // Партицию закрывает ИМЕННО sweep: наблюдений следующего окна нет.
+      // Ждём ЗАВЕРШЁННУЮ партицию (.gz есть И исходный .jsonl удалён) —
+      // иначе можно поймать середину ротации
+      await waitForCompletedPartitions(dir, 1, 4_000);
+      const gz = listFiles(dir).find((file) => file.endsWith('.jsonl.gz'))!;
+      const archiveBefore = fs.readFileSync(path.join(dir, gz));
+
+      // Запоздавшее наблюдение ТОГО ЖЕ (уже закрытого) окна
+      expect(
+        recorder.write(
+          'binance',
+          'BTC/USDT',
+          'spot',
+          'orderbook',
+          obs({ w: 'late' }, closedWindowStart + 1),
+        ),
+      ).toBe('late');
+      expect(recorder.getStats().lateObservations).toBe(1);
+
+      // Writer того же окна НЕ открыт заново: нового `.jsonl` нет
+      await recorder.flush();
+      expect(listFiles(dir).filter((file) => file.endsWith('.jsonl'))).toHaveLength(0);
+      // Готовый архив полного окна не тронут
+      expect(fs.readFileSync(path.join(dir, gz)).equals(archiveBefore)).toBe(true);
+      expect(payloadsOf(gunzipLines(path.join(dir, gz)))).toEqual([{ w: 1 }]);
+    } finally {
+      await recorder.close();
+    }
+  });
+
   it('тихое окно завершается boundary-sweep-ом без новых записей', async () => {
     const windowMs = 500;
     const recorder = new CexWindowRecorder(

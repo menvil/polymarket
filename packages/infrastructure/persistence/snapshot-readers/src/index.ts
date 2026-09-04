@@ -34,11 +34,20 @@
  * `timingQuality`:
  *
  * ```typescript
+ * import {
+ *   RawArchiveObservationReader,
+ *   SnapshotReaderFactory,
+ * } from '@polymarket/snapshot-readers';
+ *
+ * const factory = new SnapshotReaderFactory(logger);
  * const reader = new RawArchiveObservationReader(factory.create(filePath));
- * for await (const observation of reader.readObservations()) {
- *   // observation.payload — source-native, как в live
+ * try {
+ *   for await (const observation of reader.readObservations()) {
+ *     // observation.payload — source-native, как в live
+ *   }
+ * } finally {
+ *   await reader.close();
  * }
- * await reader.close();
  * ```
  */
 

@@ -133,11 +133,17 @@ File-level reader (`RawArchiveObservationReader` из
 
 ## 5. Legacy
 
-| | header | timingQuality |
-|---|---|---|
-| V2-архив | `t:'meta'` + `formatVersion: 2` | `EXACT_INGRESS` |
-| legacy market-файл | `t:'meta'` без `formatVersion` | `LEGACY_APPROXIMATE` |
-| legacy CEX-партиция | нет вовсе (LINE 1 = данные) | `LEGACY_APPROXIMATE` |
+| | header | `kind` | `timingQuality` |
+|---|---|---|---|
+| V2-архив | `t:'meta'` + `formatVersion: 2` | `V2` | `EXACT_INGRESS` |
+| legacy market-файл | `t:'meta'` без `formatVersion` | `LEGACY` | `LEGACY_APPROXIMATE` |
+| legacy CEX-партиция | нет вовсе (LINE 1 = данные) | `LEGACY` | `LEGACY_APPROXIMATE` |
+| архив чужой версии | `t:'meta'` + иной `formatVersion` | `UNSUPPORTED` | — |
+
+Legacy — это ОТСУТСТВИЕ версии, а не «любая версия, кроме нашей». Архив с
+объявленной неизвестной версией декодер не читает вовсе, а file-level reader
+отвергает исключением (fail closed): его строки имеют неизвестную структуру,
+и выдача их за legacy подменила бы данные.
 
 Legacy-архивы НЕ переписываются и НЕ мигрируются. Порядок строк внутри файла
 сохраняется строго: никакой пересортировки по vendor-timestamp, никакого

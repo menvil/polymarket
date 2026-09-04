@@ -34,7 +34,6 @@ import type {
   RecordedExternalObservationV2,
   RecordedIngress,
 } from './RecordedExternalObservation.js';
-import { RAW_ARCHIVE_FORMAT_VERSION } from './RecordedExternalObservation.js';
 import { detectRawArchiveFormat } from './archiveHeader.js';
 import type { RawArchiveFormat } from './archiveHeader.js';
 
@@ -67,7 +66,17 @@ export type DecodedObservation =
     };
 
 /**
- * Проверяет структурную полноту ingress-метки.
+ * Значение — целое число в допустимом диапазоне суб-секундного компонента.
+ *
+ * @param value - Кандидат
+ * @returns `true` для целого 0..999
+ */
+function isSubSecondComponent(value: unknown): boolean {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 999;
+}
+
+/**
+ * Проверяет структурную полноту и допустимость ingress-метки.
  *
  * @param value - Кандидат на ingress
  * @returns `true`, если все обязательные поля присутствуют и корректны
@@ -76,20 +85,30 @@ export type DecodedObservation =
  * Требуются ВСЕ поля: неполный ingress означал бы неизвестно чем испорченный
  * порядок, а `EXACT_INGRESS` — обещание точности, которое нельзя давать
  * наполовину.
+ *
+ * Диапазоны проверяются по контракту canonical metadata: `sequence` растёт
+ * с 1, суб-секундные компоненты лежат в 0..999, а целые не выходят за
+ * безопасный диапазон `number`. Production-recorder таких значений не
+ * создаёт — но decoder существует ровно для того, чтобы обнаруживать
+ * повреждение архива, а не доверять ему. `sequence: -5` или
+ * `millisecondOfSecond: 5000` сломали бы и порядок, и восстановление
+ * момента наблюдения, поэтому такая строка не получает `EXACT_INGRESS`.
  */
 function isRecordedIngress(value: unknown): value is RecordedIngress {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
   const candidate = value as Record<string, unknown>;
+  const sequence = candidate['sequence'];
   return (
     typeof candidate['runId'] === 'string' &&
     candidate['runId'].length > 0 &&
-    Number.isInteger(candidate['sequence']) &&
-    Number.isInteger(candidate['createdAtUnixSeconds']) &&
-    Number.isInteger(candidate['millisecondOfSecond']) &&
-    Number.isInteger(candidate['microsecondOfMillisecond']) &&
-    Number.isInteger(candidate['nanosecondOfMicrosecond'])
+    Number.isSafeInteger(sequence) &&
+    (sequence as number) >= 1 &&
+    Number.isSafeInteger(candidate['createdAtUnixSeconds']) &&
+    isSubSecondComponent(candidate['millisecondOfSecond']) &&
+    isSubSecondComponent(candidate['microsecondOfMillisecond']) &&
+    isSubSecondComponent(candidate['nanosecondOfMicrosecond'])
   );
 }
 
@@ -129,6 +148,11 @@ export function isRecordedObservationV2(
  * видимой (`undefined`), а не молча превращается в legacy-наблюдение с
  * приблизительным таймингом.
  *
+ * Архив с ОБЪЯВЛЕННОЙ, но неподдерживаемой версией (`kind: 'UNSUPPORTED'`)
+ * не декодируется вовсе: legacy — это отсутствие версии, а не «любая версия,
+ * кроме нашей». Строки будущего формата имеют неизвестную нам структуру, и
+ * выдача их за legacy-наблюдения молча подменила бы данные.
+ *
  * @example
  * ```typescript
  * const format = detectRawArchiveFormat(lines[0]);
@@ -144,7 +168,7 @@ export function decodeRawArchiveLine(
   line: string,
   format: RawArchiveFormat,
 ): DecodedObservation | undefined {
-  if (line.length === 0) {
+  if (line.length === 0 || format.kind === 'UNSUPPORTED') {
     return undefined;
   }
   let parsed: unknown;
@@ -154,7 +178,7 @@ export function decodeRawArchiveLine(
     return undefined;
   }
 
-  if (format.formatVersion === RAW_ARCHIVE_FORMAT_VERSION) {
+  if (format.kind === 'V2') {
     if (!isRecordedObservationV2(parsed)) {
       return undefined; // объявлен V2, но конверта нет — повреждённая строка
     }
@@ -261,6 +285,12 @@ export function decodeRawArchive(lines: readonly string[]): DecodedRawArchive {
 
   const observations: DecodedObservation[] = [];
   let malformedLines = 0;
+
+  if (format.kind === 'UNSUPPORTED') {
+    // Строки не повреждены — мы просто не умеем их читать. Считать их
+    // malformed значило бы обвинить архив в порче; ответ несёт `format.kind`.
+    return { format, observations, malformedLines };
+  }
 
   const startIndex =
     firstIndex === -1 ? lines.length : firstIndex + (format.headerConsumedFirstLine ? 1 : 0);

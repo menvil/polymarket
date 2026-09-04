@@ -159,6 +159,7 @@ Decoder никогда не возвращает `MessageMetadata` и не со�
 ```typescript
 import { SnapshotReaderFactory, RawArchiveObservationReader } from '@polymarket/snapshot-readers';
 
+const factory = new SnapshotReaderFactory(logger);
 const reader = new RawArchiveObservationReader(factory.create(filePath));
 try {
   const header = await reader.readHeader();          // meta-строка либо undefined
@@ -176,14 +177,29 @@ try {
 первой data-строки:
 
 ```text
-LINE 1 = meta с formatVersion 2   → V2, EXACT_INGRESS
-LINE 1 = meta без formatVersion   → legacy market-файл старого коллектора
-LINE 1 ≠ meta                     → legacy CEX-партиция (LINE 1 уже данные)
+LINE 1 = meta с formatVersion 2   → V2          (EXACT_INGRESS)
+LINE 1 = meta без formatVersion   → LEGACY      (market-файл старого коллектора)
+LINE 1 ≠ meta                     → LEGACY      (CEX-партиция; LINE 1 уже данные)
+LINE 1 = meta с иной версией      → UNSUPPORTED (читать нельзя)
 ```
 
 В архиве, объявившем `formatVersion: 2`, строка без валидного конверта —
 это ПОВРЕЖДЕНИЕ (декодер вернёт `undefined`), а не «наверное, legacy».
 Иначе испорченная строка молча получала бы приблизительный тайминг.
+
+### Legacy — это отсутствие версии, а не «версия ≠ 2»
+
+Архив, объявивший неизвестный `formatVersion` (например, будущий
+коллектор с версией 3), **не** читается как legacy: его строки имеют
+неизвестную нам структуру, и разбор наугад подменил бы данные.
+`RawArchiveObservationReader.readObservations()` такой архив отвергает
+исключением — молчаливый ноль наблюдений дал бы бэктесту «чистый»
+результат на пустоте. `readFormat()`/`readHeader()` при этом работают:
+версию можно узнать, не ловя исключение.
+
+Ingress-поля тоже проверяются по контракту, а не принимаются на веру:
+`sequence` ≥ 1, целые в безопасном диапазоне, суб-секундные компоненты
+0..999. Строка вне этих границ — повреждение, а не `EXACT_INGRESS`.
 
 ### Реконструкция общего порядка
 
