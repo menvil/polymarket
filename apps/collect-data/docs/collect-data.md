@@ -46,8 +46,10 @@ CexSubscriptionController → CexSource generations ─────────�
 ```
 
 Два жёстких инварианта процесса: **один bus** и **один recorder**. На диск
-попадает исключительно source-native `message.payload`. Collector — sibling
-consumer, а не gate перед семантикой.
+попадает archive envelope `{type, ingress, payload}` с НЕИЗМЕНЁННЫМ
+source-native `message.payload` внутри (Replayable Raw Format V2, см.
+`docs/guides/replayable-raw-format-v2.md`). Collector — sibling consumer, а
+не gate перед семантикой.
 
 Управление сбором — прямые вызовы control-plane каждый control-тик:
 
@@ -123,9 +125,10 @@ Lifecycle-события сбора (`DISCOVERED`/`FINALIZING`/...) убраны
 `.jsonl` = незавершённый файл, `.jsonl.gz` = завершённый архив. Незавершённые остатки
 предыдущего запуска удаляются при старте: восстановлению они не подлежат.
 
-Polymarket-архивы пишутся с `formatVersion: 2` — строки 2+ содержат source-native
-события официального SDK. Первая строка (meta-header) определяет, каким парсером
-читать остальные.
+Polymarket-архивы пишутся с `formatVersion: 2` — строки 2+ содержат
+`RecordedExternalObservationV2` (`{type, ingress, payload}`), где source-native
+событие официального SDK лежит внутри поля `payload`. Первая строка (meta-header)
+определяет, каким парсером читать остальные.
 
 ## Конфигурация
 

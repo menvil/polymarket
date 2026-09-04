@@ -279,10 +279,10 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
   });
 
   // ── CEX control-plane: контроллер создаёт immutable-поколения источников ─
-  // Транспорт адресуется парой `exchangeId + marketType` — так же, как
-  // контроллер ключует физический пул. Адресация одной биржей схлопнула бы
-  // spot и future одного экземпляра биржи, и один транспорт молча затирал бы
-  // другой.
+  // Транспорт адресуется тройкой `exchangeId + marketType + stream` — так же,
+  // как контроллер ключует физический пул. Более грубый ключ схлопнул бы либо
+  // spot с future одного экземпляра биржи, либо стакан со сделками, и один
+  // транспорт молча затирал бы другой.
   const cexTransportByPool = buildCexTransportIndex(config.cex.exchanges);
   const cexController = new CexSubscriptionController({
     sourceFactory: (sourceConfig) => {

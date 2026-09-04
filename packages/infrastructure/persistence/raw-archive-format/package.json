@@ -1,0 +1,44 @@
+{
+  "name": "@polymarket/raw-archive-format",
+  "version": "0.1.0",
+  "description": "Canonical wire contract and decoder of the replayable raw archive (format version 2)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:tests": "eslint __tests__ --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "lint:md": "markdownlint-cli2 --config ../../../../.markdownlint-cli2.jsonc \"README.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../../.markdownlint-cli2.jsonc --fix \"README.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "polymarket",
+    "archive",
+    "replay",
+    "raw-format",
+    "persistence"
+  ],
+  "author": "Ivan Moroz",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@jest/globals": "^29.0.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

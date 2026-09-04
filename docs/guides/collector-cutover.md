@@ -115,9 +115,11 @@ CEX-интерес выражается по ОДНОМУ владельцу н�
 
 ## Replay/backtest независимы
 
-Recorder пишет source-native `message.payload` в JSONL (`source → bus →
-recorder`). Replay читает JSONL → Reader → тот же bus → те же semantic
-адаптеры. `@polymarket/backtesting` НЕ импортирует ни коллектор, ни recorder —
+Recorder пишет наблюдения в JSONL (`source → bus → recorder`): archive
+envelope `{type, ingress, payload}` вокруг НЕИЗМЕНЁННОГО source-native
+`message.payload` (Replayable Raw Format V2, см.
+`docs/guides/replayable-raw-format-v2.md`). Replay читает JSONL → Reader →
+тот же bus → те же semantic адаптеры. `@polymarket/backtesting` НЕ импортирует ни коллектор, ни recorder —
 бэктест не поднимает Collector и live-контроллеры (структурный тест
 `contour-boundary.test.ts`, критерий I).
 

@@ -14,7 +14,7 @@
  * общий ExternalMessageBus
  *        ↓ subscribe('POLYMARKET_*')
  * ExternalMessageRecorder (этот класс)   ← независимый consumer
- *        ↓ message.payload  (ТОЛЬКО payload, без outer envelope)
+ *        ↓ toRecordedObservation(message)  (конверт ВОКРУГ payload)
  * DataRecorder / storage
  *        ↓
  * market JSONL file (.jsonl → .jsonl.gz)
@@ -30,19 +30,29 @@
  * - маршрутизирует RTDS-события по точному ключу фида (`topic` + `symbol`,
  *   а для settlement-потока TWAP — ещё и окно усреднения) — БЕЗ эвристик
  *   формата символа;
- * - передаёт в storage НЕИЗМЕНЁННЫЙ `message.payload`.
+ * - оборачивает сообщение в {@link RecordedExternalObservationV2}, НЕ трогая
+ *   `message.payload`.
  *
  * Buffering/flush/gzip/header/cleanup — ответственность storage
  * (`DataRecorder`), сюда не дублируются.
  *
- * ### Payload-only инвариант
+ * ### Инвариант Replayable Raw Format V2
  *
- * На диск попадает ТОЛЬКО `message.payload` (source-native SDK event):
- * canonical runtime metadata (`messageId`/`sequence`/`correlationId`/...) и
- * внешний routing discriminator (`POLYMARKET_MARKET`) принадлежат live
- * execution и НЕ записываются. Будущий Reader создаст НОВЫЙ ExternalMessage
- * вокруг того же payload — semantic adapter в live и replay получает
- * идентичное source-native представление.
+ * На диск попадает `{type, ingress, payload}`, где `payload` — тот же
+ * source-native объект, что пришёл на шину (та же ссылка: без
+ * clone/rename/flatten/normalize). Конверт добавляется СНАРУЖИ.
+ *
+ * `ingress` копируется напрямую из `message.metadata` того сообщения,
+ * которое реально пришло recorder-у: `runId`, `sequence` и high-resolution
+ * момент наблюдения. Без них после записи терялся бы точный порядок
+ * наблюдений МЕЖДУ Polymarket-файлом и CEX-партициями — физически это
+ * разные файлы, а vendor-timestamp-ы у них из разных часов.
+ *
+ * Live-only поля metadata (`messageId`/`correlationId`/`causationId`/
+ * `createdAt`) НЕ записываются: они принадлежат execution конкретного
+ * процесса, а не исторической временной линии. При replay сообщение получит
+ * СВОЮ runtime metadata, а записанный `ingress` — вход для replay
+ * scheduler-а.
  *
  * ### Policy отказов
  *
@@ -55,7 +65,13 @@ import type { ILogger } from '@polymarket/logger';
 import type { MarketId } from '@polymarket/ids';
 import type { MarketMeta } from '@polymarket/ports';
 import type { IExternalMessageBus } from '@polymarket/external-message-bus';
-import type { CexWindowRecorder, DataRecorder } from '@polymarket/data-collection';
+import type {
+  CexWindowRecordOutcome,
+  CexWindowRecorder,
+  DataRecorder,
+} from '@polymarket/data-collection';
+import { toRecordedObservation } from '@polymarket/raw-archive-format';
+import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import type {
   PolymarketCryptoBinanceExternalMessage,
   PolymarketCryptoChainlinkExternalMessage,
@@ -345,6 +361,15 @@ export interface ExternalMessageRecorderCexStats {
   readonly cexRecordsAccepted: number;
   /** Строк сознательно отброшено оконной политикой (до выравнивания/после close). */
   readonly cexRecordsDroppedInactive: number;
+  /**
+   * Наблюдений, чьё окно партиции УЖЕ было заархивировано.
+   *
+   * @remarks
+   * Отдельно от `cexRecordsDroppedInactive`: там — штатная политика
+   * («окно ещё не начиналось» / «recorder закрыт»), здесь — настоящая
+   * потеря наблюдения, чей ingress попал в завершённое окно.
+   */
+  readonly cexRecordsDroppedLate: number;
   /** Отказов приёма storage (сериализация/failed writer; залогированы storage). */
   readonly cexWriteFailures: number;
   /** Неожиданных исключений в CEX bus-handler-ах (защитный контур). */
@@ -485,6 +510,7 @@ export class ExternalMessageRecorder {
   private _cexMessagesRouted = 0;
   private _cexRecordsAccepted = 0;
   private _cexRecordsDroppedInactive = 0;
+  private _cexRecordsDroppedLate = 0;
   private _cexWriteFailures = 0;
   private _cexHandlerErrors = 0;
 
@@ -887,6 +913,7 @@ export class ExternalMessageRecorder {
       cexMessagesRouted: this._cexMessagesRouted,
       cexRecordsAccepted: this._cexRecordsAccepted,
       cexRecordsDroppedInactive: this._cexRecordsDroppedInactive,
+      cexRecordsDroppedLate: this._cexRecordsDroppedLate,
       cexWriteFailures: this._cexWriteFailures,
       cexHandlerErrors: this._cexHandlerErrors,
     };
@@ -1028,7 +1055,7 @@ export class ExternalMessageRecorder {
         return;
       }
       this._marketMessagesRouted++;
-      this._recordPayload(session, message.payload);
+      this._recordObservation(session, toRecordedObservation(message));
     } catch (error) {
       this._handlerErrors++;
       this._logger.error('Market message recording handler failed', {
@@ -1054,9 +1081,9 @@ export class ExternalMessageRecorder {
       return;
     }
     try {
-      this._routeRtdsPayload(
+      this._routeRtdsObservation(
         rtdsRoutingKey({ topic: message.payload.topic, symbol: message.payload.payload.symbol }),
-        message.payload,
+        toRecordedObservation(message),
       );
     } catch (error) {
       this._handlerErrors++;
@@ -1083,13 +1110,13 @@ export class ExternalMessageRecorder {
     }
     try {
       const payload = message.payload.payload;
-      this._routeRtdsPayload(
+      this._routeRtdsObservation(
         rtdsRoutingKey({
           topic: CHAINLINK_TWAP_TOPIC,
           symbol: payload.symbol,
           windowSeconds: payload.windowSeconds,
         }),
-        message.payload,
+        toRecordedObservation(message),
       );
     } catch (error) {
       this._handlerErrors++;
@@ -1103,20 +1130,23 @@ export class ExternalMessageRecorder {
    * Общий fan-out RTDS-наблюдения по всем сессиям, подписанным на фид.
    *
    * @param routingKey - Точный ключ фида ({@link rtdsRoutingKey})
-   * @param payload - НЕИЗМЕНЁННЫЙ source-native payload сообщения
+   * @param observation - V2-наблюдение с НЕИЗМЕНЁННЫМ source-native payload
    *
    * @remarks
    * Один RTDS-фид может использоваться несколькими активными рынками —
-   * payload записывается в файл КАЖДОЙ подписанной сессии (ровно одна
-   * строка на файл на входное сообщение).
+   * наблюдение записывается в файл КАЖДОЙ подписанной сессии (ровно одна
+   * строка на файл на входное сообщение). Конверт строится ОДИН раз на
+   * входное сообщение: все копии строки несут один и тот же `(runId,
+   * sequence)`, потому что это одно и то же наблюдение, размноженное по
+   * файлам, а не несколько разных.
    *
    * Ошибки storage изолируются НА КАЖДОЕ направление fan-out независимо:
    * отказ записи для одного рынка не лишает события остальные подписанные
    * рынки (storage failure — non-fatal, но наблюдаем: лог + `handlerErrors`).
    */
-  private _routeRtdsPayload(
+  private _routeRtdsObservation(
     routingKey: string,
-    payload: PolymarketExternalMessage['payload'],
+    observation: RecordedExternalObservationV2,
   ): void {
     const sessions = this._rtdsRouting.get(routingKey);
     if (!sessions || sessions.size === 0) {
@@ -1126,7 +1156,7 @@ export class ExternalMessageRecorder {
     this._rtdsMessagesRouted++;
     for (const session of sessions) {
       try {
-        this._recordPayload(session, payload);
+        this._recordObservation(session, observation);
       } catch (error) {
         this._handlerErrors++;
         this._logger.error('RTDS recording failed for market, continuing fan-out', {
@@ -1138,21 +1168,22 @@ export class ExternalMessageRecorder {
   }
 
   /**
-   * Передаёт payload storage-движку и учитывает исход в счётчиках.
+   * Передаёт V2-наблюдение storage-движку и учитывает исход в счётчиках.
    *
    * @param session - Recording-сессия рынка-адресата
-   * @param payload - НЕИЗМЕНЁННЫЙ source-native payload сообщения
+   * @param observation - V2-наблюдение с НЕИЗМЕНЁННЫМ source-native payload
    *
    * @remarks
-   * Payload уходит той же ссылкой — без clone/rename/flatten/normalize
-   * (PART 13). `'unregistered'` при живой сессии — рассинхрон
-   * session↔storage (finalize в обход recorder-а): логируется warn-ом.
+   * `observation.payload` — та же ссылка, что пришла на шину: без
+   * clone/rename/flatten/normalize (PART 13). `'unregistered'` при живой
+   * сессии — рассинхрон session↔storage (finalize в обход recorder-а):
+   * логируется warn-ом.
    */
-  private _recordPayload(
+  private _recordObservation(
     session: RecordingSession,
-    payload: PolymarketExternalMessage['payload'],
+    observation: RecordedExternalObservationV2,
   ): void {
-    const outcome = this._storage.recordMarketEvent(session.marketId, payload);
+    const outcome = this._storage.recordMarketEvent(session.marketId, observation);
     switch (outcome) {
       case 'recorded':
         this._recordsWritten++;
@@ -1184,10 +1215,13 @@ export class ExternalMessageRecorder {
    * @param message - Typed сообщение `CEX_ORDERBOOK`
    *
    * @remarks
-   * Регистраций нет: routing-идентичность (`exchangeId`/`symbol`/
-   * `marketType`) несёт сам typed payload; тип потока задаёт партицию
-   * (`orderbook`). В storage уходит НЕИЗМЕНЁННЫЙ `message.payload`
-   * (payload-only инвариант N-002/PART 17). Никогда не бросает.
+   * Регистраций нет: routing-идентичность (`exchangeId`/`marketType` +
+   * `symbol`) несёт сам typed payload; тип потока задаёт партицию
+   * (`orderbook`) и вместе с парой биржи/рынка образует canonical identity
+   * транспорта `exchangeId + marketType + stream`. В storage уходит
+   * V2-наблюдение с НЕИЗМЕНЁННЫМ `message.payload` внутри; окно партиции
+   * оконный storage выбирает по `ingress` ЭТОГО наблюдения, а не по
+   * wall-clock момента записи. Никогда не бросает.
    */
   private _onCexOrderbook(message: CexOrderbookExternalMessage): void {
     if (this._closed || !this._cex) {
@@ -1202,7 +1236,7 @@ export class ExternalMessageRecorder {
           payload.symbol,
           payload.marketType,
           'orderbook',
-          payload,
+          toRecordedObservation(message),
         ),
       );
     } catch (error) {
@@ -1231,7 +1265,7 @@ export class ExternalMessageRecorder {
           payload.symbol,
           payload.marketType,
           'trades',
-          payload,
+          toRecordedObservation(message),
         ),
       );
     } catch (error) {
@@ -1243,13 +1277,17 @@ export class ExternalMessageRecorder {
   }
 
   /** Учитывает исход оконной записи в счётчиках CEX-политики. */
-  private _countCexOutcome(outcome: 'recorded' | 'inactive' | 'failed'): void {
+  private _countCexOutcome(outcome: CexWindowRecordOutcome): void {
     switch (outcome) {
       case 'recorded':
         this._cexRecordsAccepted++;
         break;
       case 'inactive':
         this._cexRecordsDroppedInactive++;
+        break;
+      case 'late':
+        // Окно наблюдения уже заархивировано (storage залогировал причину)
+        this._cexRecordsDroppedLate++;
         break;
       case 'failed':
         // Ошибка уже залогирована storage

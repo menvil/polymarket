@@ -15,6 +15,7 @@ const config: Config = {
     '^@polymarket/external-message-bus$': '<rootDir>/../external-message-bus/src/index.ts',
     '^@polymarket/external-messages$': '<rootDir>/../external-messages/src/index.ts',
     '^@polymarket/data-collection$': '<rootDir>/../persistence/data-collection/src/index.ts',
+    '^@polymarket/raw-archive-format$': '<rootDir>/../persistence/raw-archive-format/src/index.ts',
     // polymarket-v2 нужен ТОЛЬКО тестам (типы CEX/PM-сообщений), не src.
     '^@polymarket/polymarket-v2$': '<rootDir>/../polymarket-v2/src/index.ts',
     '^@polymarket/cex-v2$': '<rootDir>/../cex-v2/src/index.ts',

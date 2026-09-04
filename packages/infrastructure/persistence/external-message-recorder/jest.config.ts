@@ -11,6 +11,7 @@ const config: Config = {
     // а не через приватные relative-пути — маппим имена на исходники.
     '^@polymarket/external-message-recorder$': '<rootDir>/src/index.ts',
     '^@polymarket/data-collection$': '<rootDir>/../data-collection/src/index.ts',
+    '^@polymarket/raw-archive-format$': '<rootDir>/../raw-archive-format/src/index.ts',
     '^@polymarket/polymarket-v2$': '<rootDir>/../../polymarket-v2/src/index.ts',
     '^@polymarket/cex-v2$': '<rootDir>/../../cex-v2/src/index.ts',
     '^@polymarket/external-message-bus$': '<rootDir>/../../external-message-bus/src/index.ts',

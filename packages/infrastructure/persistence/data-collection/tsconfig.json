@@ -7,6 +7,7 @@
       "@polymarket/ids":           ["../../../foundation/ids/src/index.ts"],
       "@polymarket/value-objects": ["../../../domain/value-objects/src/index.ts"],
       "@polymarket/ports":         ["../../../application/ports/src/index.ts"],
+      "@polymarket/raw-archive-format": ["../raw-archive-format/src/index.ts"],
       "@polymarket/order":         ["../../../domain/entities/order/src/index.ts"],
       "@polymarket/portfolio":     ["../../../domain/entities/portfolio/src/index.ts"]
     }

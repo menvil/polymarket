@@ -10,6 +10,7 @@
 import type { MarketId } from '@polymarket/ids';
 import type { MarketMeta } from '@polymarket/ports';
 import type { CexWindowRecordOutcome, RecordOutcome } from '@polymarket/data-collection';
+import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import type {
   CexRecordingStorage,
   PolymarketRecordingStorage,
@@ -21,6 +22,9 @@ export interface CexWindowWrite {
   readonly symbol: string;
   readonly marketType: string;
   readonly stream: string;
+  /** Конверт V2, который recorder передал storage. */
+  readonly observation: RecordedExternalObservationV2;
+  /** Source-native payload внутри конверта (та же ссылка, что на шине). */
   readonly payload: unknown;
 }
 
@@ -39,9 +43,16 @@ export class FakeCexWindowStorage implements CexRecordingStorage {
     symbol: string,
     marketType: string,
     stream: 'orderbook' | 'trades',
-    payload: unknown,
+    observation: RecordedExternalObservationV2,
   ): CexWindowRecordOutcome {
-    this.writes.push({ exchangeId, symbol, marketType, stream, payload });
+    this.writes.push({
+      exchangeId,
+      symbol,
+      marketType,
+      stream,
+      observation,
+      payload: observation.payload,
+    });
     return 'recorded';
   }
 
@@ -57,6 +68,9 @@ export class FakeCexWindowStorage implements CexRecordingStorage {
 /** Захваченная запись Polymarket-сессии. */
 export interface PolymarketWrite {
   readonly marketId: MarketId;
+  /** Конверт V2, который recorder передал storage. */
+  readonly observation: RecordedExternalObservationV2;
+  /** Source-native payload внутри конверта (та же ссылка, что на шине). */
   readonly payload: unknown;
 }
 
@@ -71,8 +85,11 @@ export class FakePolymarketRecordingStorage implements PolymarketRecordingStorag
     return true;
   }
 
-  public recordMarketEvent(marketId: MarketId, rawEvent: unknown): RecordOutcome {
-    this.writes.push({ marketId, payload: rawEvent });
+  public recordMarketEvent(
+    marketId: MarketId,
+    observation: RecordedExternalObservationV2,
+  ): RecordOutcome {
+    this.writes.push({ marketId, observation, payload: observation.payload });
     return 'recorded';
   }
 

@@ -25,6 +25,9 @@
   "references": [
     {
       "path": "../../../foundation/logger/tsconfig.build.json"
+    },
+    {
+      "path": "../raw-archive-format/tsconfig.build.json"
     }
   ]
 }

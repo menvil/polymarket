@@ -44,6 +44,9 @@
     },
     {
       "path": "../../foundation/timestamp/tsconfig.build.json"
+    },
+    {
+      "path": "../persistence/raw-archive-format/tsconfig.build.json"
     }
   ]
 }

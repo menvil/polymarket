@@ -98,6 +98,13 @@ import { ConsoleLogger, LogLevel } from '@polymarket/logger';
 import type { ILogger } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
+import {
+  RAW_ARCHIVE_FORMAT_VERSION,
+  decodeDetachedArchiveLine,
+  detectRawArchiveFormat,
+  readCexPartitionHeader,
+  toRecordedObservation,
+} from '@polymarket/raw-archive-format';
 import type { CexSourceConfig } from '@polymarket/cex-v2';
 import { createDataCollector } from '@polymarket/collect-data/runtime';
 import type {
@@ -176,15 +183,26 @@ const CEX_PLAN: readonly CexSourceConfig[] = [
   },
 ];
 
-/** Ключи canonical runtime-metadata, которым ЗАПРЕЩЕНО попадать в payload-строки. */
-const ENVELOPE_KEYS = [
+/**
+ * Live-only поля metadata, которым ЗАПРЕЩЕНО попадать в архив.
+ *
+ * @remarks
+ * Replayable Raw Format V2 записывает `ingress` (`runId`/`sequence` +
+ * high-resolution момент наблюдения) — это исторический ключ порядка. А вот
+ * identity доставки конкретного процесса (`messageId`/`correlationId`/
+ * `causationId`) и весь live-конверт (`metadata`) на диск не идут: при
+ * replay сообщение получит СВОЮ runtime metadata.
+ */
+const FORBIDDEN_LIVE_ONLY_KEYS = [
   'metadata',
   'messageId',
-  'sequence',
-  'runId',
   'correlationId',
   'causationId',
+  'createdAt',
 ] as const;
+
+/** Ровно те поля, из которых состоит V2-наблюдение. */
+const OBSERVATION_KEYS = ['ingress', 'payload', 'type'] as const;
 
 const MODE = process.env['CHECKPOINT_MODE'] === 'short' ? 'short' : 'full';
 /** Дренировать pending-финализации перед shutdown (full-режим). Off: `CHECKPOINT_DRAIN=0`. */
@@ -550,7 +568,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         ring = new Ring(RING_CAP);
         marketRings.set(marketId, ring);
       }
-      ring.push(JSON.stringify(message.payload));
+      ring.push(JSON.stringify(toRecordedObservation(message)));
     }),
     bus.subscribe('POLYMARKET_CRYPTO_BINANCE', (message) => {
       bump(busTotals, 'POLYMARKET_CRYPTO_BINANCE');
@@ -562,7 +580,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         ring = new Ring(RING_CAP);
         rtdsRings.set(key, ring);
       }
-      ring.push(JSON.stringify(message.payload));
+      ring.push(JSON.stringify(toRecordedObservation(message)));
     }),
     bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK', (message) => {
       bump(busTotals, 'POLYMARKET_CRYPTO_CHAINLINK');
@@ -574,7 +592,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         ring = new Ring(RING_CAP);
         rtdsRings.set(key, ring);
       }
-      ring.push(JSON.stringify(message.payload));
+      ring.push(JSON.stringify(toRecordedObservation(message)));
     }),
     bus.subscribe('POLYMARKET_CRYPTO_CHAINLINK_TWAP', (message) => {
       bump(busTotals, 'POLYMARKET_CRYPTO_CHAINLINK_TWAP');
@@ -588,7 +606,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         ring = new Ring(RING_CAP);
         rtdsRings.set(key, ring);
       }
-      ring.push(JSON.stringify(message.payload));
+      ring.push(JSON.stringify(toRecordedObservation(message)));
     }),
     bus.subscribe('CEX_ORDERBOOK', (message) => {
       bump(busTotals, 'CEX_ORDERBOOK');
@@ -605,7 +623,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         const key = `${payload.exchangeId}\n${payload.symbol}\norderbook`;
         const store = cexSampleStore.get(key) ?? [];
         if (store.length < 3) {
-          store.push(JSON.stringify(payload));
+          store.push(JSON.stringify(toRecordedObservation(message)));
           cexSampleStore.set(key, store);
         }
       }
@@ -625,7 +643,7 @@ async function runComposition(options: CompositionOptions): Promise<CompositionE
         const key = `${payload.exchangeId}\n${payload.symbol}\ntrades`;
         const store = cexSampleStore.get(key) ?? [];
         if (store.length < 3) {
-          store.push(JSON.stringify(payload));
+          store.push(JSON.stringify(toRecordedObservation(message)));
           cexSampleStore.set(key, store);
         }
       }
@@ -1053,9 +1071,21 @@ interface ValidationReport {
   };
 }
 
-/** Есть ли в распарсенной строке запрещённые envelope-ключи. */
+/**
+ * Проверяет строку архива на соответствие конверту V2.
+ *
+ * @param parsed - Распарсенная строка архива
+ * @returns `true` — конверт не тот, что должен писать recorder
+ *
+ * @remarks
+ * Строгая проверка: ровно три поля `{type, ingress, payload}` и ни одного
+ * live-only поля metadata на верхнем уровне. Лишнее поле означало бы, что
+ * на диск утекло что-то помимо наблюдения.
+ */
 function hasEnvelopeLeak(parsed: Record<string, unknown>): boolean {
-  return ENVELOPE_KEYS.some((key) => key in parsed);
+  if (FORBIDDEN_LIVE_ONLY_KEYS.some((key) => key in parsed)) return true;
+  const keys = Object.keys(parsed).sort();
+  return keys.length !== OBSERVATION_KEYS.length || keys.some((key, i) => key !== OBSERVATION_KEYS[i]);
 }
 
 /**
@@ -1171,17 +1201,24 @@ function validateArtifacts(
     const lineSet = new Set<string>();
     for (const line of lines.slice(1)) {
       lineSet.add(line);
-      let parsed: Record<string, unknown>;
+      let envelope: Record<string, unknown>;
       try {
-        parsed = JSON.parse(line) as Record<string, unknown>;
+        envelope = JSON.parse(line) as Record<string, unknown>;
       } catch {
         parseErrors++;
         continue;
       }
-      if (hasEnvelopeLeak(parsed)) {
+      if (hasEnvelopeLeak(envelope)) {
         envelopeLeaks++;
         continue;
       }
+      // V2: конверт снят декодером, классификация идёт по source-native payload
+      const observation = decodeDetachedArchiveLine(line);
+      if (observation === undefined || observation.timingQuality !== 'EXACT_INGRESS') {
+        parseErrors++;
+        continue;
+      }
+      const parsed = observation.payload as Record<string, unknown>;
       if ('exchangeId' in parsed || 'orderBook' in parsed || 'trade' in parsed) {
         crossRouted++;
         continue;
@@ -1430,21 +1467,53 @@ function validateArtifacts(
       report.violations.push(`empty completed CEX partition: ${file}`);
       continue;
     }
-    for (const line of lines) {
+
+    // LINE 1 — header партиции: формат и routing identity объявлены В ФАЙЛЕ,
+    // а не выводятся из имени. Имя проверяется ПРОТИВ header-а, не наоборот.
+    const format = detectRawArchiveFormat(lines[0]);
+    const partitionHeader = readCexPartitionHeader(format);
+    if (partitionHeader === undefined) {
+      report.cex.identityMismatches++;
+      report.violations.push(
+        `CEX partition without formatVersion ${String(RAW_ARCHIVE_FORMAT_VERSION)} header: ${file}`,
+      );
+      continue;
+    }
+    if (
+      partitionHeader.exchangeId !== fileExchange ||
+      partitionHeader.symbol.replace(/[/:]/g, '-') !== fileSymbol ||
+      partitionHeader.marketType !== fileMarketType ||
+      partitionHeader.stream !== fileStream
+    ) {
+      report.cex.identityMismatches++;
+      report.violations.push(`CEX header/filename identity mismatch: ${file}`);
+    }
+    if (lines.length === 1) {
+      report.violations.push(`CEX partition with header but no observations: ${file}`);
+      continue;
+    }
+
+    for (const line of lines.slice(1)) {
       report.cex.totalLines++;
       report.cex.perExchangeLines[dirExchange] =
         (report.cex.perExchangeLines[dirExchange] ?? 0) + 1;
-      let parsed: Record<string, unknown>;
+      let envelope: Record<string, unknown>;
       try {
-        parsed = JSON.parse(line) as Record<string, unknown>;
+        envelope = JSON.parse(line) as Record<string, unknown>;
       } catch {
         report.cex.parseErrors++;
         continue;
       }
-      if (hasEnvelopeLeak(parsed)) {
+      if (hasEnvelopeLeak(envelope)) {
         report.cex.envelopeLeaks++;
         continue;
       }
+      const observation = decodeDetachedArchiveLine(line);
+      if (observation === undefined || observation.timingQuality !== 'EXACT_INGRESS') {
+        report.cex.parseErrors++;
+        continue;
+      }
+      const parsed = observation.payload as Record<string, unknown>;
       const isOrderbook = 'orderBook' in parsed;
       const isTrade = 'trade' in parsed;
       if (!isOrderbook && !isTrade) {
@@ -1453,6 +1522,12 @@ function validateArtifacts(
       }
       if (isOrderbook) report.cex.orderbookLines++;
       if (isTrade) report.cex.tradeLines++;
+      // Discriminator конверта обязан совпадать с формой payload: иначе replay
+      // опубликовал бы наблюдение на чужую typed-подписку
+      const expectedType = isOrderbook ? 'CEX_ORDERBOOK' : 'CEX_TRADE';
+      if (observation.type !== expectedType) {
+        report.cex.identityMismatches++;
+      }
       const lineExchange = String(parsed['exchangeId'] ?? '');
       const lineSymbol = String(parsed['symbol'] ?? '');
       const lineMarketType = String(parsed['marketType'] ?? '');
@@ -1516,6 +1591,7 @@ function validateArtifacts(
       rotationFailures?: number;
       streamCloseFailures?: number;
       compressionFailures?: number;
+      lateObservations?: number;
     };
     bus?: { handlerErrorsTotal?: number; rejectedPublicationsTotal?: number; queueSize?: number };
     cexSources?: Array<{
@@ -1541,6 +1617,11 @@ function validateArtifacts(
   }
   if ((finalStats.windows?.compressionFailures ?? 0) > 0) {
     report.violations.push('CEX window compression failures > 0');
+  }
+  if ((finalStats.windows?.lateObservations ?? 0) > 0) {
+    // Наблюдение, чьё окно ingress уже заархивировано, — настоящая потеря
+    // данных, а не policy: партиция закрылась раньше, чем дошла строка
+    report.violations.push('CEX window late observations > 0 (partition closed before ingress)');
   }
   if ((finalStats.bus?.rejectedPublicationsTotal ?? 0) > 0) {
     report.violations.push('bus rejected publications > 0');

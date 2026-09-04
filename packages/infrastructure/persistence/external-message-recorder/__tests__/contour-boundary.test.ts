@@ -58,6 +58,9 @@ const ALLOWED_SOURCE_IMPORTS = new Set([
   // polymarket-v2; type-only — transport recorder-у по-прежнему недоступен)
   '@polymarket/cex-v2',
   '@polymarket/ports',
+  // Replayable Raw Format V2: canonical wire-контракт архива (leaf без
+  // зависимостей). Формат обязан быть ОДИН на writer и reader-ов.
+  '@polymarket/raw-archive-format',
 ]);
 
 /** Рекурсивно собирает все .ts-файлы каталога (включая вложенные). */

@@ -18,6 +18,7 @@
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
     "@polymarket/ports": "0.1.0",
+    "@polymarket/raw-archive-format": "0.1.0",
     "@polymarket/timestamp": "0.1.0",
     "@polymarket/value-objects": "0.1.0"
   },

@@ -104,10 +104,13 @@ ExternalMessageBus
 
 ## 6. Recorder rule
 
-Будущий Recorder персистит `message.payload` (source-native SDK event),
-а НЕ canonical envelope/`MessageMetadata`. Сериализуемость payload
-(JSON.stringify без потерь, с сохранением discriminators) закреплена
-тестами и live smoke.
+Recorder персистит `message.payload` (source-native SDK event) НЕИЗМЕНЁННЫМ,
+внутри archive envelope `{type, ingress, payload}` (Replayable Raw Format
+V2). Canonical live-конверт и `MessageMetadata` на диск не идут: из metadata
+в архив попадает только исторический `ingress` (`runId`/`sequence` + момент
+наблюдения), а `messageId`/`correlationId`/`causationId`/`createdAt` —
+нет. Сериализуемость payload (JSON.stringify без потерь, с сохранением
+discriminators) закреплена тестами и live smoke.
 
 ## 7. Replay invariant
 

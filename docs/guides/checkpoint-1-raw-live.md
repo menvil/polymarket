@@ -85,10 +85,18 @@ SIGINT прерывает. Подробности семантики —
   по текстам существующих логов (`Planned restart …`,
   `…failed permanently`, cooldown).
 
-### Exact-match доказательство payload-only
+### Exact-match доказательство формата архива
 
-Валидация сравнивает строки файлов с точными JSON-строками payload,
-опубликованными на bus:
+> **Формат обновлён после CHECKPOINT #1.** Прогон, зафиксированный этим
+> документом, писал payload-only строки. С Replayable Raw Format V2 data-line
+> — это `RecordedExternalObservationV2` (`{type, ingress, payload}`), а
+> CEX-партиция начинается с `formatVersion: 2` header-а. Runner
+> (`scripts/checkpoint-raw-live.mts`) обновлён под новый формат: сэмплы
+> сравниваются с полной строкой архива, а классификация идёт по декодированному
+> `payload`. Контракт формата — `@polymarket/raw-archive-format`.
+
+Валидация сравнивает строки файлов с точными JSON-строками наблюдений,
+опубликованных на bus:
 
 - CEX: mid-run сэмплы по каждой партиции (биржа×символ×поток) — строка
   обязана присутствовать в завершённой партиции той же identity;
@@ -97,10 +105,12 @@ SIGINT прерывает. Подробности семантики —
   сессий ≤10s перекрывается глубиной ring-а).
 
 Плюс структурные проверки каждой строки каждого артефакта: JSON parse,
-отсутствие envelope-ключей (`metadata`/`messageId`/`sequence`/`runId`/
-`correlationId`/`causationId`), классификация market/RTDS/CEX, routing
-identity (для CEX — сверка exchange/symbol/marketType/stream строки с
-именем и директорией файла).
+строгая форма конверта (ровно `{type, ingress, payload}`) и отсутствие
+live-only полей metadata (`metadata`/`messageId`/`correlationId`/
+`causationId`/`createdAt`), классификация market/RTDS/CEX по
+декодированному payload, routing identity (для CEX — сверка
+exchange/symbol/marketType/stream ЗАГОЛОВКА партиции с именем и директорией
+файла, плюс соответствие discriminator-а форме payload).
 
 ### Ловушка классификации строк (исправленный дефект runner-а)
 

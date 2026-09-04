@@ -28,6 +28,7 @@
       "@polymarket/ports":            ["../../packages/application/ports/src/index.ts"],
       "@polymarket/market-discovery": ["../../packages/application/market-discovery/src/index.ts"],
       "@polymarket/data-collection":  ["../../packages/infrastructure/persistence/data-collection/src/index.ts"],
+      "@polymarket/raw-archive-format": ["../../packages/infrastructure/persistence/raw-archive-format/src/index.ts"],
       "@polymarket/exchange/ws":       ["../../packages/infrastructure/polymarket/ws/index.ts"],
       "@polymarket/exchange/adapters": ["../../packages/infrastructure/polymarket/adapters/index.ts"],
       "@polymarket/exchange/rest":     ["../../packages/infrastructure/polymarket/rest/index.ts"],

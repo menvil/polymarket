@@ -54,6 +54,7 @@
     "@polymarket/external-messages": "0.1.0",
     "@polymarket/messages": "0.1.0",
     "@polymarket/polymarket-v2": "0.1.0",
+    "@polymarket/raw-archive-format": "0.1.0",
     "@polymarket/result": "^0.1.0",
     "@polymarket/time": "0.1.0",
     "@polymarket/value-objects": "0.1.0",

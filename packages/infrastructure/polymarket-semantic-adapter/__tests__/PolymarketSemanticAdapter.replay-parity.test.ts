@@ -13,6 +13,7 @@
 import { describe, expect, it } from '@jest/globals';
 import type { EventBusEvent } from '@polymarket/event-bus';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
+import { decodeDetachedArchiveLine, toRecordedObservation } from '@polymarket/raw-archive-format';
 import {
   MARKET_ID,
   TOKEN_A,
@@ -105,22 +106,25 @@ function project(events: readonly EventBusEvent[]): unknown[] {
 }
 
 /**
- * Прогоняет записанные payload через новый адаптер, как это сделает replay.
+ * Прогоняет записанные строки архива через адаптер, как это сделает replay.
  *
- * @param recorded - Payload наблюдений в том виде, в каком они лежат в архиве
+ * @param lines - Строки архива (Replayable Raw Format V2)
  * @returns Доменный слепок semantic-выхода
  *
  * @remarks
- * Сообщение пересобирается из payload и СВЕЖЕЙ metadata — ровно так и
- * поведёт себя Reader: сырой payload он читает из файла, а identity
- * доставки создаёт заново.
+ * Сообщение пересобирается из ПРОЧИТАННОГО payload и СВЕЖЕЙ metadata —
+ * ровно так и поведёт себя Reader: `type` и source-native payload он берёт
+ * из архива, а identity доставки создаёт заново. Исторический `ingress`
+ * НЕ выдаётся за metadata нового runtime.
  */
-async function replay(recorded: readonly unknown[]): Promise<unknown[]> {
+async function replay(lines: readonly string[]): Promise<unknown[]> {
   const h = createHarness();
-  for (const payload of recorded) {
+  for (const line of lines) {
+    const observation = decodeDetachedArchiveLine(line);
+    expect(observation?.timingQuality).toBe('EXACT_INGRESS');
     await h.bus.publish({
-      type: (payload as { __type: string }).__type,
-      payload: (payload as { __payload: unknown }).__payload,
+      type: observation!.type,
+      payload: observation!.payload,
       metadata: h.metadataGenerator.nextRoot(),
     } as unknown as PolymarketExternalMessage);
   }
@@ -130,18 +134,18 @@ async function replay(recorded: readonly unknown[]): Promise<unknown[]> {
 }
 
 /**
- * Сериализует raw-сообщения так, как их сохраняет recorder (payload-only).
+ * Сериализует raw-сообщения ровно так, как их кладёт на диск recorder.
  *
  * @param messages - Live raw-сообщения
- * @returns JSON round-trip записанных payload
+ * @returns Строки архива Replayable Raw Format V2
+ *
+ * @remarks
+ * Тот же `toRecordedObservation` + `JSON.stringify`, что в
+ * `ExternalMessageRecorder`: паритет проверяется на НАСТОЯЩЕМ wire-формате,
+ * а не на его подобии.
  */
-function persist(messages: readonly PolymarketExternalMessage[]): unknown[] {
-  return messages.map(
-    (message) =>
-      JSON.parse(
-        JSON.stringify({ __type: message.type, __payload: message.payload }),
-      ) as unknown,
-  );
+function persist(messages: readonly PolymarketExternalMessage[]): string[] {
+  return messages.map((message) => JSON.stringify(toRecordedObservation(message)));
 }
 
 describe('live raw и replayed raw дают одинаковое semantic-преобразование', () => {
@@ -261,10 +265,10 @@ describe('live raw и replayed raw дают одинаковое semantic-пре
     live.adapter.close();
 
     const h = createHarness();
-    const persisted = persist([raw])[0] as { __type: string; __payload: unknown };
+    const persisted = decodeDetachedArchiveLine(persist([raw])[0]!)!;
     await h.bus.publish({
-      type: persisted.__type,
-      payload: persisted.__payload,
+      type: persisted.type,
+      payload: persisted.payload,
       metadata: h.metadataGenerator.nextRoot(),
     } as unknown as PolymarketExternalMessage);
 
@@ -287,10 +291,14 @@ describe('записанный payload остаётся source-native', () => {
     });
     live.adapter.close();
 
-    const persisted = persist([raw])[0] as {
-      __payload: { payload: { bids: { price: unknown; size: unknown }[] } };
+    const persisted = decodeDetachedArchiveLine(persist([raw])[0]!)!;
+    const payload = persisted.payload as {
+      payload: { bids: { price: unknown; size: unknown }[] };
     };
-    expect(persisted.__payload.payload.bids[0]!.price).toBe('0.50');
-    expect(persisted.__payload.payload.bids[0]!.size).toBe('10');
+    expect(payload.payload.bids[0]!.price).toBe('0.50');
+    expect(payload.payload.bids[0]!.size).toBe('10');
+    // Конверт не подменяет payload: он лежит РЯДОМ с ingress, а не вместо него
+    expect(persisted.type).toBe(raw.type);
+    expect(persisted.ingress?.sequence).toBe(raw.metadata.sequence);
   });
 });

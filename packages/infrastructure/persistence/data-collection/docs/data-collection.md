@@ -46,27 +46,35 @@ outputDir/
 (`journalDir`), отдельный файл на рынок (`*.journal.jsonl`), с собственным набором типов
 записи (`session_start`/`decision`/`fill`/`resolution`/`session_end`).
 
-### `formatVersion` — дискриминатор формата payload-строк (N-002)
+### `formatVersion` — дискриминатор формата строк наблюдений
 
 `DataRecorderConfig.formatVersion` — свойство экземпляра рекордера, а не рынка:
 один экземпляр пишет строки только одного формата.
 
 - Не задан → meta-строка без поля `formatVersion`; строки 2+ — legacy wire-формат
   старого коллектора (`{event_type, asset_id, ...}` + synthetic `{t:'crypto_price'}`).
-- `formatVersion: 2` → строки 2+ — source-native события официального SDK как их
-  отдаёт `@polymarket/client` (`{topic:'market', type:'book', payload:{...}}`,
-  RTDS `{topic:'prices.crypto.*', type:'update', ...}`).
+- `formatVersion: 2` → **Replayable Raw Format V2**: строки 2+ —
+  `RecordedExternalObservationV2` (`{type, ingress, payload}`), где `payload` —
+  НЕИЗМЕНЁННОЕ source-native событие официального SDK
+  (`{topic:'market', type:'book', payload:{...}}`, RTDS
+  `{topic:'prices.crypto.*', type:'update', ...}`), а `ingress` — исторический
+  ключ порядка `(runId, sequence)` и момент наблюдения.
 
-Reader/бектест обязан по первой строке выбрать парсер строк 2+.
+Reader/бектест обязан по первой строке выбрать парсер строк 2+ — контракт и
+decoder в `@polymarket/raw-archive-format`, подробности в
+`docs/guides/replayable-raw-format-v2.md`.
 
 ### Маршрутизация записи: два пути
 
 - `recordEvent(tokenId, raw)` — legacy-путь: обратный индекс `tokenId → writer`
   (wire-формат несёт `asset_id`, source market id недоступен вызывающему).
-- `recordMarketEvent(marketId, raw): RecordOutcome` — V2-путь: прямой ключ
-  `String(marketId)` (== conditionId == `payload.market` SDK-события). SDK
-  `price_change` несёт изменения по нескольким tokenIds — записывается ОДНОЙ
-  строкой в файл рынка, без разбиения. Исход наблюдаем (`RecordOutcome`),
+- `recordMarketEvent(marketId, observation): RecordOutcome` — V2-путь: прямой
+  ключ `String(marketId)` (== conditionId == `payload.market` SDK-события).
+  Принимает готовое V2-наблюдение: ingress-метку знает только тот, кому пришёл
+  `ExternalMessage`, и пересобирать её в storage (по `Date.now()`) значило бы
+  записать время нашей обработки вместо времени наблюдения. SDK `price_change`
+  несёт изменения по нескольким tokenIds — записывается ОДНОЙ строкой в файл
+  рынка, без разбиения. Исход наблюдаем (`RecordOutcome`),
   `'failed'` возвращается при ошибке сериализации, упавшей активации writer-а
   и недоступном/разрушенном stream — событие НЕ ставится в буфер, который
   никогда не будет сброшен; метод не бросает.

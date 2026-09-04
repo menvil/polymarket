@@ -43,6 +43,7 @@
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
+    "@polymarket/raw-archive-format": "0.1.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^26.1.1",
     "jest": "^29.7.0",

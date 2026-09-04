@@ -16,10 +16,14 @@
  *     ...
  * ```
  *
- * ### Первая запись в файл — meta-событие:
+ * ### Первая запись в файл — meta-событие (header):
  * ```json
- * {"t":"meta","ts":1234567890,"marketId":"0x...","question":"...","tokenIds":["0x..."]}
+ * {"t":"meta","formatVersion":2,"ts":1234567890,"marketId":"0x...","question":"...","tokenIds":["0x..."]}
  * ```
+ *
+ * `formatVersion: 2` объявляет Replayable Raw Format V2: строки 2+ — это
+ * `RecordedExternalObservationV2` (`{type, ingress, payload}`), а не bare
+ * payload. Без поля `formatVersion` header остаётся legacy-байт-совместимым.
  *
  * ### Буферизация:
  * - События накапливаются в памяти (строки NDJSON) в порядке поступления
@@ -40,7 +44,7 @@
  * const recorder = new DataRecorder(config, new NDJSONFormatter(), new GzipCompressor(), logger);
  * recorder.registerMarket({ marketId, question, tokenIds, expiresAt });
  * recorder.recordEvent('0xyes...', { event_type: 'book', ... });
- * recorder.recordMarketEvent(marketId, sdkEvent); // V2: маршрутизация по рынку
+ * recorder.recordMarketEvent(marketId, toRecordedObservation(message)); // V2
  * await recorder.finalizeMarket(marketId, 'EXPIRED');
  * await recorder.close();
  * ```
@@ -51,6 +55,8 @@ import * as readline from 'node:readline';
 import type { ILogger } from '@polymarket/logger';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { IMarketDataRecorder, MarketMeta } from '@polymarket/ports';
+import { RAW_ARCHIVE_FORMAT_VERSION } from '@polymarket/raw-archive-format';
+import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import type { DataRecorderConfig } from './config/DataRecorderConfig.js';
 import type { IFormatter } from './formatters/IFormatter.js';
 import type { GzipCompressor } from './compression/GzipCompressor.js';
@@ -640,8 +646,22 @@ export class DataRecorder implements IMarketDataRecorder {
    * Никогда не бросает. O(1) поиск через tokenIndex.
    * Строка попадает в буфер в порядке прихода — flush не пересортировывает.
    * Если рынок ещё не достиг `startsAt` — события игнорируются (не записываются).
+   *
+   * LEGACY-путь: пишет bare `rawEvent`, БЕЗ ingress-конверта. В экземпляре,
+   * объявившем `formatVersion: 2`, такая строка недопустима — header обещает
+   * читателю {@link RecordedExternalObservationV2}, и bare-строка стала бы
+   * для V2-decoder-а повреждением. Поэтому в V2-режиме вызов игнорируется:
+   * V2-датасеты наполняются только через
+   * {@link DataRecorder.recordMarketEvent}.
    */
   public recordEvent(tokenId: InstrumentId, rawEvent: unknown): void {
+    // Формат — свойство экземпляра: смешивать legacy-строки с V2-датасетом
+    // нельзя. Проверка идёт ДО поиска writer-а: это policy пайплайна, а не
+    // состояние конкретного рынка
+    if (this._config.formatVersion === RAW_ARCHIVE_FORMAT_VERSION) {
+      return;
+    }
+
     const writer = this._tokenIndex.get(tokenId);
     if (!writer) return;
 
@@ -660,10 +680,11 @@ export class DataRecorder implements IMarketDataRecorder {
   }
 
   /**
-   * Записывает source-native событие в буфер по source market id (синхронно).
+   * Записывает V2-наблюдение в буфер по source market id (синхронно).
    *
    * @param marketId - ID рынка (conditionId) — ключ регистрации writer-а
-   * @param rawEvent - Source-native payload (например, decoded SDK-событие)
+   * @param observation - V2-наблюдение (`{type, ingress, payload}`);
+   *   `payload` внутри — НЕИЗМЕНЁННЫЙ source-native объект
    * @returns Исход записи (см. {@link RecordOutcome})
    *
    * @remarks
@@ -673,6 +694,11 @@ export class DataRecorder implements IMarketDataRecorder {
    * `price_change` с изменениями по нескольким tokenIds записывается ОДНОЙ
    * строкой в файл рынка.
    *
+   * На диск уходит РОВНО переданный конверт: storage не строит его сам —
+   * ingress-метку знает только тот, кому пришёл `ExternalMessage`, и
+   * пересобирать её здесь (по `Date.now()`) значило бы записать время нашей
+   * обработки вместо времени наблюдения.
+   *
    * Никогда не бросает: ошибка сериализации, упавшая активация writer-а и
    * недоступный/разрушенный stream логируются и возвращаются как `'failed'` —
    * recording failure наблюдаем, но не убивает вызывающего. Событие НЕ
@@ -680,11 +706,14 @@ export class DataRecorder implements IMarketDataRecorder {
    *
    * @example
    * ```typescript
-   * const outcome = recorder.recordMarketEvent(marketId, sdkEvent);
+   * const outcome = recorder.recordMarketEvent(marketId, toRecordedObservation(message));
    * if (outcome === 'failed') stats.serializationFailures++;
    * ```
    */
-  public recordMarketEvent(marketId: MarketId, rawEvent: unknown): RecordOutcome {
+  public recordMarketEvent(
+    marketId: MarketId,
+    observation: RecordedExternalObservationV2,
+  ): RecordOutcome {
     const writer = this._writers.get(String(marketId));
     if (!writer) return 'unregistered';
 
@@ -705,7 +734,7 @@ export class DataRecorder implements IMarketDataRecorder {
 
     let line: string;
     try {
-      line = this._formatter.formatRecord(rawEvent as object);
+      line = this._formatter.formatRecord(observation);
     } catch (err) {
       this._logger.error('Failed to serialize market event for recording', {
         marketId: String(marketId),

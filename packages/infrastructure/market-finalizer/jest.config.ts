@@ -15,6 +15,8 @@ const config: Config = {
     '^@polymarket/external-message-recorder$':
       '<rootDir>/../persistence/external-message-recorder/src/index.ts',
     '^@polymarket/data-collection$': '<rootDir>/../persistence/data-collection/src/index.ts',
+    '^@polymarket/raw-archive-format$':
+      '<rootDir>/../persistence/raw-archive-format/src/index.ts',
     '^@polymarket/external-message-bus$': '<rootDir>/../external-message-bus/src/index.ts',
     '^@polymarket/external-messages$': '<rootDir>/../external-messages/src/index.ts',
     // Foundation/Domain/Application транзитивные зависимости. Пакет живёт в

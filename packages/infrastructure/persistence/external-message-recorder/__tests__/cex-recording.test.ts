@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { MessageMetadataGenerator } from '@polymarket/messages';
+import type { MessageMetadata } from '@polymarket/messages';
 import { LiveClock } from '@polymarket/time';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import type { CexExternalMessage, CexOrderbookPayload, CexTradePayload } from '@polymarket/cex-v2';
@@ -62,44 +63,64 @@ function tradePayload(overrides: Partial<CexTradePayload> = {}): CexTradePayload
   };
 }
 
-async function publishOb(payload: CexOrderbookPayload): Promise<void> {
-  const result = await bus.publish({
-    type: 'CEX_ORDERBOOK',
-    payload,
-    metadata: generator.nextRoot(),
-  });
+async function publishOb(payload: CexOrderbookPayload): Promise<MessageMetadata> {
+  const metadata = generator.nextRoot();
+  const result = await bus.publish({ type: 'CEX_ORDERBOOK', payload, metadata });
   expect(result.ok).toBe(true);
+  return metadata;
 }
 
-async function publishTrade(payload: CexTradePayload): Promise<void> {
-  const result = await bus.publish({ type: 'CEX_TRADE', payload, metadata: generator.nextRoot() });
+async function publishTrade(payload: CexTradePayload): Promise<MessageMetadata> {
+  const metadata = generator.nextRoot();
+  const result = await bus.publish({ type: 'CEX_TRADE', payload, metadata });
   expect(result.ok).toBe(true);
+  return metadata;
+}
+
+/** Ingress-метка, которую обязан получить конверт наблюдения. */
+function expectedIngress(metadata: MessageMetadata): Record<string, unknown> {
+  return {
+    runId: metadata.runId,
+    sequence: metadata.sequence,
+    createdAtUnixSeconds: metadata.createdAtUnixSeconds,
+    millisecondOfSecond: metadata.millisecondOfSecond,
+    microsecondOfMillisecond: metadata.microsecondOfMillisecond,
+    nanosecondOfMicrosecond: metadata.nanosecondOfMicrosecond,
+  };
 }
 
 describe('CEX routing', () => {
-  it('CEX_ORDERBOOK → write(..., orderbook) с routing-полями из typed payload', async () => {
+  it('TEST D: CEX_ORDERBOOK → V2-наблюдение с type + ingress + нетронутым payload', async () => {
     recorder.start();
     const payload = orderbookPayload();
-    await publishOb(payload);
+    const metadata = await publishOb(payload);
 
     expect(cexStorage.writes).toHaveLength(1);
     const write = cexStorage.writes[0]!;
+    // Routing идёт по типизированному payload (identity транспорта —
+    // exchangeId + marketType + stream)
     expect(write.exchangeId).toBe('binance');
     expect(write.symbol).toBe('BTC/USDT:USDT');
     expect(write.marketType).toBe('swap');
     expect(write.stream).toBe('orderbook');
+    // Конверт: discriminator + ingress ТОГО сообщения
+    expect(write.observation.type).toBe('CEX_ORDERBOOK');
+    expect(write.observation.ingress).toEqual(expectedIngress(metadata));
     // Payload уходит ТОЙ ЖЕ ссылкой — без clone/rename/flatten
-    expect(write.payload).toBe(payload);
+    expect(write.observation.payload).toBe(payload);
   });
 
-  it('CEX_TRADE → write(..., trades)', async () => {
+  it('TEST E: CEX_TRADE → V2-наблюдение партиции trades', async () => {
     recorder.start();
     const payload = tradePayload();
-    await publishTrade(payload);
+    const metadata = await publishTrade(payload);
 
     expect(cexStorage.writes).toHaveLength(1);
-    expect(cexStorage.writes[0]!.stream).toBe('trades');
-    expect(cexStorage.writes[0]!.payload).toBe(payload);
+    const write = cexStorage.writes[0]!;
+    expect(write.stream).toBe('trades');
+    expect(write.observation.type).toBe('CEX_TRADE');
+    expect(write.observation.ingress).toEqual(expectedIngress(metadata));
+    expect(write.observation.payload).toBe(payload);
   });
 
   it('разные биржи/типы рынка маршрутизируются raw-полями payload (без эвристик)', async () => {
@@ -185,6 +206,7 @@ describe('CEX lifecycle', () => {
       cexMessagesRouted: 0,
       cexRecordsAccepted: 0,
       cexRecordsDroppedInactive: 0,
+      cexRecordsDroppedLate: 0,
       cexWriteFailures: 0,
       cexHandlerErrors: 0,
     });
@@ -198,13 +220,16 @@ describe('CEX stats / защитный контур', () => {
     await publishOb(orderbookPayload());
     cexStorage.outcomeOverride = 'inactive';
     await publishTrade(tradePayload());
+    cexStorage.outcomeOverride = 'late';
+    await publishOb(orderbookPayload());
     cexStorage.outcomeOverride = 'failed';
     await publishOb(orderbookPayload());
 
     expect(recorder.getCexStats()).toEqual({
-      cexMessagesRouted: 3,
+      cexMessagesRouted: 4,
       cexRecordsAccepted: 1,
       cexRecordsDroppedInactive: 1,
+      cexRecordsDroppedLate: 1,
       cexWriteFailures: 1,
       cexHandlerErrors: 0,
     });

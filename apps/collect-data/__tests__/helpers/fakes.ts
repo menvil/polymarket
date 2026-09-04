@@ -162,6 +162,7 @@ const EMPTY_RECORDER_CEX_STATS: ExternalMessageRecorderCexStats = {
   cexMessagesRouted: 0,
   cexRecordsAccepted: 0,
   cexRecordsDroppedInactive: 0,
+  cexRecordsDroppedLate: 0,
   cexWriteFailures: 0,
   cexHandlerErrors: 0,
 };
@@ -214,6 +215,7 @@ const EMPTY_CEX_WINDOW_STATS: CexWindowRecorderStats = {
   rotationFailures: 0,
   streamCloseFailures: 0,
   compressionFailures: 0,
+  lateObservations: 0,
 };
 
 /** Порт storage-политики CEX-окон: cleanup + статистика. */
