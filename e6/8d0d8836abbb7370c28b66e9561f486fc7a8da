@@ -1,0 +1,51 @@
+packages/infrastructure/dns-override/README.md
+  s_c99ec2b699d51d::t_683f31078a708b 45,57-77
+apps/collect-data/src/runtime/processBootstrap.ts
+  s_c99ec2b699d51d::t_044cef3fdef2ac 71-84
+packages/infrastructure/polymarket-v2/__tests__/PolymarketSource.supervision.test.ts
+  s_c99ec2b699d51d::t_f42438861b1041 487-560
+  s_c99ec2b699d51d::t_753f59a8b592af 26-34,160-163,167,178
+packages/infrastructure/dns-override/jest.config.ts
+  s_c99ec2b699d51d::t_f6259ce6fe23e6 1-14
+docs/guides/rtds-liveness-supervision.md
+  s_c99ec2b699d51d::t_0aa1ab194882a8 138-152,196,202-210,277-286
+packages/infrastructure/dns-override/tsconfig.json
+  s_c99ec2b699d51d::t_8baf8f1f56a806 5-7,9-16
+packages/infrastructure/dns-override/__tests__/DnsOverride.test.ts
+  s_c99ec2b699d51d::t_044cef3fdef2ac 179-215
+  s_c99ec2b699d51d::t_5e385eae2b3ce9 8
+  s_c99ec2b699d51d::t_8a9a0d0878a44e 148-152,155,158-159,162-167,169-176
+  s_c99ec2b699d51d::t_67cea688d8d015 1-7,9-147,153-154,156-157,160-161,168,177-178
+apps/collect-data/src/main.ts
+  s_c99ec2b699d51d::t_5d365cea77bb8f 89-90,94-103,110-112,116-120
+packages/infrastructure/dns-override/src/DnsOverride.ts
+  s_c99ec2b699d51d::t_6e046709aa2079 78-86,106,118-122,129-133,135
+  s_c99ec2b699d51d::t_932dee40130892 177-188,332-339,341-342,358-361,365
+  s_c99ec2b699d51d::t_cb974b6fc64658 87-103,144,165-171,259-264
+  s_c99ec2b699d51d::t_59ba910e8719b8 209-222
+packages/infrastructure/dns-override/tsconfig.lint.json
+  s_c99ec2b699d51d::t_8baf8f1f56a806 1-10
+packages/infrastructure/dns-override/src/index.ts
+  s_c99ec2b699d51d::t_99655997734d02 36
+packages/infrastructure/polymarket-v2/src/PolymarketSource.ts
+  s_c99ec2b699d51d::t_33d03fd0b6d260 300-311,321-322,653-657,684,761-766,805,838
+  s_c99ec2b699d51d::t_285f7f45f44944 922-937,940
+packages/infrastructure/dns-override/package.json
+  s_c99ec2b699d51d::t_f6259ce6fe23e6 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e68d0d8836abbb7370c28b66e9561f486fc7a8da",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
