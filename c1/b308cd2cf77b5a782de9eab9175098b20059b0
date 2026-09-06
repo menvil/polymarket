@@ -1,0 +1,32 @@
+packages/infrastructure/cex-v2/src/CexSource.ts
+  s_c99ec2b699d51d::t_d72bfd7c8ef561 99,1254-1266,1301-1303
+packages/infrastructure/cex-v2/__tests__/CexSource.test.ts
+  s_c99ec2b699d51d::t_fa745dfb814121 1306-1375
+packages/infrastructure/cex-v2/src/index.ts
+  s_c99ec2b699d51d::t_9f7aa2d9dee302 33
+packages/infrastructure/cex-v2/__tests__/CcxtVendorPort.test.ts
+  s_c99ec2b699d51d::t_c8a9ad98412867 78-110
+  s_c99ec2b699d51d::t_9f7aa2d9dee302 12-16
+docs/guides/legacy-hardening-audit.md
+  s_c99ec2b699d51d::t_1f1e47578554af 1-146
+packages/infrastructure/cex-v2/src/CcxtVendorPort.ts
+  s_c99ec2b699d51d::t_6582969ab5f1eb 86-98,293-361
+packages/infrastructure/cex-v2/__tests__/helpers/fakes.ts
+  s_c99ec2b699d51d::t_fa745dfb814121 152-161,165-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c1b308cd2cf77b5a782de9eab9175098b20059b0",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
