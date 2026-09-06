@@ -43,7 +43,7 @@ import type { PolymarketRestConfig, PolymarketL2Credentials } from './types.js';
 import { SignatureType } from './types.js';
 import { PolymarketSigner } from './auth/PolymarketSigner.js';
 import { PolymarketL2Authenticator } from './auth/PolymarketL2Authenticator.js';
-import type { DnsOverride } from '../dns/DnsOverride.js';
+import type { DnsOverride } from '../dns/index.js';
 
 /**
  * Класс ошибки API

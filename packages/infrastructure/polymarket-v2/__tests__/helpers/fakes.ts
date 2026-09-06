@@ -77,6 +77,22 @@ export class FakeSubscriptionHandle<TEvent> implements PolymarketSubscriptionHan
     }
   }
 
+  /**
+   * Поток завершил СЕРВЕР: итератор отдаёт `done: true` БЕЗ нашего `close()`.
+   *
+   * @remarks
+   * Отличается от {@link FakeSubscriptionHandle.close} тем, что не считается
+   * закрытием со стороны источника (`closeCalls` не растёт). Именно так
+   * выглядел дефект живого прогона: RTDS-поток кончился штатно, исключения
+   * не было, и потому в логе не осталось ни следа.
+   */
+  public endFromServer(): void {
+    this._ended = true;
+    while (this._waiters.length > 0) {
+      this._waiters.shift()?.resolve({ value: undefined, done: true });
+    }
+  }
+
   public [Symbol.asyncIterator](): AsyncIterator<TEvent> {
     return {
       next: async (): Promise<IteratorResult<TEvent>> => {

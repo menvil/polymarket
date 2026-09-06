@@ -25,6 +25,7 @@
  */
 import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
+import type { PolymarketSubscriptionHealth } from '@polymarket/polymarket-v2';
 import { loadConfig } from './config.js';
 import {
   applyProcessBootstrap,
@@ -84,6 +85,33 @@ const { collector } = createDataCollector({ config: runtimeConfig, logger, clock
 // запуска и сигнал во время него сходятся в тот же shutdown.
 const stopped = installShutdownHandlers({ target: collector, bootstrap, logger });
 
+/**
+ * Возвращает наибольший возраст последнего события среди надзираемых
+ * RTDS-фидов, в секундах.
+ *
+ * @remarks
+ * Один агрегат вместо строки на фид: в operational-логе важно «сколько времени
+ * самый тихий поток молчит», а не имена всех потоков. `null` означает, что
+ * надзираемых подписок нет вовсе (контур ещё не поднялся или уже остановлен),
+ * и это НЕ то же самое, что `0`.
+ *
+ * @param feeds - Снимок здоровья подписок из `PolymarketSource`
+ * @returns Секунды молчания самого тихого фида или `null`
+ *
+ * @example
+ * ```typescript
+ * rtdsSilenceSeconds([{ subscription: 'prices.crypto.binance', restarts: 0, broken: false }]);
+ * // → null: подписка есть, но событий ещё не было
+ * ```
+ */
+function rtdsSilenceSeconds(feeds: readonly PolymarketSubscriptionHealth[]): number | null {
+  const ages = feeds
+    .map((feed) => feed.lastEventAtMs)
+    .filter((at): at is number => at !== undefined)
+    .map((at) => Math.round((Date.now() - at) / 1_000));
+  return ages.length === 0 ? null : Math.max(...ages);
+}
+
 // Периодический operational-снимок: одна строка вместо набора таймеров.
 const statusInterval = setInterval(() => {
   const status = collector.status();
@@ -93,6 +121,11 @@ const statusInterval = setInterval(() => {
     pmActiveMarkets: status.polymarket.activeMarkets,
     pmClaims: status.polymarket.claims,
     pmRtdsFeeds: status.polymarket.rtdsFeeds.length,
+    // ЖИВОСТЬ, а не желаемое состояние: rtdsFeeds — ref-count спроса, он
+    // держался равным 6 всё то время, пока RTDS молчал (qualification run-01).
+    pmRtdsSilentSec: rtdsSilenceSeconds(status.polymarketSource.feeds),
+    pmRtdsRestarts: status.polymarketSource.feeds.reduce((sum, f) => sum + f.restarts, 0),
+    pmRtdsBroken: status.polymarketSource.feeds.filter((f) => f.broken).length,
     admitted: status.gate.admitted,
     ignoredUnknown: status.gate.ignoredUnknownMarket,
     ignoredByPolicy: status.gate.ignoredByPolicy,

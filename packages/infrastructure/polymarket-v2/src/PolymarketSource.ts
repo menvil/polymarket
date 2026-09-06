@@ -137,6 +137,18 @@ export interface PolymarketSourceDependencies {
   readonly metadataGenerator: MessageMetadataGenerator;
   /** Логгер (будет обёрнут в child с component-контекстом). */
   readonly logger: ILogger;
+  /**
+   * Пауза в RTDS-потоке, после которой он считается мёртвым (мс).
+   *
+   * @defaultValue 30_000
+   *
+   * @remarks
+   * Порог инъецируется, а не зашит константой, ровно по двум причинам:
+   * детерминированные тесты надзора и возможность подстроить его под
+   * реальную частоту фида, если она изменится. К CLOB-подпискам он не
+   * применяется вовсе — тихий рынок это норма.
+   */
+  readonly rtdsStallAfterMs?: number;
 }
 
 /**
@@ -211,6 +223,57 @@ export interface PolymarketOpenSubscription {
  * await bus.close();
  * ```
  */
+/**
+ * Надзор за непрерывностью потока подписки.
+ *
+ * @remarks
+ * Нужен там, где молчание потока — это ОТКАЗ, а не законное затишье.
+ * RTDS-фиды крипто-цен идут с частотой ~1 Гц независимо от рыночной
+ * активности, поэтому их пауза в десятки секунд означает мёртвый поток.
+ * CLOB-подписке надзор НЕ выдаётся: тихий рынок — норма, и watchdog
+ * перезапускал бы её без причины.
+ */
+interface SubscriptionSupervision<TEvent> {
+  /** Открывает НОВЫЙ SDK-handle с тем же spec-ом подписки. */
+  readonly reopen: () => Promise<PolymarketSubscriptionHandle<TEvent>>;
+  /** Пауза в событиях, после которой поток считается мёртвым (мс). */
+  readonly stallAfterMs: number;
+}
+
+/**
+ * Пауза в RTDS-потоке, после которой он считается мёртвым (мс).
+ *
+ * @remarks
+ * RTDS публикует ~1 Гц, поэтому 30 секунд — это три десятка пропущенных
+ * тиков подряд: сомнений в том, что поток мёртв, уже не остаётся, а ложных
+ * срабатываний на джиттере доставки (замер: p99 ≈ 0.4 с) не возникает.
+ */
+const RTDS_STALL_AFTER_MS = 30_000;
+
+/** Задержка перед повторной попыткой переподписки (мс). */
+const RESUBSCRIBE_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000] as const;
+
+/**
+ * Диагностика непрерывности одной надзираемой подписки.
+ */
+export interface PolymarketSubscriptionHealth {
+  /** Имя подписки (topic либо topic:window). */
+  readonly subscription: string;
+  /** Момент последнего полученного события (epoch ms); нет — событий не было. */
+  readonly lastEventAtMs?: number;
+  /** Сколько раз поток пришлось поднимать заново. */
+  readonly restarts: number;
+  /** Поток сейчас недоступен: переподписка не удалась. */
+  readonly broken: boolean;
+}
+
+/** Изменяемое состояние надзора за одной подпиской. */
+interface SupervisionState {
+  lastEventAtMs?: number;
+  restarts: number;
+  broken: boolean;
+}
+
 export class PolymarketSource {
   private readonly _client: PolymarketSubscribeClient;
   private readonly _bus: PolymarketExternalMessagePublisher;
@@ -223,6 +286,11 @@ export class PolymarketSource {
   /** Resolver-ы сигналов «handle закрыт»: будят pump, ждущий publish (drain-owner). */
   private readonly _handleCloseSignals = new Map<PolymarketSubscriptionHandle<unknown>, () => void>();
   /** true после `close()` — новые подписки запрещены. */
+  /** Состояние надзора по имени подписки (диагностика непрерывности). */
+  private readonly _supervised = new Map<string, SupervisionState>();
+  /** Порог молчания RTDS-потока (мс). */
+  private readonly _rtdsStallAfterMs: number;
+
   private _closed = false;
   /** true после терминального отказа (bus rejection / падение итератора). */
   private _failed = false;
@@ -237,6 +305,7 @@ export class PolymarketSource {
     this._bus = deps.bus;
     this._metadataGenerator = deps.metadataGenerator;
     this._logger = deps.logger.child({ component: 'PolymarketSource' });
+    this._rtdsStallAfterMs = deps.rtdsStallAfterMs ?? RTDS_STALL_AFTER_MS;
   }
 
   /** true, если source закрыт (`close()`) и новые подписки запрещены. */
@@ -321,7 +390,10 @@ export class PolymarketSource {
       topic,
       symbolCount: symbols.length,
     });
-    return this._track(topic, handle, (event) => this._toCryptoMessage(event));
+    return this._track(topic, handle, (event) => this._toCryptoMessage(event), {
+      reopen: async () => this._client.subscribe([{ topic, symbols }]),
+      stallAfterMs: this._rtdsStallAfterMs,
+    });
   }
 
   /**
@@ -369,7 +441,11 @@ export class PolymarketSource {
       windowSeconds,
       symbolCount: symbols.length,
     });
-    return this._track(subscription, handle, (event) => this._toTwapMessage(event));
+    return this._track(subscription, handle, (event) => this._toTwapMessage(event), {
+      reopen: async () =>
+        this._client.subscribe([{ topic: CHAINLINK_TWAP_TOPIC, windowSeconds, symbols }]),
+      stallAfterMs: this._rtdsStallAfterMs,
+    });
   }
 
   /**
@@ -450,37 +526,225 @@ export class PolymarketSource {
    * @param subscription - Имя подписки для логов
    * @param handle - SDK handle (AsyncIterable + close)
    * @param toMessage - Конструктор canonical сообщения из SDK-события
+   * @param supervision - Надзор за непрерывностью (только для RTDS-фидов)
    * @returns Открытая подписка с индивидуальным close
    *
    * @remarks
    * Pump-promise хранится до завершения: `close()` через него гарантирует
    * отсутствие висящих итераторов. Сам pump никогда не reject-ится —
    * все ошибки обрабатываются внутри (см. {@link PolymarketSource._pump}).
+   *
+   * ### Зачем надзорный цикл
+   *
+   * Без него поток, ЗАВЕРШИВШИЙСЯ штатно, исчезал бесследно: `for await`
+   * выходил из цикла, handle удалялся из реестра, и ни одной строки в лог не
+   * попадало — потому что исключения не было. Владелец подписки при этом
+   * продолжал считать фид живым (у него на руках остаётся тот же объект
+   * `{ close }`), а данные больше не приходили. Ровно так на прогоне 2026-09-06
+   * RTDS замолчал на 64-й минуте: десять минут рынки писались без единой
+   * котировки, `pmRtdsFeeds: 6`, ошибок ноль.
+   *
+   * Теперь у надзираемой подписки завершение потока — не конец, а повод
+   * подняться заново. Наружный объект подписки при этом НЕ меняется: владелец
+   * держит стабильный handle, а какой SDK-поток стоит за ним сейчас — деталь
+   * реализации источника.
    */
   private _track<TEvent>(
     subscription: string,
     handle: PolymarketSubscriptionHandle<TEvent>,
     toMessage: (event: TEvent) => PolymarketExternalMessage,
+    supervision?: SubscriptionSupervision<TEvent>,
   ): PolymarketOpenSubscription {
-    this._handles.add(handle);
-    let resolveClosed!: () => void;
-    const closed = new Promise<void>((resolve) => {
-      resolveClosed = resolve;
+    const state: SupervisionState = { restarts: 0, broken: false };
+    if (supervision !== undefined) {
+      this._supervised.set(subscription, state);
+    }
+    /** Подписку закрыл ВЛАДЕЛЕЦ — переподписываться больше нельзя. */
+    let releasedByOwner = false;
+    let current = handle;
+
+    const supervised = (async (): Promise<void> => {
+      for (;;) {
+        const activeHandle = current;
+        this._handles.add(activeHandle);
+        let resolveClosed!: () => void;
+        const closed = new Promise<void>((resolve) => {
+          resolveClosed = resolve;
+        });
+        this._handleCloseSignals.set(activeHandle, resolveClosed);
+
+        const watchdog =
+          supervision === undefined
+            ? undefined
+            : this._startStallWatchdog(subscription, activeHandle, state, supervision.stallAfterMs);
+        try {
+          await this._pump(subscription, activeHandle, toMessage, closed, state);
+        } finally {
+          if (watchdog !== undefined) {
+            clearInterval(watchdog);
+          }
+          this._handles.delete(activeHandle);
+          this._handleCloseSignals.delete(activeHandle);
+        }
+
+        // Поток кончился. Переподписка — только если его прекратили НЕ мы.
+        if (releasedByOwner || this._closed || this._failed || supervision === undefined) {
+          return;
+        }
+        const reopened = await this._reopenSupervised(subscription, state, supervision);
+        if (reopened === undefined) {
+          return; // переподписка исчерпала попытки; состояние помечено broken
+        }
+        current = reopened;
+      }
+    })().finally(() => {
+      this._pumps.delete(supervised);
+      this._supervised.delete(subscription);
     });
-    this._handleCloseSignals.set(handle, resolveClosed);
-    const pump = this._pump(subscription, handle, toMessage, closed).finally(() => {
-      this._handles.delete(handle);
-      this._handleCloseSignals.delete(handle);
-      this._pumps.delete(pump);
-    });
-    this._pumps.add(pump);
+    this._pumps.add(supervised);
+
     return {
       close: async () => {
-        await this._closeHandle(subscription, handle);
-        await pump;
+        // Признак ДО закрытия транспорта: иначе надзор успел бы принять
+        // штатное завершение потока за обрыв и поднять новую подписку.
+        releasedByOwner = true;
+        await this._closeHandle(subscription, current);
+        await supervised;
         this._logger.info('Polymarket subscription closed', { subscription });
       },
     };
+  }
+
+  /**
+   * Возвращает диагностику непрерывности надзираемых подписок.
+   *
+   * @returns Снимок по каждой живой RTDS-подписке
+   *
+   * @remarks
+   * Отвечает на вопрос, на который НЕ отвечает счётчик подписок: фид может
+   * числиться открытым и при этом ничего не приносить. Ref-count говорит
+   * «сколько мы хотим», а этот снимок — «сколько реально живо».
+   *
+   * @example
+   * ```typescript
+   * const stale = source.getSubscriptionHealth()
+   *   .filter((h) => Date.now() - (h.lastEventAtMs ?? 0) > 60_000);
+   * ```
+   */
+  public getSubscriptionHealth(): readonly PolymarketSubscriptionHealth[] {
+    return [...this._supervised.entries()]
+      .map(([subscription, state]) =>
+        Object.freeze({
+          subscription,
+          ...(state.lastEventAtMs !== undefined ? { lastEventAtMs: state.lastEventAtMs } : {}),
+          restarts: state.restarts,
+          broken: state.broken,
+        }),
+      )
+      .sort((a, b) => (a.subscription < b.subscription ? -1 : a.subscription > b.subscription ? 1 : 0));
+  }
+
+  /**
+   * Сторожевой таймер молчащего потока.
+   *
+   * @param subscription - Имя подписки для логов
+   * @param handle - Handle, за которым следим
+   * @param state - Состояние надзора (момент последнего события)
+   * @param stallAfterMs - Допустимая пауза в событиях
+   * @returns Дескриптор интервала — вызывающий обязан его снять
+   *
+   * @remarks
+   * Обнаружив паузу, watchdog НЕ переподписывается сам: он закрывает handle,
+   * pump на этом заканчивается, и надзорный цикл поднимает поток заново —
+   * тем же путём, что и при штатном завершении итератора. Одна дорога на оба
+   * случая: два независимых пути восстановления разошлись бы в поведении.
+   *
+   * Отсчёт ведётся от последнего события, а при его отсутствии — от момента
+   * запуска: подписка, не принёсшая НИ ОДНОГО события, тоже мертва.
+   */
+  private _startStallWatchdog(
+    subscription: string,
+    handle: PolymarketSubscriptionHandle<unknown>,
+    state: SupervisionState,
+    stallAfterMs: number,
+  ): ReturnType<typeof setInterval> {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const silentSince = state.lastEventAtMs ?? startedAt;
+      const silentMs = Date.now() - silentSince;
+      if (silentMs < stallAfterMs) {
+        return;
+      }
+      this._logger.warn('Polymarket subscription went silent, restarting stream', {
+        subscription,
+        silentMs,
+        stallAfterMs,
+        hadEvents: state.lastEventAtMs !== undefined,
+      });
+      clearInterval(timer);
+      void this._closeHandle(subscription, handle);
+    }, Math.max(1_000, Math.floor(stallAfterMs / 3)));
+    timer.unref?.();
+    return timer;
+  }
+
+  /**
+   * Поднимает надзираемую подписку заново с ограниченным backoff.
+   *
+   * @param subscription - Имя подписки для логов
+   * @param state - Состояние надзора
+   * @param supervision - Как открыть подписку заново
+   * @returns Новый handle либо `undefined`, если попытки исчерпаны
+   *
+   * @remarks
+   * Отказ переподписки НЕ роняет source: CLOB-подписки и CEX-контур живут
+   * своей жизнью, и терминальный отказ ради одного мёртвого прайс-фида
+   * стоил бы дороже самой потери. Исчерпанные попытки помечают подписку
+   * `broken` — это видно в {@link PolymarketSource.getSubscriptionHealth}
+   * и обязано быть видно в статусе рантайма.
+   */
+  private async _reopenSupervised<TEvent>(
+    subscription: string,
+    state: SupervisionState,
+    supervision: SubscriptionSupervision<TEvent>,
+  ): Promise<PolymarketSubscriptionHandle<TEvent> | undefined> {
+    for (const [attempt, backoffMs] of RESUBSCRIBE_BACKOFF_MS.entries()) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, backoffMs);
+        timer.unref?.();
+      });
+      if (this._closed || this._failed) {
+        return undefined;
+      }
+      try {
+        const handle = await supervision.reopen();
+        if (this._closed || this._failed) {
+          await this._closeHandle(subscription, handle);
+          return undefined;
+        }
+        state.restarts += 1;
+        state.lastEventAtMs = undefined;
+        state.broken = false;
+        this._logger.info('Polymarket subscription re-established', {
+          subscription,
+          attempt: attempt + 1,
+          restarts: state.restarts,
+        });
+        return handle;
+      } catch (error) {
+        this._logger.warn('Polymarket subscription re-subscribe failed', {
+          subscription,
+          attempt: attempt + 1,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    state.broken = true;
+    this._logger.error('Polymarket subscription could not be re-established; feed is dead', {
+      subscription,
+      restarts: state.restarts,
+    });
+    return undefined;
   }
 
   /**
@@ -515,10 +779,17 @@ export class PolymarketSource {
     handle: PolymarketSubscriptionHandle<TEvent>,
     toMessage: (event: TEvent) => PolymarketExternalMessage,
     closed: Promise<void>,
+    supervisionState?: SupervisionState,
   ): Promise<void> {
     const closedMarker = closed.then((): typeof PUMP_CLOSED => PUMP_CLOSED);
     try {
       for await (const event of handle) {
+        // Момент ПОЛУЧЕНИЯ события, а не публикации: watchdog следит за
+        // живостью транспорта, и медленный bus не должен выглядеть как
+        // мёртвый поток.
+        if (supervisionState !== undefined) {
+          supervisionState.lastEventAtMs = Date.now();
+        }
         const message = toMessage(event);
         const publishPromise = this._bus.publish(message);
         const outcome = await Promise.race([publishPromise, closedMarker]);

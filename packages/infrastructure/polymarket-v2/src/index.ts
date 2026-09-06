@@ -37,6 +37,7 @@ export type {
   PolymarketSourceDependencies,
   PolymarketSubscribeClient,
   PolymarketSubscriptionHandle,
+  PolymarketSubscriptionHealth,
 } from './PolymarketSource.js';
 export { PolymarketMarketDiscovery } from './PolymarketMarketDiscovery.js';
 export type {
