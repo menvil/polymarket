@@ -44,6 +44,7 @@
     "@polymarket/market-discovery": "0.1.0",
     "@polymarket/policy": "0.1.0",
     "@polymarket/ports": "0.1.0",
+    "@polymarket/time": "0.1.0",
     "@polymarket/timestamp": "0.1.0"
   },
   "devDependencies": {
@@ -53,10 +54,10 @@
     "@polymarket/external-message-bus": "0.1.0",
     "@polymarket/external-messages": "0.1.0",
     "@polymarket/messages": "0.1.0",
+    "@polymarket/polymarket-subscription-control": "0.1.0",
     "@polymarket/polymarket-v2": "0.1.0",
     "@polymarket/raw-archive-format": "0.1.0",
     "@polymarket/result": "^0.1.0",
-    "@polymarket/time": "0.1.0",
     "@polymarket/value-objects": "0.1.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^26.1.1",

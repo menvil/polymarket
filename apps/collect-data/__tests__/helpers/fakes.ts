@@ -30,12 +30,18 @@ import type {
   PolymarketControlRuntimeResult,
   PolymarketSubscriptionDemand,
 } from '@polymarket/polymarket-control-runtime';
-import type { PolymarketCollectionGateStats } from '@polymarket/collector';
+import type {
+  PolymarketCollectionGateStats,
+  PolymarketCollectionLifecycleStats,
+} from '@polymarket/collector';
+import type { MarketFinalizerStats } from '@polymarket/market-finalizer';
 import type {
   CollectorBus,
   CollectorCexController,
   CollectorCexStorage,
+  CollectorFinalizer,
   CollectorGate,
+  CollectorLifecycle,
   CollectorPolymarketClient,
   CollectorPolymarketController,
   CollectorPolymarketControlRuntime,
@@ -51,6 +57,11 @@ export class CallLog {
 
   public record(name: string): void {
     this.calls.push(name);
+  }
+
+  /** Очищает журнал (изоляция ПОРЯДКА внутри одного тика от старта). */
+  public clear(): void {
+    this.calls.length = 0;
   }
 
   /** Индекс первого вызова; отсутствие вызова — ошибка теста (не -1). */
@@ -154,6 +165,7 @@ const EMPTY_RECORDER_STATS: ExternalMessageRecorderStats = {
   marketSessionsAdmitted: 0,
   marketMessagesIgnoredByPolicy: 0,
   marketMessagesDroppedAfterExpiry: 0,
+  marketMessagesDroppedAfterSeal: 0,
   unroutedRtdsMessages: 0,
   handlerErrors: 0,
 };
@@ -359,6 +371,7 @@ const EMPTY_GATE_STATS: PolymarketCollectionGateStats = {
   admitted: 0,
   ignoredUnknownMarket: 0,
   ignoredByPolicy: 0,
+  ignoredNotHeldByCollector: 0,
   invalidMarketId: 0,
 };
 
@@ -369,12 +382,106 @@ export class FakeGate implements CollectorGate {
   }
 }
 
+const EMPTY_LIFECYCLE_STATS: PolymarketCollectionLifecycleStats = {
+  activeSessions: 0,
+  finalizingSessions: 0,
+  attachedTotal: 0,
+  sealedTotal: 0,
+  claimsReleased: 0,
+  completedTotal: 0,
+  shutdownSessions: 0,
+  finalizationFailures: 0,
+  sessionsWithoutClaim: 0,
+  orphanSessionsDiscarded: 0,
+};
+
+/** Порт lifecycle записей: журналирует проходы и остановку. */
+export class FakeLifecycle implements CollectorLifecycle {
+  public runOnceCalls = 0;
+  public closeCalls = 0;
+  /** Если задано — `runOnce` бросает (изоляция отказа тика). */
+  public runOnceFailure: Error | undefined;
+
+  public constructor(private readonly _log: CallLog) {}
+
+  public async runOnce(): Promise<void> {
+    this.runOnceCalls++;
+    this._log.record('lifecycle.runOnce');
+    if (this.runOnceFailure !== undefined) {
+      throw this.runOnceFailure;
+    }
+  }
+
+  public syncSessions(): number {
+    this._log.record('lifecycle.syncSessions');
+    return 0;
+  }
+
+  public async awaitAllSettlementCaptures(): Promise<void> {
+    this._log.record('lifecycle.awaitAllSettlementCaptures');
+  }
+
+  public onLifecycleEvent(): () => void {
+    return () => undefined;
+  }
+
+  public getStats(): PolymarketCollectionLifecycleStats {
+    return EMPTY_LIFECYCLE_STATS;
+  }
+
+  public async close(): Promise<void> {
+    this.closeCalls++;
+    this._log.record('lifecycle.close');
+  }
+}
+
+const EMPTY_FINALIZER_STATS: MarketFinalizerStats = {
+  pendingFinalizations: 0,
+  archivedTotal: 0,
+  archiveFailures: 0,
+  officialFinalizations: 0,
+  fallbackFinalizations: 0,
+  fallbackByTimeout: 0,
+  fallbackByShutdown: 0,
+  discardedUnresolvable: 0,
+};
+
+/** Порт post-expiry финализатора: журналирует проход, дренаж и остановку. */
+export class FakeFinalizer implements CollectorFinalizer {
+  public runOnceCalls = 0;
+  public drainCalls = 0;
+  public closeCalls = 0;
+
+  public constructor(private readonly _log: CallLog) {}
+
+  public async runOnce(): Promise<void> {
+    this.runOnceCalls++;
+    this._log.record('finalizer.runOnce');
+  }
+
+  public async drain(): Promise<void> {
+    this.drainCalls++;
+    this._log.record('finalizer.drain');
+  }
+
+  public async close(): Promise<void> {
+    this.closeCalls++;
+    this._log.record('finalizer.close');
+  }
+
+  public getStats(): MarketFinalizerStats {
+    return EMPTY_FINALIZER_STATS;
+  }
+}
+
 /** Собранный набор fakes + общий журнал вызовов. */
 export interface FakeContour {
   readonly log: CallLog;
   readonly bus: FakeBus;
   readonly recorder: FakeRecorder;
   readonly gate: FakeGate;
+  readonly lifecycle: FakeLifecycle;
+  readonly finalizer: FakeFinalizer;
   readonly polymarketStorage: FakePolymarketStorage;
   readonly cexStorage: FakeCexStorage;
   readonly polymarketSource: FakePolymarketSource;
@@ -409,6 +516,8 @@ export function makeFakeContour(options: { readonly cex?: boolean } = {}): FakeC
   const bus = new FakeBus(log);
   const recorder = new FakeRecorder(log);
   const gate = new FakeGate();
+  const lifecycle = new FakeLifecycle(log);
+  const finalizer = new FakeFinalizer(log);
   const polymarketStorage = new FakePolymarketStorage(log);
   const cexStorage = new FakeCexStorage(log);
   const polymarketSource = new FakePolymarketSource(log);
@@ -421,6 +530,8 @@ export function makeFakeContour(options: { readonly cex?: boolean } = {}): FakeC
     bus,
     recorder,
     gate,
+    lifecycle,
+    finalizer,
     polymarketStorage,
     cexStorage,
     polymarketSource,
@@ -436,6 +547,8 @@ export function makeFakeContour(options: { readonly cex?: boolean } = {}): FakeC
     bus,
     recorder,
     gate,
+    lifecycle,
+    finalizer,
     polymarketStorage,
     cexStorage,
     polymarketSource,

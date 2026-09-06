@@ -1,3 +1,13 @@
+/**
+ * Backfill market-метаданных в уже записанных Polymarket-архивах.
+ *
+ * @deprecated
+ * LEGACY ONE-OFF UTILITY. Работает поверх снятого с вооружения
+ * `@polymarket/exchange` (legacy discovery adapter) и потому ИСКЛЮЧЁН из
+ * сборки рантайма (`tsconfig.build.json`): в `dist/` он не нужен — свой
+ * npm-скрипт (`backfill:polymarket`) запускает его прямо из исходников
+ * через `tsx`. Удаляется вместе с legacy-инфраструктурой.
+ */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createInterface } from 'node:readline';

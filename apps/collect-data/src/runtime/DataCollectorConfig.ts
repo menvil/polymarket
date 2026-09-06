@@ -198,12 +198,72 @@ export interface DataCollectorConfig {
   readonly discoveryWindowMs?: number;
   /** Параметры control-цикла. */
   readonly control: ControlRuntimeConfig;
+  /** Параметры жизненного цикла collection-сессий. */
+  readonly collection: CollectionLifecycleRuntimeConfig;
+  /** Параметры post-expiry финализации. */
+  readonly finalization: FinalizationRuntimeConfig;
   /** Параметры CEX-контура (пустой `exchanges` — CEX выключен). */
   readonly cex: CexCollectionConfig;
 }
 
+/**
+ * Параметры жизненного цикла записи рынка.
+ *
+ * @remarks
+ * Здесь только ГРАНИЦА датасета: сколько ждать граничное наблюдение
+ * settlement-потока после истечения рынка. Момент истечения параметром не
+ * является — его задаёт сам рынок (`expiresAt`).
+ */
+export interface CollectionLifecycleRuntimeConfig {
+  /**
+   * Boundary grace settlement-потока (мс).
+   *
+   * @defaultValue 5_000 (измеренная задержка доставки RTDS ×2)
+   */
+  readonly settlementGraceMs: number;
+}
+
+/**
+ * Параметры post-expiry финализации (Gamma enrichment).
+ */
+export interface FinalizationRuntimeConfig {
+  /**
+   * Минимальная пауза между Gamma-попытками одного рынка (мс).
+   * @defaultValue 30_000
+   */
+  readonly enrichmentRetryMs: number;
+  /**
+   * Максимальное ожидание ПОЛНОГО комплекта официальных данных (мс).
+   * @defaultValue 3_600_000 (60 минут)
+   */
+  readonly enrichmentMaxWaitMs: number;
+}
+
 /** Дефолтная пауза control-тика (мс). */
 const DEFAULT_CONTROL_TICK_MS = 5_000;
+
+/**
+ * Дефолт boundary grace settlement-потока (мс).
+ *
+ * @remarks
+ * Число измерено, а не выбрано: live-характеризация RTDS 2026-08-26 дала
+ * задержку доставки TWAP 1116–2155 мс (p50 ≈ 1.5 с). 5 секунд — измеренный
+ * максимум с запасом ×2.
+ */
+const DEFAULT_SETTLEMENT_GRACE_MS = 5_000;
+
+/** Дефолтная пауза между Gamma-попытками одного рынка (мс). */
+const DEFAULT_ENRICHMENT_RETRY_MS = 30_000;
+
+/**
+ * Дефолтный бюджет ожидания официальной резолюции (мс).
+ *
+ * @remarks
+ * Замер 2026-08-26 (4 рынка `*-updown-15m`, секунды после истечения):
+ * `priceToBeat` 21…143, `uma=resolved` 311…600, `finalPrice` 1054…1296 —
+ * то есть ждать приходится до ~21.6 минуты. 60 минут покрывают это ×2.8.
+ */
+const DEFAULT_ENRICHMENT_MAX_WAIT_MS = 60 * 60_000;
 
 /** Legacy-описание одной биржи в `cex-config.json`. */
 interface CexConfigFileEntry {
@@ -556,6 +616,13 @@ export function toDataCollectorConfig(config: CollectorConfig): DataCollectorCon
     control: {
       acquireLimit: config.maxMarkets,
       tickMs: config.controlTickMs > 0 ? config.controlTickMs : DEFAULT_CONTROL_TICK_MS,
+    },
+    collection: {
+      settlementGraceMs: config.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_MS,
+    },
+    finalization: {
+      enrichmentRetryMs: config.enrichmentRetryMs ?? DEFAULT_ENRICHMENT_RETRY_MS,
+      enrichmentMaxWaitMs: config.enrichmentMaxWaitMs ?? DEFAULT_ENRICHMENT_MAX_WAIT_MS,
     },
     cex: {
       exchanges: config.cexConfig === null ? [] : parseCexExchangeConfigs(config.cexConfig),

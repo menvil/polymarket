@@ -15,7 +15,10 @@
  * PolymarketControlRuntime.runOnce()
  *        ▼
  * PolymarketSubscriptionController → PolymarketSource ──┐
- *                                                       │
+ *        ▲          ▲                                   │
+ *        │          │ getHeldMarket / release           │
+ *        │   PolymarketCollectionLifecycle ── MarketFinalizer
+ *        │          ▲ listMarketSessions                │
  * collector CEX demand (collector:raw:<exchange> + CexPolicy)
  *        ▼                                              │
  * CexSubscriptionController → CexSource generations ────┤
@@ -23,6 +26,14 @@
  *                                              ExternalMessageBus
  *                                                ├── Collector (recorder + gate)
  *                                                └── (semantic adapter — sibling)
+ * ```
+ *
+ * Полный жизненный цикл рынка после cutover:
+ *
+ * ```text
+ * claim collector:raw ДО открытия → первое наблюдение → ACTIVE
+ *   → expiresAt → FINALIZING → settlement grace → seal → release claim
+ *   → Gamma enrichment → final header → .jsonl.gz → сессия снята
  * ```
  *
  * Второй copy composition root в репозитории быть не должно: расхождение
@@ -52,7 +63,13 @@ import {
   NDJSONFormatter,
 } from '@polymarket/data-collection';
 import { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
-import { COLLECTOR_RAW_OWNER_KEY, PolymarketCollectionGate } from '@polymarket/collector';
+import {
+  COLLECTOR_RAW_OWNER_KEY,
+  PolymarketCollectionGate,
+  PolymarketCollectionLifecycle,
+} from '@polymarket/collector';
+import { MarketFinalizer } from '@polymarket/market-finalizer';
+import type { SelectedPolymarketMarket } from '@polymarket/polymarket-v2';
 import type {
   CexExchangeConfig,
   CexTransportConfig,
@@ -189,6 +206,8 @@ export function buildCexTransportIndex(
  * - ОДИН `ExternalMessageBus` на процесс;
  * - ОДИН `ExternalMessageRecorder` (Collector) как recording-consumer с
  *   политикой допуска `PolymarketCollectionGate` в качестве `sessionProvider`;
+ * - ОДИН `PolymarketCollectionLifecycle` поверх ТОГО ЖЕ recorder-а и ТОГО ЖЕ
+ *   PM-контроллера: границу датасета и снятие claim-ов ведёт он;
  * - PM source ПРИНАДЛЕЖИТ контуру и разделён с discovery/контроллером;
  * - CEX source-ы создаёт и закрывает CEX-контроллер через фабрику;
  * - policy допуска коллектора == policy его PM-спроса (иначе подписались бы на
@@ -264,10 +283,13 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
     logger,
   });
 
-  // ── Collector: recorder + политика допуска (universe + owner policy) ──
+  // ── Collector: recorder + политика допуска (universe + policy + claim) ──
+  // Gate спрашивает ТОТ ЖЕ контроллер, которым control-plane приобретает
+  // рынки: писать разрешено только то, что коллектор реально удерживает.
   const gate = new PolymarketCollectionGate({
     universe,
     policy: config.polymarketPolicy,
+    subscriptions: polymarketController,
     logger,
   });
   const recorder = new ExternalMessageRecorder({
@@ -277,6 +299,21 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
     sessionProvider: gate.sessionProvider(),
     ...(config.cex.exchanges.length > 0 ? { cex: { bus, storage: cexStorage } } : {}),
   });
+
+  // ── Lifecycle записи: граница датасета и снятие claim-ов коллектора ────
+  // Vendor-подготовка конкретизируется ЗДЕСЬ: пакет коллектора обобщён по
+  // ней, чтобы не иметь зависимости на source-пакет.
+  const lifecycle = new PolymarketCollectionLifecycle<SelectedPolymarketMarket>(
+    { recorder, subscriptions: polymarketController, clock, logger },
+    { settlementGraceMs: config.collection.settlementGraceMs },
+  );
+  const finalizer = new MarketFinalizer(
+    { lifecycle, recorder, gamma: client, clock, logger },
+    {
+      enrichmentRetryMs: config.finalization.enrichmentRetryMs,
+      enrichmentMaxWaitMs: config.finalization.enrichmentMaxWaitMs,
+    },
+  );
 
   // ── CEX control-plane: контроллер создаёт immutable-поколения источников ─
   // Транспорт адресуется тройкой `exchangeId + marketType + stream` — так же,
@@ -328,6 +365,8 @@ export function createDataCollector(options: CreateDataCollectorOptions): Create
       bus,
       recorder,
       gate,
+      lifecycle,
+      finalizer,
       polymarketStorage,
       cexStorage,
       polymarketSource,

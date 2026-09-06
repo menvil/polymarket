@@ -123,6 +123,7 @@ import type {
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type {
+  HeldPolymarketSubscriptionSnapshot,
   PolymarketAcquireFailureStage,
   PolymarketAcquireRejection,
   PolymarketAcquireResult,
@@ -716,6 +717,71 @@ export class PolymarketSubscriptionController {
         if (left < right) return -1;
         return left > right ? 1 : 0;
       });
+  }
+
+  /**
+   * Возвращает снимок рынка, который УДЕРЖИВАЕТ указанный владелец.
+   *
+   * @param ownerKey - Ключ владельца, чей claim проверяется
+   * @param marketId - Canonical id рынка
+   * @returns Снимок ({@link HeldPolymarketSubscriptionSnapshot}) либо
+   *   `undefined` — рынок не приобретён, приобретён БЕЗ этого владельца,
+   *   либо его vendor-подготовка ещё не получена
+   * @throws {ValidationError} Если ключ владельца пуст
+   *
+   * @remarks
+   * ### Зачем контроллеру read-only проекция
+   *
+   * В общем control-plane физическая подписка рынка может существовать из-за
+   * ЧУЖОГО владельца. Потребителю данных (recording-контур коллектора) этого
+   * недостаточно: писать рынок он имеет право только тогда, когда сам его
+   * приобрёл. Единственный, кто знает состав claim-ов, — контроллер, поэтому
+   * ответ на вопрос «держу ли я этот рынок» обязан приходить отсюда, а не
+   * восстанавливаться совпадением policy.
+   *
+   * ### Почему снимок доступен уже в `OPENING`
+   *
+   * Первое (опорное) наблюдение рынка приходит на шину сразу после
+   * `subscribeMarket()` — до открытия RTDS-фидов и commit-а `ACTIVE`.
+   * Требование `state === 'ACTIVE'` отбросило бы этот book-снапшот, и
+   * датасет остался бы без опорного состояния стакана. Поэтому единственное
+   * требование к стадии — наличие vendor-подготовки: без неё снимок нечем
+   * заполнить.
+   *
+   * Транзакция открытия НЕ дожидается: метод синхронный и вызывается из
+   * обработчика сообщения шины. Ожидание `opening` здесь превратило бы
+   * hot-path записи в асинхронный и потеряло бы то самое первое наблюдение.
+   *
+   * Мутабельного состояния наружу не выходит: ни handles подписок, ни
+   * множество владельцев. Снимок заморожен.
+   *
+   * @example
+   * ```typescript
+   * const held = controller.getHeldMarket('collector:raw', marketId);
+   * if (held === undefined) return; // рынок держит кто-то другой — не наш
+   * recorder.registerMarket({ marketMeta, rtdsFeeds: held.selected.rtdsFeeds });
+   * ```
+   */
+  public getHeldMarket(
+    ownerKey: SubscriptionOwnerKey,
+    marketId: MarketId,
+  ): HeldPolymarketSubscriptionSnapshot | undefined {
+    assertOwnerKey(ownerKey);
+    const state = this._markets.get(String(marketId));
+    if (state === undefined || !state.owners.has(ownerKey)) {
+      return undefined;
+    }
+    if (state.selected === undefined) {
+      // Транзакция ещё не дошла до prepareMarket (или подготовка пропала) —
+      // снимок без vendor-подготовки был бы пустым обещанием.
+      return undefined;
+    }
+    return Object.freeze({
+      marketId: state.marketId,
+      state: state.state,
+      entry: state.entry,
+      selected: state.selected,
+    });
   }
 
   /**

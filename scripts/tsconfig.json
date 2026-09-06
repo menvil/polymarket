@@ -1,0 +1,43 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "jest", "@jest/globals"],
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@polymarket/collect-data/runtime": ["../apps/collect-data/src/runtime/index.ts"],
+      "@polymarket/collector": ["../packages/infrastructure/collector/src/index.ts"],
+      "@polymarket/market-finalizer": ["../packages/infrastructure/market-finalizer/src/index.ts"],
+      "@polymarket/external-message-recorder": ["../packages/infrastructure/persistence/external-message-recorder/src/index.ts"],
+      "@polymarket/external-message-bus": ["../packages/infrastructure/external-message-bus/src/index.ts"],
+      "@polymarket/external-messages": ["../packages/infrastructure/external-messages/src/index.ts"],
+      "@polymarket/data-collection": ["../packages/infrastructure/persistence/data-collection/src/index.ts"],
+      "@polymarket/raw-archive-format": ["../packages/infrastructure/persistence/raw-archive-format/src/index.ts"],
+      "@polymarket/snapshot-readers": ["../packages/infrastructure/persistence/snapshot-readers/src/index.ts"],
+      "@polymarket/polymarket-v2": ["../packages/infrastructure/polymarket-v2/src/index.ts"],
+      "@polymarket/cex-v2": ["../packages/infrastructure/cex-v2/src/index.ts"],
+      "@polymarket/polymarket-subscription-control": ["../packages/infrastructure/polymarket-subscription-control/src/index.ts"],
+      "@polymarket/cex-subscription-control": ["../packages/infrastructure/cex-subscription-control/src/index.ts"],
+      "@polymarket/polymarket-control-runtime": ["../packages/infrastructure/polymarket-control-runtime/src/index.ts"],
+      "@polymarket/policy": ["../packages/application/policy/src/index.ts"],
+      "@polymarket/ports": ["../packages/application/ports/src/index.ts"],
+      "@polymarket/market-discovery": ["../packages/application/market-discovery/src/index.ts"],
+      "@polymarket/subscription-planning": ["../packages/application/subscription-planning/src/index.ts"],
+      "@polymarket/market": ["../packages/domain/entities/market/src/index.ts"],
+      "@polymarket/value-objects": ["../packages/domain/value-objects/src/index.ts"],
+      "@polymarket/messages": ["../packages/foundation/messages/src/index.ts"],
+      "@polymarket/message-bus": ["../packages/foundation/message-bus/src/index.ts"],
+      "@polymarket/logger": ["../packages/foundation/logger/src/index.ts"],
+      "@polymarket/ids": ["../packages/foundation/ids/src/index.ts"],
+      "@polymarket/errors": ["../packages/foundation/errors/src/index.ts"],
+      "@polymarket/errors/*": ["../packages/foundation/errors/src/*"],
+      "@polymarket/math": ["../packages/foundation/math/src/index.ts"],
+      "@polymarket/time": ["../packages/foundation/time/src/index.ts"],
+      "@polymarket/result": ["../packages/foundation/result/src/index.ts"],
+      "@polymarket/timestamp": ["../packages/foundation/timestamp/src/index.ts"],
+      "@polymarket/rolling-window": ["../packages/foundation/rolling-window/src/index.ts"],
+      "@polymarket/exchange/dns": ["../packages/infrastructure/polymarket/dns/index.ts"]
+    }
+  },
+  "include": ["checkpoint-raw-live.mts", "validate-raw-archives.mts", "__tests__/**/*.ts"],
+  "exclude": ["node_modules"]
+}

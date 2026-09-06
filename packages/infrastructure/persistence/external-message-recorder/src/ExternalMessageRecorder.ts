@@ -70,7 +70,7 @@ import type {
   CexWindowRecorder,
   DataRecorder,
 } from '@polymarket/data-collection';
-import { toRecordedObservation } from '@polymarket/raw-archive-format';
+import { ingressEpochMilliseconds, toRecordedObservation } from '@polymarket/raw-archive-format';
 import type { RecordedExternalObservationV2 } from '@polymarket/raw-archive-format';
 import type {
   PolymarketCryptoBinanceExternalMessage,
@@ -166,6 +166,28 @@ export interface PolymarketRecordingRegistration {
 export type PolymarketRecordingSessionProvider = (
   sourceMarketId: string,
 ) => PolymarketRecordingRegistration | undefined;
+
+/**
+ * Read-only снимок одной recording-сессии рынка.
+ *
+ * @remarks
+ * Всё, что нужно lifecycle-слою, чтобы принять сессию под наблюдение:
+ * identity рынка, стадия, регистрация (canonical header + `expiresAt`),
+ * состав RTDS-фидов и момент первой записанной строки. Handles, буферы и
+ * mutable-состояние recorder-а сюда не попадают.
+ */
+export interface PolymarketRecordingSessionSnapshot {
+  /** Canonical id рынка (== conditionId). */
+  readonly marketId: MarketId;
+  /** Стадия сессии: `ACTIVE` → `FINALIZING` → `SEALED`. */
+  readonly state: 'ACTIVE' | 'FINALIZING' | 'SEALED';
+  /** Регистрация сессии: header (`rawMarket`), `expiresAt`, tokenIds. */
+  readonly marketMeta: MarketMeta;
+  /** Текущий состав RTDS-фидов, пишущихся в файл рынка. */
+  readonly rtdsFeeds: readonly PolymarketRtdsFeedKey[];
+  /** `ingress` первой записанной строки (epoch ms); нет — строк ещё нет. */
+  readonly firstObservedAtMs?: number;
+}
 
 /**
  * Порт подписки recorder-а на общий ExternalMessageBus.
@@ -333,6 +355,17 @@ export interface ExternalMessageRecorderStats {
    * потерей значило бы ослабить loss-visibility ровно там, где она нужна.
    */
   readonly marketMessagesDroppedAfterExpiry: number;
+  /**
+   * Market-сообщений, пришедших ПОСЛЕ заморозки датасета рынка.
+   *
+   * @remarks
+   * Отдельно от `marketMessagesDroppedAfterExpiry`: там — окно settlement
+   * grace (датасет ещё пишется, но только settlement-потоком), здесь —
+   * окно между `sealMarket` и снятием физического claim-а. Ненулевое
+   * значение — норма (claim снимается ПОСЛЕ заморозки), а вот запись после
+   * seal была бы дефектом; их нельзя смешивать в одном числе.
+   */
+  readonly marketMessagesDroppedAfterSeal: number;
   /** RTDS-сообщений без единого зарегистрированного (topic, symbol). */
   readonly unroutedRtdsMessages: number;
   /** Неожиданных исключений в bus-handler-ах (защитный контур). */
@@ -377,29 +410,53 @@ export interface ExternalMessageRecorderCexStats {
 }
 
 /**
- * Активная recording-сессия рынка (внутреннее состояние маршрутизации).
+ * Стадия recording-сессии рынка.
+ *
+ * @remarks
+ * ```text
+ * ACTIVE ── beginMarketFinalization ──► FINALIZING ── sealMarket ──► SEALED
+ *   │              (CLOB и обычные          │       (payload заморожен)
+ *   │               RTDS больше не          │
+ *   │               пишутся; остаётся       └── finalizeMarket ──► сессии нет
+ *   │               settlement TWAP)
+ *   └── finalizeMarket(SHUTDOWN) ──────────────────────────────► сессии нет
+ * ```
+ *
+ * `SEALED` существует как ЯВНАЯ стадия, а не как удаление сессии: между
+ * заморозкой датасета и снятием физического claim-а рынок ещё присылает
+ * события, и без стадии-надгробия ленивый допуск создал бы для них ВТОРУЮ
+ * recording-сессию поверх уже завершённого датасета.
+ */
+type RecordingSessionState = 'ACTIVE' | 'FINALIZING' | 'SEALED';
+
+/**
+ * Recording-сессия рынка (внутреннее состояние маршрутизации).
  */
 interface RecordingSession {
   /** ID рынка — ключ writer-а в storage. */
   readonly marketId: MarketId;
+  /** Регистрация сессии (header/файл/активация) — отдаётся в снимках. */
+  readonly marketMeta: MarketMeta;
   /**
    * RTDS-фиды сессии (для снятия routing при finalize).
    *
    * @remarks
-   * Mutable: {@link ExternalMessageRecorder.narrowRtdsFeeds} сужает набор
-   * на boundary grace истёкшего рынка. Сам ОБЪЕКТ сессии при этом не
-   * заменяется — его identity стережёт hook отложенной активации storage.
+   * Mutable: {@link ExternalMessageRecorder.beginMarketFinalization} сужает
+   * набор до settlement-потока истёкшего рынка. Сам ОБЪЕКТ сессии при этом
+   * не заменяется — его identity стережёт hook отложенной активации storage.
    */
   rtdsFeeds: readonly PolymarketRtdsFeedKey[];
+  /** Стадия сессии (см. {@link RecordingSessionState}). */
+  state: RecordingSessionState;
   /**
-   * Маршрутизируются ли ещё market-события рынка.
+   * `ingress` ПЕРВОГО фактически записанного наблюдения сессии (epoch ms).
    *
    * @remarks
-   * Становится `false` на истечении рынка: торговый lifecycle закончен, а
-   * сессия продолжает существовать исключительно ради граничных наблюдений
-   * settlement-потока.
+   * Именно момент первого наблюдения, а не момент регистрации: датасет
+   * начинается со строки, а не с решения политики. `undefined`, пока ни
+   * одной строки не принято storage.
    */
-  marketEventsRouted: boolean;
+  firstObservedAtMs?: number;
 }
 
 /**
@@ -416,6 +473,51 @@ interface RecordingSession {
  */
 function rtdsRoutingKey(feed: PolymarketRtdsFeedKey): string {
   return rtdsFeedKey(feed);
+}
+
+/**
+ * Рекурсивно замораживает plain-JSON значение.
+ *
+ * @param value - Значение произвольной вложенности
+ *
+ * @remarks
+ * Только для данных, а не для доменных объектов: `Timestamp`/branded id
+ * сюда не попадают, потому что применяется к `rawMarket` — чистому
+ * JSON-снимку canonical header-а.
+ */
+function deepFreezeJson(value: unknown): void {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
+    return;
+  }
+  Object.freeze(value);
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreezeJson(nested);
+  }
+}
+
+/**
+ * Делает регистрацию рынка фактически неизменяемой.
+ *
+ * @param meta - Метаданные рынка из регистрации
+ * @returns Тот же объект, замороженный вместе с `tokenIds` и `rawMarket`
+ *
+ * @remarks
+ * `MarketMeta` объявлен `readonly`, но `readonly` — обещание компилятора, а
+ * не рантайма. Снимок сессии отдаёт этот объект наружу
+ * ({@link ExternalMessageRecorder.listMarketSessions}), и его `rawMarket` —
+ * это canonical header, который финализатор позже кладёт в
+ * `updateMarketMeta()`. Мутация через снимок изменила бы то, что реально
+ * попадёт в LINE 1 архива, а найти такую правку по факту было бы нечем.
+ *
+ * Замораживается ОБЪЕКТ регистрации, а не его копия: клонировать нельзя —
+ * `marketId`/`expiresAt` являются доменными значениями, и структурная копия
+ * потеряла бы их прототип. Регистрация строится вызывающим заново на каждый
+ * допуск и после передачи recorder-у ему уже не принадлежит.
+ */
+function freezeMarketMeta(meta: MarketMeta): MarketMeta {
+  deepFreezeJson(meta.rawMarket);
+  Object.freeze(meta.tokenIds);
+  return Object.freeze(meta);
 }
 
 /**
@@ -503,6 +605,7 @@ export class ExternalMessageRecorder {
   private _marketSessionsAdmitted = 0;
   private _marketMessagesIgnoredByPolicy = 0;
   private _marketMessagesDroppedAfterExpiry = 0;
+  private _marketMessagesDroppedAfterSeal = 0;
   private _unroutedRtdsMessages = 0;
   private _handlerErrors = 0;
 
@@ -610,8 +713,11 @@ export class ExternalMessageRecorder {
     // под ключом успели заменить/убрать, чужое состояние не трогается.
     const session: RecordingSession = {
       marketId: registration.marketMeta.marketId,
+      // Регистрация замораживается ЗДЕСЬ: дальше она живёт в снимках сессий
+      // и в финальном header-е, и мутация через снимок меняла бы LINE 1.
+      marketMeta: freezeMarketMeta(registration.marketMeta),
       rtdsFeeds: [...(registration.rtdsFeeds ?? [])],
-      marketEventsRouted: true,
+      state: 'ACTIVE',
     };
     const installed = this._storage.registerMarket(registration.marketMeta, () => {
       this._invalidateSessionAfterDelayedActivationFailure(key, session);
@@ -680,44 +786,71 @@ export class ExternalMessageRecorder {
   }
 
   /**
-   * Сужает RTDS-routing рынка до указанного подмножества фидов.
+   * Переводит recording-сессию рынка в FINALIZING (граница датасета).
    *
    * @param marketId - ID рынка
-   * @param feeds - Фиды, которые ПРОДОЛЖАЮТ писаться в файл рынка; все
-   *   остальные фиды сессии перестают в него маршрутизироваться
-   * @returns `true` — сужение применено; `false` — recorder закрыт либо
-   *   активной сессии рынка нет (сужать нечего)
+   * @param settlementFeeds - Фиды, которые ПРОДОЛЖАЮТ писаться в файл рынка
+   *   (точная identity settlement-потока рынка); все остальные фиды сессии
+   *   перестают в него маршрутизироваться
+   * @returns `true` — переход выполнен (или сессия уже была FINALIZING);
+   *   `false` — recorder закрыт, сессии нет либо она уже SEALED
    *
    * @remarks
-   * Нужно ровно для boundary grace истёкшего рынка (MR-B PART 25): CLOB и
-   * spot-фиды обязаны прекратиться на `expiresAt`, а официальный
-   * settlement-поток — дописать граничное наблюдение, которое RTDS
-   * доставляет на 1-2 секунды позже. Без этого сужения «хвост» spot-фидов,
-   * оставшихся живыми ради ДРУГИХ рынков, продолжал бы попадать в датасет
-   * этого рынка — граница датасета зависела бы от того, кто ещё подписан.
+   * ### Что происходит СИНХРОННО с этим вызовом
    *
-   * Это НЕ seal: writer остаётся ACTIVE и принимает записи оставленных
-   * фидов. Market-события рынка тоже перестают маршрутизироваться —
-   * торговый lifecycle на истечении закончен. Идемпотентен; фид, которого у
-   * сессии не было, просто не появляется.
+   * ```text
+   * POLYMARKET_MARKET (book/price_change/...) ──► НЕ пишется
+   * обычные RTDS (spot binance/chainlink)     ──► НЕ пишутся
+   * settlement TWAP точной identity           ──► пишется дальше
+   * ```
+   *
+   * Ни одного `await` до смены состояния: события, уже стоящие в очереди
+   * шины, и наблюдения общих spot-фидов (живых ради ДРУГИХ рынков) не имеют
+   * шанса попасть в датасет после границы. Граница датасета не должна
+   * зависеть ни от того, кто ещё подписан, ни от того, когда закроется
+   * физический транспорт.
+   *
+   * ### Почему settlement-поток остаётся
+   *
+   * RTDS доставляет наблюдение с vendor-timestamp `T` через 1.1–2.2 с
+   * реального времени (характеризация 2026-08-26). Заморозить датасет ровно
+   * на `expiresAt` означало бы потерять ГРАНИЧНОЕ наблюдение — то самое, по
+   * которому рынок и рассчитывается.
+   *
+   * Это НЕ seal: writer остаётся принимающим записи оставленных фидов;
+   * заморозку выполняет {@link ExternalMessageRecorder.sealMarket} после
+   * settlement grace. Идемпотентен; фид, которого у сессии не было, просто
+   * не появляется.
    *
    * @example
    * ```typescript
    * // рынок истёк: оставить только официальный settlement-поток
-   * recorder.narrowRtdsFeeds(marketId, [
+   * recorder.beginMarketFinalization(marketId, [
    *   { topic: 'prices.crypto.chainlink.twap', symbol: 'btc/usd', windowSeconds: 60 },
    * ]);
    * ```
    */
-  public narrowRtdsFeeds(marketId: MarketId, feeds: readonly PolymarketRtdsFeedKey[]): boolean {
+  public beginMarketFinalization(
+    marketId: MarketId,
+    settlementFeeds: readonly PolymarketRtdsFeedKey[],
+  ): boolean {
     const key = String(marketId);
+    const feeds = settlementFeeds;
     if (this._closed) {
-      this._logger.warn('Feed narrowing ignored: recorder is closed', { marketId: key });
+      this._logger.warn('Market finalization start ignored: recorder is closed', {
+        marketId: key,
+      });
       return false;
     }
     const session = this._sessions.get(key);
     if (!session) {
-      this._logger.debug('narrowRtdsFeeds: no recording session for market', { marketId: key });
+      this._logger.debug('beginMarketFinalization: no recording session for market', {
+        marketId: key,
+      });
+      return false;
+    }
+    if (session.state === 'SEALED') {
+      this._logger.debug('beginMarketFinalization: dataset already sealed', { marketId: key });
       return false;
     }
 
@@ -739,16 +872,88 @@ export class ExternalMessageRecorder {
       }
     }
     // Сам ОБЪЕКТ сессии сохраняется (identity-guard отложенной активации) —
-    // меняется только её состав фидов и признак market-routing
+    // меняется только её состав фидов и стадия
     session.rtdsFeeds = retained;
-    session.marketEventsRouted = false;
+    session.state = 'FINALIZING';
 
-    this._logger.info('Recording session narrowed to settlement feeds', {
+    this._logger.info('Recording session entered finalization', {
       marketId: key,
       retained: retained.map((feed) => rtdsRoutingKey(feed)),
       dropped: dropped.length,
     });
     return true;
+  }
+
+  /**
+   * Сужает RTDS-routing рынка до указанного подмножества фидов.
+   *
+   * @param marketId - ID рынка
+   * @param feeds - Фиды, которые ПРОДОЛЖАЮТ писаться в файл рынка
+   * @returns То же, что {@link ExternalMessageRecorder.beginMarketFinalization}
+   *
+   * @deprecated LEGACY ALIAS. Именем `narrowRtdsFeeds` пользуется только
+   *   legacy `MarketCollectionCoordinator`; canonical-имя перехода —
+   *   {@link ExternalMessageRecorder.beginMarketFinalization}. Удаляется
+   *   вместе с legacy-координатором на Legacy Infrastructure Cleanup.
+   *
+   * @example
+   * ```typescript
+   * recorder.narrowRtdsFeeds(marketId, [settlementFeed]);
+   * ```
+   */
+  public narrowRtdsFeeds(marketId: MarketId, feeds: readonly PolymarketRtdsFeedKey[]): boolean {
+    return this.beginMarketFinalization(marketId, feeds);
+  }
+
+  /**
+   * Возвращает read-only снимки всех recording-сессий рынка.
+   *
+   * @returns Снимки, отсортированные по id рынка
+   *
+   * @remarks
+   * ### Зачем это существует
+   *
+   * Факт «запись этого рынка началась» рождается ВНУТРИ recorder-а: сессию
+   * создаёт первое наблюдение через ленивый допуск, а не внешний вызов.
+   * Lifecycle-слою нужно узнавать о таких сессиях, и единственная честная
+   * форма — read-only проекция владельца факта. Обратный вызов из recorder-а
+   * в lifecycle завёл бы циклическую зависимость двух слоёв ради данных,
+   * которые и так наблюдаемы.
+   *
+   * Снимок несёт `marketMeta` (в нём — canonical header и `expiresAt`,
+   * то есть граница рынка) и `firstObservedAtMs` — момент ПЕРВОЙ реально
+   * записанной строки. Mutable-состояние наружу не выходит: массив фидов
+   * копируется, сам снимок заморожен, а регистрация (вместе с вложенным
+   * `rawMarket`) заморожена ещё при `registerMarket` — иначе вызывающий мог
+   * бы через снимок изменить canonical header, который позже уедет в LINE 1
+   * архива.
+   *
+   * @example
+   * ```typescript
+   * for (const session of recorder.listMarketSessions()) {
+   *   if (session.state === 'ACTIVE') scheduleExpiry(session.marketMeta.expiresAt);
+   * }
+   * ```
+   */
+  public listMarketSessions(): readonly PolymarketRecordingSessionSnapshot[] {
+    return [...this._sessions.values()]
+      .map((session) =>
+        Object.freeze({
+          marketId: session.marketId,
+          state: session.state,
+          marketMeta: session.marketMeta,
+          rtdsFeeds: Object.freeze([...session.rtdsFeeds]),
+          ...(session.firstObservedAtMs !== undefined
+            ? { firstObservedAtMs: session.firstObservedAtMs }
+            : {}),
+        }),
+      )
+      .sort((left, right) => {
+        const a = String(left.marketId);
+        const b = String(right.marketId);
+        if (a < b) return -1;
+        return a > b ? 1 : 0;
+      });
   }
 
   /**
@@ -766,6 +971,12 @@ export class ExternalMessageRecorder {
    * (enrichment header-а) и {@link ExternalMessageRecorder.finalizeMarket}
    * с reason `'EXPIRED'` (архив). Общие RTDS-фиды других рынков не
    * затрагиваются (per-feed removal). Идемпотентен на уровне storage.
+   *
+   * Сессия при этом НЕ удаляется, а помечается `SEALED` — надгробие живёт до
+   * `finalizeMarket`. Физический claim рынка снимается ПОЗЖЕ заморозки
+   * (иначе последний claim закрыл бы settlement-поток вместе с CLOB), и
+   * события, долетевшие в это окно, обязаны находить завершённую сессию, а
+   * не создавать ленивым допуском ВТОРУЮ поверх готового датасета.
    */
   public async sealMarket(marketId: MarketId): Promise<boolean> {
     const key = String(marketId);
@@ -775,8 +986,11 @@ export class ExternalMessageRecorder {
     }
     const session = this._sessions.get(key);
     if (session) {
-      this._sessions.delete(key);
+      // Синхронно, до первого await: routing снят и стадия сменилась —
+      // ни одно наблюдение этого тика уже не попадёт в датасет
       this._removeRtdsRouting(session);
+      session.rtdsFeeds = [];
+      session.state = 'SEALED';
     }
     const sealed = await this._storage.sealMarket(marketId);
     this._logger.info('Recording session sealed', { marketId: key, storageSealed: sealed });
@@ -897,6 +1111,7 @@ export class ExternalMessageRecorder {
       marketSessionsAdmitted: this._marketSessionsAdmitted,
       marketMessagesIgnoredByPolicy: this._marketMessagesIgnoredByPolicy,
       marketMessagesDroppedAfterExpiry: this._marketMessagesDroppedAfterExpiry,
+      marketMessagesDroppedAfterSeal: this._marketMessagesDroppedAfterSeal,
       unroutedRtdsMessages: this._unroutedRtdsMessages,
       handlerErrors: this._handlerErrors,
     };
@@ -1048,9 +1263,13 @@ export class ExternalMessageRecorder {
           return; // счётчик уже увеличен внутри _admitSession
         }
       }
-      // Сессия, сужённая до settlement-фида (рынок истёк), market-события
-      // больше не принимает: торговый lifecycle закончен на expiresAt
-      if (!session.marketEventsRouted) {
+      // Сессия истёкшего рынка market-события больше не принимает: торговый
+      // lifecycle закончен на expiresAt. SEALED — датасет уже заморожен.
+      if (session.state === 'SEALED') {
+        this._marketMessagesDroppedAfterSeal++;
+        return;
+      }
+      if (session.state === 'FINALIZING') {
         this._marketMessagesDroppedAfterExpiry++;
         return;
       }
@@ -1187,6 +1406,9 @@ export class ExternalMessageRecorder {
     switch (outcome) {
       case 'recorded':
         this._recordsWritten++;
+        // Датасет начинается со СТРОКИ, а не с решения политики: моментом
+        // начала записи считается ingress первого принятого наблюдения
+        session.firstObservedAtMs ??= ingressEpochMilliseconds(observation.ingress);
         break;
       case 'inactive':
         this._recordsSkippedInactive++;

@@ -1,5 +1,26 @@
 # @polymarket/collection-coordinator
 
+> **⚠️ LEGACY BEHAVIOR ORACLE — DELETE AFTER COLLECTOR QUALIFICATION**
+>
+> Пакет НЕ является частью canonical collector runtime. Он сам владел
+> физическими ресурсами рынка (`prepareSelected`, `subscribeMarket`,
+> `subscribeCryptoPrices`, `subscribeChainlinkTwap`, собственный ref-count
+> RTDS), а после Collector-cutover физическим ресурсом владеет ОДИН
+> компонент — `PolymarketSubscriptionController`; жизненный цикл начатой
+> записи ведёт `PolymarketCollectionLifecycle` (`@polymarket/collector`).
+>
+> Проверенная ПОВЕДЕНЧЕСКАЯ политика (ACTIVE/FINALIZING, cutoff на
+> истечении, сужение RTDS до settlement-потока, boundary grace, seal,
+> порядок shutdown) перенесена в canonical lifecycle; DTO финализации
+> header-а живут в `@polymarket/collector` и реэкспортируются отсюда.
+>
+> Правила обращения до удаления: новых runtime-зависимостей на пакет не
+> создавать (проверяется structural-тестом границы в
+> `@polymarket/collector`), использовать только как оракул поведения при
+> верификации нового контура. Пакет НЕ компилируется на `phase-3` начиная
+> с canonical V2 Discovery (PR #77) — это известное состояние, а не
+> регрессия этого этапа.
+
 Координатор collection sessions (N-003): превращает выбранный Market
 Discovery V2 рынок в failure-safe ACTIVE-сессию записи — регистрация в
 recorder СТРОГО ДО открытия realtime-подписок, shared/ref-counted

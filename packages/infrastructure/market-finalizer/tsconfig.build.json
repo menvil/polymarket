@@ -28,7 +28,7 @@
       "path": "../polymarket-v2/tsconfig.build.json"
     },
     {
-      "path": "../collection-coordinator/tsconfig.build.json"
+      "path": "../collector/tsconfig.build.json"
     },
     {
       "path": "../persistence/external-message-recorder/tsconfig.build.json"

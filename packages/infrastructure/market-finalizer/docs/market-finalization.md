@@ -28,13 +28,15 @@ SEALED .jsonl (payload заморожен; LINE 1 всё ещё перезапи
 ```text
 MarketFinalizer.runOnce()          ← cadence у composition root
  │
- ├── listSessions(): ACTIVE && expiresAt <= now
- │        ↓
- ├── coordinator.beginFinalization(marketId)
+ ├── listSessions(): ACTIVE && expiresAt <= now  → beginFinalization()
+ │                    FINALIZING (перевёл не мы)  → getFinalizingSession()
+ │        ↓            дедупликация по _pending: рынок регистрируется раз
+ ├── lifecycle.beginFinalization(marketId)
  │     ├── state → FINALIZING ДО первого await (at most once)
- │     ├── recorder.sealMarket  (routing снят, датасет заморожен)
- │     ├── close market subscription
- │     └── release RTDS refs   (общие фиды соседей живут)
+ │     ├── recorder.beginMarketFinalization (CLOB и spot больше не пишутся)
+ │     ├── settlement grace   (граничное наблюдение TWAP)
+ │     ├── recorder.sealMarket (payload заморожен)
+ │     └── release('collector:raw')  ПОСЛЕ заморозки, не на истечении
  │
  ├── pending: одна Gamma-попытка на проход (retry 30с, max 60 мин)
  │     ├── fetchMarket(gammaMarketId) → state/resolution/outcome prices
@@ -46,8 +48,47 @@ MarketFinalizer.runOnce()          ← cadence у composition root
  │           timeout  → бюджет исчерпан, best-known с явным статусом
  │
  └── финальный путь: header → finalizeMarket(EXPIRED) → gzip
-        → coordinator.completeFinalization (identity-guard: только FINALIZING)
+        → lifecycle.completeFinalization (identity-guard: только FINALIZING)
 ```
+
+## Gamma polling только ПОСЛЕ immutable-границы
+
+```text
+expiresAt → FINALIZING → settlement grace → seal → release claim
+                                                     │
+                                                     └── и только теперь
+                                                         fetchMarket/fetchEvent
+```
+
+`awaitSettlementCapture` стоит в НАЧАЛЕ каждой enrichment-попытки, а не
+только перед архивом. Иначе первая попытка уходила бы в сеть, пока grace ещё
+дописывает граничное наблюдение TWAP, а промежуточный `pending`-header
+переписывал бы LINE 1 ещё не замороженного датасета. Ожидание идемпотентно и
+после завершения границы стоит ноль — цену платит ровно первая попытка
+каждого рынка. Момент попытки при этом остаётся моментом прохода: он задаёт
+retry cadence и отсчёт бюджета, которые принадлежат проходу, а не
+длительности ожидания границы.
+
+## Почему подхват FINALIZING обязателен
+
+Границу датасета держит ТОЧНЫЙ таймер сессии в lifecycle, а не проход
+финализатора. Значит, к моменту прохода рынок обычно УЖЕ `FINALIZING`, а
+`beginFinalization` устроен «ровно один раз» и отвечает `undefined`. Искать
+только `ACTIVE` значило бы никогда не подхватить такой рынок:
+
+```text
+18:05:00.000  таймер сессии → FINALIZING → grace → seal → release
+18:05:05.000  runOnce() видит FINALIZING и пропускает
+              → Gamma polling не начинается
+              → header не финализируется, архива нет
+              → сессия висит FINALIZING вечно
+```
+
+Поэтому источников снимка два (`beginFinalization` для due `ACTIVE`,
+`getFinalizingSession` для `FINALIZING`), а регистрация одна — по `_pending`.
+`startedAtMs` берётся из снимка (`finalizingSinceMs`), а не из момента
+подхвата: иначе `finalization.startedAtMs` архива и отсчёт бюджета ожидания
+сдвигались бы на задержку control-тика.
 
 ## Почему НЕ «timer → closeSession(EXPIRED) → updateMarketMeta»
 
@@ -56,22 +97,28 @@ MarketFinalizer.runOnce()          ← cadence у composition root
 payload уже заморожен (никакие поздние ExternalMessages в датасет не
 попадают — cutoff), но header ещё writable.
 
-## Capacity и повторное открытие (PART 3/4)
+## Повторное открытие завершённого рынка
 
-FINALIZING не занимает active-слот (`maxMarkets` считает OPENING+ACTIVE —
-parity с legacy, освобождавшим слот сразу при expiry), но сессия остаётся
-в реестре координатора — duplicate reopen блокируется существующим
-guard-ом. Отдельный closed-markets blacklist с TTL из legacy НЕ перенесён:
-до `completeFinalization` identity держит сессия, после архива кандидат
-отклоняется проверкой `expiresAt <= now` (доказано тестами).
+Duplicate reopen блокируется двумя независимыми контурами: recorder держит
+`SEALED`-надгробие сессии до `finalizeMarket` (ленивый допуск не создаёт
+вторую сессию поверх готового датасета), а gate требует ПОДТВЕРЖДЁННЫЙ claim
+`collector:raw` — которого после `release` на границе датасета уже нет.
+Отдельный closed-markets blacklist с TTL из legacy не нужен.
+
+Capacity рынков считает `acquireLimit` спроса в control-plane: FINALIZING
+слота не занимает, потому что физический claim к этому моменту снят.
 
 ## Финальный header (PART 22-25)
 
 `updateMarketMeta` заменяет `m` первой строки ЦЕЛИКОМ, поэтому finalizer
-пересобирает ПОЛНЫЙ V2 header единым `buildCollectionHeader`
-(`@polymarket/collection-coordinator`): initial-ядро (identity/outcomes/
-timing/RTDS) + свежие `gammaMarket`/`gammaEvent` поверх initial +
-`finalization`-раздел В ЯДРЕ:
+собирает её из canonical header-а допуска через `buildFinalizedMarketHeader`
+(`@polymarket/collector`). Это ОБОГАЩЕНИЕ, а не пересборка: база
+(`headerVersion: 2`, identity/outcomes/timing/family/crypto) берётся такой,
+какой её записал допуск, `timing` дополняется `recordingStartsAt`, и
+добавляется `finalization`-раздел. Vendor-снапшоты Gamma в canonical header
+не переносятся, а возврат к legacy `headerVersion: 1` невозможен: два
+несовместимых shape под разными версиями в одном датасете сделали бы
+дискриминатор бесполезным.
 
 ```json
 "finalization": {
@@ -196,7 +243,7 @@ Expiry-переходы продолжаются: ACTIVE-рынок, истёк�
 ожидание in-flight → все FINALIZING архивируются EXPIRED best-known БЕЗ
 новых Gamma-запросов (сеть не задерживает shutdown; статус `'complete'`,
 если условие уже выполнено, иначе `'timeout'`). ACTIVE/OPENING рынки не
-трогаются — их закроет `coordinator.close()` как SHUTDOWN. Итоговый
+трогаются — их закроет `lifecycle.close()` как SHUTDOWN. Итоговый
 порядок контура — см. README.
 
 Ветка `'timeout'` (оба пути) — зарезервированная точка расширения

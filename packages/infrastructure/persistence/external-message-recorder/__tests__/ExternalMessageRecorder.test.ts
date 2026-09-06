@@ -563,7 +563,11 @@ describe('sealMarket', () => {
     await publishMarket(createBookEvent());
     await publishRtds(createBinanceEvent());
     expect(storage.writes).toHaveLength(1);
-    expect(recorder.getStats().unroutedMarketMessages).toBe(1);
+    // Сессия остаётся SEALED-надгробием: market-события истёкшего рынка это
+    // ШТАТНЫЙ игнор (физический claim снимается ПОСЛЕ заморозки), а не потеря
+    // при отсутствующей сессии — их нельзя смешивать в одном счётчике.
+    expect(recorder.getStats().marketMessagesDroppedAfterSeal).toBe(1);
+    expect(recorder.getStats().unroutedMarketMessages).toBe(0);
     expect(recorder.getStats().unroutedRtdsMessages).toBe(1);
 
     // Header остаётся writable, финализация EXPIRED доступна
@@ -624,5 +628,157 @@ describe('sealMarket', () => {
     expect(
       await recorder.updateMarketMeta(unsafeMarketId(MARKET_CONDITION_ID), { ok: true }),
     ).toBe(true);
+  });
+});
+
+// ── Наблюдаемость сессий и граница финализации ──────────────────────────────
+
+describe('listMarketSessions', () => {
+  it('снимок несёт стадию, регистрацию, фиды и момент ПЕРВОЙ записанной строки', async () => {
+    recorder.start();
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }],
+    });
+
+    // До первой строки момент начала записи неизвестен: датасет не начался.
+    expect(recorder.listMarketSessions()).toHaveLength(1);
+    expect(recorder.listMarketSessions()[0]?.state).toBe('ACTIVE');
+    expect(recorder.listMarketSessions()[0]?.firstObservedAtMs).toBeUndefined();
+
+    await publishMarket(createBookEvent());
+
+    const [session] = recorder.listMarketSessions();
+    expect(String(session?.marketId)).toBe(MARKET_CONDITION_ID);
+    expect(session?.state).toBe('ACTIVE');
+    expect(session?.marketMeta.question).toBe('Will BTC go up?');
+    expect(session?.rtdsFeeds).toEqual([{ topic: 'prices.crypto.binance', symbol: 'btcusdt' }]);
+    expect(typeof session?.firstObservedAtMs).toBe('number');
+  });
+
+  it('снимок не даёт изменить canonical header живой сессии', async () => {
+    recorder.start();
+    recorder.registerMarket({
+      marketMeta: {
+        ...makeMeta(MARKET_CONDITION_ID),
+        rawMarket: { headerVersion: 2, timing: { expiresAt: 1 } },
+      },
+    });
+    await publishMarket(createBookEvent());
+
+    const snapshot = recorder.listMarketSessions()[0]!;
+    const header = snapshot.marketMeta.rawMarket as Record<string, unknown>;
+    const timing = header['timing'] as Record<string, unknown>;
+    // Мутация через снимок изменила бы то, что финализатор положит в LINE 1
+    // архива, — и найти такую правку по факту было бы нечем.
+    expect(() => {
+      timing['expiresAt'] = 999;
+    }).toThrow(TypeError);
+    expect(() => {
+      header['headerVersion'] = 1;
+    }).toThrow(TypeError);
+
+    const reread = recorder.listMarketSessions()[0]!.marketMeta.rawMarket as Record<string, unknown>;
+    expect(reread['headerVersion']).toBe(2);
+    expect((reread['timing'] as Record<string, unknown>)['expiresAt']).toBe(1);
+  });
+
+  it('снимки детерминированно упорядочены по id рынка', () => {
+    recorder.start();
+    // Регистрируем в ОБРАТНОМ порядке: сортировка должна быть по id, а не по
+    // порядку вставки в карту сессий.
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID_B) });
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+
+    const ids = recorder.listMarketSessions().map((session) => String(session.marketId));
+
+    // Сравнение с ЯВНЫМ ожидаемым набором: самосравнение с отсортированной
+    // копией прошло бы и при пропавшей сессии.
+    expect(ids).toEqual([MARKET_CONDITION_ID, MARKET_CONDITION_ID_B].sort());
+  });
+});
+
+describe('beginMarketFinalization', () => {
+  it('СИНХРОННО отсекает CLOB и обычные RTDS, оставляя settlement-поток', async () => {
+    recorder.start();
+    recorder.registerMarket({
+      marketMeta: makeMeta(MARKET_CONDITION_ID),
+      rtdsFeeds: [
+        { topic: 'prices.crypto.binance', symbol: 'btcusdt' },
+        { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
+      ],
+    });
+    await publishMarket(createBookEvent());
+    expect(storage.writes).toHaveLength(1);
+
+    // Оставляем ТОЛЬКО chainlink-поток (в этой фикстуре он играет роль
+    // settlement-фида: точная identity, а не эвристика формата символа).
+    const applied = recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [
+      { topic: 'prices.crypto.chainlink', symbol: 'btc/usd' },
+    ]);
+
+    expect(applied).toBe(true);
+    expect(recorder.listMarketSessions()[0]?.state).toBe('FINALIZING');
+
+    await publishMarket(createBookEvent()); // CLOB после границы
+    await publishRtds(createBinanceEvent()); // обычный RTDS после границы
+    expect(storage.writes).toHaveLength(1);
+    expect(recorder.getStats().marketMessagesDroppedAfterExpiry).toBe(1);
+
+    await publishRtds(createChainlinkEvent()); // граничный settlement-поток
+    expect(storage.writes).toHaveLength(2);
+  });
+
+  it('идемпотентен; после заморозки датасета переход больше не выполняется', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [])).toBe(true);
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [])).toBe(true);
+
+    await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID));
+
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [])).toBe(false);
+    expect(recorder.listMarketSessions()[0]?.state).toBe('SEALED');
+  });
+
+  it('нет сессии → false (сужать нечего)', () => {
+    recorder.start();
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [])).toBe(false);
+  });
+});
+
+describe('SEALED-надгробие сессии', () => {
+  it('ленивый допуск НЕ создаёт вторую сессию поверх замороженного датасета', async () => {
+    // Провайдер согласен на рынок ВСЕГДА: единственная защита — стадия сессии.
+    const admitting = new ExternalMessageRecorder({
+      bus,
+      storage,
+      logger,
+      sessionProvider: (sourceMarketId) => ({ marketMeta: makeMeta(sourceMarketId) }),
+    });
+    admitting.start();
+    await publishMarket(createBookEvent());
+    expect(storage.registered).toHaveLength(1);
+
+    await admitting.sealMarket(unsafeMarketId(MARKET_CONDITION_ID));
+    await publishMarket(createBookEvent());
+
+    expect(storage.registered).toHaveLength(1);
+    expect(admitting.getStats().marketSessionsAdmitted).toBe(1);
+    expect(admitting.getStats().marketMessagesDroppedAfterSeal).toBe(1);
+
+    await admitting.close();
+  });
+
+  it('finalizeMarket снимает надгробие', async () => {
+    recorder.start();
+    recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
+    await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID));
+    expect(recorder.listMarketSessions()).toHaveLength(1);
+
+    await recorder.finalizeMarket(unsafeMarketId(MARKET_CONDITION_ID), 'EXPIRED');
+
+    expect(recorder.listMarketSessions()).toEqual([]);
   });
 });

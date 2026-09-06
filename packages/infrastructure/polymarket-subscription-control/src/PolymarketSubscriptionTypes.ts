@@ -28,7 +28,12 @@ import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { MarketId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/timestamp';
-import type { PolymarketMarketDiscovery, PolymarketSource } from '@polymarket/polymarket-v2';
+import type { MarketDiscoveryEntry } from '@polymarket/ports';
+import type {
+  PolymarketMarketDiscovery,
+  PolymarketSource,
+  SelectedPolymarketMarket,
+} from '@polymarket/polymarket-v2';
 
 /**
  * Стабильный ключ владельца подписки.
@@ -218,6 +223,10 @@ export interface PolymarketSubscriptionControllerStats {
  * Только canonical-данные: vendor-записи (`SelectedPolymarketMarket`,
  * Gamma-модели, SDK-объекты) наружу не выходят вообще — они остаются
  * внутренним состоянием Infrastructure.
+ *
+ * Диагностический снимок ВСЕХ подписок и снимок УДЕРЖИВАЕМОГО рынка —
+ * разные контракты: второй ({@link HeldPolymarketSubscriptionSnapshot})
+ * адресован конкретному владельцу и обязан нести vendor-подготовку.
  */
 export interface PolymarketSubscriptionSnapshot {
   /** Canonical id рынка. */
@@ -230,4 +239,46 @@ export interface PolymarketSubscriptionSnapshot {
   readonly startsAt: Timestamp;
   /** Сколько RTDS-фидов приобретено этим рынком. */
   readonly rtdsFeedCount: number;
+}
+
+/**
+ * Снимок рынка, который ДАННЫЙ владелец реально удерживает.
+ *
+ * @remarks
+ * ### Зачем нужен отдельно от {@link PolymarketSubscriptionSnapshot}
+ *
+ * Диагностический список подписок отвечает на вопрос «что вообще открыто» и
+ * потому не содержит vendor-данных. Этот снимок отвечает на другой вопрос —
+ * «что именно удерживает ЭТОТ владелец и с какой подготовкой» — и без
+ * vendor-подготовки бесполезен: recording-контур строит по ней маршрутизацию
+ * RTDS-фидов, а финализация — правило расчёта рынка. Требовать от владельца
+ * второй `prepareMarket()` было бы хуже: два независимых снимка discovery
+ * разошлись бы, и записывался бы рынок с одной подготовкой, а резолвился с
+ * другой.
+ *
+ * ### Что сюда СОЗНАТЕЛЬНО не входит
+ *
+ * Ни `marketSubscription`, ни handles RTDS-фидов, ни mutable-множество
+ * владельцев, ни внутреннее состояние транспорта. Владелец не должен иметь
+ * возможности закрыть чужой физический ресурс или мутировать состав claim-ов
+ * в обход {@link PolymarketSubscriptionController.release}.
+ *
+ * ### Почему `OPENING` — законная стадия для снимка
+ *
+ * Первое наблюдение рынка приходит на шину сразу после `subscribeMarket()` —
+ * то есть ДО того, как открылись все RTDS-фиды и транзакция закоммитила
+ * `ACTIVE`. Требование `state === 'ACTIVE'` означало бы «recording-сессию
+ * нельзя создать, пока не открылось всё» — и первый (опорный) book-снапшот
+ * рынка был бы потерян. Поэтому снимок доступен и в `OPENING`, как только
+ * vendor-подготовка получена.
+ */
+export interface HeldPolymarketSubscriptionSnapshot {
+  /** Canonical id рынка. */
+  readonly marketId: MarketId;
+  /** Стадия физического ресурса на момент снимка. */
+  readonly state: 'OPENING' | 'ACTIVE';
+  /** Canonical запись universe, по которой рынок приобретался. */
+  readonly entry: MarketDiscoveryEntry;
+  /** Immutable vendor-подготовка рынка (та же, по которой открыт транспорт). */
+  readonly selected: SelectedPolymarketMarket;
 }

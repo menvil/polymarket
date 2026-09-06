@@ -2,10 +2,10 @@
  * @polymarket/market-finalizer — post-expiry финализация V2-записей (N-004).
  *
  * @remarks
- * Control-plane пакет: due ACTIVE-сессии координатора переводятся в
- * FINALIZING (seal realtime), обогащаются свежими Gamma Market/Event через
- * официальный SDK и архивируются как EXPIRED `.jsonl.gz` с полным финальным
- * V2 header-ом:
+ * Control-plane пакет: due ACTIVE-сессии collection lifecycle переводятся в
+ * FINALIZING (cutoff → settlement grace → seal), обогащаются свежими Gamma
+ * Market/Event через официальный SDK и архивируются как EXPIRED `.jsonl.gz`
+ * с canonical V2 header-ом, дополненным разделом `finalization`:
  *
  * ```text
  * ACTIVE ──expiresAt──► FINALIZING ──enrich/timeout──► EXPIRED .jsonl.gz
@@ -21,8 +21,9 @@ export type {
   TwapSettlementObservation,
 } from './recordedTwapSettlement.js';
 export type {
-  FinalizationCoordinator,
   FinalizationGammaClient,
+  FinalizationLifecycle,
+  FinalizingMarketSession,
   FinalizationOutcome,
   FinalizationRecorder,
   MarketFinalizerConfig,

@@ -7,8 +7,9 @@
  * параметры обязаны доходить до источника, а неверные значения — ронять старт,
  * а не превращаться в валидные молча.
  */
-import { describe, it, expect } from '@jest/globals';
+import { afterEach, describe, it, expect } from '@jest/globals';
 import { parseCexExchangeConfigs, toDataCollectorConfig } from '../src/runtime/DataCollectorConfig.js';
+import { loadConfig } from '../src/config.js';
 import type { CollectorConfig } from '../src/config.js';
 
 /** Базовая внешняя конфигурация приложения (валидная). */
@@ -38,6 +39,9 @@ function baseConfig(overrides: Partial<CollectorConfig> = {}): CollectorConfig {
     policyAssets: [],
     policyDurations: [],
     discoveryWindowHours: undefined,
+    settlementGraceMs: undefined,
+    enrichmentRetryMs: undefined,
+    enrichmentMaxWaitMs: undefined,
     controlTickMs: 5_000,
     ...overrides,
   };
@@ -245,5 +249,83 @@ describe('toDataCollectorConfig — env → runtime config', () => {
         baseConfig({ cexConfig: JSON.stringify({ binance: { type: 'spot', symbols: [], orderbook: true, trades: true } }) }),
       ),
     ).toThrow();
+  });
+});
+
+// ── Валидация lifecycle-таймингов окружения ─────────────────────────────────
+
+describe('lifecycle-тайминги окружения: неверное значение роняет старт', () => {
+  const KEYS = [
+    'COLLECTOR_SETTLEMENT_GRACE_MS',
+    'COLLECTOR_ENRICHMENT_RETRY_MS',
+    'COLLECTOR_ENRICHMENT_MAX_WAIT_MS',
+  ] as const;
+
+  afterEach(() => {
+    for (const key of KEYS) delete process.env[key];
+  });
+
+  it('не задано → undefined: дефолт применяет сам компонент', () => {
+    const config = loadConfig();
+
+    expect(config.settlementGraceMs).toBeUndefined();
+    expect(config.enrichmentRetryMs).toBeUndefined();
+    expect(config.enrichmentMaxWaitMs).toBeUndefined();
+    // Дефолты рантайма при этом реальные, а не продублированные конфигом.
+    const runtime = toDataCollectorConfig(baseConfig());
+    expect(runtime.collection.settlementGraceMs).toBe(5_000);
+    expect(runtime.finalization.enrichmentRetryMs).toBe(30_000);
+    expect(runtime.finalization.enrichmentMaxWaitMs).toBe(60 * 60_000);
+  });
+
+  it('валидные значения принимаются и доезжают до рантайма', () => {
+    process.env['COLLECTOR_SETTLEMENT_GRACE_MS'] = '0'; // «без ожидания» законно
+    process.env['COLLECTOR_ENRICHMENT_RETRY_MS'] = '15000';
+    process.env['COLLECTOR_ENRICHMENT_MAX_WAIT_MS'] = '900000';
+
+    const config = loadConfig();
+
+    expect(config.settlementGraceMs).toBe(0);
+    const runtime = toDataCollectorConfig(baseConfig(config));
+    expect(runtime.collection.settlementGraceMs).toBe(0);
+    expect(runtime.finalization.enrichmentRetryMs).toBe(15_000);
+    expect(runtime.finalization.enrichmentMaxWaitMs).toBe(900_000);
+  });
+
+  it.each(KEYS)('%s = -1 → отказ старта', (key) => {
+    // Отрицательный retry сделал бы КАЖДЫЙ проход немедленно due.
+    process.env[key] = '-1';
+    expect(() => loadConfig()).toThrow(key);
+  });
+
+  it.each(KEYS)('%s = Infinity → отказ старта', (key) => {
+    // Бесконечный бюджет означал бы, что таймаут не наступает никогда.
+    process.env[key] = 'Infinity';
+    expect(() => loadConfig()).toThrow(key);
+  });
+
+  it.each(KEYS)('%s = NaN → отказ старта', (key) => {
+    process.env[key] = 'NaN';
+    expect(() => loadConfig()).toThrow(key);
+  });
+
+  it.each(KEYS)('%s = "abc" → отказ старта', (key) => {
+    process.env[key] = 'abc';
+    expect(() => loadConfig()).toThrow(key);
+  });
+
+  it('enrichmentRetryMs = 0 → отказ: cadence превратилась бы в busy loop', () => {
+    process.env['COLLECTOR_ENRICHMENT_RETRY_MS'] = '0';
+    expect(() => loadConfig()).toThrow('COLLECTOR_ENRICHMENT_RETRY_MS');
+  });
+
+  it('enrichmentMaxWaitMs = 0 → отказ: бюджет ожидания не может быть пустым', () => {
+    process.env['COLLECTOR_ENRICHMENT_MAX_WAIT_MS'] = '0';
+    expect(() => loadConfig()).toThrow('COLLECTOR_ENRICHMENT_MAX_WAIT_MS');
+  });
+
+  it('settlementGraceMs = 0 принимается: рынок без settlement-фида не ждёт', () => {
+    process.env['COLLECTOR_SETTLEMENT_GRACE_MS'] = '0';
+    expect(loadConfig().settlementGraceMs).toBe(0);
   });
 });

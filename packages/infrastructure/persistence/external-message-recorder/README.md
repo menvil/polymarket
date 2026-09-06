@@ -211,16 +211,62 @@ bus НЕ закрывается. `EXPIRED` = завершённый dataset (а�
 архив НЕ создаётся). Сообщения, регистрации и финализации после close
 игнорируются (warn).
 
-## 7a. Seal — expiry-cutoff без архива (N-004)
+## 7a. Стадии сессии: ACTIVE → FINALIZING → SEALED
 
-`sealMarket(marketId)` — переход между записью и архивом: market/RTDS
-routing сессии снимается НЕМЕДЛЕННО (новые ExternalMessages в payload не
-попадают; общие RTDS-фиды других рынков не затронуты), storage
-замораживает файл (`DataRecorder.sealMarket`: буфер flushed, append-stream
-закрыт), но writer сохраняется — `updateMarketMeta()` (enrichment header-а)
-и `finalizeMarket(EXPIRED)` продолжают работать. `updateMarketMeta`
-возвращает наблюдаемый `boolean` — finalizer не объявляет успех, если
-header фактически не записан.
+```text
+ACTIVE ── beginMarketFinalization ──► FINALIZING ── sealMarket ──► SEALED
+  │            (CLOB и обычные            │      (payload заморожен)
+  │             RTDS больше не            │
+  │             пишутся; остаётся         └── finalizeMarket ──► сессии нет
+  │             settlement TWAP)
+  └── finalizeMarket(SHUTDOWN) ──────────────────────────────► сессии нет
+```
+
+`beginMarketFinalization(marketId, settlementFeeds)` — граница датасета.
+Переход выполняется СИНХРОННО, ни одного `await`: события, уже стоящие в
+очереди шины, и наблюдения общих spot-фидов (живых ради ДРУГИХ рынков) не
+должны иметь шанса попасть в датасет после границы.
+
+| Поток | ACTIVE | FINALIZING | SEALED |
+| --- | --- | --- | --- |
+| `POLYMARKET_MARKET` | пишется | нет (`…DroppedAfterExpiry`) | нет (`…DroppedAfterSeal`) |
+| обычные RTDS | пишется | нет | нет |
+| settlement TWAP точной identity | пишется | пишется | нет |
+
+`sealMarket(marketId)` замораживает payload (`DataRecorder.sealMarket`:
+буфер flushed, append-stream закрыт), но writer сохраняется —
+`updateMarketMeta()` (enrichment header-а) и `finalizeMarket(EXPIRED)`
+продолжают работать. `updateMarketMeta` возвращает наблюдаемый `boolean` —
+finalizer не объявляет успех, если header фактически не записан.
+
+Сессия при seal НЕ удаляется, а становится `SEALED`-надгробием: физический
+claim рынка снимается ПОЗЖЕ заморозки (иначе последний claim закрыл бы
+settlement-поток вместе с CLOB), и события, долетевшие в это окно, обязаны
+находить завершённую сессию, а не создавать ленивым допуском вторую поверх
+готового датасета.
+
+`narrowRtdsFeeds` сохранён как `@deprecated`-алиас для legacy-координатора.
+
+## 7b. Наблюдаемость сессий: `listMarketSessions()`
+
+Факт «запись рынка началась» рождается ВНУТРИ recorder-а: сессию создаёт
+первое наблюдение через ленивый допуск. Lifecycle-слой узнаёт о ней
+read-only снимком, а не обратным вызовом: обратный вызов из recorder-а в
+lifecycle завёл бы циклическую зависимость двух слоёв ради данных, которые и
+так наблюдаемы.
+
+```typescript
+for (const session of recorder.listMarketSessions()) {
+  session.marketId;           // canonical id (== conditionId)
+  session.state;              // 'ACTIVE' | 'FINALIZING' | 'SEALED'
+  session.marketMeta;         // canonical header + expiresAt + tokenIds
+  session.rtdsFeeds;          // текущий состав фидов файла
+  session.firstObservedAtMs;  // ingress ПЕРВОЙ записанной строки
+}
+```
+
+`firstObservedAtMs` — момент первой реально записанной строки, а не момент
+регистрации: датасет начинается со строки, а не с решения политики.
 
 ## 8. Независимые consumers одного bus
 

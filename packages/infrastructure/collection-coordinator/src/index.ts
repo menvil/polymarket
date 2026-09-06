@@ -1,20 +1,44 @@
 /**
- * @polymarket/collection-coordinator — coordinator collection sessions (N-003).
+ * @polymarket/collection-coordinator — LEGACY координатор collection sessions.
+ *
+ * @deprecated
+ * LEGACY BEHAVIOR ORACLE.
+ * Not part of canonical collector runtime.
+ * Keep until real collector qualification is complete.
+ * Delete during Legacy Infrastructure Cleanup.
  *
  * @remarks
- * Control-plane пакет: превращает выбранный Discovery V2 рынок в failure-safe
- * ACTIVE collection session:
+ * ### Почему пакет больше не canonical
+ *
+ * Координатор сам владел физическими ресурсами рынка:
  *
  * ```text
- * Market Discovery V2 → MarketCollectionCoordinator
- *                          ├── ExternalMessageRecorder.registerMarket (FIRST)
- *                          ├── PolymarketSource.subscribeMarket
- *                          └── shared/ref-counted RTDS feeds
+ * discovery.prepareSelected()          ← собственная vendor-подготовка
+ * source.subscribeMarket()             ← собственная подписка CLOB
+ * source.subscribeCryptoPrices()       ← собственные spot-фиды
+ * source.subscribeChainlinkTwap()      ← собственный settlement-поток
+ * собственный ref-count RTDS           ← второй счётчик тех же фидов
  * ```
  *
- * Data plane (Source → ExternalMessage → общий ExternalMessageBus → Recorder)
- * пакетом НЕ затрагивается; здесь нет ни decode payload, ни записи файлов,
- * ни semantic conversion.
+ * После Collector-cutover физическим ресурсом владеет ОДИН компонент —
+ * `PolymarketSubscriptionController`, а жизненный цикл уже начатой записи
+ * ведёт `PolymarketCollectionLifecycle` (`@polymarket/collector`). Два
+ * владельца одних и тех же подписок — не стиль, а источник расхождений:
+ * второй ref-count закрывал бы фид, ещё нужный первому.
+ *
+ * ### Что от него оставлено
+ *
+ * Проверенная ПОВЕДЕНЧЕСКАЯ политика (ACTIVE/FINALIZING, cutoff на истечении,
+ * сужение RTDS до settlement-потока, boundary grace, seal, порядок shutdown)
+ * перенесена в canonical lifecycle. DTO финализации header-а живут в
+ * `@polymarket/collector` и реэкспортируются отсюда — второго набора
+ * одинаковых типов быть не должно.
+ *
+ * ### Правила обращения до удаления
+ *
+ * Новых runtime-зависимостей на этот пакет не создавать (проверяется
+ * structural-тестом границы в `@polymarket/collector`). Использовать только
+ * как оракул поведения при верификации нового контура.
  */
 export { MarketCollectionCoordinator } from './MarketCollectionCoordinator.js';
 export type {
@@ -31,12 +55,14 @@ export type {
   MarketCollectionCoordinatorDependencies,
 } from './MarketCollectionCoordinator.js';
 export { buildCollectionHeader } from './collectionHeader.js';
+export type { CollectionHeaderInput } from './collectionHeader.js';
+// Canonical DTO финализации живут в `@polymarket/collector`; здесь только
+// реэкспорт ради существующих импортов до удаления пакета.
 export type {
   CollectionFallbackEvidence,
   CollectionFallbackTrigger,
   CollectionFinalOutcome,
   CollectionHeaderFinalization,
-  CollectionHeaderInput,
   CollectionPriceProvenance,
   CollectionResolutionProvenance,
   CollectionSettlementDescriptor,

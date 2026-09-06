@@ -7,6 +7,8 @@ const config: Config = {
   ...base,
   moduleNameMapper: {
     ...base.moduleNameMapper,
+    // Canonical DTO финализации живут в пакете коллектора (реэкспорт отсюда).
+    '^@polymarket/collector$': '<rootDir>/../collector/src/index.ts',
     // Публичный API пакетов контура импортируется по имени пакета (root export),
     // а не через приватные relative-пути — маппим имена на исходники.
     '^@polymarket/collection-coordinator$': '<rootDir>/src/index.ts',

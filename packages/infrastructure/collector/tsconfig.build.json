@@ -44,6 +44,9 @@
       "path": "../../foundation/logger/tsconfig.build.json"
     },
     {
+      "path": "../../foundation/time/tsconfig.build.json"
+    },
+    {
       "path": "../../foundation/timestamp/tsconfig.build.json"
     }
   ]
