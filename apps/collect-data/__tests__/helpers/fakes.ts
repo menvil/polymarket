@@ -253,6 +253,8 @@ export class FakePolymarketSource implements CollectorPolymarketSource {
   public closeCalls = 0;
   /** Подставное здоровье надзираемых RTDS-фидов (по умолчанию — фидов нет). */
   public feeds: readonly PolymarketSubscriptionHealth[] = [];
+  /** Сколько раз сбрасывалось общее realtime-соединение SDK. */
+  public connectionResets = 0;
 
   public constructor(private readonly _log: CallLog) {}
 

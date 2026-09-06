@@ -142,7 +142,7 @@ export type CollectorCexStorage = Pick<CexWindowRecorder, 'cleanup' | 'getStats'
 /** Порт общего PM-source (закрытие + health-сигнал). */
 export type CollectorPolymarketSource = Pick<
   PolymarketSource,
-  'close' | 'hasFailed' | 'isClosed' | 'getSubscriptionHealth'
+  'close' | 'hasFailed' | 'isClosed' | 'getSubscriptionHealth' | 'connectionResets'
 >;
 
 /** Порт официального SDK-клиента в части ЕГО собственных ресурсов. */
@@ -239,6 +239,8 @@ export interface DataCollectorStatus {
     readonly hasFailed: boolean;
     readonly isClosed: boolean;
     readonly feeds: readonly PolymarketSubscriptionHealth[];
+    /** Сколько раз сбрасывалось общее realtime-соединение SDK. */
+    readonly connectionResets: number;
   };
 }
 
@@ -409,6 +411,7 @@ export class DataCollector {
         hasFailed: this._components.polymarketSource.hasFailed,
         isClosed: this._components.polymarketSource.isClosed,
         feeds: this._components.polymarketSource.getSubscriptionHealth(),
+        connectionResets: this._components.polymarketSource.connectionResets,
       },
     };
   }

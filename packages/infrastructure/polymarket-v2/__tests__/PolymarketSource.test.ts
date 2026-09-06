@@ -322,8 +322,12 @@ describe('publication failure policy (TEST 9)', () => {
     }
   });
 
-  it('падение SDK-итератора → source failed без unhandled rejection', async () => {
-    const { client, source, logger } = createHarness();
+  it('падение SDK-итератора → ЛОКАЛЬНЫЙ перезапуск без unhandled rejection', async () => {
+    // Семантика изменена осознанно: у каждой подписки есть spec в замыкании
+    // reopen, поэтому обрыв транспорта восстановим и для CLOB. Терминальный
+    // отказ остаётся только за тем, что восстановить нельзя, — отказом шины
+    // (см. тест выше).
+    const { client, source } = createHarness();
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown): void => {
       unhandled.push(reason);
@@ -334,12 +338,15 @@ describe('publication failure policy (TEST 9)', () => {
       await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
 
       client.marketHandles[0]?.fail(new Error('transport connection lost'));
-      await flushAsync();
+      const startedAt = Date.now();
+      while (client.marketHandles.length < 2 && Date.now() - startedAt < 5_000) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
 
-      expect(source.hasFailed).toBe(true);
-      expect(client.cryptoHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
-      const errors = logger.byLevel('error');
-      expect(errors.some((e) => e.message.includes('subscription stream failed'))).toBe(true);
+      expect(client.marketHandles).toHaveLength(2);
+      expect(source.hasFailed).toBe(false);
+      // Соседний RTDS-фид не тронут падением CLOB.
+      expect(client.cryptoHandles).toHaveLength(1);
 
       await source.close();
       expect(unhandled).toHaveLength(0);

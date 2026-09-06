@@ -226,17 +226,21 @@ describe('надзор не мешает штатному владению по�
     expect(source.isClosed).toBe(true);
   });
 
-  it('CLOB-подписка НЕ надзирается: тихий рынок это норма', async () => {
+  it('CLOB не watched: тихий рынок это норма, но подписка видна в health', async () => {
     const { client, source } = createHarness();
     await source.subscribeMarket([TOKEN_ID_UP]);
     client.marketHandles[0]?.emit(createBookEvent());
     await flushAsync();
 
     // Молчим дольше порога — market-подписка перезапускаться не должна.
-    await new Promise<void>((resolve) => setTimeout(resolve, STALL_MS * 4));
+    await new Promise<void>((resolve) => setTimeout(resolve, WATCHDOG_TICK_MS + STALL_MS * 4));
 
     expect(client.marketHandles).toHaveLength(1);
-    expect(source.getSubscriptionHealth()).toEqual([]);
+    // При этом она ОТСЛЕЖИВАЕТСЯ: у неё есть reopen, и после сброса общего
+    // соединения она обязана подняться. Просто её тишина не считается отказом.
+    expect(source.getSubscriptionHealth()).toEqual([
+      expect.objectContaining({ subscription: 'market\n' + TOKEN_ID_UP, watched: false, restarts: 0 }),
+    ]);
 
     await source.close();
   });
@@ -368,7 +372,7 @@ describe('identity здоровья = identity фида у контроллер�
   });
 });
 
-describe('падение итератора: локально для RTDS, терминально для CLOB', () => {
+describe('обрыв итератора восстановим у любой подписки', () => {
   it('исключение RTDS-итератора перезапускает ФИД, а не роняет source', async () => {
     // Порог молчания заведомо большой: закрытие старого handle должно быть
     // заслугой retire перед reopen, а не побочным эффектом watchdog.
@@ -384,11 +388,9 @@ describe('падение итератора: локально для RTDS, те�
     expect(client.cryptoHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
     expect(source.hasFailed).toBe(false);
     expect(source.isClosed).toBe(false);
-    // CLOB не тронут — ни закрытия, ни переоткрытия.
     expect(client.marketHandles).toHaveLength(1);
     expect(client.marketHandles[0]?.closeCalls).toBe(0);
 
-    // И CLOB продолжает публиковаться после аварии соседа.
     client.marketHandles[0]?.emit(createBookEvent());
     client.cryptoHandles[1]?.emit(createBinanceEvent());
     await flushAsync();
@@ -397,16 +399,24 @@ describe('падение итератора: локально для RTDS, те�
     await source.close();
   });
 
-  it('исключение CLOB-итератора остаётся терминальным отказом source', async () => {
-    const { client, source } = createHarness(10_000);
+  it('CLOB, кончившийся САМ (done), переоткрывается, а не роняет источник', async () => {
+    // Тишина стакана — норма, а вот конец ИТЕРАТОРА означает исчезнувшую
+    // физическую подписку. Переоткрываем её из того же spec-а: владения
+    // рынками это не меняет — tokenIds те же самые.
+    const { client, source, received } = createHarness(10_000);
     await source.subscribeMarket([TOKEN_ID_UP]);
-    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
-
-    client.marketHandles[0]?.fail(new Error('CLOB transport connection lost'));
+    client.marketHandles[0]?.emit(createBookEvent());
     await flushAsync();
 
-    expect(source.hasFailed).toBe(true);
-    expect(client.cryptoHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
+    client.marketHandles[0]?.endFromServer();
+    await waitFor(() => client.marketHandles.length === 2);
+
+    expect(source.hasFailed).toBe(false);
+    expect(client.subscribeCalls[1]).toEqual([{ topic: 'market', tokenIds: [TOKEN_ID_UP] }]);
+
+    client.marketHandles[1]?.emit(createBookEvent());
+    await flushAsync();
+    expect(received).toHaveLength(2);
 
     await source.close();
   });
@@ -451,57 +461,31 @@ describe('release во время незавершённого reopen()', () => 
   });
 });
 
-describe('физическая подписка не может исчезнуть тихо', () => {
-  it('CLOB, кончившийся САМ (done), — терминальный отказ, а не тихая смерть', async () => {
-    // Тот же класс дефекта, что нашёл прогон 2026-09-06, только на CLOB:
-    // тихий стакан это норма, а вот кончившийся ИТЕРАТОР — исчезнувшая
-    // физическая подписка при рынке, который контроллер считает ACTIVE.
-    const { client, source, logger } = createHarness(10_000);
-    await source.subscribeMarket([TOKEN_ID_UP]);
-    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
-    client.marketHandles[0]?.emit(createBookEvent());
-    await flushAsync();
-
-    client.marketHandles[0]?.endFromServer();
-    await waitFor(() => source.hasFailed);
-
-    expect(source.hasFailed).toBe(true);
-    expect(
-      logger.entries.some(
-        (e) => e.level === 'error' && e.message.includes('ended unexpectedly'),
-      ),
-    ).toBe(true);
-    // Остальные подписки сняты вместе с ним: состояния «рынок ACTIVE, а CLOB
-    // физически нет» не остаётся ни на одном фиде.
-    expect(client.cryptoHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
-    // И никакой переподписки: владение рынками — забота контроллера, не source.
-    expect(client.marketHandles).toHaveLength(1);
-    expect(source.getSubscriptionHealth()).toEqual([]);
-
-    await source.close();
-  });
-
-  it('CLOB, закрытый ВЛАДЕЛЬЦЕМ, отказом не считается', async () => {
-    const { source } = createHarness(10_000);
+describe('штатное закрытие отказом не считается', () => {
+  it('CLOB, закрытый ВЛАДЕЛЬЦЕМ, не переоткрывается', async () => {
+    const { client, source } = createHarness(10_000);
     const market = await source.subscribeMarket([TOKEN_ID_UP]);
     await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
 
     await market.close();
-    await flushAsync();
+    await new Promise<void>((resolve) => setTimeout(resolve, 200));
 
     expect(source.hasFailed).toBe(false);
-    expect(source.getSubscriptionHealth()).toHaveLength(1);
+    expect(client.marketHandles).toHaveLength(1);
+    expect(source.getSubscriptionHealth()).toHaveLength(1); // остался только RTDS
 
     await source.close();
   });
 
-  it('CLOB, закрытый вместе с source, отказом не считается', async () => {
+  it('CLOB, закрытый вместе с source, не переоткрывается', async () => {
     const { client, source } = createHarness(10_000);
     await source.subscribeMarket([TOKEN_ID_UP]);
 
     await source.close();
+    await new Promise<void>((resolve) => setTimeout(resolve, 200));
 
     expect(source.hasFailed).toBe(false);
+    expect(client.marketHandles).toHaveLength(1);
     expect(client.marketHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
   });
 });
@@ -575,6 +559,95 @@ describe('зависший reopen не держит остановку', () => {
     // SDK разрешился уже после остановки — handle не должен остаться жить.
     releaseHold();
     await waitFor(() => (client.cryptoHandles[1]?.closeCalls ?? 0) >= 1);
+
+    await source.close();
+  });
+});
+
+describe('второй уровень: сброс общего соединения', () => {
+  /** Роняет фид так, чтобы он умер СНОВА, не приняв ни одного события. */
+  async function killTwice(client: FakePolymarketClient): Promise<void> {
+    client.cryptoHandles[0]?.endFromServer();
+    await waitFor(() => client.cryptoHandles.length === 2);
+    client.cryptoHandles[1]?.endFromServer();
+  }
+
+  it('повторная смерть фида сбрасывает соединение, и ВСЕ подписки поднимаются', async () => {
+    // Первый уровень бессилен, когда мёртв сокет: мы бы бесконечно вешали
+    // новый фид поверх нерабочего соединения.
+    const { client, source } = createHarness(10_000);
+    await source.subscribeMarket([TOKEN_ID_UP]);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+
+    await killTwice(client);
+    await waitFor(() => client.closeSubscriptionsCalls === 1);
+
+    // Сброс завершает итераторы ВСЕХ подписок, и каждая поднимает себя сама —
+    // включая CLOB, который иначе остался бы закрытым.
+    await waitFor(() => client.marketHandles.length === 2);
+    expect(source.connectionResets).toBe(1);
+    expect(source.hasFailed).toBe(false);
+
+    await source.close();
+  });
+
+  it('одно событие обнуляет счётчик — обычный всплеск НЕ эскалирует', async () => {
+    const { client, source } = createHarness(10_000);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+
+    client.cryptoHandles[0]?.endFromServer();
+    await waitFor(() => client.cryptoHandles.length === 2);
+    // Фид ожил — цепочка прервана.
+    client.cryptoHandles[1]?.emit(createBinanceEvent());
+    await flushAsync();
+    client.cryptoHandles[1]?.endFromServer();
+    await waitFor(() => client.cryptoHandles.length === 3);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    expect(client.closeSubscriptionsCalls).toBe(0);
+    expect(source.connectionResets).toBe(0);
+
+    await source.close();
+  });
+
+  it('шесть фидов, умерших пачкой, дают ОДИН сброс, а не шесть', async () => {
+    // Ровно наблюдённый в run-02 сценарий: замолчали все шесть разом. Без
+    // single-flight и cooldown мы бы рвали соединение шесть раз подряд.
+    const { client, source } = createHarness(10_000);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['ethusdt']);
+    await source.subscribeCryptoPrices('prices.crypto.chainlink', ['btc/usd']);
+    await source.subscribeCryptoPrices('prices.crypto.chainlink', ['eth/usd']);
+    await source.subscribeChainlinkTwap(60, ['btc/usd']);
+    await source.subscribeChainlinkTwap(60, ['eth/usd']);
+    const openedBefore = client.subscribeCalls.length;
+
+    // Все шесть умирают, поднимаются и умирают снова, не приняв событий.
+    for (const h of [...client.cryptoHandles, ...client.twapHandles]) h.endFromServer();
+    await waitFor(() => client.subscribeCalls.length >= openedBefore + 6);
+    for (const h of [...client.cryptoHandles, ...client.twapHandles]) h.endFromServer();
+
+    await waitFor(() => client.closeSubscriptionsCalls >= 1);
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+
+    expect(client.closeSubscriptionsCalls).toBe(1);
+    expect(source.connectionResets).toBe(1);
+
+    await source.close();
+  }, 20_000);
+
+  it('release во время сброса не оставляет подписку поднятой', async () => {
+    const { client, source } = createHarness(10_000);
+    const subscription = await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+
+    await killTwice(client);
+    await waitFor(() => client.closeSubscriptionsCalls === 1);
+    await subscription.close();
+
+    const opened = client.cryptoHandles.length;
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    expect(client.cryptoHandles).toHaveLength(opened);
+    expect(source.getSubscriptionHealth()).toEqual([]);
 
     await source.close();
   });
