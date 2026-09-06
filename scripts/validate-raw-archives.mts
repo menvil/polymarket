@@ -31,6 +31,21 @@
  * это FAIL, а не предупреждение: и то и другое означает, что граница записи
  * не сработала, а именно её и вводил этот этап.
  *
+ * ### Что именно разрешено после `expiresAt`
+ *
+ * ```text
+ * POLYMARKET_MARKET                  ← запрещено (CLOB отсекается на границе)
+ * POLYMARKET_CRYPTO_BINANCE          ← запрещено (обычный spot-фид)
+ * POLYMARKET_CRYPTO_CHAINLINK        ← запрещено (обычный spot-фид)
+ * POLYMARKET_CRYPTO_CHAINLINK_TWAP   ← РАЗРЕШЕНО в пределах settlement grace
+ * ```
+ *
+ * Ровно ради последней строки граница и не совпадает с `expiresAt`: RTDS
+ * доставляет граничное наблюдение TWAP на 1.1–2.2 с позже, и датасет обязан
+ * его дождаться. Всё остальное после истечения — признак того, что сужение
+ * routing-а не сработало. Допуск для TWAP задаётся `--grace-ms` (дефолт
+ * покрывает production-настройку `COLLECTOR_SETTLEMENT_GRACE_MS` с запасом).
+ *
  * ### Чего валидатор НЕ делает
  *
  * Не сравнивает OLD и NEW датасеты и не считает статистику стратегий: это
@@ -50,10 +65,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
+import { pathToFileURL } from 'node:url';
 import {
   RAW_ARCHIVE_FORMAT_VERSION,
   decodeRawArchive,
   detectRawArchiveFormat,
+  ingressEpochMilliseconds,
   readCexPartitionHeader,
 } from '@polymarket/raw-archive-format';
 import type { DecodedObservation } from '@polymarket/raw-archive-format';
@@ -92,6 +109,65 @@ interface ValidationReport {
 
 /** Расширения, которые валидатор считает архивами. */
 const ARCHIVE_SUFFIXES = ['.jsonl', '.jsonl.gz'] as const;
+
+/** Внешний discriminator официального settlement-потока рынка. */
+const SETTLEMENT_TWAP_TYPE = 'POLYMARKET_CRYPTO_CHAINLINK_TWAP';
+
+/**
+ * Типы наблюдений, которым после `expiresAt` в датасете места нет.
+ *
+ * @remarks
+ * И CLOB, и ОБЫЧНЫЕ RTDS-фиды отсекаются ровно на границе: spot-цены живут
+ * ради других рынков актива, и их «хвост» в датасете истёкшего рынка делал бы
+ * границу зависимой от того, кто ещё подписан.
+ */
+const POST_EXPIRY_FORBIDDEN_TYPES: readonly string[] = [
+  'POLYMARKET_MARKET',
+  'POLYMARKET_CRYPTO_BINANCE',
+  'POLYMARKET_CRYPTO_CHAINLINK',
+];
+
+/**
+ * Допуск для settlement-потока после истечения рынка (мс).
+ *
+ * @remarks
+ * Production-дефолт `COLLECTOR_SETTLEMENT_GRACE_MS` — 5 с; здесь взят запас
+ * ×3 на планировщик и сброс буфера, чтобы штатный прогон не давал ложных
+ * нарушений. Точное значение прогона задаётся `--grace-ms`.
+ */
+const DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS = 15_000;
+
+/**
+ * Приводит значение к объекту-словарю, отвергая `null` и массивы.
+ *
+ * @param value - Разобранное JSON-значение
+ * @returns Словарь либо `undefined`, если это не объект
+ *
+ * @remarks
+ * Валидатор читает ЧУЖИЕ файлы, в том числе повреждённые: `"finalization":
+ * null` и `"winning": []` — не «поля нет», а «поле испорчено». Прямое
+ * обращение по ключу превратило бы такой файл в падение процесса, а отчёт по
+ * остальным файлам пропал бы целиком. Ответ обязан быть нарушением
+ * КОНКРЕТНОГО файла.
+ */
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+/**
+ * Момент наблюдения в epoch ms, если он точно известен.
+ *
+ * @param observation - Декодированное наблюдение
+ * @returns Момент ingress либо `undefined` для legacy-строки
+ */
+function observationAtMs(observation: DecodedObservation): number | undefined {
+  return observation.timingQuality === 'EXACT_INGRESS'
+    ? ingressEpochMilliseconds(observation.ingress)
+    : undefined;
+}
 
 /**
  * Рекурсивно собирает файлы-архивы под корнем датасетов.
@@ -194,7 +270,12 @@ function checkObservations(
  * @param completed - Завершённый архив (`.gz`)
  * @returns Отчёт по файлу
  */
-function validatePolymarketArchive(file: string, lines: string[], completed: boolean): FileReport {
+function validatePolymarketArchive(
+  file: string,
+  lines: string[],
+  completed: boolean,
+  settlementGraceMs: number,
+): FileReport {
   const violations: string[] = [];
   const warnings: string[] = [];
   const archive = decodeRawArchive(lines);
@@ -209,8 +290,12 @@ function validatePolymarketArchive(file: string, lines: string[], completed: boo
     violations.push(`${String(archive.malformedLines)} malformed line(s)`);
   }
 
-  const meta = archive.format.header ?? {};
-  const header = (meta['m'] ?? {}) as Record<string, unknown>;
+  const meta = asRecord(archive.format.header) ?? {};
+  const header = asRecord(meta['m']);
+  if (header === undefined) {
+    violations.push('meta line has no market header object (key "m")');
+    return { file, kind: 'polymarket', completed, observations: archive.observations.length, violations, warnings };
+  }
   if (header['headerVersion'] !== 2) {
     violations.push(`headerVersion is ${String(header['headerVersion'])}, expected canonical 2`);
   }
@@ -221,7 +306,7 @@ function validatePolymarketArchive(file: string, lines: string[], completed: boo
   if (!Array.isArray(outcomes) || outcomes.length === 0) {
     violations.push('header has no outcomes');
   }
-  const timing = (header['timing'] ?? {}) as Record<string, unknown>;
+  const timing = asRecord(header['timing']) ?? {};
   const expiresAtMs = typeof timing['expiresAt'] === 'number' ? timing['expiresAt'] : undefined;
   if (expiresAtMs === undefined) {
     violations.push('header timing has no expiresAt');
@@ -255,36 +340,73 @@ function validatePolymarketArchive(file: string, lines: string[], completed: boo
   }
 
   // Граница датасета: после истечения рынка в файл имеет право попасть
-  // ТОЛЬКО settlement-поток, и только в пределах grace.
+  // ТОЛЬКО settlement-поток, и только в пределах grace. Проверяется КАЖДЫЙ
+  // тип наблюдения, а не один CLOB: «хвост» общего spot-фида нарушает
+  // границу ровно так же, как запоздавший price_change.
   if (expiresAtMs !== undefined) {
-    const lateMarket = marketObservations.filter(
-      (observation) =>
-        observation.timingQuality === 'EXACT_INGRESS' &&
-        observation.ingress.createdAtUnixSeconds * 1000 > expiresAtMs,
-    );
-    if (lateMarket.length > 0) {
+    const lateByType = new Map<string, number>();
+    let lateSettlement = 0;
+    for (const observation of archive.observations) {
+      const atMs = observationAtMs(observation);
+      if (atMs === undefined || atMs <= expiresAtMs) {
+        continue;
+      }
+      const type = observation.type ?? 'unknown';
+      if (POST_EXPIRY_FORBIDDEN_TYPES.includes(type)) {
+        lateByType.set(type, (lateByType.get(type) ?? 0) + 1);
+        continue;
+      }
+      if (type === SETTLEMENT_TWAP_TYPE) {
+        // Настоящая причина, по которой граница не совпадает с expiresAt:
+        // граничное наблюдение TWAP приходит на 1.1–2.2 с позже.
+        if (atMs > expiresAtMs + settlementGraceMs) {
+          lateSettlement++;
+        }
+        continue;
+      }
+      lateByType.set(type, (lateByType.get(type) ?? 0) + 1);
+    }
+    for (const [type, count] of [...lateByType.entries()].sort()) {
       violations.push(
-        `${String(lateMarket.length)} CLOB observation(s) recorded after the market expiry boundary`,
+        `${String(count)} ${type} observation(s) recorded after the market expiry boundary`,
+      );
+    }
+    if (lateSettlement > 0) {
+      violations.push(
+        `${String(lateSettlement)} settlement TWAP observation(s) beyond the ` +
+          `${String(settlementGraceMs)}ms settlement grace`,
       );
     }
   }
 
   if (completed) {
-    const finalization = header['finalization'] as Record<string, unknown> | undefined;
+    // `null` и массив здесь — не «поля нет», а испорченный header: читать их
+    // как объект значило бы уронить процесс и потерять отчёт по остальным
+    // файлам вместо нарушения по конкретному.
+    const finalization = asRecord(header['finalization']);
     if (finalization === undefined) {
-      violations.push('completed archive has no finalization section');
+      violations.push(
+        header['finalization'] === undefined
+          ? 'completed archive has no finalization section'
+          : 'completed archive has a malformed finalization section (not an object)',
+      );
     } else {
       if (finalization['status'] !== 'complete' && finalization['status'] !== 'timeout') {
         violations.push(`completed archive finalization.status is ${String(finalization['status'])}`);
       }
-      const winning = finalization['winning'] as Record<string, unknown> | undefined;
-      if (isCrypto && winning === undefined) {
+      const winning = asRecord(finalization['winning']);
+      if (winning === undefined && finalization['winning'] !== undefined) {
+        violations.push('winning outcome is malformed (not an object)');
+      } else if (isCrypto && winning === undefined) {
         violations.push('completed crypto archive has no winning outcome');
       }
       if (winning !== undefined && typeof winning['instrumentId'] !== 'string') {
         violations.push('winning outcome has no machine identity (instrumentId)');
       }
-      const provenance = finalization['provenance'] as Record<string, unknown> | undefined;
+      const provenance = asRecord(finalization['provenance']);
+      if (provenance === undefined && finalization['provenance'] !== undefined) {
+        violations.push('resolution provenance is malformed (not an object)');
+      }
       if (isCrypto && provenance?.['resolution'] === undefined) {
         violations.push('completed crypto archive has no resolution provenance');
       }
@@ -333,12 +455,10 @@ function validateCexPartition(file: string, lines: string[], completed: boolean)
     checkObservations(archive.observations, violations);
     // Окно партиции — часть её идентичности: наблюдение вне окна означает,
     // что оконная политика записи разошлась с ingress наблюдения.
-    const late = archive.observations.filter(
-      (observation) =>
-        observation.timingQuality === 'EXACT_INGRESS' &&
-        (observation.ingress.createdAtUnixSeconds * 1000 < header.windowStartMs ||
-          observation.ingress.createdAtUnixSeconds * 1000 >= header.windowEndMs),
-    );
+    const late = archive.observations.filter((observation) => {
+      const atMs = observationAtMs(observation);
+      return atMs !== undefined && (atMs < header.windowStartMs || atMs >= header.windowEndMs);
+    });
     if (late.length > 0) {
       violations.push(`${String(late.length)} observation(s) outside the declared partition window`);
     }
@@ -365,10 +485,27 @@ function validateCexPartition(file: string, lines: string[], completed: boolean)
  * Проверяет весь корень датасетов.
  *
  * @param root - Корень датасетов реального прогона
+ * @param options - Допуск settlement-потока после истечения рынка
  * @returns Сводный отчёт
  * @throws {Error} Если корень не существует
+ *
+ * @remarks
+ * Отказ на ОДНОМ файле не прерывает проход: валидатор читает чужие,
+ * потенциально повреждённые артефакты, и падение процесса лишило бы отчёта
+ * все остальные файлы. Любое неожиданное исключение становится нарушением
+ * своего файла.
+ *
+ * @example
+ * ```typescript
+ * const report = validateDatasetRoot('./data/snapshots');
+ * if (report.verdict === 'FAIL') process.exitCode = 2;
+ * ```
  */
-export function validateDatasetRoot(root: string): ValidationReport {
+export function validateDatasetRoot(
+  root: string,
+  options: { readonly settlementGraceMs?: number } = {},
+): ValidationReport {
+  const settlementGraceMs = options.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS;
   if (!fs.existsSync(root)) {
     throw new Error(`Dataset root does not exist: ${root}`);
   }
@@ -391,11 +528,24 @@ export function validateDatasetRoot(root: string): ValidationReport {
       continue;
     }
     const firstLine = lines.find((line) => line.length > 0);
-    files.push(
-      archiveKind(firstLine) === 'cex'
-        ? validateCexPartition(relative, lines, completed)
-        : validatePolymarketArchive(relative, lines, completed),
-    );
+    try {
+      files.push(
+        archiveKind(firstLine) === 'cex'
+          ? validateCexPartition(relative, lines, completed)
+          : validatePolymarketArchive(relative, lines, completed, settlementGraceMs),
+      );
+    } catch (error) {
+      files.push({
+        file: relative,
+        kind: 'polymarket',
+        completed,
+        observations: 0,
+        violations: [
+          `validation failed: ${error instanceof Error ? error.message : String(error)}`,
+        ],
+        warnings: [],
+      });
+    }
   }
 
   const polymarket = files.filter((report) => report.kind === 'polymarket');
@@ -426,14 +576,25 @@ function main(): number {
   const [rootArg, ...rest] = process.argv.slice(2);
   if (rootArg === undefined) {
     process.stderr.write(
-      'usage: npx tsx scripts/validate-raw-archives.mts <dataset-root> [--json <report.json>]\n',
+      'usage: npx tsx scripts/validate-raw-archives.mts <dataset-root> ' +
+        '[--json <report.json>] [--grace-ms <ms>]\n',
     );
     return 1;
   }
   const jsonIndex = rest.indexOf('--json');
   const jsonPath = jsonIndex === -1 ? undefined : rest[jsonIndex + 1];
+  const graceIndex = rest.indexOf('--grace-ms');
+  const graceRaw = graceIndex === -1 ? undefined : rest[graceIndex + 1];
+  const settlementGraceMs = graceRaw === undefined ? undefined : Number(graceRaw);
+  if (settlementGraceMs !== undefined && (!Number.isFinite(settlementGraceMs) || settlementGraceMs < 0)) {
+    process.stderr.write(`--grace-ms must be a finite number >= 0, got ${String(graceRaw)}\n`);
+    return 1;
+  }
 
-  const report = validateDatasetRoot(path.resolve(rootArg));
+  const report = validateDatasetRoot(
+    path.resolve(rootArg),
+    settlementGraceMs === undefined ? {} : { settlementGraceMs },
+  );
   for (const file of report.files) {
     if (file.violations.length === 0) {
       continue;
@@ -458,4 +619,13 @@ function main(): number {
   return report.verdict === 'PASS' ? 0 : 2;
 }
 
-process.exitCode = main();
+/**
+ * Запускает CLI только при ПРЯМОМ запуске файла.
+ *
+ * @remarks
+ * Без этой проверки любой `import` модуля (в том числе из теста) выполнял бы
+ * `main()` со случайным `process.argv` и менял бы `exitCode` процесса.
+ */
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = main();
+}

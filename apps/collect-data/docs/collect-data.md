@@ -183,9 +183,9 @@ Polymarket-архивы пишутся с `formatVersion: 2` — строки 2+
 | `MARKET_DISCOVERY_MIN_SPREAD` / `_MIN_LIQUIDITY` | Пороги → `minSpread`/`minLiquidity` policy |
 | `DISCOVERY_WINDOW_HOURS`         | Окно обзора каталога; не задано — canonical дефолт discovery (6ч) |
 | `COLLECTOR_CONTROL_TICK_MS`      | Пауза между control-тиками (по умолчанию 5000)      |
-| `COLLECTOR_SETTLEMENT_GRACE_MS`  | Boundary grace settlement-потока (по умолчанию 5000) |
-| `COLLECTOR_ENRICHMENT_RETRY_MS`  | Пауза между Gamma-попытками рынка (по умолчанию 30000) |
-| `COLLECTOR_ENRICHMENT_MAX_WAIT_MS` | Бюджет ожидания официальной резолюции (по умолчанию 3600000) |
+| `COLLECTOR_SETTLEMENT_GRACE_MS`  | Boundary grace settlement-потока, мс `>= 0` (по умолчанию 5000) |
+| `COLLECTOR_ENRICHMENT_RETRY_MS`  | Пауза между Gamma-попытками рынка, мс `> 0` (по умолчанию 30000) |
+| `COLLECTOR_ENRICHMENT_MAX_WAIT_MS` | Бюджет ожидания официальной резолюции, мс `> 0` (по умолчанию 3600000) |
 | `CEX_CONFIG_FILE` / `CEX_CONFIG` | Конфигурация бирж; не задана — CEX выключен         |
 | `CEX_WINDOW_MINUTES`             | Размер окна партиции (по умолчанию — 5)             |
 | `DNS_OVERRIDE_ENABLED`           | Обход подменённого DNS провайдера                   |
@@ -203,7 +203,11 @@ keyword-селекторы), а не keyword-фильтр discovery. Форма�
 не переносится. Конфликтом считается лишь случай, когда два профиля просят ОДИН
 И ТОТ ЖЕ поток с разными параметрами. Неверные
 значения (`orderbook: "true"`, строковый `obDepth`, неизвестный `obMethod`)
-роняют старт, а не превращаются молча в валидные. Невалидная
+роняют старт, а не превращаются молча в валидные. Так же ведут себя
+lifecycle-тайминги: отрицательное, нефинитное либо нулевое (там, где ноль
+запрещён) значение — отказ старта, потому что `COLLECTOR_ENRICHMENT_RETRY_MS=-1`
+превратил бы cadence в сплошной Gamma-опрос, а `Infinity` в бюджете ожидания
+означал бы, что рынок не архивируется никогда. Невалидная
 policy-конфигурация не даёт процессу стартовать (fail-fast).
 
 ## CLI-инструменты калибровки crypto-сигналов

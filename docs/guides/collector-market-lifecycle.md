@@ -151,8 +151,13 @@ expiresAt → cutoff → settlement grace → SEAL → release claim
                                           └── и только теперь: Gamma polling
 ```
 
-Ни один Gamma-запрос не влияет на поток сырых наблюдений: к моменту первой
-попытки enrichment датасет уже заморожен, а claim снят.
+Ни один Gamma-запрос не влияет на поток сырых наблюдений: ожидание границы
+стоит ПЕРЕД первой (и любой) enrichment-попыткой, а не только перед архивом.
+Иначе первая попытка уходила бы в сеть, пока settlement grace ещё дописывает
+граничное наблюдение TWAP, а промежуточный `pending`-header переписывал бы
+LINE 1 ещё не замороженного датасета. Ожидание идемпотентно и после
+завершения границы стоит ноль, так что цену платит ровно первая попытка
+каждого рынка.
 
 ## Граница датасета в recorder-е
 
@@ -286,6 +291,15 @@ CexPolicy → CexSubscriptionController → CexSource → ExternalMessageBus
 | `collection.settlementGraceMs` | `COLLECTOR_SETTLEMENT_GRACE_MS` | `5000` | измеренная задержка доставки TWAP 1116–2155 мс (2026-08-26) с запасом ×2 |
 | `finalization.enrichmentRetryMs` | `COLLECTOR_ENRICHMENT_RETRY_MS` | `30000` | parity с legacy `ENRICHMENT_INTERVAL_MS` |
 | `finalization.enrichmentMaxWaitMs` | `COLLECTOR_ENRICHMENT_MAX_WAIT_MS` | `3600000` | замер: самый медленный сигнал (`finalPrice`) до ~21.6 мин; 60 мин покрывают ×2.8 |
+
+Все три валидируются на старте: значение обязано быть конечным числом
+миллисекунд, `settlementGraceMs >= 0`, остальные `> 0`. Не задано — остаётся
+`undefined`, и дефолт применяет сам компонент (конфигурация приложения его
+констант не дублирует). Отказ на старте здесь честнее молчаливого приёма:
+`COLLECTOR_ENRICHMENT_RETRY_MS=-1` делал бы КАЖДЫЙ проход немедленно due
+(сплошной Gamma-опрос), а `Infinity` в `enrichmentMaxWaitMs` означал бы, что
+таймаут не наступает никогда и рынок не архивируется вовсе — обе опечатки
+выглядели бы как работающая конфигурация.
 | `control.acquireLimit` | `DATA_COLLECTION_MAX_MARKETS` | `10` | сколько первых кандидатов плана приобретать за тик |
 | `control.tickMs` | `COLLECTOR_CONTROL_TICK_MS` | `5000` | каденция control-цикла (границу датасета НЕ определяет) |
 
@@ -312,12 +326,32 @@ control-plane: запись идёт, а claim-а нет — такую сесс
 
 ```bash
 npx tsx scripts/validate-raw-archives.mts ./data/snapshots --json report.json
+npx tsx scripts/validate-raw-archives.mts ./data/snapshots --grace-ms 5000
 ```
 
 Валидатор читает УЖЕ ЗАПИСАННЫЙ корень и проверяет: `formatVersion: 2` и
 `headerVersion: 2`, наличие `runId`/`sequence` у каждого наблюдения и
 строгое возрастание `sequence` внутри одного прогона, опорный book-снапшот
-CLOB, наличие RTDS у крипто-рынка, ОТСУТСТВИЕ CLOB-строк после границы
-датасета, `finalization` с победителем и происхождением у завершённых
-архивов, а для CEX — что ни одно наблюдение не вышло за окно партиции.
-Сравнения OLD и NEW датасетов он не делает: это следующий этап квалификации.
+CLOB, наличие RTDS у крипто-рынка, `finalization` с победителем и
+происхождением у завершённых архивов, а для CEX — что ни одно наблюдение не
+вышло за окно партиции.
+
+Граница датасета проверяется по КАЖДОМУ типу наблюдения:
+
+```text
+POLYMARKET_MARKET                  ← после expiresAt запрещено
+POLYMARKET_CRYPTO_BINANCE          ← после expiresAt запрещено
+POLYMARKET_CRYPTO_CHAINLINK        ← после expiresAt запрещено
+POLYMARKET_CRYPTO_CHAINLINK_TWAP   ← РАЗРЕШЕНО в пределах settlement grace
+```
+
+Ровно ради последней строки граница и не совпадает с `expiresAt`. Допуск
+задаётся `--grace-ms` (дефолт 15 000 мс — production-настройка 5 с с запасом
+на планировщик и сброс буфера).
+
+Повреждённый header (`"finalization": null`, `"winning": []`) даёт нарушение
+КОНКРЕТНОГО файла, а не падение процесса: валидатор читает чужие артефакты, и
+отчёт по остальным файлам терять нельзя.
+
+Правила покрыты тестами (`npm run test:scripts`). Сравнения OLD и NEW
+датасетов валидатор не делает: это следующий этап квалификации.

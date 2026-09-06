@@ -381,6 +381,15 @@ export class FakeCollectionRecorder {
   public sealResult = true;
   /** Если задано — sealMarket бросает для этого `String(marketId)`. */
   public sealErrorForMarketId: string | undefined;
+  /**
+   * Если задано — `sealMarket` ждёт этот promise.
+   *
+   * @remarks
+   * Моделирует ИДУЩУЮ границу датасета (settlement grace + заморозка): пока
+   * он не разрешён, задача границы в lifecycle не завершена, а значит
+   * финализатор не имеет права ходить в Gamma.
+   */
+  public sealHold: Promise<void> | undefined;
   /** Если задано — finalizeMarket бросает. */
   public finalizeError: unknown;
   /** Исход следующих updateMarketMeta (default true = header записан). */
@@ -441,6 +450,9 @@ export class FakeCollectionRecorder {
   };
 
   public readonly sealMarket = async (marketId: MarketId): Promise<boolean> => {
+    if (this.sealHold !== undefined) {
+      await this.sealHold;
+    }
     if (this.sealErrorForMarketId === String(marketId)) {
       throw new Error(`storage seal failed for ${String(marketId)}`);
     }

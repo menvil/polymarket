@@ -51,6 +51,24 @@ MarketFinalizer.runOnce()          ← cadence у composition root
         → lifecycle.completeFinalization (identity-guard: только FINALIZING)
 ```
 
+## Gamma polling только ПОСЛЕ immutable-границы
+
+```text
+expiresAt → FINALIZING → settlement grace → seal → release claim
+                                                     │
+                                                     └── и только теперь
+                                                         fetchMarket/fetchEvent
+```
+
+`awaitSettlementCapture` стоит в НАЧАЛЕ каждой enrichment-попытки, а не
+только перед архивом. Иначе первая попытка уходила бы в сеть, пока grace ещё
+дописывает граничное наблюдение TWAP, а промежуточный `pending`-header
+переписывал бы LINE 1 ещё не замороженного датасета. Ожидание идемпотентно и
+после завершения границы стоит ноль — цену платит ровно первая попытка
+каждого рынка. Момент попытки при этом остаётся моментом прохода: он задаёт
+retry cadence и отсчёт бюджета, которые принадлежат проходу, а не
+длительности ожидания границы.
+
 ## Почему подхват FINALIZING обязателен
 
 Границу датасета держит ТОЧНЫЙ таймер сессии в lifecycle, а не проход

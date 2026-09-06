@@ -226,6 +226,19 @@ interface LifecycleSession<TPrepared extends CollectionMarketPreparation> {
    * остаться моментом ГРАНИЦЫ, а не моментом подхвата.
    */
   finalizingSinceMs?: number;
+  /**
+   * Claim коллектора по этому рынку уже снят.
+   *
+   * @remarks
+   * Снятие claim-а — операция, наблюдаемая счётчиком, и запрашивают её ДВА
+   * независимых пути: задача границы (`grace → seal → release`) и `close()`,
+   * который обязан освободить всё оставшееся. Между ними сессия жива —
+   * `completeFinalization` её ещё не снял, — поэтому без явной отметки
+   * `close()` вызывал бы release повторно. Контроллер такой вызов переживает
+   * (`not-held`), но `claimsReleased` начинал бы врать: диагностика
+   * показывала бы больше снятых claim-ов, чем было рынков.
+   */
+  claimReleased: boolean;
   /** Таймер истечения (снимается при переходе/закрытии). */
   expiryTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -383,6 +396,7 @@ export class PolymarketCollectionLifecycle<
         recordingStartedAt: recordingStartedAt.value,
         expiresAt: snapshot.marketMeta.expiresAt,
         state: snapshot.state === 'FINALIZING' ? 'FINALIZING' : 'ACTIVE',
+        claimReleased: false,
         expiryTimer: null,
       };
       this._sessions.set(key, session);
@@ -808,7 +822,10 @@ export class PolymarketCollectionLifecycle<
    *    к replay архив нельзя;
    * 3. claim-ы коллектора снимаются для ВСЕХ оставшихся сессий — включая те,
    *    чья финализация отказала: zombie-подписка после остановки процесса
-   *    недопустима.
+   *    недопустима. Сессия, у которой claim уже снят задачей границы,
+   *    повторного release не получает (отметка в сессии), а вот сессия,
+   *    принятая уже в состоянии `FINALIZING` и потому не имевшая своей
+   *    задачи границы, освобождается именно здесь.
    *
    * FINALIZING-сессии здесь не архивируются: их судьбой владеет
    * `MarketFinalizer`, который в штатном shutdown уже отработал (drain →
@@ -982,11 +999,28 @@ export class PolymarketCollectionLifecycle<
   }
 
   /**
-   * Снимает claim коллектора с рынка (идемпотентно, отказ не бросается).
+   * Снимает claim коллектора с рынка (ровно один раз на сессию).
    *
    * @param session - Сессия рынка
+   *
+   * @remarks
+   * Идемпотентность обеспечивается отметкой в самой сессии, а не ответом
+   * контроллера: тот на повторный вызов честно отвечает `not-held`, но
+   * счётчик `claimsReleased` к этому моменту уже вырос бы второй раз.
+   *
+   * Отметка ставится ДО `await`: `close()`, пришедший следующим тиком,
+   * обязан увидеть, что release уже начат, и не продублировать его.
+   *
+   * Отказ снятия наблюдаем, но отметку НЕ снимает: повторять release,
+   * отказавший по причине состояния контроллера (остановлен, разбирает
+   * ресурс), значило бы множить одинаковые ошибки в логе, не меняя исхода.
+   * Утечка видна по `finalizationFailures` и по статистике контроллера.
    */
   private async _releaseClaim(session: LifecycleSession<TPrepared>): Promise<void> {
+    if (session.claimReleased) {
+      return;
+    }
+    session.claimReleased = true;
     const key = String(session.marketId);
     try {
       const result = await this._subscriptions.release(this._ownerKey, session.marketId);

@@ -615,3 +615,63 @@ describe('сирота откаченного приобретения: дата
     expect(contour.lifecycle.getStats().orphanSessionsDiscarded).toBe(0);
   });
 });
+
+describe('release claim идемпотентен на сессию', () => {
+  it('close() ПОСЛЕ завершённой границы не снимает claim второй раз', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeLifecycleContour([entry]);
+    await startRecording(contour, entry);
+    contour.subscriptions.clock.set(EXPIRES_AT_MS);
+    await contour.lifecycle.beginFinalization(entry.market.id);
+    await contour.lifecycle.awaitSettlementCapture(entry.market.id);
+    expect(contour.lifecycle.getStats().claimsReleased).toBe(1);
+
+    // Сессия ещё жива: completeFinalization её не снимал (финализатор не
+    // отработал) — именно здесь `close()` и дублировал release.
+    expect(contour.lifecycle.listSessions()).toHaveLength(1);
+    await contour.lifecycle.close();
+
+    expect(contour.lifecycle.getStats().claimsReleased).toBe(1);
+    expect(contour.lifecycle.getStats().finalizationFailures).toBe(0);
+  });
+
+  it('close() ВО ВРЕМЯ границы дожидается её и не дублирует release', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeLifecycleContour([entry], { settlementGraceMs: 250 });
+    await startRecording(contour, entry);
+    contour.subscriptions.clock.set(EXPIRES_AT_MS);
+    await contour.lifecycle.beginFinalization(entry.market.id);
+
+    // Граница ещё идёт (grace не истёк) — close() обязан её дождаться.
+    await contour.lifecycle.close();
+
+    expect(contour.pmStorage.sealed).toEqual(['btc-5m-1']);
+    expect(contour.lifecycle.getStats().claimsReleased).toBe(1);
+    // FINALIZING-сессия НЕ закрывается как SHUTDOWN: её архивом владеет
+    // финализатор, а датасет уже заморожен.
+    expect(contour.pmStorage.finalized).toEqual([]);
+  });
+
+  it('сессия, принятая уже FINALIZING (без своей задачи границы), освобождается в close()', async () => {
+    const entry = makeEntry({ id: 'btc-5m-1' });
+    const contour = makeLifecycleContour([entry]);
+    await acquireFor(contour.subscriptions, entry, COLLECTOR_RAW_OWNER_KEY);
+    contour.recorder.start();
+    await publishMarket(contour, 'btc-5m-1');
+    // Переход выполнен В ОБХОД lifecycle (например, legacy-путь recorder-а):
+    // своей задачи границы у сессии не будет.
+    contour.recorder.beginMarketFinalization(entry.market.id, []);
+    contour.subscriptions.clock.set(BASE_START_MS + 60_000);
+    contour.lifecycle.syncSessions();
+    expect(contour.lifecycle.listSessions()[0]?.state).toBe('FINALIZING');
+    expect(contour.lifecycle.getStats().claimsReleased).toBe(0);
+
+    await contour.lifecycle.close();
+
+    // Zombie-claim после остановки процесса недопустим.
+    expect(contour.lifecycle.getStats().claimsReleased).toBe(1);
+    expect(
+      contour.subscriptions.controller.getHeldMarket(COLLECTOR_RAW_OWNER_KEY, entry.market.id),
+    ).toBeUndefined();
+  });
+});

@@ -182,6 +182,50 @@ export function loadConfig(): CollectorConfig {
     return n;
   }
 
+  /**
+   * Читает необязательную ДЛИТЕЛЬНОСТЬ в миллисекундах.
+   *
+   * @param name - Имя переменной окружения
+   * @param options - `allowZero` — допустим ли ноль (выключенное ожидание)
+   * @returns Длительность либо `undefined`, если переменная не задана
+   * @throws {Error} Если значение нечисловое, нефинитное либо вне допустимого
+   *   диапазона
+   *
+   * @remarks
+   * Отдельно от {@link optionalNumberOrUndefined} потому, что для тайминга
+   * lifecycle «любое число» — не валидный ввод. Опечатка вида
+   * `COLLECTOR_ENRICHMENT_RETRY_MS=-1` делала бы КАЖДЫЙ проход немедленно
+   * due (сплошной Gamma-опрос), а `Infinity` в `enrichmentMaxWaitMs`
+   * означал бы, что таймаут не наступает никогда и рынок не архивируется
+   * вовсе. Обе опечатки выглядели бы как «работающая конфигурация» — падать
+   * на старте честнее.
+   *
+   * Ноль допустим только там, где означает осмысленное «без ожидания»
+   * (settlement grace рынка без settlement-фида), но не там, где превращает
+   * cadence в busy loop.
+   *
+   * @example
+   * ```typescript
+   * optionalDurationMs('COLLECTOR_SETTLEMENT_GRACE_MS', { allowZero: true });
+   * ```
+   */
+  function optionalDurationMs(
+    name: string,
+    options: { readonly allowZero: boolean },
+  ): number | undefined {
+    const val = process.env[name];
+    if (!val) return undefined;
+    const n = Number(val);
+    const min = options.allowZero ? 0 : 1;
+    if (!Number.isFinite(n) || n < min) {
+      throw new Error(
+        `Env var ${name} must be a finite number of milliseconds ` +
+          `${options.allowZero ? '>= 0' : '> 0'}, got: ${val}`,
+      );
+    }
+    return n;
+  }
+
   function parseKeywords(name: string): readonly string[] {
     const val = process.env[name];
     if (!val || val.trim() === '') return [];
@@ -250,8 +294,8 @@ export function loadConfig(): CollectorConfig {
     policyDurations:      parseList('COLLECTOR_POLICY_DURATIONS'),
     discoveryWindowHours: optionalNumberOrUndefined('DISCOVERY_WINDOW_HOURS'),
     controlTickMs:        optionalNumber('COLLECTOR_CONTROL_TICK_MS', 5_000),
-    settlementGraceMs:    optionalNumberOrUndefined('COLLECTOR_SETTLEMENT_GRACE_MS'),
-    enrichmentRetryMs:    optionalNumberOrUndefined('COLLECTOR_ENRICHMENT_RETRY_MS'),
-    enrichmentMaxWaitMs:  optionalNumberOrUndefined('COLLECTOR_ENRICHMENT_MAX_WAIT_MS'),
+    settlementGraceMs:    optionalDurationMs('COLLECTOR_SETTLEMENT_GRACE_MS', { allowZero: true }),
+    enrichmentRetryMs:    optionalDurationMs('COLLECTOR_ENRICHMENT_RETRY_MS', { allowZero: false }),
+    enrichmentMaxWaitMs:  optionalDurationMs('COLLECTOR_ENRICHMENT_MAX_WAIT_MS', { allowZero: false }),
   };
 }

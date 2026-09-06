@@ -17,6 +17,8 @@ import {
   createFinalizerHarness,
   createFreshGammaEvent,
   createFreshGammaMarket,
+  deferred,
+  flushAsync,
   mid,
   openMarket,
 } from './helpers/fakes.js';
@@ -843,5 +845,84 @@ describe('FINALIZING-сессия попадает в финализатор, к
     expect(finalizer.getStats().pendingFinalizations).toBe(0);
     expect(recorder.seals).toEqual([]);
     expect(lifecycle.listSessions()[0]?.state).toBe('ACTIVE');
+  });
+});
+
+// ── Граница датасета ПЕРЕД Gamma polling ────────────────────────────────────
+
+describe('Gamma polling не начинается, пока датасет не заморожен', () => {
+  it('пока settlement capture не завершён: ни одного Gamma-запроса и ни одного header update', async () => {
+    const harness = createFinalizerHarness();
+    const { recorder, subscriptions, gamma, clock, lifecycle, finalizer } = harness;
+    armGamma(
+      gamma,
+      createFreshGammaMarket(),
+      createFreshGammaEvent({ priceToBeat: 78027.1, finalPrice: 78325.2 }),
+    );
+    openMarket(harness);
+    clock.advance(EXPIRE_ADVANCE_MS);
+
+    // Граница ИДЁТ: seal удерживается, значит grace/seal/release не завершены.
+    const boundary = deferred();
+    recorder.sealHold = boundary.promise;
+    await lifecycle.beginFinalization(mid(CID_A));
+
+    const pass = finalizer.runOnce();
+    await flushAsync();
+
+    // Инвариант: ни один Gamma-запрос не влияет на поток сырых наблюдений —
+    // сеть не трогается, пока датасет ещё принимает граничный TWAP.
+    expect(gamma.fetchMarketCalls).toEqual([]);
+    expect(gamma.fetchEventCalls).toEqual([]);
+    expect(recorder.metaUpdates).toEqual([]);
+    expect(recorder.seals).toEqual([]);
+    expect(subscriptions.released).toEqual([]);
+
+    // Граница завершилась: датасет заморожен, claim снят.
+    boundary.resolve();
+    recorder.sealHold = undefined;
+    await pass;
+
+    expect(recorder.seals).toEqual([CID_A]);
+    expect(subscriptions.released).toEqual([CID_A]);
+    // Порядок доказан журналом: seal и release ПРЕДШЕСТВУЮТ header update.
+    expect(harness.log.indexOf(`recorder.sealMarket:${CID_A}`)).toBeLessThan(
+      harness.log.indexOf(`recorder.updateMarketMeta:${CID_A}`),
+    );
+    expect(harness.log.indexOf(`subscriptions.release:${CID_A}`)).toBeLessThan(
+      harness.log.indexOf(`recorder.updateMarketMeta:${CID_A}`),
+    );
+    expect(gamma.fetchMarketCalls).toHaveLength(1);
+    expect(recorder.finalizations).toEqual([`${CID_A}:EXPIRED`]);
+  });
+
+  it('промежуточный pending-header тоже ждёт границы (частичные данные Gamma)', async () => {
+    const harness = createFinalizerHarness();
+    const { recorder, gamma, clock, lifecycle, finalizer } = harness;
+    // Резолюции нет — проход закончится pending-header-ом, а не архивом.
+    armGamma(
+      gamma,
+      createFreshGammaMarket({ closed: false, umaResolutionStatus: null, yesPrice: '0.5', noPrice: '0.5' }),
+      createFreshGammaEvent({ priceToBeat: 78027.1 }),
+    );
+    openMarket(harness);
+    clock.advance(EXPIRE_ADVANCE_MS);
+
+    const boundary = deferred();
+    recorder.sealHold = boundary.promise;
+    await lifecycle.beginFinalization(mid(CID_A));
+
+    const pass = finalizer.runOnce();
+    await flushAsync();
+    expect(recorder.metaUpdates).toEqual([]);
+
+    boundary.resolve();
+    recorder.sealHold = undefined;
+    await pass;
+
+    expect(lastFinalization(recorder).status).toBe('pending');
+    expect(harness.log.indexOf(`recorder.sealMarket:${CID_A}`)).toBeLessThan(
+      harness.log.indexOf(`recorder.updateMarketMeta:${CID_A}`),
+    );
   });
 });

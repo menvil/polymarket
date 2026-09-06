@@ -739,6 +739,29 @@ export class MarketFinalizer {
    * @param entry - Pending-финализация
    * @param nowMs - Момент прохода
    * @param timedOut - Бюджет ожидания исчерпан (архивировать best-known)
+   *
+   * @remarks
+   * ### Датасет заморожен ДО первого Gamma-запроса
+   *
+   * ```text
+   * expiresAt → FINALIZING → settlement grace → seal → release claim
+   *                                                      │
+   *                                                      └── и только теперь
+   *                                                          Gamma polling
+   * ```
+   *
+   * Ожидание границы стоит ЗДЕСЬ, а не только перед архивом: иначе первая
+   * попытка уходила бы в сеть, пока settlement grace ещё дописывает граничное
+   * наблюдение TWAP, а промежуточный `pending`-header переписывал бы LINE 1
+   * ещё не замороженного датасета. Инвариант «ни один Gamma-запрос не влияет
+   * на поток сырых наблюдений» держится только при таком порядке.
+   *
+   * Вызов идемпотентен и после завершения границы стоит ноль (`no-op`), так
+   * что цену платит ровно первая попытка каждого рынка.
+   *
+   * Момент попытки (`nowMs`) СОЗНАТЕЛЬНО остаётся моментом прохода: он задаёт
+   * retry cadence и отсчёт бюджета, которые принадлежат проходу, а не
+   * длительности ожидания границы.
    */
   private async _attemptEnrichment(
     entry: PendingFinalization,
@@ -747,6 +770,8 @@ export class MarketFinalizer {
   ): Promise<void> {
     const key = String(entry.session.marketId);
     const selected = entry.session.selected;
+    // Граница датасета ПЕРЕД сетью: seal и release claim уже состоялись
+    await this._lifecycle.awaitSettlementCapture(entry.session.marketId);
     entry.attempts++;
     entry.lastAttemptMs = nowMs;
 
@@ -866,8 +891,10 @@ export class MarketFinalizer {
   ): Promise<FinalizationOutcome> {
     const key = String(entry.session.marketId);
     // Датасет обязан быть заморожен ДО чтения/архива: на истёкшем рынке с
-    // settlement-фидом координатор ещё несколько секунд дописывает граничное
-    // наблюдение (boundary grace). No-op, если grace уже завершён.
+    // settlement-фидом lifecycle ещё несколько секунд дописывает граничное
+    // наблюдение (boundary grace). Обычно no-op — enrichment-путь дожидается
+    // границы раньше; здесь ожидание нужно shutdown-пути `close()`, который
+    // архивирует pending-рынки НЕ через `_attemptEnrichment`.
     await this._lifecycle.awaitSettlementCapture(entry.session.marketId);
 
     const resolution = await this._resolveArchive(entry, fallbackTrigger);

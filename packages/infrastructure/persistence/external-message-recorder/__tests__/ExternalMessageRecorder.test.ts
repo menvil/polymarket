@@ -656,13 +656,45 @@ describe('listMarketSessions', () => {
     expect(typeof session?.firstObservedAtMs).toBe('number');
   });
 
-  it('снимки детерминированно упорядочены по id рынка', async () => {
+  it('снимок не даёт изменить canonical header живой сессии', async () => {
     recorder.start();
+    recorder.registerMarket({
+      marketMeta: {
+        ...makeMeta(MARKET_CONDITION_ID),
+        rawMarket: { headerVersion: 2, timing: { expiresAt: 1 } },
+      },
+    });
+    await publishMarket(createBookEvent());
+
+    const snapshot = recorder.listMarketSessions()[0]!;
+    const header = snapshot.marketMeta.rawMarket as Record<string, unknown>;
+    const timing = header['timing'] as Record<string, unknown>;
+    // Мутация через снимок изменила бы то, что финализатор положит в LINE 1
+    // архива, — и найти такую правку по факту было бы нечем.
+    expect(() => {
+      timing['expiresAt'] = 999;
+    }).toThrow(TypeError);
+    expect(() => {
+      header['headerVersion'] = 1;
+    }).toThrow(TypeError);
+
+    const reread = recorder.listMarketSessions()[0]!.marketMeta.rawMarket as Record<string, unknown>;
+    expect(reread['headerVersion']).toBe(2);
+    expect((reread['timing'] as Record<string, unknown>)['expiresAt']).toBe(1);
+  });
+
+  it('снимки детерминированно упорядочены по id рынка', () => {
+    recorder.start();
+    // Регистрируем в ОБРАТНОМ порядке: сортировка должна быть по id, а не по
+    // порядку вставки в карту сессий.
     recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID_B) });
     recorder.registerMarket({ marketMeta: makeMeta(MARKET_CONDITION_ID) });
 
     const ids = recorder.listMarketSessions().map((session) => String(session.marketId));
-    expect(ids).toEqual([...ids].sort());
+
+    // Сравнение с ЯВНЫМ ожидаемым набором: самосравнение с отсортированной
+    // копией прошло бы и при пропавшей сессии.
+    expect(ids).toEqual([MARKET_CONDITION_ID, MARKET_CONDITION_ID_B].sort());
   });
 });
 

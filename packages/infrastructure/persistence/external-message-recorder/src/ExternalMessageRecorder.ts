@@ -476,6 +476,51 @@ function rtdsRoutingKey(feed: PolymarketRtdsFeedKey): string {
 }
 
 /**
+ * Рекурсивно замораживает plain-JSON значение.
+ *
+ * @param value - Значение произвольной вложенности
+ *
+ * @remarks
+ * Только для данных, а не для доменных объектов: `Timestamp`/branded id
+ * сюда не попадают, потому что применяется к `rawMarket` — чистому
+ * JSON-снимку canonical header-а.
+ */
+function deepFreezeJson(value: unknown): void {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
+    return;
+  }
+  Object.freeze(value);
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreezeJson(nested);
+  }
+}
+
+/**
+ * Делает регистрацию рынка фактически неизменяемой.
+ *
+ * @param meta - Метаданные рынка из регистрации
+ * @returns Тот же объект, замороженный вместе с `tokenIds` и `rawMarket`
+ *
+ * @remarks
+ * `MarketMeta` объявлен `readonly`, но `readonly` — обещание компилятора, а
+ * не рантайма. Снимок сессии отдаёт этот объект наружу
+ * ({@link ExternalMessageRecorder.listMarketSessions}), и его `rawMarket` —
+ * это canonical header, который финализатор позже кладёт в
+ * `updateMarketMeta()`. Мутация через снимок изменила бы то, что реально
+ * попадёт в LINE 1 архива, а найти такую правку по факту было бы нечем.
+ *
+ * Замораживается ОБЪЕКТ регистрации, а не его копия: клонировать нельзя —
+ * `marketId`/`expiresAt` являются доменными значениями, и структурная копия
+ * потеряла бы их прототип. Регистрация строится вызывающим заново на каждый
+ * допуск и после передачи recorder-у ему уже не принадлежит.
+ */
+function freezeMarketMeta(meta: MarketMeta): MarketMeta {
+  deepFreezeJson(meta.rawMarket);
+  Object.freeze(meta.tokenIds);
+  return Object.freeze(meta);
+}
+
+/**
  * Recording-подписчик общего ExternalMessageBus: персистит source-native
  * `message.payload` Polymarket-сообщений в market-файлы через storage-движок.
  *
@@ -668,7 +713,9 @@ export class ExternalMessageRecorder {
     // под ключом успели заменить/убрать, чужое состояние не трогается.
     const session: RecordingSession = {
       marketId: registration.marketMeta.marketId,
-      marketMeta: registration.marketMeta,
+      // Регистрация замораживается ЗДЕСЬ: дальше она живёт в снимках сессий
+      // и в финальном header-е, и мутация через снимок меняла бы LINE 1.
+      marketMeta: freezeMarketMeta(registration.marketMeta),
       rtdsFeeds: [...(registration.rtdsFeeds ?? [])],
       state: 'ACTIVE',
     };
@@ -876,7 +923,10 @@ export class ExternalMessageRecorder {
    * Снимок несёт `marketMeta` (в нём — canonical header и `expiresAt`,
    * то есть граница рынка) и `firstObservedAtMs` — момент ПЕРВОЙ реально
    * записанной строки. Mutable-состояние наружу не выходит: массив фидов
-   * копируется, объекты заморожены.
+   * копируется, сам снимок заморожен, а регистрация (вместе с вложенным
+   * `rawMarket`) заморожена ещё при `registerMarket` — иначе вызывающий мог
+   * бы через снимок изменить canonical header, который позже уедет в LINE 1
+   * архива.
    *
    * @example
    * ```typescript

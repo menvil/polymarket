@@ -182,6 +182,28 @@ describe('I. Replay-контур не зависит от Collector', () => {
   });
 });
 
+/**
+ * Импортирует ли спецификатор legacy-координатор (включая subpath).
+ *
+ * @param specifier - Спецификатор импорта из исходника
+ * @returns `true` для корневого импорта и для любого его подпути
+ *
+ * @remarks
+ * Точное сравнение пропускало бы
+ * `@polymarket/collection-coordinator/collectionHeader`: такой импорт
+ * зависит от legacy-пакета ровно так же, а после его удаления сломается
+ * ровно так же — правило обязано ловить и подпути.
+ */
+function importsLegacyCoordinator(specifier: string): boolean {
+  return (
+    specifier === LEGACY_COORDINATOR_PACKAGE ||
+    specifier.startsWith(`${LEGACY_COORDINATOR_PACKAGE}/`)
+  );
+}
+
+/** Legacy-пакет, который удаляется после квалификации коллектора. */
+const LEGACY_COORDINATOR_PACKAGE = '@polymarket/collection-coordinator';
+
 describe('Q. Canonical runtime не зависит от legacy collection-coordinator', () => {
   /** Пакеты и приложения, образующие canonical runtime сбора. */
   const CANONICAL_RUNTIME_ROOTS: readonly string[] = [
@@ -193,23 +215,35 @@ describe('Q. Canonical runtime не зависит от legacy collection-coordi
     join(PACKAGE_ROOT, '..', '..', '..', 'apps', 'collect-data'),
   ];
 
-  it('ни один src canonical runtime не импортирует legacy-координатор', () => {
+  it('ни один src canonical runtime не импортирует legacy-координатор (включая subpath)', () => {
     const violations: string[] = [];
     for (const root of CANONICAL_RUNTIME_ROOTS) {
       for (const filePath of listSourceFiles(join(root, 'src'))) {
-        if (collectImports(filePath).includes('@polymarket/collection-coordinator')) {
-          violations.push(filePath);
+        for (const specifier of collectImports(filePath)) {
+          if (importsLegacyCoordinator(specifier)) {
+            violations.push(`${filePath}: ${specifier}`);
+          }
         }
       }
     }
     expect(violations).toEqual([]);
   });
 
+  it('subpath-импорт распознаётся правилом, а не обходит его', () => {
+    // Защита самого правила: точное сравнение пропускало бы такой импорт.
+    expect(importsLegacyCoordinator(`${LEGACY_COORDINATOR_PACKAGE}/collectionHeader`)).toBe(true);
+    expect(importsLegacyCoordinator(LEGACY_COORDINATOR_PACKAGE)).toBe(true);
+    // Однофамилец с общим префиксом правилом НЕ затрагивается.
+    expect(importsLegacyCoordinator(`${LEGACY_COORDINATOR_PACKAGE}-v2`)).toBe(false);
+  });
+
   it('legacy-координатора нет в РАНТАЙМ-зависимостях canonical runtime', () => {
     const violations: string[] = [];
     for (const root of CANONICAL_RUNTIME_ROOTS) {
-      if (runtimeDependencies(root).includes('@polymarket/collection-coordinator')) {
-        violations.push(root);
+      for (const dependency of runtimeDependencies(root)) {
+        if (importsLegacyCoordinator(dependency)) {
+          violations.push(`${root}: ${dependency}`);
+        }
       }
     }
     expect(violations).toEqual([]);

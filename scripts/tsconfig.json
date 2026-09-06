@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": ["node", "jest", "@jest/globals"],
     "allowImportingTsExtensions": true,
     "paths": {
       "@polymarket/collect-data/runtime": ["../apps/collect-data/src/runtime/index.ts"],
@@ -38,6 +38,6 @@
       "@polymarket/exchange/dns": ["../packages/infrastructure/polymarket/dns/index.ts"]
     }
   },
-  "include": ["checkpoint-raw-live.mts", "validate-raw-archives.mts"],
+  "include": ["checkpoint-raw-live.mts", "validate-raw-archives.mts", "__tests__/**/*.ts"],
   "exclude": ["node_modules"]
 }

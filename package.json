@@ -23,6 +23,7 @@
     "prebuild": "npm run clean:dist && npm run clean:build",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces --if-present",
+    "test:scripts": "node --experimental-vm-modules node_modules/.bin/jest --config scripts/jest.config.ts",
     "lint": "npm run lint --workspaces",
     "lint:md": "npm run lint:md --workspaces --if-present",
     "lint:md:fix": "npm run lint:md:fix --workspaces --if-present",
