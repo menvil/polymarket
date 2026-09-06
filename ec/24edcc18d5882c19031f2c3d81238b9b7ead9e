@@ -1,0 +1,62 @@
+packages/infrastructure/market-finalizer/__tests__/MarketFinalizer.test.ts
+  s_c99ec2b699d51d::t_c13f9c5291e811 20-21,850-926
+scripts/jest.config.ts
+  s_c99ec2b699d51d::t_0310ae54a5cfd1 16,19-20,22
+  s_c99ec2b699d51d::t_428ef5a6da2eb7 34-39
+  s_c99ec2b699d51d::t_76fd8d273c1978 1-15,17-18,21,23-33,40-47
+packages/infrastructure/collector/__tests__/contour-boundary.test.ts
+  s_c99ec2b699d51d::t_cf3c8b32557725 185-206,218,222-225,232-239,243-246
+docs/guides/collector-market-lifecycle.md
+  s_c99ec2b699d51d::t_46184860572774 154-160,294-302,329,335-357
+scripts/tsconfig.json
+  s_c99ec2b699d51d::t_76fd8d273c1978 4,41
+packages/infrastructure/market-finalizer/__tests__/helpers/fakes.ts
+  s_c99ec2b699d51d::t_c13f9c5291e811 384-392,453-455
+package.json
+  s_c99ec2b699d51d::t_76fd8d273c1978 26
+packages/infrastructure/persistence/external-message-recorder/__tests__/ExternalMessageRecorder.test.ts
+  s_c99ec2b699d51d::t_cf3c8b32557725 686-689,694-697
+  s_c99ec2b699d51d::t_e50f219afe3a9a 659,661-685
+packages/infrastructure/persistence/external-message-recorder/src/ExternalMessageRecorder.ts
+  s_c99ec2b699d51d::t_0a4579ac560d4d 479-522,716-718,926-929
+packages/infrastructure/collector/__tests__/collection-lifecycle.integration.test.ts
+  s_c99ec2b699d51d::t_b57522387ad336 618-677
+scripts/__tests__/validate-raw-archives.test.ts
+  s_c99ec2b699d51d::t_62a02992922abd 1-12,14-132,139-227,231-232,240-322
+  s_c99ec2b699d51d::t_de99bb60040035 228-230,233-239
+  s_c99ec2b699d51d::t_3e5d6c99eb5a49 13,133-138
+packages/infrastructure/market-finalizer/src/MarketFinalizer.ts
+  s_c99ec2b699d51d::t_d7f9ce971c3515 742-764,773-774,894-897
+apps/collect-data/src/config.ts
+  s_c99ec2b699d51d::t_0715411b0e9fb5 185-228,297-299
+scripts/tsconfig.lint.json
+  s_c99ec2b699d51d::t_76fd8d273c1978 1-4
+apps/collect-data/docs/collect-data.md
+  s_c99ec2b699d51d::t_46184860572774 186-188,206-210
+apps/collect-data/__tests__/DataCollectorConfig.test.ts
+  s_c99ec2b699d51d::t_da4698d9dea580 10,12,254-329
+packages/infrastructure/collector/src/PolymarketCollectionLifecycle.ts
+  s_c99ec2b699d51d::t_681e3d0b20a251 229-241,399,825-828,1002,1005-1017,1020-1023
+packages/infrastructure/market-finalizer/docs/market-finalization.md
+  s_c99ec2b699d51d::t_3bcd2563284f96 54-71
+scripts/validate-raw-archives.mts
+  s_c99ec2b699d51d::t_73b822ad78b6ab 68,458-461,488,491-502,504-508,531-548,579-580,586-592,594-597,622-631
+  s_c99ec2b699d51d::t_4f5b874da2b158 34-48,73,113-170
+  s_c99ec2b699d51d::t_f7518af9ca08be 273-278,293-298,309,343-345,347-369,371-377,383-386,388-392,397-400,406-408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ec24edcc18d5882c19031f2c3d81238b9b7ead9e",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
