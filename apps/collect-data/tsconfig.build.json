@@ -97,7 +97,7 @@
       "path": "../../packages/infrastructure/cex-v2/tsconfig.build.json"
     },
     {
-      "path": "../../packages/infrastructure/polymarket/tsconfig.build.json"
+      "path": "../../packages/infrastructure/dns-override/tsconfig.build.json"
     }
   ]
 }

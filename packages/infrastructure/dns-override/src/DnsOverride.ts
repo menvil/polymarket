@@ -75,9 +75,35 @@ const DEFAULT_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
  * После `install()` все сетевые запросы к хостам Polymarket прозрачно
  * используют IP из пула с round-robin ротацией.
  */
+/**
+ * Порт резолвера: единственное, что нужно от него override-у.
+ *
+ * @remarks
+ * Узкий тип вместо всего класса — чтобы тест мог подставить свой резолвер,
+ * не наследуя боевой DoH-стек.
+ */
+export type DnsResolverPort = Pick<DnsResolver, 'resolve'>;
+
+/**
+ * Что дала установка override-а.
+ *
+ * @remarks
+ * `resolved === 0` означает, что патч стоит, но обслуживать ему нечем: все
+ * запросы уйдут в системный резолвер, пока фоновый refresh не поднимет хотя бы
+ * один хост. Возвращать это, а не молчать, обязательно — иначе `install()`
+ * отчитывается об успехе там, где не разрезолвился ни один хост, и вызывающий
+ * не может отличить рабочий override от инертного.
+ */
+export interface DnsOverrideInstallResult {
+  /** Сколько хостов имеет IP в кэше. */
+  readonly resolved: number;
+  /** Сколько хостов запрошено. */
+  readonly total: number;
+}
+
 export class DnsOverride {
   private readonly _store: IpStore;
-  private readonly _resolver: DnsResolver;
+  private readonly _resolver: DnsResolverPort;
   private readonly _logger: ILogger;
   private readonly _refreshIntervalMs: number;
 
@@ -89,15 +115,24 @@ export class DnsOverride {
   /**
    * @param logger - Логгер для диагностики
    * @param refreshIntervalMs - Интервал фонового обновления IP (по умолчанию 5 минут)
+   * @param resolver - Резолвер DoH; по умолчанию боевой {@link DnsResolver}
+   *
+   * @remarks
+   * Резолвер инъецируется ради тестов: без этого проверить поведение при
+   * недоступном DoH можно было бы только настоящим сетевым запросом.
    *
    * @example
    * ```typescript
    * const dnsOverride = new DnsOverride(logger);
    * ```
    */
-  constructor(logger: ILogger, refreshIntervalMs: number = DEFAULT_REFRESH_INTERVAL_MS) {
+  constructor(
+    logger: ILogger,
+    refreshIntervalMs: number = DEFAULT_REFRESH_INTERVAL_MS,
+    resolver: DnsResolverPort = new DnsResolver(),
+  ) {
     this._store = new IpStore();
-    this._resolver = new DnsResolver();
+    this._resolver = resolver;
     this._logger = logger.child({ component: 'DnsOverride' });
     this._refreshIntervalMs = refreshIntervalMs;
   }
@@ -106,6 +141,7 @@ export class DnsOverride {
    * Устанавливает DNS-переопределение для указанных хостов.
    *
    * @param hosts - Список hostname для перехвата
+   * @returns Сколько хостов реально разрезолвилось из скольких запрошенных
    *
    * @remarks
    * Последовательность:
@@ -114,26 +150,49 @@ export class DnsOverride {
    * 3. Патчит `dns.lookup`
    * 4. Запускает фоновый рефреш
    *
-   * Повторный вызов — no-op.
+   * Повторный вызов — no-op, возвращающий текущее состояние кэша.
    *
-   * @throws {Error} Если все хосты завершились ошибкой при резолвинге
+   * Метод НЕ бросает при отказе резолвинга, в том числе полном: патч ставится
+   * всё равно (`hasHost` вернёт false, запросы уйдут в системный резолвер), а
+   * фоновый рефреш продолжает попытки и поднимает override сам, когда DoH
+   * оживёт. Полный провал возвращается как `{ resolved: 0 }` — проверять его
+   * обязан вызывающий; коллектор логирует на это ERROR.
    *
    * @example
    * ```typescript
-   * await dnsOverride.install([
+   * const { resolved, total } = await dnsOverride.install([
    *   'clob.polymarket.com',
    *   'gamma-api.polymarket.com',
    * ]);
+   * if (resolved === 0) {
+   *   logger.error('DNS override is inert', { total });
+   * }
    * ```
    */
-  async install(hosts: string[]): Promise<void> {
-    if (this._installed) return;
+  async install(hosts: string[]): Promise<DnsOverrideInstallResult> {
+    if (this._installed) {
+      return {
+        resolved: this._hosts.filter((host) => this._store.hasHost(host)).length,
+        total: this._hosts.length,
+      };
+    }
 
     this._hosts = [...hosts];
     this._logger.info('Installing DNS override', { hosts });
 
     // Резолвим IP для всех хостов перед установкой патча
-    await this._refreshAll();
+    const resolved = await this._refreshAll();
+    if (resolved === 0) {
+      // Патч ставится всё равно, и это осознанно: `hasHost` вернёт false, все
+      // запросы уйдут в системный резолвер, а фоновый refresh продолжит
+      // попытки и поднимет override сам, когда DoH оживёт. Отказать в
+      // установке значило бы обменять это самовосстановление на громкость —
+      // громкость достигается строкой ниже дешевле.
+      this._logger.error('DNS override resolved no hosts; it is inert until a refresh succeeds', {
+        hosts: this._hosts,
+        refreshIntervalMs: this._refreshIntervalMs,
+      });
+    }
 
     // Сохраняем оригинальный lookup перед подменой
     this._originalLookup = dns.lookup.bind(dns);
@@ -154,7 +213,20 @@ export class DnsOverride {
         typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
       ) as LookupOneCallback;
 
-      if (store.hasHost(hostname)) {
+      // Запрошенный family: `dns.lookup(host, 6, cb)` либо `{ family: 6 }`.
+      const requestedFamily =
+        typeof optionsOrCallback === 'number'
+          ? optionsOrCallback
+          : typeof optionsOrCallback === 'object' && optionsOrCallback !== null
+            ? (optionsOrCallback as LookupOptions).family
+            : undefined;
+
+      // Кэш хранит ТОЛЬКО A-записи (resolve4), поэтому явный запрос AAAA
+      // обслужить нечем: отдать IPv4 под видом ответа на family: 6 значит
+      // соврать вызывающему. Такой запрос уходит в системный резолвер.
+      if (requestedFamily === 6) {
+        logger.debug('DNS override: IPv6 requested, delegating to system DNS', { hostname });
+      } else if (store.hasHost(hostname)) {
         const ip = store.getNextIp(hostname);
         if (ip) {
           logger.debug('DNS override: serving cached IP', { hostname, ip });
@@ -191,7 +263,12 @@ export class DnsOverride {
     this._installed = true;
     this._startAutoRefresh();
 
-    this._logger.info('DNS override installed', { hosts: this._hosts });
+    this._logger.info('DNS override installed', {
+      hosts: this._hosts,
+      resolved,
+      total: this._hosts.length,
+    });
+    return { resolved, total: this._hosts.length };
   }
 
   /**
@@ -259,9 +336,17 @@ export class DnsOverride {
    * @remarks
    * При ошибке резолвинга — логируем и сохраняем старые IP (если есть).
    * Сбой для одного хоста не прерывает обновление остальных.
+   *
+   * Итог считается по СОДЕРЖИМОМУ кэша, а не по статусам promise: каждая
+   * задача гасит свою ошибку сама, поэтому `Promise.allSettled` никогда не
+   * вернёт `rejected`, и агрегирующий счётчик по её статусам был мёртвым
+   * кодом — предупреждение «часть хостов не разрезолвилась» не могло
+   * сработать ни разу.
+   *
+   * @returns Сколько хостов имеет IP в кэше после обновления
    */
-  private async _refreshAll(): Promise<void> {
-    const results = await Promise.allSettled(
+  private async _refreshAll(): Promise<number> {
+    await Promise.all(
       this._hosts.map(async (host) => {
         try {
           const ips = await this._resolver.resolve(host);
@@ -277,13 +362,14 @@ export class DnsOverride {
       }),
     );
 
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed > 0) {
-      this._logger.warn('Some hosts failed to resolve during refresh', {
-        failed,
+    const resolved = this._hosts.filter((host) => this._store.hasHost(host)).length;
+    if (resolved < this._hosts.length) {
+      this._logger.warn('Some hosts have no cached IPs after refresh', {
+        resolved,
         total: this._hosts.length,
       });
     }
+    return resolved;
   }
 
   /**

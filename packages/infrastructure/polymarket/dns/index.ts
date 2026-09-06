@@ -1,26 +1,16 @@
 /**
- * DNS Override — динамическая подмена DNS для обхода блокировок Polymarket.
+ * DNS Override — РЕЭКСПОРТ из `@polymarket/dns-override`.
  *
  * @remarks
- * Экспортирует три класса для работы с DNS override:
- * - `DnsOverride` — основной класс, устанавливает monkey-patch и управляет жизненным циклом
- * - `IpStore` — хранилище IP с round-robin ротацией (используется внутри DnsOverride)
- * - `DnsResolver` — DNS-резолвер через dns.resolve4 (используется внутри DnsOverride)
+ * Классы переехали в собственный пакет: подмена DNS — забота процесса
+ * (monkey-patch на `node:dns` действует на весь процесс), а не биржевого
+ * адаптера. Пока сборщик получал их отсюда, он тянул за собой весь legacy
+ * V1-стек `@polymarket/exchange` и ломался вместе с ним.
  *
- * ### Типичное использование:
- * ```typescript
- * import { DnsOverride } from './dns/index.js';
+ * Этот файл оставлен, чтобы существующие импорты `@polymarket/exchange/dns`
+ * продолжали работать. Новый код должен импортировать из
+ * `@polymarket/dns-override` напрямую.
  *
- * const dnsOverride = new DnsOverride(logger);
- * await dnsOverride.install([
- *   'clob.polymarket.com',
- *   'gamma-api.polymarket.com',
- *   'data-api.polymarket.com',
- *   'ws-subscriptions-clob.polymarket.com',
- * ]);
- * ```
+ * @deprecated Импортируйте из `@polymarket/dns-override`.
  */
-
-export { DnsOverride } from './DnsOverride.js';
-export { IpStore } from './IpStore.js';
-export { DnsResolver } from './DnsResolver.js';
+export { DnsOverride, IpStore, DnsResolver } from '@polymarket/dns-override';

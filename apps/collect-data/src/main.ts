@@ -25,6 +25,7 @@
  */
 import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
+import type { PolymarketSubscriptionHealth } from '@polymarket/polymarket-v2';
 import { loadConfig } from './config.js';
 import {
   applyProcessBootstrap,
@@ -84,6 +85,41 @@ const { collector } = createDataCollector({ config: runtimeConfig, logger, clock
 // запуска и сигнал во время него сходятся в тот же shutdown.
 const stopped = installShutdownHandlers({ target: collector, bootstrap, logger });
 
+/**
+ * Возвращает наибольшее время молчания среди надзираемых RTDS-фидов, в
+ * секундах.
+ *
+ * @remarks
+ * Один агрегат вместо строки на фид: в operational-логе важно «сколько времени
+ * самый тихий поток молчит», а не имена всех потоков.
+ *
+ * Отсчёт идёт от `silentSinceMs`, а НЕ от `lastEventAtMs`: подписка, не
+ * принёсшая ни одного события, — самое тревожное состояние из возможных, и
+ * считать её «нечего показать» значило бы повторить исходный дефект, где
+ * мёртвый фид выглядел благополучно. У такой подписки отсчёт идёт от старта
+ * потока — ровно как у watchdog.
+ *
+ * `null` означает единственное: надзираемых подписок нет вовсе (контур ещё не
+ * поднялся или уже остановлен). Это НЕ то же самое, что `0`.
+ *
+ * @param feeds - Снимок здоровья подписок из `PolymarketSource`
+ * @returns Секунды молчания самого тихого фида или `null`
+ *
+ * @example
+ * ```typescript
+ * // подписка есть, событий ещё не было → возраст от старта потока, не null
+ * rtdsSilenceSeconds([{ subscription: 'prices.crypto.binance\nbtcusdt',
+ *   silentSinceMs: Date.now() - 12_000, restarts: 0, broken: false }]); // → 12
+ * ```
+ */
+function rtdsSilenceSeconds(feeds: readonly PolymarketSubscriptionHealth[]): number | null {
+  if (feeds.length === 0) {
+    return null;
+  }
+  const now = Date.now();
+  return Math.max(...feeds.map((feed) => Math.round((now - feed.silentSinceMs) / 1_000)));
+}
+
 // Периодический operational-снимок: одна строка вместо набора таймеров.
 const statusInterval = setInterval(() => {
   const status = collector.status();
@@ -93,6 +129,11 @@ const statusInterval = setInterval(() => {
     pmActiveMarkets: status.polymarket.activeMarkets,
     pmClaims: status.polymarket.claims,
     pmRtdsFeeds: status.polymarket.rtdsFeeds.length,
+    // ЖИВОСТЬ, а не желаемое состояние: rtdsFeeds — ref-count спроса, он
+    // держался равным 6 всё то время, пока RTDS молчал (qualification run-01).
+    pmRtdsSilentSec: rtdsSilenceSeconds(status.polymarketSource.feeds),
+    pmRtdsRestarts: status.polymarketSource.feeds.reduce((sum, f) => sum + f.restarts, 0),
+    pmRtdsBroken: status.polymarketSource.feeds.filter((f) => f.broken).length,
     admitted: status.gate.admitted,
     ignoredUnknown: status.gate.ignoredUnknownMarket,
     ignoredByPolicy: status.gate.ignoredByPolicy,

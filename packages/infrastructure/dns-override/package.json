@@ -1,0 +1,43 @@
+{
+  "name": "@polymarket/dns-override",
+  "version": "0.1.0",
+  "description": "Process-level DNS override via DoH - bypasses a blocked or tampered provider resolver",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "test": "node --experimental-vm-modules ../../../node_modules/.bin/jest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"README.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "dns",
+    "doh",
+    "process",
+    "infrastructure"
+  ],
+  "author": "Ivan Moroz",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@polymarket/logger": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

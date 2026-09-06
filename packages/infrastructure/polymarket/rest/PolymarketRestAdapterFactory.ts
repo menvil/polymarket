@@ -42,7 +42,7 @@ import type { PolymarketRestConfig } from './types.js';
 import type { MarketDataClientConfig } from './clients/PolymarketMarketDataRestClient.js';
 import type { IEventBus } from '../ports/IEventBus.js';
 import type { IPortfolioProjector } from '../ports/IPortfolioProjector.js';
-import type { DnsOverride } from '../dns/DnsOverride.js';
+import type { DnsOverride } from '../dns/index.js';
 
 import { PolymarketRestClient } from './PolymarketRestClient.js';
 import { PolymarketDataApiClient } from './PolymarketDataApiClient.js';

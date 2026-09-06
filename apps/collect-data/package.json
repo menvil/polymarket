@@ -22,7 +22,7 @@
     "@polymarket/client": "^0.6.0",
     "@polymarket/collector": "0.1.0",
     "@polymarket/data-collection": "0.1.0",
-    "@polymarket/exchange": "0.1.0",
+    "@polymarket/dns-override": "0.1.0",
     "@polymarket/external-message-bus": "0.1.0",
     "@polymarket/external-message-recorder": "0.1.0",
     "@polymarket/ids": "0.1.0",

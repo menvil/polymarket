@@ -27,6 +27,7 @@
     "lint": "eslint . --ext .ts"
   },
   "dependencies": {
+    "@polymarket/dns-override": "0.1.0",
     "@polymarket/clob-client-v2": "^1.0.3",
     "@polymarket/errors": "0.1.0",
     "@polymarket/handlers": "0.1.0",

@@ -21,6 +21,7 @@ import type {
 } from '@polymarket/external-message-recorder';
 import type { CexWindowRecorderStats } from '@polymarket/data-collection';
 import type { PolymarketSubscriptionControllerStats } from '@polymarket/polymarket-subscription-control';
+import type { PolymarketSubscriptionHealth } from '@polymarket/polymarket-v2';
 import type {
   CexSubscriptionControllerStats,
   CexSubscriptionDemand,
@@ -250,6 +251,8 @@ export class FakePolymarketSource implements CollectorPolymarketSource {
   public hasFailed = false;
   public isClosed = false;
   public closeCalls = 0;
+  /** Подставное здоровье надзираемых RTDS-фидов (по умолчанию — фидов нет). */
+  public feeds: readonly PolymarketSubscriptionHealth[] = [];
 
   public constructor(private readonly _log: CallLog) {}
 
@@ -257,6 +260,10 @@ export class FakePolymarketSource implements CollectorPolymarketSource {
     this._log.record('polymarketSource.close');
     this.isClosed = true;
     this.closeCalls++;
+  }
+
+  public getSubscriptionHealth(): readonly PolymarketSubscriptionHealth[] {
+    return this.feeds;
   }
 }
 

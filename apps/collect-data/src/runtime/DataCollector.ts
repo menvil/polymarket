@@ -71,7 +71,7 @@ import type { MessageBusDrainError, MessageBusStats } from '@polymarket/message-
 import type { createPublicClient } from '@polymarket/client';
 import type { CexWindowRecorder, DataRecorder } from '@polymarket/data-collection';
 import type { CexWindowRecorderStats } from '@polymarket/data-collection';
-import type { PolymarketSource } from '@polymarket/polymarket-v2';
+import type { PolymarketSource, PolymarketSubscriptionHealth } from '@polymarket/polymarket-v2';
 import type { ExternalMessageRecorder } from '@polymarket/external-message-recorder';
 import type {
   ExternalMessageRecorderCexStats,
@@ -140,7 +140,10 @@ export type CollectorPolymarketStorage = Pick<DataRecorder, 'cleanup'>;
 export type CollectorCexStorage = Pick<CexWindowRecorder, 'cleanup' | 'getStats'>;
 
 /** Порт общего PM-source (закрытие + health-сигнал). */
-export type CollectorPolymarketSource = Pick<PolymarketSource, 'close' | 'hasFailed' | 'isClosed'>;
+export type CollectorPolymarketSource = Pick<
+  PolymarketSource,
+  'close' | 'hasFailed' | 'isClosed' | 'getSubscriptionHealth'
+>;
 
 /** Порт официального SDK-клиента в части ЕГО собственных ресурсов. */
 export type CollectorPolymarketClient = Pick<
@@ -228,8 +231,15 @@ export interface DataCollectorStatus {
   readonly cexWindows: CexWindowRecorderStats;
   /** Очередь и ошибки обработчиков общего bus. */
   readonly bus: MessageBusStats;
-  /** Здоровье общего PM-source. */
-  readonly polymarketSource: { readonly hasFailed: boolean; readonly isClosed: boolean };
+  /**
+   * Здоровье общего PM-source: терминальные флаги и живость надзираемых
+   * RTDS-фидов (последнее событие, перезапуски, безнадёжно сломанные).
+   */
+  readonly polymarketSource: {
+    readonly hasFailed: boolean;
+    readonly isClosed: boolean;
+    readonly feeds: readonly PolymarketSubscriptionHealth[];
+  };
 }
 
 /** Один шаг остановки контура. */
@@ -398,6 +408,7 @@ export class DataCollector {
       polymarketSource: {
         hasFailed: this._components.polymarketSource.hasFailed,
         isClosed: this._components.polymarketSource.isClosed,
+        feeds: this._components.polymarketSource.getSubscriptionHealth(),
       },
     };
   }
@@ -639,6 +650,17 @@ export class DataCollector {
           this._scheduleTick(this._control.tickMs);
         });
     }, delayMs);
-    this._tickTimer.unref?.();
+    // Таймер тика СОЗНАТЕЛЬНО не `unref`-ится: это сердцебиение рантайма, и
+    // пока контур работает, оно обязано удерживать процесс живым.
+    //
+    // Все остальные таймеры контура (flush storage, окна CEX, expiry сессий,
+    // печать статуса) `unref`-нуты — правильно, они не должны мешать
+    // завершению. Но если `unref`-нуть И этот, живых хэндлов у процесса не
+    // остаётся вовсе: первый тик планируется ДО того, как открыта хоть одна
+    // подписка, и Node выходит с кодом 13 («unsettled top-level await»),
+    // не успев его выполнить. Под `tsx` это было незаметно — его загрузчик
+    // держал event loop за нас, — и проявилось только при запуске из `dist`.
+    //
+    // Остановке таймер не мешает: `_close()` снимает его явно.
   }
 }
