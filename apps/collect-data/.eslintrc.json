@@ -4,5 +4,12 @@
   "parserOptions": {
     "project": "./tsconfig.json"
   },
-  "ignorePatterns": ["dist/", "node_modules/", "coverage/", "*.js", "jest.config.ts"]
+  "ignorePatterns": [
+    "dist/",
+    "node_modules/",
+    "coverage/",
+    "*.js",
+    "jest.config.ts",
+    "src/backfillPolymarketMeta.ts"
+  ]
 }

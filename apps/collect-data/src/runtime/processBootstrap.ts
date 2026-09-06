@@ -7,7 +7,7 @@
  * `DataCollector` остаётся чистой composition без process-специфики.
  */
 import type { ILogger } from '@polymarket/logger';
-import { DnsOverride } from '@polymarket/exchange/dns';
+import { DnsOverride } from '@polymarket/dns-override';
 
 /**
  * Хосты, которые контур V2 действительно резолвит.
