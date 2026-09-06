@@ -33,6 +33,27 @@ const STALL_MS = 60;
 const WATCHDOG_TICK_MS = 1_000;
 
 /**
+ * Порог молчания для теста «живой поток НЕ перезапускается».
+ *
+ * @remarks
+ * У этого теста порог СВОЙ и большой, в отличие от остальных. Причина в
+ * направлении проверки: все прочие тесты ждут срабатывания watchdog, и
+ * короткий порог им только помогает, а этот доказывает ОТСУТСТВИЕ
+ * срабатывания — то есть ложное срабатывание для него означает падение.
+ * С порогом 60 мс на настоящих часах хватило бы паузы планировщика чуть
+ * длиннее 60 мс рядом с тиком watchdog, чтобы уронить зелёный тест на CI.
+ * Две секунды дают запас, которого пауза такой длины уже не перекрывает.
+ *
+ * Радикальнее было бы перевести тест на fake timers, но async-итератор,
+ * реальный bus и промисы переподписки делают подмену часов дороже, чем
+ * выигрыш; порог — тот же эффект за одну константу.
+ */
+const CONTINUOUS_STALL_MS = 2_000;
+
+/** Интервал событий в тесте живого потока: заведомо чаще порога. */
+const CONTINUOUS_EMIT_EVERY_MS = 100;
+
+/**
  * Лестница переподписки в тестах: та же ФОРМА, что в production (четыре
  * ступени с плато на последней), но в сотни раз короче. Проверяется поведение
  * лестницы, а не её абсолютные величины.
@@ -161,13 +182,13 @@ describe('молчащий RTDS-поток перезапускается по w
     // проходит вхолостую: watchdog опрашивает состояние не чаще
     // `max(1000, порог/3)` мс, и при коротком пороге первая же проверка
     // случается позже, чем заканчивался прежний 240-мс цикл.
-    const { client, source } = createHarness();
+    const { client, source } = createHarness(CONTINUOUS_STALL_MS);
     await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
 
-    const until = Date.now() + WATCHDOG_TICK_MS * 2 + STALL_MS;
+    const until = Date.now() + WATCHDOG_TICK_MS * 2 + CONTINUOUS_EMIT_EVERY_MS;
     while (Date.now() < until) {
       client.cryptoHandles[0]?.emit(createBinanceEvent());
-      await new Promise<void>((resolve) => setTimeout(resolve, STALL_MS / 4));
+      await new Promise<void>((resolve) => setTimeout(resolve, CONTINUOUS_EMIT_EVERY_MS));
     }
     await flushAsync();
 

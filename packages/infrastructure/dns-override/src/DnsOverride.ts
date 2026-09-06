@@ -150,16 +150,23 @@ export class DnsOverride {
    * 3. Патчит `dns.lookup`
    * 4. Запускает фоновый рефреш
    *
-   * Повторный вызов — no-op.
+   * Повторный вызов — no-op, возвращающий текущее состояние кэша.
    *
-   * @throws {Error} Если все хосты завершились ошибкой при резолвинге
+   * Метод НЕ бросает при отказе резолвинга, в том числе полном: патч ставится
+   * всё равно (`hasHost` вернёт false, запросы уйдут в системный резолвер), а
+   * фоновый рефреш продолжает попытки и поднимает override сам, когда DoH
+   * оживёт. Полный провал возвращается как `{ resolved: 0 }` — проверять его
+   * обязан вызывающий; коллектор логирует на это ERROR.
    *
    * @example
    * ```typescript
-   * await dnsOverride.install([
+   * const { resolved, total } = await dnsOverride.install([
    *   'clob.polymarket.com',
    *   'gamma-api.polymarket.com',
    * ]);
+   * if (resolved === 0) {
+   *   logger.error('DNS override is inert', { total });
+   * }
    * ```
    */
   async install(hosts: string[]): Promise<DnsOverrideInstallResult> {
