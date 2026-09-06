@@ -1,0 +1,35 @@
+packages/infrastructure/polymarket-v2/__tests__/PolymarketSource.supervision.test.ts
+  s_c99ec2b699d51d::t_ff636ce7760c06 208-213,220-232,234-244,246-257,259-266,268-273,275-281,283-285,287,289-295,297-340,345-353,357-371
+  s_c99ec2b699d51d::t_49ba21a4d93073 296
+  s_c99ec2b699d51d::t_80456dbb8fd37c 102
+  s_c99ec2b699d51d::t_cf9633b765ef8b 372-409
+  s_c99ec2b699d51d::t_4f4effa157da6c 25-31,51,219,233,245,258,267,274,282,286,288,341,356
+packages/infrastructure/polymarket-v2/src/PolymarketSource.ts
+  s_c99ec2b699d51d::t_fa062817bfbe6b 266-276,279-288,293-296,302,313-343
+  s_c99ec2b699d51d::t_f7ce75eaa69fd5 645-660,697,700-706,708,714-717,727
+  s_c99ec2b699d51d::t_9c4598832abe85 678-687
+  s_c99ec2b699d51d::t_b095532b5da88e 152-164,364-365,382-383,828-830,861-862,906-908,921-922,930,935,940
+  s_c99ec2b699d51d::t_fb99bfc52d3d67 468-476,515
+  s_c99ec2b699d51d::t_4f2d946f24d9fc 967-969
+  s_c99ec2b699d51d::t_3d7c0563e159cb 358,360-361,551,1064,1068-1080
+  s_c99ec2b699d51d::t_75c77e5a686235 809,811,814-816,819-827,831-847,853-854,856-860,863-870,875-877,886,891-892,895-905,909-920,923-929,931-934,936-939,941-945
+  s_c99ec2b699d51d::t_384d0cf66e945e 1030-1041
+docs/guides/rtds-liveness-supervision.md
+  s_c99ec2b699d51d::t_359fb8196664c7 52-53,55-62,65-67,75,78-83,92-117,119-136,154,157,161-173,195-196,200-203,214-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6c53a6232bb01588d72e52601937cfc171041a23",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
