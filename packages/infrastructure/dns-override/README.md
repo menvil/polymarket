@@ -42,7 +42,7 @@ SNI берётся из hostname, сертификат валидируется 
 import { DnsOverride } from '@polymarket/dns-override';
 
 const dnsOverride = new DnsOverride(logger);
-await dnsOverride.install([
+const { resolved, total } = await dnsOverride.install([
   'gamma-api.polymarket.com',
   'clob.polymarket.com',
   'ws-subscriptions-clob.polymarket.com',
@@ -54,3 +54,24 @@ dnsOverride.uninstall();
 
 Отказ `install()` не обязан ронять процесс: вызывающий вправе продолжить с
 системным DNS (так и делает `applyProcessBootstrap` коллектора).
+
+### Результат install()
+
+`install()` возвращает `{ resolved, total }`, и это не украшение.
+`resolved === 0` означает, что патч стоит, но обслуживать ему нечем: все
+запросы уйдут в системный резолвер — там, где площадка заблокирована, это
+нерабочий контур. Раньше метод возвращал `void`, и вызывающий логировал
+«installed» одинаково и при полном успехе, и при полном провале резолвинга.
+
+Установка при `resolved === 0` **не отменяется** намеренно: фоновый refresh
+продолжает попытки и поднимает override сам, когда DoH оживёт. Отказать в
+установке значило бы обменять это самовосстановление на громкость, а
+громкость даёт возвращённый результат — дешевле и без потери.
+
+### Чего подмена НЕ делает
+
+Кэш хранит только A-записи (`resolve4`), поэтому **явный запрос AAAA**
+(`dns.lookup(host, { family: 6 })` или `dns.lookup(host, 6, cb)`) уходит в
+системный резолвер: отдать IPv4 в ответ на `family: 6` значило бы соврать
+вызывающему. Запросы без указания family обслуживаются из кэша как обычно —
+именно так ходит `undici`.

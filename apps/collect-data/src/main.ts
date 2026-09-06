@@ -86,30 +86,38 @@ const { collector } = createDataCollector({ config: runtimeConfig, logger, clock
 const stopped = installShutdownHandlers({ target: collector, bootstrap, logger });
 
 /**
- * Возвращает наибольший возраст последнего события среди надзираемых
- * RTDS-фидов, в секундах.
+ * Возвращает наибольшее время молчания среди надзираемых RTDS-фидов, в
+ * секундах.
  *
  * @remarks
  * Один агрегат вместо строки на фид: в operational-логе важно «сколько времени
- * самый тихий поток молчит», а не имена всех потоков. `null` означает, что
- * надзираемых подписок нет вовсе (контур ещё не поднялся или уже остановлен),
- * и это НЕ то же самое, что `0`.
+ * самый тихий поток молчит», а не имена всех потоков.
+ *
+ * Отсчёт идёт от `silentSinceMs`, а НЕ от `lastEventAtMs`: подписка, не
+ * принёсшая ни одного события, — самое тревожное состояние из возможных, и
+ * считать её «нечего показать» значило бы повторить исходный дефект, где
+ * мёртвый фид выглядел благополучно. У такой подписки отсчёт идёт от старта
+ * потока — ровно как у watchdog.
+ *
+ * `null` означает единственное: надзираемых подписок нет вовсе (контур ещё не
+ * поднялся или уже остановлен). Это НЕ то же самое, что `0`.
  *
  * @param feeds - Снимок здоровья подписок из `PolymarketSource`
  * @returns Секунды молчания самого тихого фида или `null`
  *
  * @example
  * ```typescript
- * rtdsSilenceSeconds([{ subscription: 'prices.crypto.binance', restarts: 0, broken: false }]);
- * // → null: подписка есть, но событий ещё не было
+ * // подписка есть, событий ещё не было → возраст от старта потока, не null
+ * rtdsSilenceSeconds([{ subscription: 'prices.crypto.binance\nbtcusdt',
+ *   silentSinceMs: Date.now() - 12_000, restarts: 0, broken: false }]); // → 12
  * ```
  */
 function rtdsSilenceSeconds(feeds: readonly PolymarketSubscriptionHealth[]): number | null {
-  const ages = feeds
-    .map((feed) => feed.lastEventAtMs)
-    .filter((at): at is number => at !== undefined)
-    .map((at) => Math.round((Date.now() - at) / 1_000));
-  return ages.length === 0 ? null : Math.max(...ages);
+  if (feeds.length === 0) {
+    return null;
+  }
+  const now = Date.now();
+  return Math.max(...feeds.map((feed) => Math.round((now - feed.silentSinceMs) / 1_000)));
 }
 
 // Периодический operational-снимок: одна строка вместо набора таймеров.

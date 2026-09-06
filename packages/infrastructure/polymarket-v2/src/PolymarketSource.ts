@@ -297,6 +297,18 @@ export interface PolymarketSubscriptionHealth {
   readonly subscription: string;
   /** Момент последнего полученного события (epoch ms); нет — событий не было. */
   readonly lastEventAtMs?: number;
+  /**
+   * Момент, ОТ КОТОРОГО считается тишина (epoch ms): последнее событие, а
+   * если событий ещё не было — старт текущего поколения потока.
+   *
+   * @remarks
+   * Поле обязательное намеренно. Подписка, не принёсшая ни одного события, —
+   * самое тревожное состояние из возможных, и потребитель, считающий возраст
+   * по одному `lastEventAtMs`, отрисовал бы её как «данных нет» вместо
+   * «молчит N секунд». Watchdog меряет тишину от этого же момента, поэтому
+   * диагностика и решение о перезапуске согласованы по построению.
+   */
+  readonly silentSinceMs: number;
   /** Сколько раз поток пришлось поднимать заново. */
   readonly restarts: number;
   /** Поток сейчас недоступен: переподписка не удалась подряд достаточно раз. */
@@ -306,6 +318,8 @@ export interface PolymarketSubscriptionHealth {
 /** Изменяемое состояние надзора за одной подпиской. */
 interface SupervisionState {
   lastEventAtMs?: number;
+  /** Старт текущего поколения потока — точка отсчёта тишины до первого события. */
+  streamStartedAtMs: number;
   restarts: number;
   broken: boolean;
 }
@@ -636,7 +650,11 @@ export class PolymarketSource {
     toMessage: (event: TEvent) => PolymarketExternalMessage,
     supervision?: SubscriptionSupervision<TEvent>,
   ): PolymarketOpenSubscription {
-    const state: SupervisionState = { restarts: 0, broken: false };
+    const state: SupervisionState = {
+      streamStartedAtMs: Date.now(),
+      restarts: 0,
+      broken: false,
+    };
     if (supervision !== undefined) {
       this._supervised.set(subscription, state);
     }
@@ -663,6 +681,7 @@ export class PolymarketSource {
     const supervised = (async (): Promise<void> => {
       for (;;) {
         const activeHandle = current;
+        state.streamStartedAtMs = Date.now();
         this._handles.add(activeHandle);
         let resolveClosed!: () => void;
         const closed = new Promise<void>((resolve) => {
@@ -739,7 +758,12 @@ export class PolymarketSource {
       // Цикл завершается ТОЛЬКО при release/close/fail — неудачная
       // переподписка его больше не прекращает, поэтому запись здоровья
       // исчезает вместе с самой подпиской, а не в момент её смерти.
-      this._supervised.delete(subscription);
+      // Удаляем СВОЮ запись: две подписки с одинаковым ключом (source —
+      // публичный API, дубли им не запрещены) иначе стирали бы диагностику
+      // друг друга — снова «фид жив, а health о нём молчит».
+      if (this._supervised.get(subscription) === state) {
+        this._supervised.delete(subscription);
+      }
     });
     this._pumps.add(supervised);
 
@@ -778,6 +802,7 @@ export class PolymarketSource {
         Object.freeze({
           subscription,
           ...(state.lastEventAtMs !== undefined ? { lastEventAtMs: state.lastEventAtMs } : {}),
+          silentSinceMs: state.lastEventAtMs ?? state.streamStartedAtMs,
           restarts: state.restarts,
           broken: state.broken,
         }),
@@ -809,9 +834,8 @@ export class PolymarketSource {
     state: SupervisionState,
     stallAfterMs: number,
   ): ReturnType<typeof setInterval> {
-    const startedAt = Date.now();
     const timer = setInterval(() => {
-      const silentSince = state.lastEventAtMs ?? startedAt;
+      const silentSince = state.lastEventAtMs ?? state.streamStartedAtMs;
       const silentMs = Date.now() - silentSince;
       if (silentMs < stallAfterMs) {
         return;
@@ -895,13 +919,25 @@ export class PolymarketSource {
         return undefined;
       }
       try {
-        const handle = await supervision.reopen();
-        if (abandoned()) {
-          // Handle открылся одновременно с release: он не должен стать
-          // активным ни на секунду — закрываем и уходим.
-          await this._closeHandle(subscription, handle);
+        // `subscribe()` SDK неотменяем и на мёртвом соединении может не
+        // разрешиться вовсе. Ждать его безусловно значило бы подвесить
+        // `close()` владельца и всю лестницу остановки на неопределённый
+        // срок — тот же бюджет, ради которого прерывается ожидание ступени.
+        const reopening = supervision.reopen();
+        const opened = await Promise.race([
+          reopening.then((value) => ({ handle: value })),
+          released.then(() => undefined),
+        ]);
+        if (opened === undefined || abandoned()) {
+          // Release победил гонку либо случился, пока handle открывался:
+          // поздний handle не должен стать активным ни на секунду.
+          void reopening.then(
+            async (late) => this._closeHandle(subscription, late),
+            () => undefined, // отказ поздней переподписки уже никого не волнует
+          );
           return undefined;
         }
+        const handle = opened.handle;
         state.restarts += 1;
         state.lastEventAtMs = undefined;
         state.broken = false;

@@ -68,8 +68,20 @@ export async function applyProcessBootstrap(options: {
 
   const dnsOverride = new DnsOverride(logger);
   try {
-    await dnsOverride.install([...V2_COLLECTOR_HOSTS]);
-    logger.info('DNS override installed', { hosts: V2_COLLECTOR_HOSTS.length });
+    const { resolved, total } = await dnsOverride.install([...V2_COLLECTOR_HOSTS]);
+    if (resolved === 0) {
+      // Патч стоит, но обслуживать ему нечем: до первого удачного refresh все
+      // запросы уходят в системный резолвер — там, где площадка заблокирована,
+      // это означает нерабочий контур. Молчать про это нельзя: раньше
+      // `install()` отчитывался об успехе и в этом случае тоже.
+      logger.error('DNS override resolved no hosts; requests fall back to system DNS', {
+        hosts: total,
+      });
+    } else if (resolved < total) {
+      logger.warn('DNS override resolved only part of the hosts', { resolved, total });
+    } else {
+      logger.info('DNS override installed', { hosts: total });
+    }
   } catch (error) {
     logger.warn('DNS override install failed, continuing with system DNS', {
       error: error instanceof Error ? error.message : String(error),

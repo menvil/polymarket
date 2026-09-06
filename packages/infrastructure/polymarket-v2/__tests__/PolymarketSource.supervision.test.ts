@@ -23,6 +23,16 @@ import { TOKEN_ID_UP, createBinanceEvent, createBookEvent } from './helpers/sdkF
 const STALL_MS = 60;
 
 /**
+ * Период опроса watchdog при коротком пороге.
+ *
+ * @remarks
+ * Watchdog тикает не чаще `max(1000, порог/3)` мс, поэтому при `STALL_MS = 60`
+ * период равен полу — одной секунде. Тест «поток НЕ перезапускается» обязан
+ * прожить дольше нескольких таких тиков, иначе он ничего не проверяет.
+ */
+const WATCHDOG_TICK_MS = 1_000;
+
+/**
  * Лестница переподписки в тестах: та же ФОРМА, что в production (четыре
  * ступени с плато на последней), но в сотни раз короче. Проверяется поведение
  * лестницы, а не её абсолютные величины.
@@ -147,10 +157,14 @@ describe('молчащий RTDS-поток перезапускается по w
   });
 
   it('поток с событиями чаще порога НЕ перезапускается', async () => {
+    // Окно теста обязано ПЕРЕКРЫТЬ несколько тиков watchdog, иначе тест
+    // проходит вхолостую: watchdog опрашивает состояние не чаще
+    // `max(1000, порог/3)` мс, и при коротком пороге первая же проверка
+    // случается позже, чем заканчивался прежний 240-мс цикл.
     const { client, source } = createHarness();
     await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
 
-    const until = Date.now() + STALL_MS * 4;
+    const until = Date.now() + WATCHDOG_TICK_MS * 2 + STALL_MS;
     while (Date.now() < until) {
       client.cryptoHandles[0]?.emit(createBinanceEvent());
       await new Promise<void>((resolve) => setTimeout(resolve, STALL_MS / 4));
@@ -161,7 +175,7 @@ describe('молчащий RTDS-поток перезапускается по w
     expect(source.getSubscriptionHealth()[0]?.restarts).toBe(0);
 
     await source.close();
-  });
+  }, 15_000);
 });
 
 describe('надзор не мешает штатному владению подпиской', () => {
@@ -468,5 +482,79 @@ describe('физическая подписка не может исчезнут
 
     expect(source.hasFailed).toBe(false);
     expect(client.marketHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('диагностика не выдаёт мёртвый фид за благополучный', () => {
+  it('подписка без единого события отвечает на «молчит с какого момента»', async () => {
+    // Считать возраст по одному lastEventAtMs значило бы отрисовать самое
+    // тревожное состояние — фид, не принёсший НИЧЕГО — как «нечего показать».
+    const { client, source } = createHarness(10_000);
+    const openedAt = Date.now();
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+
+    const fresh = source.getSubscriptionHealth()[0];
+    expect(fresh?.lastEventAtMs).toBeUndefined();
+    expect(fresh?.silentSinceMs).toBeGreaterThanOrEqual(openedAt);
+    expect(fresh?.silentSinceMs).toBeLessThanOrEqual(Date.now());
+
+    // После первого события точка отсчёта переезжает на него.
+    client.cryptoHandles[0]?.emit(createBinanceEvent());
+    await flushAsync();
+    const withEvent = source.getSubscriptionHealth()[0];
+    expect(withEvent?.silentSinceMs).toBe(withEvent?.lastEventAtMs);
+
+    await source.close();
+  });
+});
+
+describe('дубль ключа не стирает чужую диагностику', () => {
+  it('закрытие одной подписки не удаляет health другой с тем же ключом', async () => {
+    // Source — публичный API, дубли ключа им не запрещены. Раньше завершение
+    // первой подписки удаляло запись, которую уже занимала вторая.
+    const { client, source } = createHarness(10_000);
+    const first = await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+    client.cryptoHandles[1]?.emit(createBinanceEvent());
+    await flushAsync();
+
+    await first.close();
+
+    // Живая вторая подписка обязана остаться видимой — и именно ОНА,
+    // что доказывает пришедшее по ней событие.
+    expect(source.getSubscriptionHealth()).toHaveLength(1);
+    expect(source.getSubscriptionHealth()[0]?.lastEventAtMs).toEqual(expect.any(Number));
+
+    await source.close();
+  });
+});
+
+describe('зависший reopen не держит остановку', () => {
+  it('close() не ждёт неразрешимый subscribe(), поздний handle закрывается', async () => {
+    // `subscribe()` SDK неотменяем: на мёртвом соединении он может не
+    // разрешиться вовсе, и безусловное ожидание подвесило бы всю лестницу.
+    const { client, source } = createHarness(10_000);
+    const subscription = await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+
+    let releaseHold!: () => void;
+    client.subscribeHold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    client.cryptoHandles[0]?.endFromServer();
+    await waitFor(() => client.subscribeCalls.length === 2);
+
+    const closedAt = Date.now();
+    const outcome = await Promise.race([
+      subscription.close().then(() => 'closed' as const),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 2_000)),
+    ]);
+    expect(outcome).toBe('closed');
+    expect(Date.now() - closedAt).toBeLessThan(2_000);
+
+    // SDK разрешился уже после остановки — handle не должен остаться жить.
+    releaseHold();
+    await waitFor(() => (client.cryptoHandles[1]?.closeCalls ?? 0) >= 1);
+
+    await source.close();
   });
 });

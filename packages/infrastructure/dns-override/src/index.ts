@@ -33,5 +33,6 @@
  */
 
 export { DnsOverride } from './DnsOverride.js';
+export type { DnsOverrideInstallResult, DnsResolverPort } from './DnsOverride.js';
 export { IpStore } from './IpStore.js';
 export { DnsResolver } from './DnsResolver.js';
