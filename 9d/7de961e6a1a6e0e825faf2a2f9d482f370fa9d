@@ -1,0 +1,24 @@
+packages/infrastructure/polymarket-v2/__tests__/PolymarketSource.supervision.test.ts
+  s_c99ec2b699d51d::t_75602d75c1a7ac 338-340,347-349,418-470
+  s_c99ec2b699d51d::t_f84bde3b702bce 127-129
+packages/infrastructure/polymarket-v2/src/PolymarketSource.ts
+  s_c99ec2b699d51d::t_77717d32a154b1 696-721
+docs/guides/rtds-liveness-supervision.md
+  s_c99ec2b699d51d::t_2e49bc3d7da0aa 144-170,250-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9d7de961e6a1a6e0e825faf2a2f9d482f370fa9d",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
