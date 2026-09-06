@@ -1,0 +1,41 @@
+docs/guides/rtds-liveness-supervision.md
+  s_c99ec2b699d51d::t_8968e6b26c7412 1-146
+apps/collect-data/src/runtime/DataCollector.ts
+  s_c99ec2b699d51d::t_bc017c393ebbc6 74,143-146,234-242,411
+apps/collect-data/__tests__/helpers/fakes.ts
+  s_c99ec2b699d51d::t_bc017c393ebbc6 24,254-255,264-266
+docs/guides/collector-qualification-run-01.md
+  s_c99ec2b699d51d::t_ef5fad03e28263 197-208
+packages/infrastructure/polymarket-v2/src/PolymarketSource.ts
+  s_c99ec2b699d51d::t_b10555840a6169 258
+  s_c99ec2b699d51d::t_85ef81484bb81e 396
+  s_c99ec2b699d51d::t_bc017c393ebbc6 140-151,226-257,259-276,289-293,308,393-395,444-448,529,536-550,556,558-602,604-605,608-612,618-749,782,787-792
+apps/collect-data/src/main.ts
+  s_c99ec2b699d51d::t_bc017c393ebbc6 28,88-114,124-128
+packages/infrastructure/polymarket/rest/PolymarketRestAdapterFactory.ts
+  s_c99ec2b699d51d::t_bc017c393ebbc6 45
+packages/infrastructure/polymarket-v2/__tests__/helpers/fakes.ts
+  s_c99ec2b699d51d::t_bc017c393ebbc6 80-95
+packages/infrastructure/polymarket-v2/__tests__/PolymarketSource.supervision.test.ts
+  s_c99ec2b699d51d::t_107170a841c74b 1-226
+packages/infrastructure/polymarket-v2/src/index.ts
+  s_c99ec2b699d51d::t_bc017c393ebbc6 40
+packages/infrastructure/polymarket/rest/PolymarketRestClient.ts
+  s_c99ec2b699d51d::t_bc017c393ebbc6 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "08a9bc93e78b57a3df07b5483538a94d7f84777b",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
