@@ -124,7 +124,9 @@ describe('молчащий RTDS-поток перезапускается по w
     // который ref-count подписок заметить не в состоянии.
     await waitFor(() => client.cryptoHandles.length === 2);
 
-    expect(client.cryptoHandles[0]?.closeCalls).toBe(1);
+    // Закрыт хотя бы раз: watchdog закрывает handle, а надзорный цикл ещё
+    // раз retire-ит его перед reopen — контракт close() идемпотентен.
+    expect(client.cryptoHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
     expect(
       logger.entries.some(
         (e) => e.level === 'warn' && e.message.includes('went silent, restarting'),
@@ -333,13 +335,18 @@ describe('identity здоровья = identity фида у контроллер�
 
 describe('падение итератора: локально для RTDS, терминально для CLOB', () => {
   it('исключение RTDS-итератора перезапускает ФИД, а не роняет source', async () => {
-    const { client, source, received } = createHarness();
+    // Порог молчания заведомо большой: закрытие старого handle должно быть
+    // заслугой retire перед reopen, а не побочным эффектом watchdog.
+    const { client, source, received } = createHarness(10_000);
     await source.subscribeMarket([TOKEN_ID_UP]);
     await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
 
     client.cryptoHandles[0]?.fail(new Error('RTDS transport connection lost'));
     await waitFor(() => client.cryptoHandles.length === 2);
 
+    // Старое поколение закрыто ДО нового: иначе на каждой сетевой ошибке
+    // копился бы висящий SDK-ресурс (fake `fail()` close() не вызывает).
+    expect(client.cryptoHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
     expect(source.hasFailed).toBe(false);
     expect(source.isClosed).toBe(false);
     // CLOB не тронут — ни закрытия, ни переоткрытия.
@@ -406,5 +413,60 @@ describe('release во время незавершённого reopen()', () => 
     expect(source.getSubscriptionHealth()).toEqual([]);
 
     await source.close();
+  });
+});
+
+describe('физическая подписка не может исчезнуть тихо', () => {
+  it('CLOB, кончившийся САМ (done), — терминальный отказ, а не тихая смерть', async () => {
+    // Тот же класс дефекта, что нашёл прогон 2026-09-06, только на CLOB:
+    // тихий стакан это норма, а вот кончившийся ИТЕРАТОР — исчезнувшая
+    // физическая подписка при рынке, который контроллер считает ACTIVE.
+    const { client, source, logger } = createHarness(10_000);
+    await source.subscribeMarket([TOKEN_ID_UP]);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+    client.marketHandles[0]?.emit(createBookEvent());
+    await flushAsync();
+
+    client.marketHandles[0]?.endFromServer();
+    await waitFor(() => source.hasFailed);
+
+    expect(source.hasFailed).toBe(true);
+    expect(
+      logger.entries.some(
+        (e) => e.level === 'error' && e.message.includes('ended unexpectedly'),
+      ),
+    ).toBe(true);
+    // Остальные подписки сняты вместе с ним: состояния «рынок ACTIVE, а CLOB
+    // физически нет» не остаётся ни на одном фиде.
+    expect(client.cryptoHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
+    // И никакой переподписки: владение рынками — забота контроллера, не source.
+    expect(client.marketHandles).toHaveLength(1);
+    expect(source.getSubscriptionHealth()).toEqual([]);
+
+    await source.close();
+  });
+
+  it('CLOB, закрытый ВЛАДЕЛЬЦЕМ, отказом не считается', async () => {
+    const { source } = createHarness(10_000);
+    const market = await source.subscribeMarket([TOKEN_ID_UP]);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+
+    await market.close();
+    await flushAsync();
+
+    expect(source.hasFailed).toBe(false);
+    expect(source.getSubscriptionHealth()).toHaveLength(1);
+
+    await source.close();
+  });
+
+  it('CLOB, закрытый вместе с source, отказом не считается', async () => {
+    const { client, source } = createHarness(10_000);
+    await source.subscribeMarket([TOKEN_ID_UP]);
+
+    await source.close();
+
+    expect(source.hasFailed).toBe(false);
+    expect(client.marketHandles[0]?.closeCalls).toBeGreaterThanOrEqual(1);
   });
 });

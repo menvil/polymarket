@@ -693,8 +693,32 @@ export class PolymarketSource {
           this._handleCloseSignals.delete(activeHandle);
         }
 
-        // Поток кончился. Переподписка — только если его прекратили НЕ мы.
-        if (abandoned() || supervision === undefined) {
+        // Поток кончился. Дальше всё зависит от того, кто его прекратил.
+        if (abandoned()) {
+          return;
+        }
+        if (supervision === undefined) {
+          // Ненадзираемая (CLOB) подписка кончилась САМА. Watchdog ей не
+          // нужен — тихий стакан это норма, — но штатное завершение
+          // ИТЕРАТОРА тишиной не является: физическая подписка исчезла, а
+          // контроллер продолжает считать рынок ACTIVE. Это тот же класс
+          // бесшумно неполного датасета, что нашёл прогон 2026-09-06, только
+          // на CLOB. Переподписываться здесь нельзя (владение рынками — не
+          // забота source), поэтому единственный честный исход — терминальный
+          // отказ: он поднимает hasFailed, и контур пересобирает подписки.
+          this._logger.error('Polymarket subscription ended unexpectedly, failing source', {
+            subscription,
+          });
+          await this._fail();
+          return;
+        }
+        // Старое поколение обязано быть закрыто ДО открытия нового: путь
+        // «итератор бросил исключение» приходит сюда с ЖИВЫМ handle, и без
+        // явного close на каждой сетевой ошибке оставался бы висящий
+        // SDK-ресурс. Для завершившегося итератора и для закрытого watchdog-ом
+        // handle этот вызов — no-op: контракт close() идемпотентен.
+        await this._closeHandle(subscription, activeHandle);
+        if (abandoned()) {
           return;
         }
         const reopened = await this._reopenSupervised(
