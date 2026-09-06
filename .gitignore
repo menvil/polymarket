@@ -59,6 +59,9 @@ apps/bot/data/
 # Collector datasets (live-прогоны и smoke пишут сюда собранные архивы)
 apps/collect-data/data/
 
+# Локальные CEX-конфигурации прогонов (базовый cex-config.json — трекается)
+apps/collect-data/cex-config.*.json
+
 # Checkpoint verification runs (raw live collection artifacts)
 /data/
 
