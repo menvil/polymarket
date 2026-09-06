@@ -96,6 +96,7 @@ import type {
   CcxtRawOrderBook,
   CcxtRawTrade,
 } from './CcxtVendorPort.js';
+import { releaseVendorCaches } from './CcxtVendorPort.js';
 import { createCcxtProExchange, normalizeOrderbookDepth } from './CcxtVendorPort.js';
 import type { CexSourceConfig } from './CexSourceConfig.js';
 import {
@@ -1250,6 +1251,19 @@ export class CexSource {
     const result = await Promise.race([closeOperation.then(() => 'closed' as const), timeout]);
     if (timer) clearTimeout(timer);
 
+    // Освобождаем кэши в момент «мы перестали ЖДАТЬ», а не «закрытие
+    // завершилось»: интересующий случай — зависшее `instance.close()`, и у
+    // зависшего промиса `finally` не выполнится никогда. Инстанс к этой точке
+    // уже брошен (право публиковать снимает abort сессии), читать его кэши
+    // больше некому.
+    const released = releaseVendorCaches(instance);
+    if (released > 0) {
+      this._logger.debug('Released vendor caches of retired CCXT instance', {
+        released,
+        closeResult: result,
+      });
+    }
+
     if (result === 'timeout') {
       this._logger.warn('Timed out waiting for CCXT instance close (teardown continues)', {
         timeoutMs: this._closeTimeoutMs,
@@ -1284,6 +1298,9 @@ export class CexSource {
     // после присваивания.
     const tracked: Promise<void> = operation.finally(() => {
       this._pendingInstanceCloses.delete(tracked);
+      // Повторное освобождение по ФАКТИЧЕСКОМУ завершению: между истёкшим
+      // ожиданием и settle vendor мог дописать в кэш. Идемпотентно.
+      releaseVendorCaches(instance);
     });
     this._pendingInstanceCloses.add(tracked);
     return tracked;

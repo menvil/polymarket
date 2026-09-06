@@ -30,6 +30,7 @@ export {
   buildCcxtInstanceOptions,
   createCcxtProExchange,
   normalizeOrderbookDepth,
+  releaseVendorCaches,
 } from './CcxtVendorPort.js';
 export type { CexSourceConfig } from './CexSourceConfig.js';
 export {

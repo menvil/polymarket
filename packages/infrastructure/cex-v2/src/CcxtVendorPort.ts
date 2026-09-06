@@ -83,6 +83,19 @@ export interface CcxtProExchangeInstance {
   readonly clients?: Readonly<Record<string, CcxtProClientLike | undefined>> | undefined;
   /** Закрытие инстанса (WS-соединения + внутренние ресурсы). */
   readonly close?: (() => Promise<unknown>) | undefined;
+  /**
+   * Внутренние кэши наблюдений CCXT Pro.
+   *
+   * @remarks
+   * Объявлены в порту с единственной целью — ОСВОБОЖДАТЬ их у брошенного
+   * инстанса (см. {@link releaseVendorCaches}). Читать их нельзя: источник
+   * работает со значениями, которые возвращает сам `watch*`, а не с этими
+   * мутабельными структурами.
+   */
+  readonly trades?: unknown;
+  readonly orderbooks?: unknown;
+  readonly myTrades?: unknown;
+  readonly orders?: unknown;
 }
 
 /**
@@ -276,4 +289,74 @@ export async function createCcxtProExchange(
     timeout: constructorArgs.timeout,
     options: { ...constructorArgs.options },
   });
+}
+
+/** Кэши CCXT Pro, которые освобождаются у брошенного инстанса. */
+const VENDOR_CACHE_PROPERTIES = ['trades', 'orderbooks', 'myTrades', 'orders'] as const;
+
+/**
+ * Освобождает внутренние кэши наблюдений брошенного CCXT-инстанса.
+ *
+ * @param instance - Инстанс, который источник больше не использует
+ * @returns Сколько кэш-структур было опустошено (для диагностики)
+ *
+ * @remarks
+ * ### Зачем
+ *
+ * Инстансы переоткрываются планово (раз в 15 минут на пул) и аварийно.
+ * Закрытие сокета НЕ освобождает накопленные `trades`/`orderbooks`: это
+ * обычные объекты на самом инстансе, и они живут ровно столько, сколько
+ * живёт ссылка на него. Пока `instance.close()` не завершился — а он может
+ * зависнуть, ровно от этого защищает `closeTimeoutMs`, — инстанс жив вместе
+ * со всеми своими стаканами.
+ *
+ * ### Почему не в `finally` закрытия, как было в legacy
+ *
+ * Legacy-сборщик чистил кэши в `.finally()` операции закрытия. Для нас этого
+ * мало: интересующий случай — ЗАВИСШЕЕ закрытие, а у зависшего промиса
+ * `finally` не выполняется никогда. Поэтому освобождение привязано к моменту
+ * «мы перестали ждать», а не «закрытие завершилось».
+ *
+ * ### Почему `.length = 0`, а не переприсваивание
+ *
+ * `instance.trades[symbol]` — это `ArrayCache`, наследник `Array` с
+ * собственным `append`. Замена ссылки на новый массив сломала бы vendor-код,
+ * если он ещё держит эту структуру. Ту же ловушку legacy обнаружил откатом
+ * (`fix: revert ccxt.pro trades cache reset — ArrayCache not a plain array`),
+ * и повторять её не нужно.
+ *
+ * Идемпотентна: повторный вызов на уже очищенном инстансе безвреден.
+ *
+ * @example
+ * ```typescript
+ * releaseVendorCaches(instance); // → 2 (trades и orderbooks были непусты)
+ * ```
+ */
+export function releaseVendorCaches(instance: CcxtProExchangeInstance): number {
+  let released = 0;
+  for (const property of VENDOR_CACHE_PROPERTIES) {
+    const cache: unknown = (instance as Record<string, unknown>)[property];
+    if (cache === null || typeof cache !== 'object') {
+      continue;
+    }
+    if (Array.isArray(cache)) {
+      if (cache.length > 0) {
+        cache.length = 0;
+        released += 1;
+      }
+      continue;
+    }
+    // Карта «символ → ArrayCache»: опустошаем каждую запись НА МЕСТЕ, затем
+    // снимаем сами ключи — сокращается и содержимое, и сама карта.
+    const map = cache as Record<string, unknown>;
+    for (const key of Object.keys(map)) {
+      const entry: unknown = map[key];
+      if (Array.isArray(entry)) {
+        entry.length = 0;
+      }
+      delete map[key];
+      released += 1;
+    }
+  }
+  return released;
 }
