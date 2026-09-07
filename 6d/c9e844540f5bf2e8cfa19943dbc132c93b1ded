@@ -1,0 +1,28 @@
+apps/collect-data/src/config.ts
+  s_c99ec2b699d51d::t_cbda6b7391995c 237-276,348
+apps/collect-data/src/runtime/DataCollectorConfig.ts
+  s_c99ec2b699d51d::t_a7c9b0ffe4a39e 266-268
+  s_c99ec2b699d51d::t_11ad2c44261f1a 183,269-274,276
+apps/collect-data/ecosystem.config.cjs
+  s_c99ec2b699d51d::t_f0389d6b37e268 15-25,71,85-89
+  s_c99ec2b699d51d::t_11ad2c44261f1a 64-70
+apps/collect-data/__tests__/DataCollectorConfig.test.ts
+  s_c99ec2b699d51d::t_034e67d4f4bf34 339,366-387
+  s_c99ec2b699d51d::t_11ad2c44261f1a 342-345
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6dc9e844540f5bf2e8cfa19943dbc132c93b1ded",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
