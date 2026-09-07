@@ -564,9 +564,26 @@ export class DataCollector {
       clearTimeout(this._tickTimer);
       this._tickTimer = null;
     }
-    while (this._activeTicks.size > 0) {
-      await Promise.allSettled([...this._activeTicks]);
-    }
+    // Бюджет включается ДО ожидания тиков: зависший control-тик — такой же
+    // повод не ждать, как зависший шаг лестницы, и раньше он обходил дедлайн
+    // с чёрного хода (таймер создавался уже после этого цикла).
+    const startedAtMs = Date.now();
+    let expired = false;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<'deadline'>((resolve) => {
+      deadlineTimer = setTimeout(() => {
+        expired = true;
+        resolve('deadline');
+      }, this._shutdownDeadlineMs);
+      deadlineTimer.unref?.();
+    });
+
+    const drainTicks = (async (): Promise<void> => {
+      while (this._activeTicks.size > 0) {
+        await Promise.allSettled([...this._activeTicks]);
+      }
+    })();
+    await Promise.race([drainTicks, deadline]);
 
     const steps: ShutdownStep[] = [
       // 1. Доводим до конца УЖЕ начатые записи. Истёкшие сессии входят в
@@ -630,17 +647,17 @@ export class DataCollector {
       },
     ];
 
-    const startedAtMs = Date.now();
     const ladder = (async () => {
       for (const step of steps) {
+        // Истёкший бюджет останавливает ЗАПУСК следующих шагов: продолжать
+        // лестницу после того, как мы перестали её ждать, — чистая работа
+        // в пустоту, а её шаги ходят в сеть.
+        if (expired) {
+          return;
+        }
         await this._runStep(step);
       }
     })();
-    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<'deadline'>((resolve) => {
-      deadlineTimer = setTimeout(() => resolve('deadline'), this._shutdownDeadlineMs);
-      deadlineTimer.unref?.();
-    });
     const outcome = await Promise.race([ladder.then(() => 'done' as const), deadline]);
     if (deadlineTimer !== undefined) {
       clearTimeout(deadlineTimer);

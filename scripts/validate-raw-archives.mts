@@ -161,6 +161,71 @@ const DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS = 15_000;
  */
 const DEFAULT_BOUNDARY_JITTER_ALLOWANCE_MS = 500;
 
+/** Маркер невалидного флага: отличает «ошибку» от «не задано». */
+const INVALID_FLAG = Symbol('invalid-flag');
+
+/**
+ * Разбирает числовой флаг в миллисекундах.
+ *
+ * @param args - Аргументы после корня датасета
+ * @param flag - Имя флага, например `--grace-ms`
+ * @returns Значение, `undefined` (флаг не задан) либо {@link INVALID_FLAG}
+ *
+ * @remarks
+ * Отдельная функция нужна ради одного случая, который оба прежних разбора
+ * пропускали одинаково: **флаг последним аргументом**. Тогда значение
+ * оказывалось `undefined`, и это было неотличимо от «флаг не передан», —
+ * скрипт молча применял дефолт вместо того, чтобы сообщить об опечатке.
+ *
+ * @example
+ * ```typescript
+ * parseMsFlag(['--grace-ms'], '--grace-ms');      // INVALID_FLAG
+ * parseMsFlag(['--grace-ms', '10'], '--grace-ms'); // 10
+ * parseMsFlag([], '--grace-ms');                   // undefined
+ * ```
+ */
+function parseMsFlag(
+  args: readonly string[],
+  flag: string,
+): number | undefined | typeof INVALID_FLAG {
+  const index = args.indexOf(flag);
+  if (index === -1) {
+    return undefined;
+  }
+  const raw = args[index + 1];
+  if (raw === undefined || raw.startsWith('--')) {
+    process.stderr.write(`${flag} requires a value\n`);
+    return INVALID_FLAG;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    process.stderr.write(`${flag} must be a finite number >= 0, got ${raw}\n`);
+    return INVALID_FLAG;
+  }
+  return value;
+}
+
+/**
+ * Проверяет допуск, пришедший через API (не через CLI).
+ *
+ * @param value - Значение из опций
+ * @param name - Имя опции для сообщения
+ * @returns Само значение
+ * @throws {RangeError} Если значение не конечное или отрицательное
+ *
+ * @remarks
+ * CLI свои значения уже проверил, но `validateDatasetRoot` — публичная
+ * функция, и вызов из кода мог бы протащить `NaN` прямо в сравнение
+ * `atMs > expiresAtMs + jitter`, где оно молча сделало бы КАЖДОЕ сравнение
+ * ложным и отключило проверку целиком. Отказ громче тихой поломки.
+ */
+function assertAllowanceMs(value: number, name: string): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${name} must be a finite number >= 0, got ${String(value)}`);
+  }
+  return value;
+}
+
 /**
  * Приводит значение к объекту-словарю, отвергая `null` и массивы.
  *
@@ -535,9 +600,14 @@ export function validateDatasetRoot(
   root: string,
   options: { readonly settlementGraceMs?: number; readonly boundaryJitterMs?: number } = {},
 ): ValidationReport {
-  const settlementGraceMs = options.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS;
-  const boundaryJitterMs =
-    options.boundaryJitterMs ?? DEFAULT_BOUNDARY_JITTER_ALLOWANCE_MS;
+  const settlementGraceMs = assertAllowanceMs(
+    options.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS,
+    'settlementGraceMs',
+  );
+  const boundaryJitterMs = assertAllowanceMs(
+    options.boundaryJitterMs ?? DEFAULT_BOUNDARY_JITTER_ALLOWANCE_MS,
+    'boundaryJitterMs',
+  );
   if (!fs.existsSync(root)) {
     throw new Error(`Dataset root does not exist: ${root}`);
   }
@@ -621,21 +691,17 @@ function main(): number {
   }
   const jsonIndex = rest.indexOf('--json');
   const jsonPath = jsonIndex === -1 ? undefined : rest[jsonIndex + 1];
-  const graceIndex = rest.indexOf('--grace-ms');
-  const graceRaw = graceIndex === -1 ? undefined : rest[graceIndex + 1];
-  const settlementGraceMs = graceRaw === undefined ? undefined : Number(graceRaw);
-  if (settlementGraceMs !== undefined && (!Number.isFinite(settlementGraceMs) || settlementGraceMs < 0)) {
-    process.stderr.write(`--grace-ms must be a finite number >= 0, got ${String(graceRaw)}\n`);
+  const grace = parseMsFlag(rest, '--grace-ms');
+  if (grace === INVALID_FLAG) {
     return 1;
   }
+  const settlementGraceMs = grace;
 
-  const jitterIndex = rest.indexOf('--jitter-ms');
-  const jitterRaw = jitterIndex === -1 ? undefined : rest[jitterIndex + 1];
-  const boundaryJitterMs = jitterRaw === undefined ? undefined : Number(jitterRaw);
-  if (boundaryJitterMs !== undefined && (!Number.isFinite(boundaryJitterMs) || boundaryJitterMs < 0)) {
-    process.stderr.write(`--jitter-ms must be a finite number >= 0, got ${String(jitterRaw)}\n`);
+  const jitter = parseMsFlag(rest, '--jitter-ms');
+  if (jitter === INVALID_FLAG) {
     return 1;
   }
+  const boundaryJitterMs = jitter;
 
   const report = validateDatasetRoot(path.resolve(rootArg), {
     ...(settlementGraceMs === undefined ? {} : { settlementGraceMs }),

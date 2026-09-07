@@ -291,6 +291,43 @@ export async function createCcxtProExchange(
   });
 }
 
+/**
+ * Освобождает одну структуру `ArrayCache` ccxt.pro.
+ *
+ * @param cache - Массив-кэш vendor-а
+ * @returns `true`, если что-то было освобождено
+ *
+ * @remarks
+ * `length = 0` НЕДОСТАТОЧНО. `ArrayCache` наследует `Array`, но подклассы
+ * (`ArrayCacheBySymbolById`, `ArrayCacheBySymbolBySide`) держат ещё и
+ * `hashmap` — индекс `symbol → id → item`, через который ссылки на объекты
+ * переживают опустошение массива.
+ *
+ * При штатной работе `hashmap` чистится вытеснением: `append` удаляет из него
+ * запись вытесненного элемента по достижении `maxSize`. Но `length = 0`
+ * обходит `append` целиком, поэтому после него в индексе остаётся до
+ * `maxSize` объектов на символ — у сделок это `tradesLimit`, то есть тысяча.
+ *
+ * Показательно, что и собственный `BaseCache.clear()` ccxt делает только
+ * `length = 0`: полагаться на «вендор сам всё освободит» здесь нельзя.
+ *
+ * Ссылка на сам массив НЕ заменяется — у него собственный `append`, и подмена
+ * сломала бы vendor-код (ловушка, найденная legacy откатом `d47fb7f6`).
+ */
+function releaseArrayCache(cache: unknown[]): boolean {
+  const hashmap: unknown = (cache as unknown as Record<string, unknown>)['hashmap'];
+  let released = cache.length > 0;
+  cache.length = 0;
+  if (hashmap !== null && typeof hashmap === 'object') {
+    const index = hashmap as Record<string, unknown>;
+    for (const key of Object.keys(index)) {
+      delete index[key];
+      released = true;
+    }
+  }
+  return released;
+}
+
 /** Кэши CCXT Pro, которые освобождаются у брошенного инстанса. */
 const VENDOR_CACHE_PROPERTIES = ['trades', 'orderbooks', 'myTrades', 'orders'] as const;
 
@@ -340,8 +377,7 @@ export function releaseVendorCaches(instance: CcxtProExchangeInstance): number {
       continue;
     }
     if (Array.isArray(cache)) {
-      if (cache.length > 0) {
-        cache.length = 0;
+      if (releaseArrayCache(cache)) {
         released += 1;
       }
       continue;
@@ -352,7 +388,7 @@ export function releaseVendorCaches(instance: CcxtProExchangeInstance): number {
     for (const key of Object.keys(map)) {
       const entry: unknown = map[key];
       if (Array.isArray(entry)) {
-        entry.length = 0;
+        releaseArrayCache(entry);
       }
       delete map[key];
       released += 1;

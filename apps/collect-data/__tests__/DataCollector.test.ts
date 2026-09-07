@@ -340,3 +340,42 @@ describe('DataCollector.drain() — wind-down финализаций без ос
     await collector.close();
   });
 });
+
+describe('бюджет остановки покрывает и зависший control-тик', () => {
+  it('close() не ждёт вечно, если тик застрял до начала лестницы', async () => {
+    // Ожидание `_activeTicks` идёт ПЕРЕД лестницей. Пока таймер бюджета
+    // создавался после него, зависший тик обходил весь механизм с чёрного
+    // хода: остановка вставала до того, как дедлайн вообще начинал считать.
+    const { contour, collector } = makeCollector();
+    await collector.start();
+    contour.polymarketControlRuntime.hold = true;
+    const stuck = collector.tick();
+
+    const startedAt = Date.now();
+    await collector.close();
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(collector.state).toBe('stopped');
+    void stuck.catch(() => undefined);
+  });
+});
+
+describe('истёкший бюджет прекращает лестницу', () => {
+  it('шаг, отпущенный ПОСЛЕ дедлайна, не тянет за собой остальные', async () => {
+    // Продолжать лестницу после того, как мы перестали её ждать, — работа в
+    // пустоту, и её шаги ходят в сеть.
+    const { contour, collector } = makeCollector();
+    await collector.start();
+    contour.polymarketSource.delayCloseMs = 900; // бюджет 500 мс
+
+    await collector.close();
+    // close() вернулся по дедлайну, но задержанный шаг ещё выполняется —
+    // ждём дольше него, иначе ассерт проверял бы «ещё не успело», а не
+    // «прекращено».
+    await new Promise<void>((resolve) => setTimeout(resolve, 700));
+
+    expect(contour.log.calls).toContain('polymarketSource.close');
+    expect(contour.log.calls).not.toContain('bus.close');
+    expect(collector.state).toBe('stopped');
+  });
+});

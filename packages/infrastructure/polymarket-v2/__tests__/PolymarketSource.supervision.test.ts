@@ -652,3 +652,28 @@ describe('второй уровень: сброс общего соединен�
     await source.close();
   });
 });
+
+describe('зависший сброс соединения не парализует источник', () => {
+  it('closeSubscriptions() без ответа не держит эскалацию и close()', async () => {
+    // `.finally()` зависшего промиса не выполнится никогда: без ограничения
+    // single-flight не снимался бы, и КАЖДАЯ следующая эскалация встала бы на
+    // нём навсегда — вместе с close(), который ждёт pump-циклы.
+    const { client, source } = createHarness(10_000);
+    await source.subscribeCryptoPrices('prices.crypto.binance', ['btcusdt']);
+
+    client.holdCloseSubscriptions = true;
+    client.cryptoHandles[0]?.endFromServer();
+    await waitFor(() => client.cryptoHandles.length === 2);
+    client.cryptoHandles[1]?.endFromServer();
+    await waitFor(() => client.closeSubscriptionsCalls === 1);
+
+    // Источник обязан закрыться, несмотря на висящий vendor-вызов.
+    const closedAt = Date.now();
+    const outcome = await Promise.race([
+      source.close().then(() => 'closed' as const),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 8_000)),
+    ]);
+    expect(outcome).toBe('closed');
+    expect(Date.now() - closedAt).toBeLessThan(8_000);
+  }, 20_000);
+});

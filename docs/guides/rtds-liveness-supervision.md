@@ -294,8 +294,9 @@ interface PolymarketSubscriptionHealth {
 ```text
 pmRtdsFeeds: 6          ← желаемое состояние (было 6 и во время тишины)
 pmRtdsSilentSec: 612    ← ФАКТ: самый тихий фид молчит 10 минут
-pmRtdsRestarts: 0
-pmRtdsBroken: 0
+pmFeedRestarts: 0
+pmFeedBroken: 0
+pmConnResets: 0
 ```
 
 `pmRtdsSilentSec: null` означает «надзираемых подписок нет» (контур ещё не
@@ -309,7 +310,7 @@ new PolymarketSource({
   bus,
   metadataGenerator,
   logger,
-  rtdsStallAfterMs: 30_000,                        // по умолчанию
+  rtdsStallAfterMs: 10_000,                        // по умолчанию
   rtdsResubscribeBackoffMs: [1_000, 2_000, 5_000, 10_000], // по умолчанию
 });
 ```

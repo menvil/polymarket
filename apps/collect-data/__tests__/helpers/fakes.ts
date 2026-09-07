@@ -266,10 +266,16 @@ export class FakePolymarketSource implements CollectorPolymarketSource {
     this._hold = true;
   }
 
+  /** Задерживает close() на заданное время — шаг, отпущенный ПОСЛЕ дедлайна. */
+  public delayCloseMs = 0;
+
   public async close(): Promise<void> {
     this._log.record('polymarketSource.close');
     if (this._hold) {
       await new Promise<void>(() => undefined);
+    }
+    if (this.delayCloseMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, this.delayCloseMs));
     }
     this.isClosed = true;
     this.closeCalls++;
@@ -303,11 +309,17 @@ export class FakePolymarketControlRuntime implements CollectorPolymarketControlR
 
   public constructor(private readonly _log: CallLog) {}
 
+  /** Барьер, вешающий проход навсегда — имитация зависшего control-тика. */
+  public hold = false;
+
   public async runOnce(
     demands: readonly PolymarketSubscriptionDemand[],
   ): Promise<PolymarketControlRuntimeResult> {
     this._log.record('pmControlRuntime.runOnce');
     (this.demandsSeen as PolymarketSubscriptionDemand[][]).push([...demands]);
+    if (this.hold) {
+      await new Promise<void>(() => undefined);
+    }
     if (this.runFailure !== undefined) {
       throw this.runFailure;
     }

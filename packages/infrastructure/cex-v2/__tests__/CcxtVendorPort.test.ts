@@ -108,3 +108,47 @@ describe('releaseVendorCaches', () => {
     expect(releaseVendorCaches({} as never)).toBe(0);
   });
 });
+
+describe('releaseVendorCaches: hashmap ArrayCache', () => {
+  /** Форма, эквивалентная `ArrayCacheBySymbolById` ccxt.pro. */
+  function makeArrayCacheBySymbolById(): unknown[] & { hashmap: Record<string, unknown> } {
+    const cache = [] as unknown as unknown[] & { hashmap: Record<string, unknown> };
+    cache.hashmap = {};
+    return cache;
+  }
+
+  it('освобождает hashmap, а не только массив', () => {
+    // `length = 0` обходит `append`, который единственный чистит hashmap при
+    // вытеснении. Без явной очистки индекс удерживает до maxSize объектов на
+    // символ — у сделок это tradesLimit, тысяча.
+    const cache = makeArrayCacheBySymbolById();
+    const trade = { id: '1', symbol: 'BTC/USDT' };
+    cache.push(trade);
+    cache.hashmap['BTC/USDT'] = { '1': trade };
+    const instance = { trades: { 'BTC/USDT': cache } };
+
+    releaseVendorCaches(instance as never);
+
+    expect(cache).toHaveLength(0);
+    expect(Object.keys(cache.hashmap)).toEqual([]);
+  });
+
+  it('считает освобождённым кэш, где пуст массив, но НЕ пуст hashmap', () => {
+    // Ровно состояние после чужого `clear()` из самого ccxt: тот делает
+    // только `length = 0`, поэтому «пустой» кэш всё ещё держит ссылки.
+    const cache = makeArrayCacheBySymbolById();
+    cache.hashmap['BTC/USDT'] = { '1': { id: '1' } };
+    const instance = { trades: { 'BTC/USDT': cache } };
+
+    expect(releaseVendorCaches(instance as never)).toBe(1);
+    expect(Object.keys(cache.hashmap)).toEqual([]);
+  });
+
+  it('обычный массив без hashmap обрабатывается как прежде', () => {
+    const cache: unknown[] = [{ id: 1 }, { id: 2 }];
+    const instance = { orderbooks: { 'BTC/USDT': cache } };
+
+    expect(releaseVendorCaches(instance as never)).toBe(1);
+    expect(cache).toHaveLength(0);
+  });
+});

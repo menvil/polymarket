@@ -140,7 +140,7 @@ export interface PolymarketSourceDependencies {
   /**
    * Пауза в RTDS-потоке, после которой он считается мёртвым (мс).
    *
-   * @defaultValue 30_000
+   * @defaultValue 10_000
    *
    * @remarks
    * Порог инъецируется, а не зашит константой, ровно по двум причинам:
@@ -329,6 +329,17 @@ const ESCALATE_AFTER_RESTARTS = 2;
  * У legacy-клиента ту же роль играл cooldown resubscribe по топику.
  */
 const CONNECTION_RESET_COOLDOWN_MS = 30_000;
+
+/**
+ * Сколько ждать `closeSubscriptions()` SDK при сбросе соединения (мс).
+ *
+ * @remarks
+ * Вызов неотменяем и на мёртвом транспорте может не разрешиться. Ждать его
+ * безусловно значит подвесить эскалацию и остановку источника; ограничение
+ * означает «мы перестали ЖДАТЬ», а не «сброс не состоялся» — teardown
+ * продолжается в фоне, подписки переоткрываются своим чередом.
+ */
+const CONNECTION_RESET_TIMEOUT_MS = 5_000;
 
 /**
  * Диагностика непрерывности одной надзираемой подписки.
@@ -845,6 +856,21 @@ export class PolymarketSource {
   }
 
   /**
+   * Сколько раз пришлось сбрасывать общее realtime-соединение SDK.
+   *
+   * @returns Счётчик сбросов за жизнь источника
+   *
+   * @remarks
+   * Растущее значение означает, что первый уровень (переоткрытие подписки)
+   * систематически не помогает, то есть проблема в транспорте SDK, а не в
+   * отдельных фидах. Ноль при ненулевых `restarts` — наоборот, признак, что
+   * обычной переподписки хватает.
+   */
+  public get connectionResets(): number {
+    return this._connectionResets;
+  }
+
+  /**
    * Возвращает диагностику непрерывности надзираемых подписок.
    *
    * @returns Снимок по каждой живой RTDS-подписке
@@ -867,21 +893,6 @@ export class PolymarketSource {
    *   .filter((h) => Date.now() - (h.lastEventAtMs ?? 0) > 60_000);
    * ```
    */
-  /**
-   * Сколько раз пришлось сбрасывать общее realtime-соединение SDK.
-   *
-   * @returns Счётчик сбросов за жизнь источника
-   *
-   * @remarks
-   * Растущее значение означает, что первый уровень (переоткрытие подписки)
-   * систематически не помогает, то есть проблема в транспорте SDK, а не в
-   * отдельных фидах. Ноль при ненулевых `restarts` — наоборот, признак, что
-   * обычной переподписки хватает.
-   */
-  public get connectionResets(): number {
-    return this._connectionResets;
-  }
-
   public getSubscriptionHealth(): readonly PolymarketSubscriptionHealth[] {
     return [...this._supervised.entries()]
       .map(([subscription, state]) =>
@@ -1085,6 +1096,8 @@ export class PolymarketSource {
   ): Promise<void> {
     const inFlight = this._connectionReset;
     if (inFlight !== undefined) {
+      // Ждём ОГРАНИЧЕННЫЙ промис соседа, а не сам vendor-вызов: он снимается
+      // и по таймауту, поэтому зависший сброс не держит остальные циклы.
       await inFlight;
       return;
     }
@@ -1103,16 +1116,41 @@ export class PolymarketSource {
       consecutiveRestarts,
       connectionResets: this._connectionResets,
     });
+    // `closeSubscriptions()` SDK неотменяем и может не разрешиться вовсе.
+    // Ограничение ставится на ВНУТРЕННЮЮ операцию, а не на ожидание снаружи:
+    // тогда сам `reset` завершается при любом исходе, его `.finally()`
+    // отрабатывает и снимает single-flight. Иначе зависший vendor-вызов
+    // оставил бы `_connectionReset` навсегда, и КАЖДАЯ следующая эскалация
+    // встала бы на нём — вместе с `close()`, который ждёт pump-циклы.
     const reset = (async (): Promise<void> => {
-      try {
-        await this._client.closeSubscriptions();
-      } catch (error) {
-        this._logger.warn('Shared realtime reset failed; subscriptions will retry anyway', {
+      const closing = (async (): Promise<void> => {
+        try {
+          await this._client.closeSubscriptions();
+        } catch (error) {
+          this._logger.warn('Shared realtime reset failed; subscriptions will retry anyway', {
+            subscription,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const bounded = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), CONNECTION_RESET_TIMEOUT_MS);
+        timer.unref?.();
+      });
+      const outcome = await Promise.race([closing.then(() => 'closed' as const), bounded]);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      // Cooldown ставится при ЛЮБОМ исходе: сброс либо случился, либо мы
+      // перестали его ждать — в обоих случаях рвать соединение снова прямо
+      // сейчас бессмысленно.
+      this._lastConnectionResetAtMs = Date.now();
+      if (outcome === 'timeout') {
+        this._logger.warn('Shared realtime reset did not complete in time (teardown continues)', {
           subscription,
-          error: error instanceof Error ? error.message : String(error),
+          timeoutMs: CONNECTION_RESET_TIMEOUT_MS,
         });
-      } finally {
-        this._lastConnectionResetAtMs = Date.now();
       }
     })().finally(() => {
       this._connectionReset = undefined;
