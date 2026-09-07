@@ -1,0 +1,9 @@
+docs/guides/legacy-hardening-audit.md
+  ai_agent 143-199,202-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "25aa2ac3c515889e8696554ba0a3b7678427f70c",
+  "prompts": {}
+}
