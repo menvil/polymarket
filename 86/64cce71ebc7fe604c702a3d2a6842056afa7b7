@@ -1,0 +1,25 @@
+apps/collect-data/__tests__/DataCollectorConfig.test.ts
+  s_c99ec2b699d51d::t_c587c771219fe6 333-369
+apps/collect-data/src/runtime/DataCollectorConfig.ts
+  s_c99ec2b699d51d::t_2e67165f8e25ec 645-646,648-650
+apps/collect-data/src/config.ts
+  s_c99ec2b699d51d::t_2af350cc654730 305-309
+packages/infrastructure/cex-v2/__tests__/CexSource.test.ts
+  s_c99ec2b699d51d::t_2681afb85f232a 1376-1408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8664cce71ebc7fe604c702a3d2a6842056afa7b7",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
