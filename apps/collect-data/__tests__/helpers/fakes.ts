@@ -256,10 +256,21 @@ export class FakePolymarketSource implements CollectorPolymarketSource {
   /** Сколько раз сбрасывалось общее realtime-соединение SDK. */
   public connectionResets = 0;
 
+  /** Барьер, вешающий close() навсегда — имитация зависшего vendor-а. */
+  private _hold = false;
+
   public constructor(private readonly _log: CallLog) {}
+
+  /** Заставляет close() зависнуть: проверка бюджета остановки. */
+  public holdClose(): void {
+    this._hold = true;
+  }
 
   public async close(): Promise<void> {
     this._log.record('polymarketSource.close');
+    if (this._hold) {
+      await new Promise<void>(() => undefined);
+    }
     this.isClosed = true;
     this.closeCalls++;
   }

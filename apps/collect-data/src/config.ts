@@ -123,6 +123,14 @@ export interface CollectorConfig {
    * `reconcile`.
    */
   readonly controlTickMs: number;
+  /**
+   * Бюджет остановки (мс) — сколько лестница остановки имеет права занять.
+   *
+   * @remarks
+   * Обязан быть МЕНЬШЕ `kill_timeout` супервизора: тогда процесс выходит сам
+   * и упорядоченно, а SIGKILL остаётся признаком настоящего зависания.
+   */
+  readonly shutdownDeadlineMs: number;
 
   /**
    * Boundary grace settlement-потока (мс): сколько после истечения рынка
@@ -294,6 +302,7 @@ export function loadConfig(): CollectorConfig {
     policyDurations:      parseList('COLLECTOR_POLICY_DURATIONS'),
     discoveryWindowHours: optionalNumberOrUndefined('DISCOVERY_WINDOW_HOURS'),
     controlTickMs:        optionalNumber('COLLECTOR_CONTROL_TICK_MS', 5_000),
+    shutdownDeadlineMs:   optionalNumber('COLLECTOR_SHUTDOWN_DEADLINE_MS', 10_000),
     settlementGraceMs:    optionalDurationMs('COLLECTOR_SETTLEMENT_GRACE_MS', { allowZero: true }),
     enrichmentRetryMs:    optionalDurationMs('COLLECTOR_ENRICHMENT_RETRY_MS', { allowZero: false }),
     enrichmentMaxWaitMs:  optionalDurationMs('COLLECTOR_ENRICHMENT_MAX_WAIT_MS', { allowZero: false }),

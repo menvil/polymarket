@@ -43,6 +43,7 @@ function baseConfig(overrides: Partial<CollectorConfig> = {}): CollectorConfig {
     enrichmentRetryMs: undefined,
     enrichmentMaxWaitMs: undefined,
     controlTickMs: 5_000,
+    shutdownDeadlineMs: 10_000,
     ...overrides,
   };
 }

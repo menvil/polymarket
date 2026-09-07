@@ -177,6 +177,23 @@ export interface ControlRuntimeConfig {
   readonly acquireLimit: number;
   /** Пауза между control-тиками (мс): один тик = `runOnce` + `reconcile`. */
   readonly tickMs: number;
+  /**
+   * Бюджет остановки (мс): по его истечении оставшиеся шаги бросаются.
+   *
+   * @defaultValue 10_000
+   *
+   * @remarks
+   * Остановка обязана быть быстрой и предсказуемой, как выдернутое питание.
+   * Супервизор перезапускает процесс не только по деплою, но и по выходу за
+   * `max_memory_restart` и по зависанию — в обоих случаях ждать нечего и
+   * некогда. Всё, что не успело стать архивом, теряется осознанно: остатки
+   * подметёт startup cleanup следующего запуска.
+   *
+   * Бюджет обязан быть МЕНЬШЕ `kill_timeout` супервизора: тогда процесс
+   * выходит сам и упорядоченно, а SIGKILL остаётся честным признаком
+   * «завис по-настоящему».
+   */
+  readonly shutdownDeadlineMs: number;
 }
 
 /**
@@ -241,6 +258,15 @@ export interface FinalizationRuntimeConfig {
 
 /** Дефолтная пауза control-тика (мс). */
 const DEFAULT_CONTROL_TICK_MS = 5_000;
+
+/**
+ * Бюджет остановки по умолчанию (мс).
+ *
+ * @remarks
+ * Замер штатной остановки БЕЗ дренажа — около 4 секунд. Десять даёт
+ * двукратный запас и остаётся много меньше любого разумного `kill_timeout`.
+ */
+const DEFAULT_SHUTDOWN_DEADLINE_MS = 10_000;
 
 /**
  * Дефолт boundary grace settlement-потока (мс).
@@ -616,6 +642,10 @@ export function toDataCollectorConfig(config: CollectorConfig): DataCollectorCon
     control: {
       acquireLimit: config.maxMarkets,
       tickMs: config.controlTickMs > 0 ? config.controlTickMs : DEFAULT_CONTROL_TICK_MS,
+      shutdownDeadlineMs:
+        config.shutdownDeadlineMs !== undefined && config.shutdownDeadlineMs > 0
+          ? config.shutdownDeadlineMs
+          : DEFAULT_SHUTDOWN_DEADLINE_MS,
     },
     collection: {
       settlementGraceMs: config.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_MS,

@@ -264,6 +264,8 @@ interface ShutdownStep {
 export class DataCollector {
   private readonly _components: DataCollectorComponents;
   private readonly _control: ControlRuntimeConfig;
+  /** Бюджет остановки (мс) — см. {@link ControlRuntimeConfig.shutdownDeadlineMs}. */
+  private readonly _shutdownDeadlineMs: number;
   private readonly _clock: IClock;
   private readonly _logger: ILogger;
 
@@ -282,6 +284,7 @@ export class DataCollector {
   constructor(deps: DataCollectorDependencies) {
     this._components = deps.components;
     this._control = deps.control;
+    this._shutdownDeadlineMs = deps.control.shutdownDeadlineMs;
     this._clock = deps.clock;
     this._logger = deps.logger.child({ component: 'DataCollector' });
   }
@@ -574,7 +577,21 @@ export class DataCollector {
         name: 'lifecycle.awaitAllSettlementCaptures',
         run: async () => this._components.lifecycle.awaitAllSettlementCaptures(),
       },
-      { name: 'finalizer.drain', run: async () => this._components.finalizer.drain() },
+      // ДРЕНАЖА ЗДЕСЬ НЕТ — сознательно. `finalizer.drain()` крутится, пока
+      // `_pending` не опустеет, а `_pending` во время остановки РАСТЁТ: шаг 3
+      // ниже (`lifecycle.close`) идёт позже, поэтому рынки, не истёкшие к
+      // моменту сигнала, продолжают жить по таймерам, доходят до экспирации
+      // уже во время остановки и встают в ту же очередь. Дренаж догоняет
+      // движущуюся цель: замер run-02 — 26 минут, теоретический потолок
+      // ~75 (дожитие 15-минутного рынка + `enrichmentMaxWaitMs`).
+      //
+      // Остановка обязана быть быстрой и предсказуемой, как выдернутое
+      // питание: при выходе за `max_memory_restart` или при зависании ждать
+      // дренажа абсурдно — нужен немедленный рестарт. Всё, что не успело
+      // стать архивом, теряется осознанно: незавершённые датасеты удаляет
+      // `lifecycle.close`, а остатки после жёсткого убийства — startup
+      // cleanup следующего запуска. Claim-ы живут в памяти процесса, поэтому
+      // залипших владельцев после смерти не остаётся.
       // 2. Финализатор закрывается: официальный итог → архив, иначе
       // deterministic fallback, иначе discard (собственная policy пакета).
       { name: 'finalizer.close', run: async () => this._components.finalizer.close() },
@@ -613,12 +630,35 @@ export class DataCollector {
       },
     ];
 
-    for (const step of steps) {
-      await this._runStep(step);
+    const startedAtMs = Date.now();
+    const ladder = (async () => {
+      for (const step of steps) {
+        await this._runStep(step);
+      }
+    })();
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<'deadline'>((resolve) => {
+      deadlineTimer = setTimeout(() => resolve('deadline'), this._shutdownDeadlineMs);
+      deadlineTimer.unref?.();
+    });
+    const outcome = await Promise.race([ladder.then(() => 'done' as const), deadline]);
+    if (deadlineTimer !== undefined) {
+      clearTimeout(deadlineTimer);
+    }
+    if (outcome === 'deadline') {
+      // Ждать дальше нельзя: остановка обязана укладываться в бюджет
+      // супервизора. Незакрытые ресурсы освободит выход процесса, а
+      // недописанные файлы — startup cleanup следующего запуска.
+      this._logger.error('Shutdown deadline exceeded, abandoning remaining steps', {
+        deadlineMs: this._shutdownDeadlineMs,
+      });
     }
 
     this._state = 'stopped';
-    this._logger.info('Data collector stopped');
+    this._logger.info('Data collector stopped', {
+      elapsedMs: Date.now() - startedAtMs,
+      completedLadder: outcome === 'done',
+    });
   }
 
   /** Выполняет шаг остановки, поглощая и логируя его отказ. */
