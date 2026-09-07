@@ -138,6 +138,30 @@ const POST_EXPIRY_FORBIDDEN_TYPES: readonly string[] = [
 const DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS = 15_000;
 
 /**
+ * Допуск на джиттер границы датасета для запрещённых после экспирации типов.
+ *
+ * @remarks
+ * Границу датасета держит `setTimeout` на `expiresAt`. Node гарантирует «не
+ * раньше», но никогда «ровно»: колбэк ждёт своей очереди в event loop, а тот
+ * в момент экспирации занят пиковой записью. Поэтому граница ВСЕГДА
+ * опаздывает, и наблюдения, пришедшие в это окно, успевают записаться.
+ *
+ * Величина взята из замера, а не из осторожности. run-02, 48 архивов:
+ * перехлёст CLOB 13–232 мс, причём БЕЗ хвоста — p90, p99 и максимум лежат в
+ * пределах 7 мс друг от друга. 500 мс — это двукратный запас над
+ * наблюдённым максимумом.
+ *
+ * Допуск сознательно НЕ делает правило беззубым: джиттер сверху ничем не
+ * ограничен, и опоздание в секунды означало бы, что таймерный механизм
+ * действительно поехал (GC-пауза, перегруз event loop, ошибка в lifecycle).
+ * Такое обязано оставаться нарушением — именно ради этого допуск конечен, а
+ * не отключает проверку.
+ *
+ * @see docs/guides/collector-qualification-run-01.md — первое обнаружение
+ */
+const DEFAULT_BOUNDARY_JITTER_ALLOWANCE_MS = 500;
+
+/**
  * Приводит значение к объекту-словарю, отвергая `null` и массивы.
  *
  * @param value - Разобранное JSON-значение
@@ -275,6 +299,7 @@ function validatePolymarketArchive(
   lines: string[],
   completed: boolean,
   settlementGraceMs: number,
+  boundaryJitterMs: number,
 ): FileReport {
   const violations: string[] = [];
   const warnings: string[] = [];
@@ -353,7 +378,11 @@ function validatePolymarketArchive(
       }
       const type = observation.type ?? 'unknown';
       if (POST_EXPIRY_FORBIDDEN_TYPES.includes(type)) {
-        lateByType.set(type, (lateByType.get(type) ?? 0) + 1);
+        // Джиттер таймера границы — не логическая ошибка, а свойство
+        // event loop; нарушением считается только выход за допуск.
+        if (atMs > expiresAtMs + boundaryJitterMs) {
+          lateByType.set(type, (lateByType.get(type) ?? 0) + 1);
+        }
         continue;
       }
       if (type === SETTLEMENT_TWAP_TYPE) {
@@ -368,7 +397,8 @@ function validatePolymarketArchive(
     }
     for (const [type, count] of [...lateByType.entries()].sort()) {
       violations.push(
-        `${String(count)} ${type} observation(s) recorded after the market expiry boundary`,
+        `${String(count)} ${type} observation(s) recorded more than ` +
+          `${String(boundaryJitterMs)}ms after the market expiry boundary`,
       );
     }
     if (lateSettlement > 0) {
@@ -503,9 +533,11 @@ function validateCexPartition(file: string, lines: string[], completed: boolean)
  */
 export function validateDatasetRoot(
   root: string,
-  options: { readonly settlementGraceMs?: number } = {},
+  options: { readonly settlementGraceMs?: number; readonly boundaryJitterMs?: number } = {},
 ): ValidationReport {
   const settlementGraceMs = options.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS;
+  const boundaryJitterMs =
+    options.boundaryJitterMs ?? DEFAULT_BOUNDARY_JITTER_ALLOWANCE_MS;
   if (!fs.existsSync(root)) {
     throw new Error(`Dataset root does not exist: ${root}`);
   }
@@ -532,7 +564,13 @@ export function validateDatasetRoot(
       files.push(
         archiveKind(firstLine) === 'cex'
           ? validateCexPartition(relative, lines, completed)
-          : validatePolymarketArchive(relative, lines, completed, settlementGraceMs),
+          : validatePolymarketArchive(
+              relative,
+              lines,
+              completed,
+              settlementGraceMs,
+              boundaryJitterMs,
+            ),
       );
     } catch (error) {
       files.push({
@@ -577,7 +615,7 @@ function main(): number {
   if (rootArg === undefined) {
     process.stderr.write(
       'usage: npx tsx scripts/validate-raw-archives.mts <dataset-root> ' +
-        '[--json <report.json>] [--grace-ms <ms>]\n',
+        '[--json <report.json>] [--grace-ms <ms>] [--jitter-ms <ms>]\n',
     );
     return 1;
   }
@@ -591,10 +629,18 @@ function main(): number {
     return 1;
   }
 
-  const report = validateDatasetRoot(
-    path.resolve(rootArg),
-    settlementGraceMs === undefined ? {} : { settlementGraceMs },
-  );
+  const jitterIndex = rest.indexOf('--jitter-ms');
+  const jitterRaw = jitterIndex === -1 ? undefined : rest[jitterIndex + 1];
+  const boundaryJitterMs = jitterRaw === undefined ? undefined : Number(jitterRaw);
+  if (boundaryJitterMs !== undefined && (!Number.isFinite(boundaryJitterMs) || boundaryJitterMs < 0)) {
+    process.stderr.write(`--jitter-ms must be a finite number >= 0, got ${String(jitterRaw)}\n`);
+    return 1;
+  }
+
+  const report = validateDatasetRoot(path.resolve(rootArg), {
+    ...(settlementGraceMs === undefined ? {} : { settlementGraceMs }),
+    ...(boundaryJitterMs === undefined ? {} : { boundaryJitterMs }),
+  });
   for (const file of report.files) {
     if (file.violations.length === 0) {
       continue;
