@@ -302,7 +302,11 @@ export function loadConfig(): CollectorConfig {
     policyDurations:      parseList('COLLECTOR_POLICY_DURATIONS'),
     discoveryWindowHours: optionalNumberOrUndefined('DISCOVERY_WINDOW_HOURS'),
     controlTickMs:        optionalNumber('COLLECTOR_CONTROL_TICK_MS', 5_000),
-    shutdownDeadlineMs:   optionalNumber('COLLECTOR_SHUTDOWN_DEADLINE_MS', 10_000),
+    // Через optionalDurationMs, а не optionalNumber: `Infinity` прошёл бы
+    // проверку «> 0», и бюджет остановки не сработал бы НИКОГДА — механизм
+    // ограничения молча выключился бы вместо того, чтобы отказать.
+    shutdownDeadlineMs:
+      optionalDurationMs('COLLECTOR_SHUTDOWN_DEADLINE_MS', { allowZero: false }) ?? 10_000,
     settlementGraceMs:    optionalDurationMs('COLLECTOR_SETTLEMENT_GRACE_MS', { allowZero: true }),
     enrichmentRetryMs:    optionalDurationMs('COLLECTOR_ENRICHMENT_RETRY_MS', { allowZero: false }),
     enrichmentMaxWaitMs:  optionalDurationMs('COLLECTOR_ENRICHMENT_MAX_WAIT_MS', { allowZero: false }),

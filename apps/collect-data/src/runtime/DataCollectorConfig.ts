@@ -642,8 +642,12 @@ export function toDataCollectorConfig(config: CollectorConfig): DataCollectorCon
     control: {
       acquireLimit: config.maxMarkets,
       tickMs: config.controlTickMs > 0 ? config.controlTickMs : DEFAULT_CONTROL_TICK_MS,
+      // `> 0` НЕДОСТАТОЧНО: `Infinity > 0` истинно, и бюджет с таким значением
+      // не сработает никогда — ограничение молча выключилось бы.
       shutdownDeadlineMs:
-        config.shutdownDeadlineMs !== undefined && config.shutdownDeadlineMs > 0
+        config.shutdownDeadlineMs !== undefined &&
+        Number.isFinite(config.shutdownDeadlineMs) &&
+        config.shutdownDeadlineMs > 0
           ? config.shutdownDeadlineMs
           : DEFAULT_SHUTDOWN_DEADLINE_MS,
     },

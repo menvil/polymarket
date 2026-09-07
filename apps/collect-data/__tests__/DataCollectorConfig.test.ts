@@ -330,3 +330,40 @@ describe('lifecycle-тайминги окружения: неверное зна
     expect(loadConfig().settlementGraceMs).toBe(0);
   });
 });
+
+describe('COLLECTOR_SHUTDOWN_DEADLINE_MS', () => {
+  const KEY = 'COLLECTOR_SHUTDOWN_DEADLINE_MS';
+
+  afterEach(() => {
+    delete process.env[KEY];
+  });
+
+  it('не задано → дефолт 10 с доезжает до рантайма', () => {
+    expect(toDataCollectorConfig(loadConfig()).control.shutdownDeadlineMs).toBe(10_000);
+  });
+
+  it('валидное значение принимается', () => {
+    process.env[KEY] = '20000';
+    expect(toDataCollectorConfig(loadConfig()).control.shutdownDeadlineMs).toBe(20_000);
+  });
+
+  it('Infinity ОТВЕРГАЕТСЯ, а не проходит как «больше нуля»', () => {
+    // `Infinity > 0` истинно, поэтому наивная проверка пропустила бы его — и
+    // бюджет остановки не сработал бы НИКОГДА: механизм ограничения молча
+    // выключился бы вместо того, чтобы отказать на старте.
+    process.env[KEY] = 'Infinity';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
+  });
+
+  it('ноль отвергается: остановка прервалась бы до первого шага', () => {
+    process.env[KEY] = '0';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
+  });
+
+  it('отрицательное и нечисловое отвергаются', () => {
+    process.env[KEY] = '-1';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
+    process.env[KEY] = 'abc';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
+  });
+});

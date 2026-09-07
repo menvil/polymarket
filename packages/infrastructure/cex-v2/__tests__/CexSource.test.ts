@@ -1373,3 +1373,36 @@ describe('кэши брошенного CCXT-инстанса освобожда
     await source.close();
   });
 });
+
+describe('позднее завершение закрытия тоже освобождает кэши', () => {
+  it('release после таймаута: кэши очищаются ВТОРОЙ раз', async () => {
+    // Освобождение привязано к «перестали ждать», но между таймаутом и
+    // фактическим settle vendor может дописать в кэш ещё. Поэтому очистка
+    // повторяется в `.finally()` операции закрытия — этот путь и проверяем.
+    const { source, factory } = makeHarness(
+      baseConfig({ closeTimeoutMs: 20, initialBackoffMs: 5, maxBackoffMs: 10 }),
+      { watchOrderBookForSymbols: true },
+    );
+    source.start();
+    await waitUntil(() => factory.instances.length === 1 && factory.latest.obMultiplexFeed.hasWaiter);
+
+    const retired = factory.instances[0]!;
+    retired.fillVendorCaches('BTC/USDT');
+    const releaseClose = retired.holdClose();
+    retired.obMultiplexFeed.fail(new Error('transport down'));
+
+    // Первое освобождение — по истечении closeTimeoutMs.
+    await waitUntil(() => factory.instances.length === 2, 2_000);
+    expect(retired.cachedEntries).toBe(0);
+
+    // Vendor дописал уже ПОСЛЕ того, как мы перестали ждать закрытия.
+    retired.fillVendorCaches('BTC/USDT', 30);
+    expect(retired.cachedEntries).toBe(60);
+
+    // Закрытие наконец завершилось — остаток обязан быть освобождён.
+    releaseClose();
+    await waitUntil(() => retired.cachedEntries === 0, 2_000);
+
+    await source.close();
+  });
+});
