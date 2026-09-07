@@ -1,0 +1,22 @@
+scripts/validate-raw-archives.mts
+  s_c99ec2b699d51d::t_6a4ecf443af10c 632-643
+  s_c99ec2b699d51d::t_af6e1743f0cb79 536,618
+  s_c99ec2b699d51d::t_87ad8b10132473 302,567-573
+  s_c99ec2b699d51d::t_622c13b738a72d 141-163,381-385,400-401,539-540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9ab7c1c04339eaafc267d486c65f60bbd50f0118",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
