@@ -1,0 +1,47 @@
+scripts/validate-raw-archives.mts
+  s_c99ec2b699d51d::t_79ea9a5ffd373f 164-228,603-610,694-695,698,700-701,704
+scripts/__tests__/validate-raw-archives.test.ts
+  s_c99ec2b699d51d::t_7d83a5419a86e9 325-328,345-347
+  s_c99ec2b699d51d::t_73f299e6bc8c09 329
+  s_c99ec2b699d51d::t_4317161378b9e6 323-324,330-344,348-349
+  s_c99ec2b699d51d::t_22b68dabf0ce83 162,172,182,207-208
+packages/infrastructure/cex-v2/__tests__/CcxtVendorPort.test.ts
+  s_c99ec2b699d51d::t_6e1fd16c0d172c 111-154
+packages/infrastructure/polymarket-v2/__tests__/PolymarketSource.supervision.test.ts
+  s_c99ec2b699d51d::t_17d5059ecdefa5 655-679
+packages/infrastructure/cex-v2/src/CcxtVendorPort.ts
+  s_c99ec2b699d51d::t_9422316178839f 294-330,380,391
+apps/collect-data/__tests__/DataCollector.test.ts
+  s_c99ec2b699d51d::t_a88ac735c66e77 362-371,376-381
+  s_c99ec2b699d51d::t_a4735dd0b45714 372-375
+  s_c99ec2b699d51d::t_41e55efa068de8 343-361
+apps/collect-data/__tests__/helpers/fakes.ts
+  s_c99ec2b699d51d::t_41e55efa068de8 312-314,320-322
+  s_c99ec2b699d51d::t_a88ac735c66e77 269-271,277-278
+apps/collect-data/src/runtime/DataCollector.ts
+  s_c99ec2b699d51d::t_f1f8b191fd4b43 567-586,652-657
+packages/infrastructure/polymarket-v2/src/PolymarketSource.ts
+  s_c99ec2b699d51d::t_ad7e98c7fa6ffa 334-343,1099-1100,1119
+  s_c99ec2b699d51d::t_d329e46b0518aa 143,859-872
+  s_c99ec2b699d51d::t_2d1f9f87254ac9 1120-1124,1126-1150,1152
+packages/infrastructure/polymarket-v2/__tests__/helpers/fakes.ts
+  s_c99ec2b699d51d::t_17d5059ecdefa5 170-172,175-177
+docs/guides/rtds-liveness-supervision.md
+  s_c99ec2b699d51d::t_ae5d382d48d8a8 297-299,313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bbacbadf984c357784f3b7291f0527e8309bfedc",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
