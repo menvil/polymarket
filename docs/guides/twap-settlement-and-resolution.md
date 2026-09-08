@@ -167,7 +167,7 @@ parseChainlinkTwapSettlement('https://data.chain.link/streams/btc-usd-twap-45s-s
 flowchart TD
     G["Gamma resolution.source<br/>btc-usd-twap-60s-streams"] --> P["parseChainlinkTwapSettlement<br/>symbol + ТОЧНОЕ окно"]
     P --> D["SelectedPolymarketMarket<br/>crypto.settlement + rtdsFeeds"]
-    D --> C["MarketCollectionCoordinator<br/>ref-count по rtdsFeedKey"]
+    D --> C["PolymarketSubscriptionController<br/>ref-count по rtdsFeedKey"]
     C --> S["PolymarketSource<br/>subscribeChainlinkTwap(window, symbols)"]
     S --> B["общий ExternalMessageBus<br/>POLYMARKET_CRYPTO_CHAINLINK_TWAP"]
     B --> R["ExternalMessageRecorder<br/>routing с учётом окна"]

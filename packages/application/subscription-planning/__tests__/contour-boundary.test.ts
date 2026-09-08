@@ -65,7 +65,6 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/external-message-bus',
   '@polymarket/external-messages',
   '@polymarket/external-message-recorder',
-  '@polymarket/collection-coordinator',
   '@polymarket/market-finalizer',
   '@polymarket/data-collection',
   'ccxt',
@@ -240,15 +239,16 @@ describe('структурные инварианты планировщика',
   });
 
   it('новый контур не знает LEGACY-контрактов отбора и сбора', () => {
-    // `DiscoveredMarket`/`IMarketFilterConfig` — прежний owner-контракт,
-    // `MarketCollectionCoordinator` — прежний координатор сбора. Планировщик
-    // не их переименование: он использован как поведенческий ориентир, но
-    // ни одной их сущности не наследует.
+    // `DiscoveredMarket`/`IMarketFilterConfig` — прежний owner-контракт отбора.
+    // Планировщик не их переименование: он использован как поведенческий
+    // ориентир, но ни одной их сущности не наследует.
+    //
+    // Проверка на `MarketCollectionCoordinator` убрана вместе с самим
+    // пакетом: сущности, которой нельзя подражать, больше не существует.
     for (const filePath of listSourceFiles(SRC_ROOT)) {
       const content = readFileSync(filePath, 'utf8');
       expect(content).not.toContain('DiscoveredMarket');
       expect(content).not.toContain('IMarketFilterConfig');
-      expect(content).not.toContain('MarketCollectionCoordinator');
     }
   });
 });

@@ -5,7 +5,7 @@
  *
  * @remarks
  * Часы инъецируются (детерминизм, PART 14); Gamma/recorder — узкие fakes;
- * session lifecycle — настоящий `MarketCollectionCoordinator`.
+ * session lifecycle — настоящий `PolymarketCollectionLifecycle`.
  */
 import { describe, it, expect } from '@jest/globals';
 import type { CollectionHeaderFinalization } from '@polymarket/collector';

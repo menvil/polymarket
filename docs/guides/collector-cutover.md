@@ -54,6 +54,8 @@ Collector — **sibling** consumer, а не gate перед семантикой
 | `MarketFinalizer`/`PolymarketTwapObservations` | убраны из композиции (finalization — следующий этап) |
 
 `apps/collect-data` больше не зависит от `@polymarket/collection-coordinator`.
+Сам пакет удалён из репозитория после успешной квалификации нового
+коллектора (`run-05`) — см. `docs/guides/legacy-hardening-audit.md`.
 
 > **Следующий этап выполнен.** Полный жизненный цикл записи (expiry →
 > FINALIZING → settlement grace → seal → release claim → финализация) описан

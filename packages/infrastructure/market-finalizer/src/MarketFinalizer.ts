@@ -152,9 +152,11 @@ export type FinalizingMarketSession = FinalizingCollectionSession<SelectedPolyma
  * due-сессии определяются по read-only снимкам `listSessions()`.
  *
  * Canonical зависимость — `PolymarketCollectionLifecycle`
- * (`@polymarket/collector`), а НЕ legacy `MarketCollectionCoordinator`:
- * тот сам владел подписками и vendor-подготовкой, и финализатор через него
- * тянул бы за собой всю снятую с вооружения архитектуру.
+ * (`@polymarket/collector`): он владеет ТОЛЬКО жизненным циклом сессий.
+ * Прежний координатор сбора владел вдобавок подписками и vendor-подготовкой,
+ * поэтому финализатор через него тянул бы за собой весь контур; из-за этого
+ * зависимость и была сужена. Сам координатор удалён после квалификации
+ * нового коллектора.
  */
 export type FinalizationLifecycle = Pick<
   PolymarketCollectionLifecycle<SelectedPolymarketMarket>,
