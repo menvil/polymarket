@@ -1,8 +1,11 @@
 # План: Strategy Engine (reactive scheduling)
 
-> Дата: 2026-03-13
-> Ветка: phase-3 → новая ветка phase-strategy-engine
-> Статус: обсуждение → финализация
+> **LEGACY / HISTORICAL.** Старый `apps/bot` удалён после завершения Collector
+> Qualification. Описанные ниже команды запуска и композиция больше не
+> существуют; новый trading runtime будет построен поверх canonical event
+> pipeline. Документ сохранён ради алгоритмов и решений, которые в него заложены.
+>
+> Дата: 2026-03-13 · Ветка: phase-3 → phase-strategy-engine · Статус: финализация
 
 ## Архитектура
 

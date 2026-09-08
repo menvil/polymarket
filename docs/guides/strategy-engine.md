@@ -1,5 +1,12 @@
 # Strategy Engine: Reactive Scheduling
 
+> **LEGACY / HISTORICAL**
+>
+> Старый `apps/bot` удалён после завершения Collector Qualification. Описанные
+> ниже команды запуска и композиция больше не существуют; новый trading runtime
+> будет построен поверх canonical event pipeline. Документ сохранён ради
+> алгоритмов и решений, которые в него заложены.
+
 ## Обзор
 
 Strategy Engine — реактивная event-driven архитектура для торговых стратегий.
