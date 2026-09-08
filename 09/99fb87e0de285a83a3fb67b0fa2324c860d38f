@@ -1,0 +1,1907 @@
+legacy-bot/configs/sweep-zone55-nomax-day1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ptv2-e5x2s3-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/docs/guides/live-arb-execution.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-129
+legacy-bot/configs/verify-cll-down-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-100
+legacy-bot/scripts/compare-cc-live-vs-backtest.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-593
+legacy-bot/strategies/risk-budget/RiskBudgetPolicy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-311
+legacy-bot/configs/cc-backtest-cex-agree-down-hold-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-91
+legacy-bot/configs/cpv2-e55x35-edge2-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ptv2-e5x2s3-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/strategies/PairedCexCrowdStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-1763
+legacy-bot/configs/ci-e5x40-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-regime-t2m2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/abl2-no-bad3-btc1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cll-risk-budget-backtest-2026-05-06.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-158
+legacy-bot/configs/ae-5min-rise3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/ce-zone-p20-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-unwind180-sl3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/cp-p60-exit30-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/cpv2-delta02-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/sel-backtest-5min-post-only-only.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/verify-ae-auto-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/ce-zone-p35-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-enhanced-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/as-profithold5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-55
+legacy-bot/configs/as-5min-sweep-ea04-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-e5-os5-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/crowd-dev-up-pos-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-55
+legacy-bot/configs/sel-down-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-enhanced-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/osc-mm-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/as-regime-w15-t2m20-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/ci-e3x30-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ci-exit30-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-dynsize-veto-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/ci-entry5-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/verify-cll-up-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/ae-5min-baseline-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/mom-scalp-mid-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/fv-f65-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/scripts/compare-paper-live.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-251
+legacy-bot/configs/verify-cllr-down-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/cll-exit-policy-live-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-160
+legacy-bot/configs/pt-e3-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-warmup15-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/mom-scalp-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/scripts/sweep-entry-dev.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-384
+legacy-bot/configs/ae-up-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/scripts/build-exit-policy-table.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-398
+legacy-bot/scripts/create-builder-keys.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-162
+legacy-bot/scripts/risk-budget-sandbox.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-493
+legacy-bot/configs/as-15min-combo-ofiskip-aas-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-trail5-nosl-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-z60-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/verify-cllr-down-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/cpv2-tight-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-dn-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-15m-mm-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-5min-sweep-os3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cll-down-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-100
+legacy-bot/configs/cpv2-e55x35-edge3-tau110-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/crowd-dev-d10-t15-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/as-best-all-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-60
+legacy-bot/configs/se-bull-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/sel-tau90-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/sweep-wu30z55-nomax-day5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/crowd-dev-tpsl-paper.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/configs/ce-zone-p40-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-cr2-m75-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/15m-baseline-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-dynsize-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cc-bt-A-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cll-paper-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-144
+legacy-bot/configs/as-unwind150-disc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cpv2-e55x35-edge3-tau110-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/scripts/test-auto-redeem.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-51
+legacy-bot/configs/as-5min-trail4-nosl-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/scripts/backtest-calibrated-crowd.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-466
+legacy-bot/configs/15m-baseline-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cpd-e60x40-nozone-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/fv-q1f60-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/scripts/inject-config-meta.py
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-1195
+legacy-bot/configs/cc-live-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-65
+legacy-bot/configs/ce-nodg-p30-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/ae-5min-rise2-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-1p5bps-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-86
+legacy-bot/configs/as-5min-trail3-best-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-wu30z55-veto-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample-aggressive-faster-exit.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-2bps-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-86
+legacy-bot/configs/ce-nodg-p40-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/obw-btc-2026-05-04.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/ae-cr0-m75-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/fv-s80f60-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-56
+legacy-bot/configs/crowd-dev-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/cc-bt-A-mc015-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-ea015-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/fv-q1f60-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/ae-cr0-m99-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/strategies/ProbTableStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-455
+legacy-bot/configs/verify-ae-auto-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/cpv2-e55x45-q1-edge3-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/scripts/analyze-adaptive.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-306
+legacy-bot/docs/guides/auto-redeem.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-129
+legacy-bot/configs/cpv2-e55x35-edge3-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/sweep-zone55-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-baseline-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-51
+legacy-bot/configs/cpd-e55x35-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ci-e5x30-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cll-risk-budget-backtest-2026-05-05.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-175
+legacy-bot/scripts/build-edge-table.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-1081
+legacy-bot/configs/verify-cllc-down-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-104
+legacy-bot/configs/pt-zone55-veto-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ce-zone-p25-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-trail3-nofilter-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/as-jump3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-56
+legacy-bot/configs/ae-5min-rise4-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/pt-wide-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/se-bull-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/scripts/risk-budget-path-sim.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-307
+legacy-bot/configs/pt-e5-os5-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cc-sweep-S4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-baseline-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cll-up-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/cpv2-combo-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-52
+legacy-bot/configs/pt-baseline-veto-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cc-backtest-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/verify-fv-s80f60-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/scripts/backtest-cex-crowd.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-2315
+legacy-bot/configs/ci-entry3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/osc-mm-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/as-15min-uw180-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-5min-trail4-nosl-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpd-e60x40-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/cll-risk-budget-live-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-173
+legacy-bot/configs/15m-ofi-aas-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/sel-tau90-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/as-os5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/strategies/order-book-wall/ConsumptionTracker.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-256
+legacy-bot/configs/as-5min-uw120-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-15min-uw240-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-5min-midfilter-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-sweep-baseline-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-trail3-w65h83-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/paired-cex-crowd-paper-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-136
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample-aggressive.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+legacy-bot/configs/ae-cr0-m75-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-5min-trail3-best-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-auto-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/as-warmup15-jump3-f2.0-c8-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/sel-down-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/cpv2-e60x40-edge3-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-mkt-up-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/abl2-zone-ofiskip-btc2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/strategies/calibrated-crowd/ExitPolicyTable.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-143
+legacy-bot/configs/as-5min-trail3-w70h85-bid10-75-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cex-lead-lag-btc-apr8-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-93
+legacy-bot/configs/as-jump2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-56
+legacy-bot/strategies/SelectiveEntryStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-1023
+legacy-bot/configs/as-15min-uw420-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/docs/research/ablation-study-btc-5min.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-117
+legacy-bot/configs/cp-p55-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/verify-cllr-up-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/se-bear-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/verify-sel-baseline-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/scripts/analyze-crowd-dev-trades.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-399
+legacy-bot/configs/cc-paper-cex-not-adverse-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-126
+legacy-bot/configs/ae-dn-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-15min-combo-full-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-64
+legacy-bot/configs/as-5min-sweep-baseline-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/fv-s80f60-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-56
+legacy-bot/configs/verify-cll-down-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-100
+legacy-bot/configs/cc-sweep-A1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-trail3-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/fv-f65-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/sweep-wu30z55-day1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-regime-w15-t2m35-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/sweep-os8-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpd-e65x45-edge3-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/cc-backtest-apr23-27-mc005-tau-only.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/cpv2-combo-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-52
+legacy-bot/configs/as-5min-sweep-q10-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-sl2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/ae-5min-rise7-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/as-5min-sweep-g003-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/strategies/calibrated-crowd/EdgeTable.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-262
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-fixed-slower-exit.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-98
+legacy-bot/configs/cc-sweep-R2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-unwind120-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-dynamicq-skew2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/crowd-dev-d10-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/ci-e5x30-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/sweep-wu30z55-nomax-day1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-off3-up-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cc-bt-A-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-w15-jt1-f2.0-c3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/cpv2-e55x35-edge2-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/cp-p60-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/crowd-dev-delta50-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-55
+legacy-bot/configs/ae-off3-dn-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cc-sweep-W30.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-trail3-w70h85-bid11-74-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/scripts/analyze-first-touch.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-344
+legacy-bot/configs/as-baseline-day2-5min-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/sweep-os8-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-e3-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-5min-sweep-g003-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-cr0-m99-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cc-bt-A-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-ea02-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-d05-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/cpv2-e55x45-edge3-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/cll-rb-apr-table-2026-05-07.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/ce-nodg-p20-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/verify-fv-s80f60-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/as-5min-sweep-g003-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/screening/cllc-aggressive-down-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/docs/guides/unify-paper-live.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-168
+legacy-bot/configs/as-5min-sweep-q10-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-e5x50-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-15min-filter-tight-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-warmup15-jump3-f3.0-c5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/verify-cll-down-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-100
+legacy-bot/configs/as-5min-trail4-hold80-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-wide-shift-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/fv-q1f60-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/cll-rb-drawdown-fix-2026-05-06.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/fv-s80f60-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-56
+legacy-bot/configs/sel-15m-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/as-15m-mm-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/ae-combo-up-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-5min-uw150-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/pt-wide-shift-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/sweep-a20-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ce-nodg-p40-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/fv-baseline-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/osc-mm-filtered-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cp-p65-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/sel-up-only-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/scripts/shadow-validate-portfolio-service.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-526
+legacy-bot/configs/cll-rb-snap-2026-05-06.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-115
+legacy-bot/configs/cc-sweep-W0.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cll-rb-snap-single-535am.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-115
+legacy-bot/configs/sel-up-only-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-5min-r2w15-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/as-15m-best-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/cll-rb-down-tuned-2026-05-07.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-158
+legacy-bot/configs/as-5min-combo-ofiskip-aas-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-auto-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/as-w15-jt3-f2.0-c2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/ci-e5x40-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/sel-baseline-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-51
+legacy-bot/strategies/OscillationMMStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-644
+legacy-bot/configs/abl2-zone-ofiskip-ofi-btc1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-combo-dn-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cc-bt-A-mc010-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/docs/strategies/cex-lead-lag.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-238
+legacy-bot/configs/sel-discovery-backtest-btc-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-5min-trail3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/sel-backtest-5min-current.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/ci-e3x50-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/scripts/shadow-validate-ledger.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-378
+legacy-bot/configs/as-5min-trail3-profitonly-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cc-sweep-R6.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cpv2-combo3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-52
+legacy-bot/configs/sel-z60-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/cc-backtest-diag.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-64
+legacy-bot/configs/pt-wu30z55-veto-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/sel-bidir-paper-discovery.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/cll-rb-drawdown-fix-2026-05-04.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/cc-paper-cex-not-adverse-up-hold-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-135
+legacy-bot/configs/abl2-no-bad3-btc5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-e3x30-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cll-rb-apr-table-2026-05-04.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/strategies/AdaptiveEntryStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-481
+legacy-bot/configs/as-5min-uw30-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/ae-off3-up-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cc-sweep-R3.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/abl2-zone-only-btc2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpv2-tau240-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/cpv2-tight-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/arb-paper.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/as-5min-loosefilter-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-e3x40-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-5min-r2wp30-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-verbose.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/sweep-wu30z55-nomax-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cll-rb-no-stops-2026-05-06.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/pt-e3-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/15m-baseline-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-wide-veto-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cc-sweep-A5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/baseline-paired-overlay-backtest-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-95
+legacy-bot/configs/cc-paper-cex-agree-up-signal-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/sweep-zone55-day5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-unwind60-disc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/as-regime-w15-t2m6-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cp-p65-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/verify-cll-down-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-100
+legacy-bot/configs/verify-cllr-up-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/strategies/BinanceProbMMStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-930
+legacy-bot/configs/as-5min-trail3-sl10-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cpv2-e55x35-edge3-tau110-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-trail3-w70h85-bid10-75-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-best-day1-15min-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/verify-ae-auto-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/as-5min-sweep-sp05-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/strategies/CexLeadLagStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-3214
+legacy-bot/configs/backtest-cc-delta-regime-down-hold.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-37
+legacy-bot/configs/crowd-policy-rules-btc.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-125
+legacy-bot/configs/pt-wu30z55-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/ci-exit40-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cll-rb-apr-table-2026-05-05.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-173
+legacy-bot/configs/pt-e5-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/abl2-no-bad3-btc2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-mkt-up-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cll-rb-snap-2026-05-01.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-108
+legacy-bot/configs/cc-sweep-R5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ce-zone-p35-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/sel-paper-discovery.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-56
+legacy-bot/configs/verify-cllc-up-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/configs/as-mm-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/verify-cllc-up-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/scripts/audit-live-vs-backtest.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-553
+legacy-bot/configs/ptv2-e5x2s3-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/strategies/FairValueMMStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-485
+legacy-bot/scripts/analyze-up-down-zones.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-340
+legacy-bot/configs/ci-e5x30-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-combo-dn-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/ae-mkt-up-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/strategies/CrowdDeviationTPSLStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-749
+legacy-bot/configs/sel-z60-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/as-5min-trail3-w70h85-wd7-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cc-bt-v9-insample.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-68
+legacy-bot/configs/abl2-zone-ofiskip-ofi-btc5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-mkt-dn-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/ae-5min-r2wp70-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/as-15m-ofi-aas-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ce-nodg-p20-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/as-5min-sweep-notrail-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cp-p60-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/ptv2-e5x1s2-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/sel-d05-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/strategies/calibrated-crowd/index.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-35
+legacy-bot/configs/15m-ofi-aas-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/abl2-zone-ofiskip-ds-btc4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-sweep-sp08-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-notrail-dynsize-a1-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-sweep-g007-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-e5-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-5min-notrail-dynsize-a1-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cll-up-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/cpd-e55x35-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/pt-e5-os5-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/ae-off3-dn-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/mom-scalp-wide-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/verify-cllr-down-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/crowd-dev-backtest-2d.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/cc-bt-A-mc010-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/sweep-wu30z55-day3.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/README.md
+  s_c99ec2b699d51d::t_c83bf8ca78a434 1-31
+legacy-bot/configs/as-warmup15-jump3-f1.5-c5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/backtest-dumb.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-42
+legacy-bot/configs/sweep-zone55-day1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-sel-baseline-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-5min-trail3-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cllr-paper-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-150
+legacy-bot/configs/sel-backtest-5min-legacy.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/abl2-zone-only-btc5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cex-lead-lag-btc-live.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-135
+legacy-bot/configs/dumb-paper-discovery.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/mom-scalp-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/scripts/simulate-crowd-deviation-trades.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-529
+legacy-bot/configs/as-5min-sweep-ea04-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-off3-up-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/docs/guides/exit-policy-table-fallback.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-72
+legacy-bot/configs/multi-strategy-paper.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-82
+legacy-bot/configs/ce-nodg-p40-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample-aggressive-stricter-opposite.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+legacy-bot/configs/cpd-e60x40-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/abl2-zone-only-btc1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-regime-w15-t2m7-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/as-5min-trail3-q1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/ci-e5x40-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ptv2-e5x2s3-t60-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/sweep-a20-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-entry5-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cpd-e55x35-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/verify-fv-s80f60-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/binance-prob-mm-sample-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/verify-cllr-down-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/ci-e5x50-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-os10-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-e7-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cc-sweep-A3.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/verify-cll-down-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-100
+legacy-bot/configs/as-warmup20-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/se-bull-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/obw-paper.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-36
+legacy-bot/strategies/calibrated-crowd/CalibratedCrowdStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-1526
+legacy-bot/configs/ce-nodg-p25-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/cll-rb-apr-table-2026-05-02.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/scripts/test-post-only.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-500
+legacy-bot/configs/ce-nodg-p20-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/as-15m-best-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/ce-zone-p40-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-5min-baseline-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-regime-w10-t2m3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cc-bt-A-mc015-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cc-sweep-A7.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/ce-nodg-p30-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/ce-nodg-p35-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/ce-zone-p25-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-best-day2-15min-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/cll-rb-drawdown-fix-2026-05-05.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-173
+legacy-bot/configs/mom-scalp-mid-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/as-5min-trail3-w70h85-bid11-74-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-unwind120-sl3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/docs/strategies/adaptive-entry.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-355
+legacy-bot/configs/as-5min-sweep-q10-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ce-zone-p30-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/docs/research/crowd-calibration-analysis.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-513
+legacy-bot/configs/ae-5min-r2-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/as-15min-filter-best-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-uw90-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/pt-baseline-shift-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ptv2-e5x2s3-t60-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ce-nodg-p40-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/verify-sel-baseline-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/osc-mm-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/pt-dynsize-shift-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/cc-backtest-cex-not-adverse-up-hold-2026-04-20.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-91
+legacy-bot/configs/cpv2-tight-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/strategies/order-book-wall/WallSignalComputer.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-210
+legacy-bot/configs/ptv2-e7x3s5-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-paper-15min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-52
+legacy-bot/configs/as-w15-jt2-f2.0-c4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/scripts/cex-loader.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-275
+legacy-bot/configs/ci-exit30-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-baseline-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/cc-bt-AC.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ci-e5x50-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-dynsize-veto-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/dumb-live.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-41
+legacy-bot/configs/as-5min-sweep-q10-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-up-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/verify-cll-up-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/strategies/order-book-wall/WallDetector.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-174
+legacy-bot/configs/mom-scalp-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/strategies/SmartEntryStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-398
+legacy-bot/configs/pt-zone55-shift-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ae-dn-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/ce-nodg-p30-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/ce-zone-p40-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/sweep-wu30z55-day5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-backtest-apr8.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/se-bull-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/sel-backtest-5min-pricing-only.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/sel-d05-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/cc-bt-B-strict.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-65
+legacy-bot/configs/ci-entry3-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-trail3-sl5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ptv2-e5x2s3-q3-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/verify-cllc-up-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/configs/cc-backtest-cex-not-adverse-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-91
+legacy-bot/configs/cc-paper-cex-not-adverse-both-hold-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-135
+legacy-bot/configs/sel-backtest-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/as-unwind180-disc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/verify-cllc-up-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/configs/as-5min-trail3-hold85-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-sel-baseline-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-5min-trail4-hold85-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ce-zone-p35-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-e7-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-regime-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/verify-ae-auto-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/pt-baseline-veto-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cll-rb-live.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-157
+legacy-bot/configs/cc-backtest-apr23-27-mc005-regime-flip.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/cc-bt-A-mc015-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/as-w15-jt2-f3.0-c3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/scripts/analyze-distribution-shift.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-610
+legacy-bot/configs/as-w15-jt2-f2.0-c3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/cll-rb-snap-2026-05-02.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-115
+legacy-bot/configs/ce-zone-p30-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ci-e5x30-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/verify-sel-baseline-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-5min-asym-trail-t5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ce-zone-p30-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-sp15-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/15m-ofi-aas-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/as-regime-w15-t2m4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/pt-dynsize-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cll-up-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/backtest-cex-crowd-up-agree-signal.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/sel-z60d05-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/ce-zone-p20-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-cr2-m75-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cp-p65-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/ae-combo-dn-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-5min-trail3-narrow-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample-conservative.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+legacy-bot/configs/verify-cllr-up-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/strategies/BaselinePairedOverlayStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-1752
+legacy-bot/configs/cpv2-tight-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-mkt-dn-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-15min-uw300-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/cc-sweep-W60.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/scripts/config-summary.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-311
+legacy-bot/configs/as-5min-asym-trail-t3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cc-sweep-S2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-best-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/pt-e3-q5-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/ce-zone-p30-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/verify-cllc-up-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/configs/as-warmup15-dyngamma1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-55
+legacy-bot/configs/osc-mm-filtered-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/scripts/test-post-only-official.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-312
+legacy-bot/configs/cc-sweep-R1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/verify-fv-s80f60-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/as-regime-g03-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cll-rb-worst20.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-126
+legacy-bot/configs/cpv2-e55x45-edge3-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/osc-mm-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cllr-live-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-150
+legacy-bot/configs/pt-wide-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-fixed-opposite-active.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-98
+legacy-bot/configs/sweep-zone60-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpv2-e55x45-edge3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/cpv2-e55x35-edge3-tau110-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-cr0-m75-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/verify-ae-auto-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/ce-nodg-p35-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/pt-zone55-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/sweep-zone55-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-sweep-notrail-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-e5-os5-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cpv2-combo2-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-52
+legacy-bot/configs/ae-cr0-m99-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-5min-nofilter-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/cc-sweep-A6.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/cll-rb-no-stops-2026-05-07.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/sweep-zone60-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-5min-baseline-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cpd-e65x45-edge3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/abl2-no-bad5-btc5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cllc-down-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-104
+legacy-bot/scripts/analyze-crowd-deviation.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-436
+legacy-bot/configs/as-best-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/ae-5min-r2wp40-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/as-unwind180-sl5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/cpd-e60x40-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-trail4-nosl-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-regime-w15-t2m3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/ptv2-e7x3s5-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ci-exit30-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-15min-combo-ofiskip-aas-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpv2-combo-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-52
+legacy-bot/configs/sel-tau90-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/cpd-e65x45-edge3-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-15m-ofi-aas-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/abl2-no-bad5-btc1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-15m-best-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/cpv2-e55x35-edge3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/pt-zone55-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/strategies/CryptoProbStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-512
+legacy-bot/configs/ptv2-e5x2s3-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/verify-fv-s80f60-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/ae-5min-r2off3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/cc-bt-A-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/backtest-cex-crowd-down-agree-signal.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/ae-5min-r2wp60-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/crowd-dev-tpsl-live.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-96
+legacy-bot/configs/ae-combo-up-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/cc-bt-BC.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-z60d05-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/ptv2-e5x2s3-q3-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-asym-trail-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ae-mkt-up-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/ci-exit40-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/scripts/test-redeem.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/15m-baseline-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ci-entry3-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-up-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/sweep-wu30z55-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-down-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/sel-paper-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/strategies/order-book-wall/types.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-191
+legacy-bot/configs/as-regime-w15-t2m15-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/sel-z60d05-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/verify-cllr-up-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/scripts/find-edge-opportunities.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-391
+legacy-bot/configs/ae-5min-r2off2-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/mom-scalp-wide-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/ae-dn-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/ce-zone-p25-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-combo-up-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/pt-baseline-shift-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cll-rb-paper.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-157
+legacy-bot/configs/cll-rb-no-stops-2026-05-04.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/verify-cll-up-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/abl2-zone-ofiskip-btc4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/osc-mm-filtered-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/ci-e5x40-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ci-entry5-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/screening/cllc-relaxed-down-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/cll-rb-down-tuned-2026-05-04.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-158
+legacy-bot/configs/cc-backtest-cex-not-adverse-2026-04-21-sample.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-97
+legacy-bot/configs/fv-baseline-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample-aggressive-lite.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+legacy-bot/configs/as-15m-ofi-aas-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-sweep-ea05-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cllr-up-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/verify-cllc-down-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-104
+legacy-bot/strategies/MomentumScalpStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-439
+legacy-bot/configs/verify-cllc-down-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-104
+legacy-bot/configs/abl2-zone-ofiskip-ds-btc5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-e3x50-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-baseline-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/se-bear-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/sel-d05-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/abl2-no-bad3-btc4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/mom-scalp-mid-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/pt-e3-q5-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-warmup10-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/scripts/backtest-policy-rules.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-311
+legacy-bot/configs/screening/cllc-aggressive-down-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-98
+legacy-bot/configs/abl2-zone-ofiskip-ds-btc1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-mkt-dn-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/ce-nodg-p20-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/cpd-e60x40-nozone-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-fixed-stale-grace.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/screening/cllc-relaxed-down-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/as-regime-t2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/as-5min-trail3-wide-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-entry5-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/strategies/order-book-wall/index.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-6
+legacy-bot/configs/ae-cr0-m75-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-enhanced-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/as-5min-bookaware-best-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/sweep-zone55-nomax-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cllr-up-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/docs/strategies/paired-cex-crowd.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-118
+legacy-bot/configs/cc-bt-A-20260423.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/verify-sel-baseline-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-warmup15-dyngamma1-jump3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/cp-p60-exit30-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/cp-p65-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/verify-cllc-down-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-104
+legacy-bot/configs/verify-fv-s80f60-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/verify-ae-auto-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/abl2-zone-ofiskip-ofi-btc4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/docs/research/price-model-optimization.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-264
+legacy-bot/strategies/order-book-wall/OrderBookWallStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-570
+legacy-bot/configs/ci-exit40-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-w15-jt3-f2.0-c4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/ce-nodg-p25-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/sel-15m-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/docs/strategies/selective-entry.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-157
+legacy-bot/configs/crowd-dev-tpsl-tp20-sl15-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-trail3-w70h85-bid12-73-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-68
+legacy-bot/configs/cp-p60-exit30-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/ae-5min-r2-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/ptv2-e5x2s3-q3-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/sel-live-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-68
+legacy-bot/configs/sweep-zone55-day3.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/screening/cllc-stat-priority-down-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/cp-p55-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/ci-entry3-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/sel-baseline-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-51
+legacy-bot/configs/cll-rb-snap-2026-05-05.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-115
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-86
+legacy-bot/configs/as-5min-sweep-baseline-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-trail3-w70h85-bid10-75-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sweep-wu30z55-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-15min-trail3-nosl-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/ci-e3x40-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/fv-f65-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/cpv2-e55x35-edge2-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-notrail-dynsize-a05-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/scripts/latency-check.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-434
+legacy-bot/configs/ae-5min-r2w7-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/as-5min-notrail-dynsize-a1-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-2026-04-20-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-87
+legacy-bot/configs/ptv2-e5x1s2-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/screening/cllc-relaxed-up-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/sweep-a15-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-fixed-fill-penalty.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-98
+legacy-bot/configs/cex-lead-lag-btc-paper.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-140
+legacy-bot/configs/ce-nodg-p35-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/ae-off3-dn-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-15min-combo-cd60-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-65
+legacy-bot/configs/cc-backtest-apr23-27-mc005-full-risk.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-71
+legacy-bot/configs/as-5min-trail3-w70h85-bid13-72-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-trail3-w70h85-wd8-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-warmup15-jump3-f2.0-c3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/mom-scalp-wide-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/as-dyngamma1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/ae-mkt-dn-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-5min-sweep-notrail-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-dynsize-shift-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/fv-baseline-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/verify-fv-s80f60-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/as-w15-jt2-f2.0-c2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/strategies/CexLeadLagRiskBudgetStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-3622
+legacy-bot/configs/as-15m-mm-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cll-rb-snap-2026-05-04.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-115
+legacy-bot/configs/as-15min-combo-ofiskip-aas-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpv2-e55x35-edge3-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/strategies/CexLeadLagExitPolicyStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-3288
+legacy-bot/configs/as-dynamicq-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-60
+legacy-bot/configs/pt-wu30z55-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/cc-bt-A-mc010-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ptv2-e5x2s3-q3-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/sweep-zone55-nomax-day3.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/strategies/calibrated-crowd/RegimeDetector.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-126
+legacy-bot/configs/as-5min-trail5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/verify-cllc-up-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/configs/ae-5min-baseline-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/verify-cllr-down-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/ae-cr0-m99-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/strategies/calibrated-crowd/CexCrowdNotAdverseStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-31
+legacy-bot/configs/cc-bt-v9-oos.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-64
+legacy-bot/configs/cc-backtest-cex-not-adverse-both-hold-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-91
+legacy-bot/configs/as-5min-sweep-sp05-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-asym-trail-tight1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/scripts/setup-builder-keys.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-80
+legacy-bot/configs/sweep-wu30z55-nomax-day3.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-cr2-m75-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cpd-e55x35-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/scripts/sweep-tp-sl-dev.sh
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-85
+legacy-bot/configs/as-5min-trail3-w70h85-bid11-74-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/abl2-zone-ofiskip-ofi-btc2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-15m-ofi-aas-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/15m-ofi-aas-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/as-5min-sweep-g003-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-tau90-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/as-5min-sweep-q10-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-best-day2-5min-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/cc-sweep-A8.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-63
+legacy-bot/configs/cll-rb-drawdown-fix-2026-05-07.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/scripts/build-probability-table.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-344
+legacy-bot/configs/verify-cllc-down-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-104
+legacy-bot/configs/ci-exit40-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-off3-up-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/fv-f65-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/cp-p60-exit30-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/verify-cll-up-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-99
+legacy-bot/configs/ce-zone-p25-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-mm-single-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/as-15m-best-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/as-5min-trail3-best-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-68
+legacy-bot/configs/as-regime-w15-t2m10-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/crowd-dev-cex-pos-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-55
+legacy-bot/configs/se-bear-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-fixed-baseline.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-98
+legacy-bot/configs/osc-mm-filtered-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/sel-z60d05-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/ae-up-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-5min-notrail-dynsize-a1-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpv2-e55x45-edge3-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-trail4-hold85-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-ae-auto-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/cc-paper-cex-agree-down-hold-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-135
+legacy-bot/strategies/AvellanedaStoikovStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-2247
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-fixed-lock-looser.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-98
+legacy-bot/configs/as-5min-uw60-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/sel-15m-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/as-5min-notrail-dynsize-a05-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-trail3-nosl-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/docs/guides/canonical-market.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-237
+legacy-bot/configs/screening/cllc-relaxed-up-20260422.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/as-5min-trail3-w75h88-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-e3x40-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-regime-w15-t2m5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/pt-wu30z55-shift-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ptv2-e5x1s2-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-mm-paper-discovery.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/ptv2-e5x2s3-t60-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-warmup15-jump3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/ae-5min-r2off0-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/cpv2-prob65-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/crowd-dev-regime-up-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-55
+legacy-bot/configs/cc-bt-A-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-os10-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-e3x50-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cll-rb-down-tuned-2026-05-05.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-175
+legacy-bot/configs/as-sl2-os5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-2026-04-16-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/verify-cllr-down-20260424.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/verify-cllr-up-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/sel-baseline-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-51
+legacy-bot/configs/arb-live.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-1p25bps-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-86
+legacy-bot/configs/cpv2-e55x45-q3-edge3-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-auto-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/crowd-dev-d10-t15-live-params-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-55
+legacy-bot/configs/ce-zone-p40-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/dumb-paper.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-37
+legacy-bot/configs/cll-rb-apr-table-2026-05-06.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/cpv2-e55x35-edge5-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-trail4-hold85-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-15min-uw120-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/se-bear-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/as-w15-jt4-f2.0-c3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/ci-e3x50-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cpv2-e55x35-edge3-tau90-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/cc-sweep-A2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cp-p60-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/ce-zone-p20-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cc-paper-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-64
+legacy-bot/configs/sel-15m-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-48
+legacy-bot/configs/pt-zone55-shift-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cc-sweep-S1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/sweep-zone55-nomax-day5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ce-nodg-p30-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/scripts/replay-compare.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-293
+legacy-bot/configs/screening/cllc-stat-priority-down-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-90
+legacy-bot/configs/as-5min-trail3-filter-nosl-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/cll-risk-budget-backtest-2026-05-07.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-158
+legacy-bot/configs/cp-p60-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-verbose-journal.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-103
+legacy-bot/configs/abl2-zone-ofiskip-ds-btc2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cc-bt-A-mc010-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-2p25bps-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-86
+legacy-bot/configs/crowd-dev-tpsl-tp25-sl5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/pt-e3-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/abl2-no-bad5-btc2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/abl2-zone-ofiskip-btc5.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-5min-r2w3-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/as-5min-trail-profitonly-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/verify-sel-baseline-20260427.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/ae-auto-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/ptv2-e5x2s3-t60-day1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-notrail-dynsize-a1-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-15min-bookaware-best-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/configs/mom-scalp-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/verify-cll-down-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-100
+legacy-bot/configs/cpv2-combo-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-52
+legacy-bot/configs/verify-cllc-up-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-106
+legacy-bot/configs/cp-p55-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/scripts/analyze-crowd-failures.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-387
+legacy-bot/configs/as-5min-trail3-w70h85-bid12-73-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-15m-mm-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cll-rb-down-tuned-2026-05-06.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-158
+legacy-bot/strategies/DumbStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-463
+legacy-bot/configs/cll-rb-no-stops-2026-05-05.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-173
+legacy-bot/configs/as-regime-w15-t2m12-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cc-bt-ABC.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/ptv2-e7x3s5-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/sel-down-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/test-baseline-btc1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-60
+legacy-bot/configs/ci-e3x30-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ci-e3x30-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample-aggressive-weaker-lock.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+legacy-bot/configs/ce-nodg-p25-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/cll-rb-snap-2026-05-03.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-115
+legacy-bot/configs/as-5min-sweep-notrail-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-sweep-q4-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-wide-veto-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/sweep-a15-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/verify-cllr-down-20260425.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-105
+legacy-bot/configs/as-5min-sweep-g003-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cc-sweep-A4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-trail3-w75h85-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-5min-r2w5-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/fv-s80f60-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-56
+legacy-bot/configs/cc-bt-A-exits.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/mom-scalp-wide-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cc-backtest-apr23-27-mc005-hold.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/crowd-dev-live-dev30.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-93
+legacy-bot/configs/as-15min-uw90-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/as-best-dyngamma-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/cll-rb-apr-table-2026-05-01.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-156
+legacy-bot/configs/cll-risk-budget-backtest-2026-05-04.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-158
+legacy-bot/configs/sweep-zone55-nomax-day4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ae-combo-dn-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-5min-sweep-notrail-day4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/docs/research/calibrated-crowd-tail-zones-apr23-27.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-101
+legacy-bot/configs/as-5min-sweep-notrail-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cc-bt-C-cex.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ci-exit30-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/fv-baseline-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/cc-bt-AB.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cc-backtest-diag-one.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/sel-z60-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-50
+legacy-bot/configs/ce-nodg-p35-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/abl2-zone-only-btc4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ce-zone-p35-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-baseline-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-enhanced-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-70
+legacy-bot/configs/cpv2-e55x35-edge2-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ci-e3x40-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-combo-full-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-64
+legacy-bot/configs/as-best-day1-5min-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-58
+legacy-bot/configs/cc-sweep-R4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/strategies/CalibrationRulesStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-372
+legacy-bot/configs/as-regime-w15-t2m25-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/ci-e5x50-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/cc-sweep-S3.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-5min-sweep-os4-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/backtest-calibration-rules-btc-holdout.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/ptv2-e5x1s2-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/ae-5min-r2-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-44
+legacy-bot/configs/sweep-wu30z55-nomax-day2.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/mom-scalp-mid-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/configs/as-5min-trail3-q3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/ce-zone-p20-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/ae-off3-dn-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/ae-cr2-m75-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-46
+legacy-bot/configs/cpd-e60x40-nozone-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/abl2-no-bad5-btc4.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cpv2-e55x35-edge3-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/strategies/CrossMarketArbStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-1016
+legacy-bot/configs/ae-combo-up-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-45
+legacy-bot/configs/as-5min-trail3-w70h85-bid12-73-day3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/scripts/analyze-crowd-calibration.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-2762
+legacy-bot/configs/cc-bt-A-mc015-20260426.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-61
+legacy-bot/configs/as-w15-jt2-f2.5-c3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-57
+legacy-bot/configs/abl2-zone-ofiskip-btc1.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/as-5min-sweep-q3-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/cc-backtest-cex-agree-up-signal-1p75bps-2026-04-21.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-86
+legacy-bot/configs/cll-rb-single-market-sim.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-121
+legacy-bot/configs/cpd-e65x45-edge3-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/verify-cllc-down-20260421.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-104
+legacy-bot/configs/pt-zone55-veto-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cpd-e60x40-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/crowd-dev-live.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-92
+legacy-bot/configs/sel-up-only-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/fv-q1f60-btc5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-54
+legacy-bot/configs/as-15min-best-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-59
+legacy-bot/configs/ptv2-e7x3s5-day2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-regime-w15-t2m8-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-53
+legacy-bot/docs/strategies/README.md
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-196
+legacy-bot/scripts/analyze-entry-velocity.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-443
+legacy-bot/configs/cpd-e60x40-nozone-btc4-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-47
+legacy-bot/configs/cp-p55-btc1-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-62
+legacy-bot/strategies/CrowdDeviationStrategy.ts
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-728
+legacy-bot/configs/ce-nodg-p25-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-69
+legacy-bot/configs/sel-up-only-btc2-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-49
+legacy-bot/configs/as-5min-trail3-w70h85-wd8-bid20-65-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-66
+legacy-bot/configs/pt-wu30z55-shift-day5-backtest.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-67
+legacy-bot/configs/cll-live-5min.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-157
+legacy-bot/configs/paired-cex-crowd-backtest-2026-04-21-sample-aggressive-fill-penalty.json
+  s_c99ec2b699d51d::t_35c46e0b5b817f 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0999fb87e0de285a83a3fb67b0fa2324c860d38f",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
