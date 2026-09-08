@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "desc": "FairValueMM f65, btc5 dataset",
+    "status": "insample",
+    "backtest": {
+      "dataset": "btc5 snapshots 5-min BTC",
+      "pnl": "-12.34 USDC",
+      "date": "2026-03-31",
+      "notes": "Часть серии f65. Total 4-day: +13.64 USDC sigma=0.60, minFair=65. Total +13.64, OOS -10.34. OOS dataset"
+    },
+    "todo": [
+      "не использовать — есть более стабильные стратегии (sel-daccel, ae-auto)"
+    ]
+  },
+  "strategy": "fair-value-mm",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "qMax": 1,
+    "sigmaAnnual": 0.6,
+    "minEdgeCents": 2,
+    "minFairCents": 65,
+    "inventorySkew": 1.0,
+    "baseSpreadCents": 1,
+    "maxSpreadCents": 5,
+    "flowThreshold": 0.8,
+    "jumpThresholdCents": 3,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 5,
+    "unwindSec": 30,
+    "dynSizeDecay": 0.2
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day5/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

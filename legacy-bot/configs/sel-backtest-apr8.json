@@ -1,0 +1,49 @@
+{
+  "_meta": {
+    "desc": "SelectiveEntry Apr8 backtest",
+    "status": "insample",
+    "backtest": {
+      "dataset": "5-min BTC snapshots",
+      "pnl": "не записан",
+      "notes": "Бэктест на Apr 8 данных."
+    },
+    "todo": [
+      "результаты не зафиксированы — см. docs/guides/selective-entry-ablation.md"
+    ]
+  },
+  "strategy": "selective-entry",
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 60,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
+    "bidOffsetCents": 1,
+    "requireDeltaAccel": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "data/paper-recordings/2026-04-08/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

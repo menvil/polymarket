@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "desc": "CrowdDeviation baseline backtest — OOS May 1-6 2026",
+    "status": "active",
+    "backtest": {
+      "dataset": "5-min BTC Up or Down, May 1-6 OOS",
+      "notes": "Baseline: entryDevCents=30, minDelta=25, all regimes. Из simulate-script: 61 трейдов, 65.6% WR, total +136.80 @ $10/trade."
+    }
+  },
+  "strategy": "crowd-deviation",
+  "resources": {
+    "initialBalance": 200,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": false
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "tableFile": "tables/edge-table-5min-full-mar-apr-up.json",
+    "orderSize": 10,
+    "entryDevCents": 30,
+    "minDeltaDollars": 25,
+    "minTauSec": 30,
+    "maxTauSec": 300,
+    "regimeFilter": "all",
+    "bidOffsetCents": 1,
+    "warmupSec": 0,
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-01/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-02/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-03/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-04/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-05/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-06/polymarket/*Bitcoin_Up_or_Down*"
+    ],
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  }
+}

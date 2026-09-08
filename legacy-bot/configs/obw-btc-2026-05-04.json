@@ -1,0 +1,59 @@
+{
+  "_meta": {
+    "desc": "OrderBookWall BTC UP+DOWN backtest — May 04 2026 (rejection strategy, coinbase 50-level book)",
+    "status": "backtest"
+  },
+  "strategy": "order-book-wall",
+  "resources": {
+    "initialBalance": 200,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 5,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "side": "up",
+    "orderSize": 5,
+    "venue": "coinbase",
+    "lookbackMs": 60000,
+    "bandSizePct": 0.00005,
+    "wallThresholdFactor": 2.0,
+    "minWallSize": 0.3,
+    "minWallAgeMs": 3000,
+    "consumptionWindowMs": 30000,
+    "recentWindowMs": 8000,
+    "rejectionMaxAbsorption": 0.2,
+    "minWallTestVolume": 0.05,
+    "flowDecelerationFactor": 0.4,
+    "minSignalStrength": 0.3,
+    "minEdgeCents": 0,
+    "holdMaxMs": 240000,
+    "stopLossCents": 5,
+    "sigmaAnnual": 0.6
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "data/live-recordings-cll/2026-05-04/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0,
+    "bidirectional": true
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/backtest-recordings/obw-btc-2026-05-04",
+    "compression": "gzip"
+  }
+}

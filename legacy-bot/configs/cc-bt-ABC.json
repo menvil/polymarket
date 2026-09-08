@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "desc": "CalibratedCrowd cc-bt-ABC variant — Apr 21 OOS (265 markets)",
+    "status": "insample",
+    "backtest": {
+      "dataset": "snapshots 2026-04-21 OOS, 265 markets",
+      "pnl": "+5.81 USDC",
+      "wr": "55.6%",
+      "markets": 145,
+      "date": "2026-04-27",
+      "notes": "A+B+C combo = AC (B is no-op). CEX agree вредит (+14.50→+5.81)."
+    },
+    "todo": [
+      "archived — only A variant is worth using"
+    ]
+  },
+  "strategy": "calibrated-crowd",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min-delta-regime.json",
+    "minComposite": 0.5,
+    "maxPositionFraction": 0.05,
+    "maxSharesPerMarket": 5,
+    "warmupSec": 15,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "cexFilterMode": "agree",
+    "exitOnRegimeFlip": true,
+    "exitOnTauTimeout": true,
+    "exitTauSec": 15,
+    "exitOnWeightDrop": false,
+    "exitOnEdgeClosure": false,
+    "allowPanicTaker": false
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

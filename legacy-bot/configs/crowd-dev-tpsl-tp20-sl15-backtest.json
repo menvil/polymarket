@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "desc": "CrowdDeviationTPSL TP=20¢ SL=15¢ — backtest 5min BTC UP May 1-6",
+    "status": "experiment",
+    "backtest": {
+      "dataset": "5-min BTC Up or Down, May 1-6 2026 OOS",
+      "simulate_pnl": "+$160.20 (simulate script, $10/trade)",
+      "date": "2026-05-19",
+      "notes": "d10-t15 table, entryDevCents=15, minEntryPrice=45, regime=up. TP=20/SL=15. simulate-script: 114 TP / 69 SL / 17 expiry = +$160.20. WR=63.5%, более стабилен для live."
+    }
+  },
+  "strategy": "crowd-deviation-tpsl",
+  "resources": {
+    "initialBalance": 200,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": false
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "tableFile": "tables/edge-table-5min-apr-d10-t15-up.json",
+    "orderSize": 10,
+    "entryDevCents": 15,
+    "minEntryPriceCents": 45,
+    "minDeltaDollars": 25,
+    "minTauSec": 30,
+    "maxTauSec": 300,
+    "regimeFilter": "up",
+    "residualFilter": "all",
+    "bidOffsetCents": 1,
+    "sellOffsetCents": 1,
+    "warmupSec": 0,
+    "postOnly": true,
+    "takeProfitCents": 20,
+    "stopLossCents": 15
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-01/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-02/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-03/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-04/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-05/polymarket/*Bitcoin_Up_or_Down*",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-05-06/polymarket/*Bitcoin_Up_or_Down*"
+    ],
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "desc": "Cross-market arbitrage live micro-test",
+    "status": "experimental-live",
+    "notes": "BTC 5m/15m arb. Micro budget config for live smoke tests."
+  },
+  "strategy": "cross-market-arb",
+  "strategyParams": {
+    "peerInstrumentId": "placeholder",
+    "minSpreadAfterFees": 0.001,
+    "maxPositionUnits": 5,
+    "maxDepth": 5,
+    "bookStalenessMs": 1500,
+    "executionOrderType": "FAK",
+    "executionReconcileDelayMs": 2500,
+    "executionRepairDelayMs": 2500,
+    "auditMode": false
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minLiquidity": 50
+    },
+    "scanPauseMs": 60000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 30,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 5,
+    "tradingBalanceRatio": 1.0
+  },
+  "execution": {
+    "postOnly": false
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "apps/bot/data/arb-live-recordings",
+    "journalDir": "apps/bot/data/arb-live-journals",
+    "compression": "gzip"
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:live"
+  }
+}

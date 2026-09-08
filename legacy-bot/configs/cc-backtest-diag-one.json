@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "desc": "CalibratedCrowd experiment — cc-backtest-diag-one",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots Apr 2026",
+      "pnl": "не записан",
+      "notes": "Ранний эксперимент CalibratedCrowd. Большинство конфигов — варианты CEX filter (agree/not-adverse) которые ухудшают результат."
+    },
+    "todo": [
+      "результаты не зафиксированы",
+      "CEX agree/not-adverse фильтры исторически вредят — не использовать в новых конфигах"
+    ]
+  },
+  "strategy": "calibrated-crowd",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min-delta-regime.json",
+    "minComposite": 0,
+    "maxPositionFraction": 0.05,
+    "maxSharesPerMarket": 5,
+    "warmupSec": 0,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "exitOnRegimeFlip": false,
+    "exitOnWeightDrop": false,
+    "exitOnTauTimeout": false,
+    "exitOnEdgeClosure": false,
+    "allowPanicTaker": false,
+    "logEntries": true
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/polymarket_Bitcoin_Up_or_Down_-2026_April_21_1000AM-1005AM_ET___0xd50e846cf6d6bc07ef23621a2d77fa8a7da3db.jsonl.gz",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/polymarket_Bitcoin_Up_or_Down_-2026_April_21_1005AM-1010AM_ET___*.jsonl.gz",
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-21/polymarket/polymarket_Bitcoin_Up_or_Down_-2026_April_21_1010AM-1015AM_ET___*.jsonl.gz"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

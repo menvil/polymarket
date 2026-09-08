@@ -1,0 +1,91 @@
+{
+  "_meta": {
+    "desc": "CalibratedCrowd experiment — cc-backtest-cex-not-adverse-up-hold-2026-04-20",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots Apr 2026",
+      "pnl": "не записан",
+      "notes": "Ранний эксперимент CalibratedCrowd. Большинство конфигов — варианты CEX filter (agree/not-adverse) которые ухудшают результат."
+    },
+    "todo": [
+      "результаты не зафиксированы",
+      "CEX agree/not-adverse фильтры исторически вредят — не использовать в новых конфигах"
+    ]
+  },
+  "strategy": "calibrated-crowd-cex",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min.json",
+    "crowdGate": "relaxed",
+    "relaxedEntrySide": "up",
+    "relaxedMinN": 20,
+    "relaxedMinEdge": 0.01,
+    "relaxedMinCiEdge": -1,
+    "relaxedRequireOos": false,
+    "minComposite": 0.05,
+    "orderShares": 5,
+    "warmupSec": 15,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "exitOnRegimeFlip": false,
+    "exitOnWeightDrop": false,
+    "exitOnTauTimeout": false,
+    "exitOnEdgeClosure": false,
+    "allowPanicTaker": false,
+    "logEntries": false,
+    "cexFilterMode": "not-adverse",
+    "cexSignalId": "cex_chainlink_linear_lead_lag",
+    "cexVenues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
+    "cexThresholdBps": 0.5,
+    "cexStaleMs": 2000,
+    "cexMinVenueCount": 3,
+    "cexMaxSpreadBps": 10,
+    "cexLinearInterceptUsd": 1.865884,
+    "cexWeights": {
+      "binance": -0.026698,
+      "coinbase": 0.135985,
+      "okx": 0.127467
+    },
+    "cexBasisByVenue": {
+      "binance": -17.839,
+      "coinbase": 5.315,
+      "okx": 7.613
+    }
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/Users/menvil/Projects/polymarket/apps/collect-data/snapshots/2026-04-20/polymarket/*Bitcoin*"
+    ],
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 1000,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": false,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

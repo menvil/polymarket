@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "desc": "Dumb strategy — live test (диагностика инфраструктуры V2)",
+    "status": "wip",
+    "live": {
+      "started": "2026-05-05",
+      "pnl": "active",
+      "notes": "не production-стратегия; для верификации V2 order signing"
+    }
+  },
+  "strategy": "dumb",
+  "strategyParams": {
+    "orderSize": 5,
+    "buyOffsetPct": 10,
+    "profitMarginPct": 10,
+    "repriceThreshold": 0.08
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "anyOfKeywords": [
+        "bitcoin",
+        "crypto",
+        "ETH",
+        "BTC"
+      ],
+      "minLiquidity": 500
+    },
+    "scanPauseMs": 60000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 10,
+    "maxConcurrentMarkets": 2,
+    "minCapitalPerMarket": 5,
+    "tradingBalanceRatio": 1.0
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:0x326A9569053C4815991C38a60B0B84F054c337f2"
+  }
+}

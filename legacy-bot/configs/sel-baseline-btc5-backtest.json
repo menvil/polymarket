@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "desc": "SelectiveEntry baseline, btc5 dataset",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "btc5 snapshots 5-min BTC, 207 markets",
+      "pnl": "+4.74 USDC",
+      "wr": "66.7%",
+      "markets": 207,
+      "date": "2026-03-28",
+      "notes": "45 fills. test (OOS profitable!). Total: +13.75 USDC, 65.6% WR."
+    },
+    "todo": [
+      "re-run on Apr 21-27 (see verify-sel-baseline configs)"
+    ]
+  },
+  "strategy": "selective-entry",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.03,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 120,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
+    "bidOffsetCents": 1
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day5/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

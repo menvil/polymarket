@@ -1,0 +1,50 @@
+{
+  "_meta": {
+    "desc": "SelectiveEntry daccel ablation (requireDeltaAccel=true), btc1",
+    "status": "oos-validated",
+    "backtest": {
+      "dataset": "btc1 snapshots 5-min BTC",
+      "pnl": "+13.96 USDC",
+      "date": "2026-04-01",
+      "notes": "daccel лучший вариант. Total: +24.71 USDC, 68.3% WR (+10.96 vs baseline). Перевернул btc2 с -7.10 в +7.51."
+    },
+    "todo": [
+      "эти параметры использованы в sel-live-5min.json"
+    ]
+  },
+  "strategy": "selective-entry",
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "strategyParams": {
+    "orderSize": 5,
+    "minZoneCents": 55,
+    "maxZoneCents": 68,
+    "minDeltaPct": 0.05,
+    "maxDeltaPct": 0.12,
+    "minTauSec": 120,
+    "maxTauSec": 210,
+    "maxSpreadCents": 4,
+    "warmupSec": 60,
+    "bidOffsetCents": 1,
+    "side": "up"
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/5min-btc-day1/*"
+    ],
+    "outcomeIndex": 0
+  }
+}

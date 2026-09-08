@@ -1,0 +1,70 @@
+{
+  "_meta": {
+    "desc": "Avellaneda-Stoikov experiment — as-enhanced-btc2-backtest",
+    "status": "archived",
+    "backtest": {
+      "dataset": "5-min или 15-min BTC/ETH/SOL/XRP",
+      "pnl": "не записан",
+      "notes": "Ранний AS эксперимент. Вся история: docs/guides/strategy-hypotheses.md. AS 5-min с зоной: +0.4 USDC breakeven. Без зоны: -174 USDC катастрофа. Заменён SelectiveEntry/AdaptiveEntry."
+    },
+    "todo": [
+      "archived — не перезапускать. Лучше использовать sel/ae стратегии."
+    ]
+  },
+  "strategy": "avellaneda-stoikov",
+  "strategyParams": {
+    "gamma": 0.03,
+    "qMax": 10,
+    "orderSize": 5,
+    "spreadMult": 0.2,
+    "dynamicQ": [
+      {
+        "until": 0.4,
+        "qMax": 10
+      },
+      {
+        "until": 0.7,
+        "qMax": 5
+      },
+      {
+        "until": 1.0,
+        "qMax": 3
+      }
+    ],
+    "profitHoldThreshold": 5,
+    "profitHoldSkewReduction": 0.5,
+    "ewmaAlpha": 0.3,
+    "unwindSec": 120,
+    "unwindMaxDiscountCents": 3,
+    "warmupSec": 30,
+    "regimeWindow": 20,
+    "regimeTrendThreshold": 3,
+    "regimeRangeThreshold": 1,
+    "regimeTrendSpreadMult": 1.5,
+    "regimeRangeSpreadMult": 0.8,
+    "jumpThreshold": 5,
+    "jumpWidenFactor": 2.0,
+    "jumpCooldownTrades": 5
+  },
+  "market": {
+    "source": "snapshots",
+    "paths": [
+      "/tmp/15min-btc-day2/*"
+    ],
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 10,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  }
+}

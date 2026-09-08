@@ -1,0 +1,140 @@
+{
+  "_meta": {
+    "desc": "CexLeadLag BTC early paper config",
+    "status": "archived",
+    "backtest": {
+      "dataset": "BTC snapshots / live-recordings",
+      "pnl": "не записан",
+      "notes": "Ранний paper конфиг. Заменён cll-paper-5min.json."
+    },
+    "todo": [
+      "устарел — использовать cll-paper-5min.json"
+    ]
+  },
+  "strategy": "cex-lead-lag",
+  "strategyParams": {
+    "orderSize": 10,
+    "qMax": 1,
+    "side": "up",
+    "mode": "skewed",
+    "venues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
+    "signalThresholdBps": 0.5,
+    "signalLookbackMs": 1000,
+    "signalStaleMs": 2000,
+    "minVenueCount": 2,
+    "maxSpreadBps": 10,
+    "minSignalStrength": 6,
+    "minSignalConfidence": 0.45,
+    "makerRepriceThresholdCents": 1,
+    "requireSignalForEntry": true,
+    "allowTaker": false,
+    "sigmaAnnual": 0.6,
+    "minEdgeCents": 2,
+    "exitEdgeCents": 1,
+    "baseSpreadCents": 1,
+    "exitDiscountCents": 1,
+    "emergencyExitSlippageCents": 1,
+    "maxChaseAboveExitCents": 5,
+    "stopLossCents": 5,
+    "stopLossCooldownMs": 60000,
+    "breakEvenTriggerCents": 6,
+    "breakEvenOffsetCents": 0,
+    "trailingStartMultiplier": 0.7,
+    "minTrailingDistanceCents": 5,
+    "tauTighteningStartSec": 25,
+    "tauTighteningMinMultiplier": 0.8,
+    "trailingExitRatio": 0.5,
+    "signalExitEnabled": true,
+    "signalExitGraceMs": 500,
+    "signalExitMinProfitCents": 2,
+    "signalExitRatio": 0.5,
+    "adverseExitGraceMs": 300,
+    "adverseExitRatio": 1,
+    "warmupSec": 10,
+    "ewmaAlpha": 0.3,
+    "minTradesForMid": 3,
+    "exitTauSec": 20,
+    "maxEntryTauSec": 300,
+    "minSignalPersistenceMs": 150
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/paper-recordings",
+    "journalDir": "./data/paper-journals",
+    "compression": "gzip"
+  },
+  "cex": {
+    "enabled": true,
+    "outputDir": "./data/paper-recordings/cex",
+    "compression": "gzip",
+    "windowMinutes": 5,
+    "bufferSize": 200,
+    "flushIntervalMs": 5000,
+    "exchanges": {
+      "binance": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "coinbase": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "okx": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      }
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "_meta": {
+    "desc": "CrowdDeviation dev=15 minEntry=45 regime=up — live 5min BTC UP",
+    "status": "ready",
+    "backtest": {
+      "dataset": "5-min BTC Up or Down, Apr 20-30 + May 1-13 2026",
+      "pnl": "+$117 (May 1-6) / +$57 (May 7-13 clean)",
+      "winRate": "57-61%",
+      "trades": "224-267",
+      "date": "2026-05-18",
+      "notes": "d10-t15 table, entryDevCents=15, minEntryPriceCents=45, regimeFilter=up. Калибровочный анализ: WR 30%→57% при фильтре ≥45¢. regime=up стабилен на всех 3 периодах."
+    }
+  },
+  "strategy": "crowd-deviation",
+  "resources": {
+    "initialBalance": 200,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1
+  },
+  "execution": {
+    "postOnly": false
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:live"
+  },
+  "strategyParams": {
+    "tableFile": "tables/edge-table-5min-apr-d10-t15-up.json",
+    "orderSize": 5,
+    "entryDevCents": 15,
+    "minEntryPriceCents": 45,
+    "minDeltaDollars": 25,
+    "minTauSec": 30,
+    "maxTauSec": 300,
+    "regimeFilter": "up",
+    "residualFilter": "all",
+    "cexVenues": ["cex_binance", "cex_coinbase", "cex_okx"],
+    "cexMinVenueCount": 2,
+    "bidOffsetCents": 1,
+    "warmupSec": 0
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": ["bitcoin", "up or down"],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0,
+    "bidirectional": false
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/live-recordings-crowd-dev-30",
+    "journalDir": "./data/journals-crowd-dev-30",
+    "compression": "gzip"
+  },
+  "cex": {
+    "enabled": true,
+    "outputDir": "./data/live-recordings-crowd-dev-30/cex",
+    "compression": "gzip",
+    "windowMinutes": 5,
+    "bufferSize": 200,
+    "flushIntervalMs": 5000,
+    "exchanges": {
+      "binance": {
+        "type": "spot",
+        "symbols": ["BTC/USD"],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "coinbase": {
+        "type": "spot",
+        "symbols": ["BTC/USD"],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "okx": {
+        "type": "spot",
+        "symbols": ["BTC/USD"],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      }
+    }
+  }
+}

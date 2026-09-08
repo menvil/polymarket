@@ -1,0 +1,135 @@
+{
+  "_meta": {
+    "desc": "CC paper: CEX not-adverse + both sides hold",
+    "status": "archived",
+    "paper": {
+      "period": "2026-04-21/...",
+      "pnl": "не записан",
+      "notes": "CEX filter variants — исторически CEX agree/not-adverse ухудшают результаты CC стратегии. Не рекомендуется."
+    },
+    "todo": [
+      "CEX agree/not-adverse фильтры ухудшают CC результаты (доказано: A vs AC: +14.50 → +5.81)",
+      "не запускать без нового анализа"
+    ]
+  },
+  "strategy": "calibrated-crowd-cex",
+  "strategyParams": {
+    "edgeTablePath": "tables/edge-table-5min.json",
+    "crowdGate": "relaxed",
+    "relaxedEntrySide": "both",
+    "relaxedMinN": 20,
+    "relaxedMinEdge": 0.01,
+    "relaxedMinCiEdge": -1,
+    "relaxedRequireOos": false,
+    "minComposite": 0.05,
+    "orderShares": 5,
+    "warmupSec": 15,
+    "regimeThresholdPerMin": 10,
+    "regimeWindowMs": 60000,
+    "regimeMinPoints": 5,
+    "exitOnRegimeFlip": false,
+    "exitOnWeightDrop": false,
+    "exitOnTauTimeout": false,
+    "exitOnEdgeClosure": false,
+    "allowPanicTaker": false,
+    "logEntries": true,
+    "cexFilterMode": "not-adverse",
+    "cexSignalId": "cex_chainlink_linear_lead_lag",
+    "cexVenues": [
+      "binance",
+      "coinbase",
+      "okx"
+    ],
+    "cexThresholdBps": 0.5,
+    "cexStaleMs": 2000,
+    "cexMinVenueCount": 3,
+    "cexMaxSpreadBps": 10,
+    "cexLinearInterceptUsd": 0.270605,
+    "cexWeights": {
+      "binance": 0.058363,
+      "coinbase": 0.083856,
+      "okx": 0.077538
+    },
+    "cexBasisByVenue": {
+      "binance": -24.74,
+      "coinbase": 1.392,
+      "okx": -7.133
+    }
+  },
+  "execution": {
+    "postOnly": true
+  },
+  "market": {
+    "source": "discovery",
+    "filter": {
+      "requiredKeywords": [
+        "bitcoin",
+        "up or down"
+      ],
+      "minDurationMinutes": 4,
+      "maxDurationMinutes": 6
+    },
+    "scanPauseMs": 30000,
+    "outcomeIndex": 0
+  },
+  "resources": {
+    "initialBalance": 100,
+    "maxConcurrentMarkets": 1,
+    "minCapitalPerMarket": 1,
+    "tradingBalanceRatio": 1.0
+  },
+  "paper": {
+    "fillOnBookCrossing": true,
+    "fillOnTape": true,
+    "fillAtOrderPrice": true
+  },
+  "account": {
+    "accountId": "venue:POLYMARKET:paper-account"
+  },
+  "recording": {
+    "enabled": true,
+    "outputDir": "./data/paper-recordings",
+    "journalDir": "./data/paper-journals",
+    "compression": "gzip"
+  },
+  "cex": {
+    "enabled": true,
+    "outputDir": "./data/paper-recordings/cex",
+    "compression": "gzip",
+    "windowMinutes": 5,
+    "bufferSize": 200,
+    "flushIntervalMs": 5000,
+    "exchanges": {
+      "binance": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "coinbase": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      },
+      "okx": {
+        "type": "spot",
+        "symbols": [
+          "BTC/USD"
+        ],
+        "orderbook": true,
+        "trades": true,
+        "obDepth": 10,
+        "obMethod": "watch"
+      }
+    }
+  }
+}
