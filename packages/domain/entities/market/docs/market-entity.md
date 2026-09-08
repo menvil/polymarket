@@ -467,9 +467,8 @@ RESOLVED → CLOSED / RESOLVED(i) → RESOLVED(j≠i)           отвергаю
 
 ## Вне scope этого пакета
 
-`PolymarketMarketDiscovery`, `MarketFilter`, `MarketScorer`, `CollectionCoordinator`,
-subscription control, CEX, semantic-адаптеры и backtest runtime продолжают работать на
-своих текущих контрактах. Перевод V2 Discovery на canonical `Market` — следующий MR.
+`PolymarketMarketDiscovery`, `MarketFilter`, `MarketScorer`, subscription control, CEX,
+semantic-адаптеры и backtest runtime продолжают работать на своих текущих контрактах. Перевод V2 Discovery на canonical `Market` — следующий MR.
 
 ---
 

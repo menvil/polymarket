@@ -110,8 +110,8 @@ export type PolymarketRtdsFeedKey = PolymarketRtdsFeed;
  *
  * @remarks
  * Recorder НЕ решает, какие символы нужны рынку — готовую routing-регистрацию
- * ему передаёт вызывающий (`MarketCollectionCoordinator`, который берёт
- * фиды из settlement-метаданных выбранного рынка).
+ * ему передаёт вызывающий (в canonical-контуре это `PolymarketCollectionGate`,
+ * берущий фиды из settlement-метаданных выбранного рынка).
  * `marketMeta` — существующий storage-контракт (`registerMarket`): recorder
  * не добавляет собственного дубликата source market id, потому что
  * `String(marketMeta.marketId)` УЖЕ равен conditionId — routing identity
@@ -130,7 +130,8 @@ export interface PolymarketRecordingRegistration {
  * @remarks
  * ### Зачем провайдер существует
  *
- * До Collector-cutover recording-сессии создавал `MarketCollectionCoordinator`
+ * До Collector-cutover recording-сессии создавал legacy-координатор сбора
+ * (удалён после квалификации нового коллектора)
  * ДО открытия подписки (recorder-first): рынок регистрировался заранее, и
  * первое CLOB-событие уже попадало в готовую сессию. После cutover физические
  * подписки принадлежат общему control-plane (`collector:raw`), и recorder
@@ -350,7 +351,7 @@ export interface ExternalMessageRecorderStats {
    * Отдельно от `unroutedMarketMessages`: там — потеря (сессии нет), здесь —
    * работающая по плану граница. Сессия истёкшего рынка живёт ещё несколько
    * секунд ради граничного наблюдения settlement-потока
-   * ({@link ExternalMessageRecorder.narrowRtdsFeeds}), и CLOB-события,
+   * ({@link ExternalMessageRecorder.beginMarketFinalization}), и CLOB-события,
    * долетевшие в это окно, в датасет уже не идут. Смешивать их с настоящей
    * потерей значило бы ослабить loss-visibility ровно там, где она нужна.
    */
@@ -882,27 +883,6 @@ export class ExternalMessageRecorder {
       dropped: dropped.length,
     });
     return true;
-  }
-
-  /**
-   * Сужает RTDS-routing рынка до указанного подмножества фидов.
-   *
-   * @param marketId - ID рынка
-   * @param feeds - Фиды, которые ПРОДОЛЖАЮТ писаться в файл рынка
-   * @returns То же, что {@link ExternalMessageRecorder.beginMarketFinalization}
-   *
-   * @deprecated LEGACY ALIAS. Именем `narrowRtdsFeeds` пользуется только
-   *   legacy `MarketCollectionCoordinator`; canonical-имя перехода —
-   *   {@link ExternalMessageRecorder.beginMarketFinalization}. Удаляется
-   *   вместе с legacy-координатором на Legacy Infrastructure Cleanup.
-   *
-   * @example
-   * ```typescript
-   * recorder.narrowRtdsFeeds(marketId, [settlementFeed]);
-   * ```
-   */
-  public narrowRtdsFeeds(marketId: MarketId, feeds: readonly PolymarketRtdsFeedKey[]): boolean {
-    return this.beginMarketFinalization(marketId, feeds);
   }
 
   /**

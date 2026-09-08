@@ -64,7 +64,6 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/exchange',
   '@polymarket/external-message-bus',
   '@polymarket/external-messages',
-  '@polymarket/collection-coordinator',
   '@polymarket/market-finalizer',
   '@polymarket/data-collection',
   'ccxt',

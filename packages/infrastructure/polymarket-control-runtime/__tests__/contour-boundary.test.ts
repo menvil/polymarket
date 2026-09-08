@@ -69,7 +69,6 @@ const FORBIDDEN_RUNTIME_DEPENDENCIES = [
   '@polymarket/external-message-bus',
   '@polymarket/external-message-recorder',
   '@polymarket/market-finalizer',
-  '@polymarket/collection-coordinator',
   '@polymarket/data-collection',
   '@polymarket/strategy',
   '@polymarket/exchange',
@@ -93,7 +92,6 @@ const FORBIDDEN_RUNTIME_DEPENDENCIES = [
 const FORBIDDEN_ANYWHERE_DEPENDENCIES = [
   '@polymarket/external-message-recorder',
   '@polymarket/market-finalizer',
-  '@polymarket/collection-coordinator',
   '@polymarket/data-collection',
   '@polymarket/strategy',
   '@polymarket/exchange',

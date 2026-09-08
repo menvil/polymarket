@@ -187,7 +187,7 @@ describe('payload остаётся source-native (PART 18/22/60)', () => {
   });
 });
 
-describe('narrowRtdsFeeds: сужение до settlement-потока (PART 25)', () => {
+describe('beginMarketFinalization: сужение до settlement-потока (PART 25)', () => {
   it('оставляет settlement-фид и снимает spot + market routing', async () => {
     recorder.start();
     recorder.registerMarket({
@@ -195,7 +195,7 @@ describe('narrowRtdsFeeds: сужение до settlement-потока (PART 25)
       rtdsFeeds: [CHAINLINK_SPOT, TWAP_60],
     });
 
-    expect(recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
 
     // Spot больше не пишется
     const spot: PolymarketExternalMessage = {
@@ -228,7 +228,7 @@ describe('narrowRtdsFeeds: сужение до settlement-потока (PART 25)
       rtdsFeeds: [CHAINLINK_SPOT],
     });
 
-    recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60]);
+    recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60]);
 
     await bus.publish({
       type: 'POLYMARKET_CRYPTO_CHAINLINK',
@@ -246,7 +246,7 @@ describe('narrowRtdsFeeds: сужение до settlement-потока (PART 25)
       marketMeta: makeMeta(MARKET_CONDITION_ID),
       rtdsFeeds: [CHAINLINK_SPOT, TWAP_60],
     });
-    recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60]);
+    recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60]);
 
     await recorder.sealMarket(unsafeMarketId(MARKET_CONDITION_ID));
     await publishTwap(createChainlinkTwapEvent({ windowSeconds: 60 }));
@@ -262,15 +262,15 @@ describe('narrowRtdsFeeds: сужение до settlement-потока (PART 25)
       rtdsFeeds: [CHAINLINK_SPOT, TWAP_60],
     });
 
-    expect(recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
-    expect(recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
-    expect(recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID_B), [TWAP_60])).toBe(false);
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID_B), [TWAP_60])).toBe(false);
 
     await publishTwap(createChainlinkTwapEvent({ windowSeconds: 60 }));
     expect(writesFor(MARKET_CONDITION_ID)).toHaveLength(1); // не задвоилось
 
     await recorder.close();
-    expect(recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(false);
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(false);
   });
 
   it('сужение до фида, которого у сессии не было, оставляет её без RTDS', async () => {
@@ -280,7 +280,7 @@ describe('narrowRtdsFeeds: сужение до settlement-потока (PART 25)
       rtdsFeeds: [CHAINLINK_SPOT],
     });
 
-    expect(recorder.narrowRtdsFeeds(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
+    expect(recorder.beginMarketFinalization(unsafeMarketId(MARKET_CONDITION_ID), [TWAP_60])).toBe(true);
 
     await publishTwap(createChainlinkTwapEvent({ windowSeconds: 60 }));
     expect(writesFor(MARKET_CONDITION_ID)).toHaveLength(0);

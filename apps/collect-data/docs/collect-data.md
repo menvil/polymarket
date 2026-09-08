@@ -72,8 +72,8 @@ ACTIVE → expiresAt (таймер СЕССИИ) → FINALIZING → settlement g
 ```
 
 `DataCollector` оркестрирует control-тик и лестницу остановки, но собственного
-рыночного состояния не держит. Legacy `MarketCollectionCoordinator` в
-композиции отсутствует (structural-тест границы). Полный разбор —
+рыночного состояния не держит. Legacy-координатор сбора удалён из репозитория
+после квалификации нового коллектора. Полный разбор —
 `docs/guides/collector-market-lifecycle.md`.
 
 ## Lifecycle рантайма

@@ -66,7 +66,6 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/data-collection',
   '@polymarket/external-message-recorder',
   '@polymarket/market-finalizer',
-  '@polymarket/collection-coordinator',
   '@polymarket/cex-semantic-adapter',
   '@polymarket/cex-market-data',
   '@polymarket/strategy',
