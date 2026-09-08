@@ -1,5 +1,13 @@
 # CEX Multiplex Exchange Watcher
 
+> **LEGACY / HISTORICAL**
+>
+> `CcxtExchangeWatcher` и пакет `@polymarket/cex-market-data` удалены после
+> того, как их последний потребитель (старый `apps/bot`) был удалён.
+> Канонический CEX-транспорт — `CexSource` из `@polymarket/cex-v2`, поднимаемый
+> через `CexSubscriptionController`. Документ сохранён ради описанных здесь
+> механизмов мультиплексирования и эксплуатационных решений.
+
 ## Почему это сделано так?
 
 Предыдущая архитектура (`CcxtSymbolWatcher`) создавала отдельный ccxt.pro-инстанс

@@ -44,7 +44,6 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/orchestrators',
   '@polymarket/risk',
   '@polymarket/exchange',
-  '@polymarket/cex-market-data',
 ];
 
 /** Разрешённые package-импорты исходников recorder-а. */

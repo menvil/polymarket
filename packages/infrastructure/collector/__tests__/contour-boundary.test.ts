@@ -5,7 +5,7 @@
  * @remarks
  * - **E. Collector не владеет source.** Пакет не импортирует ни source-классы
  *   (`CexSource`/`PolymarketSource`/`Ccxt*Watcher`), ни транспорт
- *   (`ccxt`/`@polymarket/client`/`@polymarket/cex-market-data`). Ему разрешён
+ *   (`ccxt`/`@polymarket/client`). Ему разрешён
  *   контракт шины/recorder-а, external message types и canonical
  *   domain/application зависимости.
  * - **I. Replay-контур не зависит от Collector.** Backtesting/replay-пакеты и
@@ -24,7 +24,6 @@ const PERSISTENCE_ROOT = join(INFRA_ROOT, 'persistence');
 const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/client',
   '@polymarket/bindings',
-  '@polymarket/cex-market-data',
   '@polymarket/exchange',
   'ccxt',
   // polymarket-v2/cex-v2 экспортируют source-классы и транзитивно тянут client/
@@ -55,7 +54,7 @@ const ALLOWED_SOURCE_IMPORTS = new Set([
 ]);
 
 /** Идентификаторы source-классов, которые не должны встречаться в src. */
-const FORBIDDEN_IDENTIFIERS = ['CexSource', 'PolymarketSource', 'CcxtExchangeWatcher', 'CcxtSymbolWatcher'];
+const FORBIDDEN_IDENTIFIERS = ['CexSource', 'PolymarketSource'];
 
 function listSourceFiles(dir: string): string[] {
   const files: string[] = [];

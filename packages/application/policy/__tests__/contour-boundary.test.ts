@@ -58,7 +58,6 @@ const ALLOWED_IMPORTS = new Set([
 const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/polymarket-v2',
   '@polymarket/cex-v2',
-  '@polymarket/cex-market-data',
   '@polymarket/client',
   '@polymarket/bindings',
   '@polymarket/exchange',
