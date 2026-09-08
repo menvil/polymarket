@@ -1,5 +1,12 @@
 # Strategy: lifecycle, concurrency и execution safety
 
+> **LEGACY / HISTORICAL**
+>
+> Старый `apps/bot` удалён после завершения Collector Qualification. Описанные
+> ниже команды запуска и композиция больше не существуют; новый trading runtime
+> будет построен поверх canonical event pipeline. Документ сохранён ради
+> алгоритмов и решений, которые в него заложены.
+
 Пакет `@polymarket/strategy` (StrategyScheduler / ExecutionEngine / OrderEventBridge).
 
 ## Почему это сделано так?
