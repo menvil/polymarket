@@ -3,9 +3,9 @@
  *
  * @remarks
  * Перенос production-проверенного супервизора из legacy CEX-коллектора
- * (`cex-market-data`) в V2-контур: новый contour не имеет права импортировать
- * legacy-пакет (dependency boundary N-005), а сам механизм — ровно тот
- * transport-supervision, который нужно сохранить:
+ * (пакет `cex-market-data`, впоследствии удалён) в V2-контур. Новый contour
+ * не имел права импортировать legacy-пакет (dependency boundary N-005), а сам
+ * механизм — ровно тот transport-supervision, который нужно было сохранить:
  *
  * - нормальный return сессии = controlled restart (без backoff, но с
  *   минимальной паузой `controlledRestartDelayMs`);

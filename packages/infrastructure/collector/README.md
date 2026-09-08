@@ -109,7 +109,7 @@ Policy коллектора ДОЛЖНА совпадать с policy спрос
 ## 6. Границы (закреплено `contour-boundary.test.ts`)
 
 - **E.** src не импортирует `CexSource`/`PolymarketSource`/`Ccxt*Watcher`,
-  `ccxt`, `@polymarket/client`, `@polymarket/cex-market-data`,
+  `ccxt`, `@polymarket/client`,
   `@polymarket/bindings`; закрытый allow-list импортов.
 - **I.** replay-контур (`backtesting`, `data-collection`, `snapshot-readers`)
   и recorder не зависят от коллектора — провайдер сессий инъецируется, а не

@@ -74,7 +74,6 @@ const FORBIDDEN_RUNTIME_DEPENDENCIES = [
   '@polymarket/exchange',
   '@polymarket/risk',
   '@polymarket/cex-v2',
-  '@polymarket/cex-market-data',
   '@polymarket/cex-semantic-adapter',
   'ccxt',
 ];
@@ -97,7 +96,6 @@ const FORBIDDEN_ANYWHERE_DEPENDENCIES = [
   '@polymarket/exchange',
   '@polymarket/risk',
   '@polymarket/cex-v2',
-  '@polymarket/cex-market-data',
   '@polymarket/cex-semantic-adapter',
   'ccxt',
 ];

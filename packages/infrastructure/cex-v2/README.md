@@ -143,7 +143,7 @@ source.start();
   Entity) — CEX Semantic Adapter, после CHECKPOINT #1;
 - собственный recorder/бас/очередь — ONE bus, ONE recorder;
 - миграция Application/Risk/Strategies и legacy cutover
-  (`cex-market-data` остаётся работать для старых consumers).
+  (legacy `cex-market-data` удалён вместе со своим последним потребителем).
 
 ## Скрипты
 

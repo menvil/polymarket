@@ -66,7 +66,7 @@ contract.md`, Решение 10):
 
 1. **Hot-path.** `updatePrice()`/`updateCexBook()`/`updateCexTrade()` вызываются на каждое
    WS-событие — и в реплее бэктеста (`infrastructure/backtesting/BacktestEngine.ts`), и в
-   живом сборе (`infrastructure/cex-market-data/CexCollectorService.ts`). Заворачивание в
+   живом сборе (legacy `CexCollectorService`, удалён). Заворачивание в
    VO на этой частоте — измеримая деградация ради типобезопасности, не нужной внутри уже
    строго типизированного внутреннего API.
 2. **Диапазон.** `price` здесь — крипто-спот-цена произвольного масштаба (например,

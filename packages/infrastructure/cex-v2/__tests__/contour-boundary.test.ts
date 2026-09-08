@@ -43,7 +43,6 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/data-collection',
   '@polymarket/ports',
   '@polymarket/market-discovery',
-  '@polymarket/cex-market-data',
 ];
 
 /** Разрешённые импорты исходников (Foundation + внешний контур + vendor). */
@@ -133,10 +132,12 @@ describe('dependency graph boundary (PART 22)', () => {
     }
   });
 
-  it('исходники не импортируют legacy CEX-пакет и internal ccxt paths', () => {
+  it('исходники не импортируют internal ccxt paths', () => {
+    // Проверка на legacy CEX-пакет снята вместе с ним самим: импортировать
+    // несуществующий пакет нельзя. Запрет на внутренние пути ccxt остаётся —
+    // он защищает границу vendor-порта, а не отсутствие удалённого кода.
     for (const filePath of listSourceFiles(SRC_ROOT)) {
       for (const specifier of collectImports(filePath)) {
-        expect(specifier.includes('cex-market-data')).toBe(false);
         expect(specifier.startsWith('ccxt/')).toBe(false);
       }
     }
