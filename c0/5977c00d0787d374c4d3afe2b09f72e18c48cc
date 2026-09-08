@@ -1,0 +1,34 @@
+package-lock.json
+  ai_agent 642,659,676,693,710,727,744,761,778,795,812,829,846,863,880,897,914,931,948,965,982,999,1016,1033,1050,1067,3615,3945,4220,4365,4571,5195,5312,6789,8518,8714,9206,9262,9626
+docs/plans/strategy-engine-plan.md
+  s_c99ec2b699d51d::t_7c4dda799f3837 3-6,8
+  s_c99ec2b699d51d::t_67986a35ca7685 7
+docs/guides/strategies.md
+  s_c99ec2b699d51d::t_c98667dfb8b923 9
+  s_c99ec2b699d51d::t_67986a35ca7685 3-8
+docs/guides/sell-balance-protection.md
+  s_c99ec2b699d51d::t_67986a35ca7685 3-9
+docs/guides/cross-market-arbitrage.md
+  s_c99ec2b699d51d::t_67986a35ca7685 3-8
+  s_c99ec2b699d51d::t_676b4a9b778bb8 9
+docs/guides/strategy-engine.md
+  s_c99ec2b699d51d::t_67986a35ca7685 3-9
+docs/guides/strategy-lifecycle-execution-safety.md
+  s_c99ec2b699d51d::t_67986a35ca7685 3-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c05977c00d0787d374c4d3afe2b09f72e18c48cc",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
