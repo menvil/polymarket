@@ -1,0 +1,42 @@
+packages/infrastructure/market-finalizer/__tests__/MarketFinalizer.test.ts
+  s_c99ec2b699d51d::t_a8e404182eacbc 8
+docs/guides/data-collector-v2-cutover.md
+  s_c99ec2b699d51d::t_e43311341fec11 3-6
+packages/infrastructure/persistence/external-message-recorder/src/ExternalMessageRecorder.ts
+  s_c99ec2b699d51d::t_b94319d08c4ec2 354
+  s_c99ec2b699d51d::t_10fb8dcd14d16b 113-114,133-134
+packages/infrastructure/collector/docs/collector.md
+  s_c99ec2b699d51d::t_75f8eed64f5245 6-8
+docs/guides/collector-cutover.md
+  s_c99ec2b699d51d::t_e43311341fec11 57-58
+packages/infrastructure/persistence/external-message-recorder/__tests__/twap-routing.test.ts
+  s_c99ec2b699d51d::t_b94319d08c4ec2 190,198,231,249,265-267,273,283
+packages/application/subscription-planning/__tests__/contour-boundary.test.ts
+  s_c99ec2b699d51d::t_a8e404182eacbc 242-247
+packages/infrastructure/collector/src/collectionFinalization.ts
+  s_c99ec2b699d51d::t_d294ae2501317c 7-13
+docs/guides/twap-settlement-and-resolution.md
+  s_c99ec2b699d51d::t_75f8eed64f5245 170
+packages/domain/entities/market/docs/market-entity.md
+  s_c99ec2b699d51d::t_75f8eed64f5245 470-471
+apps/collect-data/docs/collect-data.md
+  s_c99ec2b699d51d::t_75f8eed64f5245 75-76
+packages/infrastructure/market-finalizer/src/MarketFinalizer.ts
+  s_c99ec2b699d51d::t_a8e404182eacbc 155-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "363d0232a543828b5b1c64148ecf6526042691c3",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
