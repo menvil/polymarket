@@ -93,7 +93,7 @@ export interface PolymarketSubscriptionHandle<TEvent> extends AsyncIterable<TEve
  */
 export type PolymarketSubscribeClient = Pick<
   ReturnType<typeof createPublicClient>,
-  'subscribe'
+  'subscribe' | 'closeSubscriptions'
 >;
 
 /**
@@ -140,7 +140,7 @@ export interface PolymarketSourceDependencies {
   /**
    * Пауза в RTDS-потоке, после которой он считается мёртвым (мс).
    *
-   * @defaultValue 30_000
+   * @defaultValue 10_000
    *
    * @remarks
    * Порог инъецируется, а не зашит константой, ровно по двум причинам:
@@ -247,21 +247,40 @@ export interface PolymarketOpenSubscription {
  * перезапускал бы её без причины.
  */
 interface SubscriptionSupervision<TEvent> {
-  /** Открывает НОВЫЙ SDK-handle с тем же spec-ом подписки. */
+  /**
+   * Открывает НОВЫЙ SDK-handle с тем же spec-ом подписки.
+   *
+   * @remarks
+   * Это и есть «кэш подписок» из legacy `RtdsWebSocketClient`: замыкание
+   * помнит spec целиком, поэтому восстановление после сброса соединения не
+   * требует ни отдельного реестра, ни участия владельца. Замыкание есть у
+   * КАЖДОЙ подписки, включая CLOB, — иначе connection-level reset оставил бы
+   * стакан закрытым.
+   */
   readonly reopen: () => Promise<PolymarketSubscriptionHandle<TEvent>>;
-  /** Пауза в событиях, после которой поток считается мёртвым (мс). */
-  readonly stallAfterMs: number;
+  /**
+   * Пауза в событиях, после которой поток считается мёртвым (мс);
+   * `undefined` — молчание для этой подписки законно (CLOB).
+   */
+  readonly stallAfterMs?: number;
 }
 
 /**
  * Пауза в RTDS-потоке, после которой он считается мёртвым (мс).
  *
  * @remarks
- * RTDS публикует ~1 Гц, поэтому 30 секунд — это три десятка пропущенных
- * тиков подряд: сомнений в том, что поток мёртв, уже не остаётся, а ложных
+ * RTDS публикует ~1 Гц, поэтому 10 секунд — это десяток пропущенных тиков
+ * подряд: сомнений в том, что поток мёртв, уже не остаётся, а ложных
  * срабатываний на джиттере доставки (замер: p99 ≈ 0.4 с) не возникает.
+ *
+ * Было 30 с. Живой разрыв в run-02 показал, где реальная цена: провал данных
+ * составил ~34 с, из которых 32.5 с ушло на ОБНАРУЖЕНИЕ и лишь 1.3 с на саму
+ * переподписку. Узкое место — порог, а не скорость восстановления, поэтому
+ * его снижение втрое стоит дешевле любого другого улучшения. Legacy
+ * `RtdsWebSocketClient` держал те же 30 с, но опрашивал каждые 5 с и имел
+ * PING-heartbeat, которого у SDK-транспорта мы не видим.
  */
-const RTDS_STALL_AFTER_MS = 30_000;
+const RTDS_STALL_AFTER_MS = 10_000;
 
 /**
  * Лестница задержек перед повторной попыткой переподписки (мс).
@@ -285,6 +304,42 @@ const RESUBSCRIBE_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000] as const;
  * одна строка в минуту: отказ остаётся видимым, лог не тонет.
  */
 const BROKEN_LOG_EVERY_NTH_FAILURE = 6;
+
+/**
+ * Сколько перезапусков подряд БЕЗ единого события означают, что виновата не
+ * подписка, а общее соединение SDK.
+ *
+ * @remarks
+ * Счётчик обнуляется первым же пришедшим событием, поэтому «подряд» здесь —
+ * это «фид переоткрыли, и он снова умер, так и не ожив». Один такой цикл
+ * бывает при обычном сетевом всплеске; два подряд означают, что мы
+ * переоткрываем поток поверх мёртвого сокета. Порог взят из legacy
+ * `RtdsWebSocketClient`, где эскалация звалась
+ * `subscription_stale_after_resubscribe` и срабатывала при `staleCount >= 2`.
+ */
+const ESCALATE_AFTER_RESTARTS = 2;
+
+/**
+ * Пауза между сбросами общего соединения (мс).
+ *
+ * @remarks
+ * Обязательна, потому что фиды умирают ПАЧКОЙ: в живом прогоне 2026-09-06
+ * замолчали все шесть разом. Без cooldown каждый из них потребовал бы своего
+ * сброса, и мы бы рвали соединение шесть раз подряд, мешая ему подняться.
+ * У legacy-клиента ту же роль играл cooldown resubscribe по топику.
+ */
+const CONNECTION_RESET_COOLDOWN_MS = 30_000;
+
+/**
+ * Сколько ждать `closeSubscriptions()` SDK при сбросе соединения (мс).
+ *
+ * @remarks
+ * Вызов неотменяем и на мёртвом транспорте может не разрешиться. Ждать его
+ * безусловно значит подвесить эскалацию и остановку источника; ограничение
+ * означает «мы перестали ЖДАТЬ», а не «сброс не состоялся» — teardown
+ * продолжается в фоне, подписки переоткрываются своим чередом.
+ */
+const CONNECTION_RESET_TIMEOUT_MS = 5_000;
 
 /**
  * Диагностика непрерывности одной надзираемой подписки.
@@ -311,6 +366,16 @@ export interface PolymarketSubscriptionHealth {
   readonly silentSinceMs: number;
   /** Сколько раз поток пришлось поднимать заново. */
   readonly restarts: number;
+  /**
+   * Молчание этой подписки считается отказом.
+   *
+   * @remarks
+   * Отличает RTDS-фиды (идут ~1 Гц, тишина = смерть) от CLOB (тихий стакан —
+   * норма). Потребитель ОБЯЗАН фильтровать по этому полю, когда считает
+   * «сколько времени самый тихий поток молчит»: без фильтра спокойный рынок
+   * выглядел бы как авария.
+   */
+  readonly watched: boolean;
   /** Поток сейчас недоступен: переподписка не удалась подряд достаточно раз. */
   readonly broken: boolean;
 }
@@ -321,6 +386,10 @@ interface SupervisionState {
   /** Старт текущего поколения потока — точка отсчёта тишины до первого события. */
   streamStartedAtMs: number;
   restarts: number;
+  /** Перезапуски подряд без единого события; обнуляется первым событием. */
+  consecutiveRestarts: number;
+  /** Молчание этой подписки — отказ (RTDS), а не норма (CLOB). */
+  watched: boolean;
   broken: boolean;
 }
 
@@ -373,6 +442,12 @@ export class PolymarketSource {
   private readonly _supervised = new Map<string, SupervisionState>();
   /** Будильники ожидающих backoff циклов: `close()`/`_fail()` не ждут ступень. */
   private readonly _releaseSignals = new Set<() => void>();
+  /** Идущий сброс общего соединения (single-flight). */
+  private _connectionReset: Promise<void> | undefined;
+  /** Когда общее соединение сбрасывали в последний раз (epoch ms). */
+  private _lastConnectionResetAtMs = 0;
+  /** Сколько раз сбрасывали общее соединение — для статуса. */
+  private _connectionResets = 0;
   /** Порог молчания RTDS-потока (мс). */
   private readonly _rtdsStallAfterMs: number;
   /** Лестница задержек переподписки (мс); последняя ступень повторяется. */
@@ -438,7 +513,15 @@ export class PolymarketSource {
       return this._discardLateSubscription('market', handle);
     }
     this._logger.info('Polymarket market subscription opened', { tokenIdCount: tokenIds.length });
-    return this._track('market', handle, (event) => this._toMarketMessage(event));
+    // Watchdog CLOB не получает — тихий стакан это норма. Но reopen получает:
+    // после connection-level reset стакан обязан подняться вместе со всеми,
+    // иначе сброс соединения лечил бы RTDS ценой потери CLOB.
+    return this._track(
+      supervisionKey('market', tokenIds),
+      handle,
+      (event) => this._toMarketMessage(event),
+      { reopen: async () => this._client.subscribe([{ topic: 'market', tokenIds }]) },
+    );
   }
 
   /**
@@ -648,16 +731,16 @@ export class PolymarketSource {
     subscription: string,
     handle: PolymarketSubscriptionHandle<TEvent>,
     toMessage: (event: TEvent) => PolymarketExternalMessage,
-    supervision?: SubscriptionSupervision<TEvent>,
+    supervision: SubscriptionSupervision<TEvent>,
   ): PolymarketOpenSubscription {
     const state: SupervisionState = {
       streamStartedAtMs: Date.now(),
       restarts: 0,
+      consecutiveRestarts: 0,
+      watched: supervision.stallAfterMs !== undefined,
       broken: false,
     };
-    if (supervision !== undefined) {
-      this._supervised.set(subscription, state);
-    }
+    this._supervised.set(subscription, state);
     /** Подписку закрыл ВЛАДЕЛЕЦ — переподписываться больше нельзя. */
     let releasedByOwner = false;
     /**
@@ -689,21 +772,16 @@ export class PolymarketSource {
         });
         this._handleCloseSignals.set(activeHandle, resolveClosed);
 
+        const stallAfterMs = supervision.stallAfterMs;
         const watchdog =
-          supervision === undefined
+          stallAfterMs === undefined
             ? undefined
-            : this._startStallWatchdog(subscription, activeHandle, state, supervision.stallAfterMs);
+            : this._startStallWatchdog(subscription, activeHandle, state, stallAfterMs);
         try {
           // Состояние надзора — ТОЛЬКО надзираемым: для `_pump` его наличие
           // и есть признак «этот поток восстановим». Передать его CLOB-у
           // значило бы молча превратить терминальный отказ в перезапуск.
-          await this._pump(
-            subscription,
-            activeHandle,
-            toMessage,
-            closed,
-            supervision === undefined ? undefined : state,
-          );
+          await this._pump(subscription, activeHandle, toMessage, closed, state);
         } finally {
           if (watchdog !== undefined) {
             clearInterval(watchdog);
@@ -716,21 +794,6 @@ export class PolymarketSource {
         if (abandoned()) {
           return;
         }
-        if (supervision === undefined) {
-          // Ненадзираемая (CLOB) подписка кончилась САМА. Watchdog ей не
-          // нужен — тихий стакан это норма, — но штатное завершение
-          // ИТЕРАТОРА тишиной не является: физическая подписка исчезла, а
-          // контроллер продолжает считать рынок ACTIVE. Это тот же класс
-          // бесшумно неполного датасета, что нашёл прогон 2026-09-06, только
-          // на CLOB. Переподписываться здесь нельзя (владение рынками — не
-          // забота source), поэтому единственный честный исход — терминальный
-          // отказ: он поднимает hasFailed, и контур пересобирает подписки.
-          this._logger.error('Polymarket subscription ended unexpectedly, failing source', {
-            subscription,
-          });
-          await this._fail();
-          return;
-        }
         // Старое поколение обязано быть закрыто ДО открытия нового: путь
         // «итератор бросил исключение» приходит сюда с ЖИВЫМ handle, и без
         // явного close на каждой сетевой ошибке оставался бы висящий
@@ -739,6 +802,18 @@ export class PolymarketSource {
         await this._closeHandle(subscription, activeHandle);
         if (abandoned()) {
           return;
+        }
+        // Второй уровень: поток умирает СНОВА, не успев ожить. Значит дело не
+        // в подписке, а в общем соединении SDK — лечить надо его, иначе мы
+        // бесконечно переоткрываем фид поверх мёртвого сокета. Ровно эта
+        // эскалация была в legacy `RtdsWebSocketClient`
+        // (`subscription_stale_after_resubscribe`).
+        state.consecutiveRestarts += 1;
+        if (state.consecutiveRestarts >= ESCALATE_AFTER_RESTARTS) {
+          await this._resetSharedConnection(subscription, state.consecutiveRestarts);
+          if (abandoned()) {
+            return;
+          }
         }
         const reopened = await this._reopenSupervised(
           subscription,
@@ -781,6 +856,21 @@ export class PolymarketSource {
   }
 
   /**
+   * Сколько раз пришлось сбрасывать общее realtime-соединение SDK.
+   *
+   * @returns Счётчик сбросов за жизнь источника
+   *
+   * @remarks
+   * Растущее значение означает, что первый уровень (переоткрытие подписки)
+   * систематически не помогает, то есть проблема в транспорте SDK, а не в
+   * отдельных фидах. Ноль при ненулевых `restarts` — наоборот, признак, что
+   * обычной переподписки хватает.
+   */
+  public get connectionResets(): number {
+    return this._connectionResets;
+  }
+
+  /**
    * Возвращает диагностику непрерывности надзираемых подписок.
    *
    * @returns Снимок по каждой живой RTDS-подписке
@@ -811,6 +901,7 @@ export class PolymarketSource {
           ...(state.lastEventAtMs !== undefined ? { lastEventAtMs: state.lastEventAtMs } : {}),
           silentSinceMs: state.lastEventAtMs ?? state.streamStartedAtMs,
           restarts: state.restarts,
+          watched: state.watched,
           broken: state.broken,
         }),
       )
@@ -962,6 +1053,113 @@ export class PolymarketSource {
   }
 
   /**
+   * Сбрасывает ОБЩЕЕ realtime-соединение SDK и даёт всем подпискам подняться.
+   *
+   * @param subscription - Фид, чья повторная смерть вызвала эскалацию
+   * @param consecutiveRestarts - Сколько перезапусков подряд он пережил
+   *
+   * @remarks
+   * ### Зачем второй уровень
+   *
+   * Первый уровень переоткрывает одну подписку. Он бессилен, когда мёртв сам
+   * сокет: мы будем бесконечно вешать новый фид поверх нерабочего соединения.
+   * В живом прогоне 2026-09-06 замолчали ВСЕ ШЕСТЬ RTDS-фидов одновременно —
+   * это и есть подпись общего соединения, а не шести независимых потоков.
+   *
+   * `closeSubscriptions()` по контракту SDK «ends active subscription
+   * iterators and closes shared websocket connections... does not affect
+   * authentication or other client state», то есть клиент после него
+   * переиспользуем. Итераторы всех подписок завершаются, каждый надзорный
+   * цикл видит конец потока и поднимает СВОЮ подписку из собственного
+   * замыкания `reopen`. Отдельный реестр не нужен: множество живых циклов и
+   * есть кэш подписок.
+   *
+   * ### Почему single-flight и cooldown
+   *
+   * Фиды умирают пачкой, и без защиты каждый из шести потребовал бы своего
+   * сброса — мы бы рвали соединение шесть раз подряд, не давая ему встать.
+   * Идущий сброс переиспользуется, а следующий возможен не раньше
+   * {@link CONNECTION_RESET_COOLDOWN_MS}.
+   *
+   * Ошибка `closeSubscriptions()` не терминальна: соединение и так считается
+   * мёртвым, а переоткрытие подписок идёт своим чередом.
+   *
+   * @example
+   * ```typescript
+   * // фид переоткрыт и умер снова, не приняв ни одного события
+   * await this._resetSharedConnection('prices.crypto.binance\nbtcusdt', 2);
+   * ```
+   */
+  private async _resetSharedConnection(
+    subscription: string,
+    consecutiveRestarts: number,
+  ): Promise<void> {
+    const inFlight = this._connectionReset;
+    if (inFlight !== undefined) {
+      // Ждём ОГРАНИЧЕННЫЙ промис соседа, а не сам vendor-вызов: он снимается
+      // и по таймауту, поэтому зависший сброс не держит остальные циклы.
+      await inFlight;
+      return;
+    }
+    const sinceLastMs = Date.now() - this._lastConnectionResetAtMs;
+    if (sinceLastMs < CONNECTION_RESET_COOLDOWN_MS) {
+      this._logger.debug('Shared realtime reset skipped, still in cooldown', {
+        subscription,
+        sinceLastMs,
+        cooldownMs: CONNECTION_RESET_COOLDOWN_MS,
+      });
+      return;
+    }
+    this._connectionResets += 1;
+    this._logger.error('Resetting shared realtime connection after repeated feed death', {
+      subscription,
+      consecutiveRestarts,
+      connectionResets: this._connectionResets,
+    });
+    // `closeSubscriptions()` SDK неотменяем и может не разрешиться вовсе.
+    // Ограничение ставится на ВНУТРЕННЮЮ операцию, а не на ожидание снаружи:
+    // тогда сам `reset` завершается при любом исходе, его `.finally()`
+    // отрабатывает и снимает single-flight. Иначе зависший vendor-вызов
+    // оставил бы `_connectionReset` навсегда, и КАЖДАЯ следующая эскалация
+    // встала бы на нём — вместе с `close()`, который ждёт pump-циклы.
+    const reset = (async (): Promise<void> => {
+      const closing = (async (): Promise<void> => {
+        try {
+          await this._client.closeSubscriptions();
+        } catch (error) {
+          this._logger.warn('Shared realtime reset failed; subscriptions will retry anyway', {
+            subscription,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const bounded = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), CONNECTION_RESET_TIMEOUT_MS);
+        timer.unref?.();
+      });
+      const outcome = await Promise.race([closing.then(() => 'closed' as const), bounded]);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      // Cooldown ставится при ЛЮБОМ исходе: сброс либо случился, либо мы
+      // перестали его ждать — в обоих случаях рвать соединение снова прямо
+      // сейчас бессмысленно.
+      this._lastConnectionResetAtMs = Date.now();
+      if (outcome === 'timeout') {
+        this._logger.warn('Shared realtime reset did not complete in time (teardown continues)', {
+          subscription,
+          timeoutMs: CONNECTION_RESET_TIMEOUT_MS,
+        });
+      }
+    })().finally(() => {
+      this._connectionReset = undefined;
+    });
+    this._connectionReset = reset;
+    await reset;
+  }
+
+  /**
    * Логирует неудачную переподписку и переводит фид в `broken`.
    *
    * @param subscription - Identity фида
@@ -1057,6 +1255,8 @@ export class PolymarketSource {
         // мёртвый поток.
         if (supervisionState !== undefined) {
           supervisionState.lastEventAtMs = Date.now();
+          // Поток ожил — цепочка «умер сразу после перезапуска» прервана.
+          supervisionState.consecutiveRestarts = 0;
         }
         const message = toMessage(event);
         const publishPromise = this._bus.publish(message);
@@ -1094,23 +1294,14 @@ export class PolymarketSource {
         });
         return;
       }
-      if (supervisionState !== undefined) {
-        // Надзираемый фид восстановим: падение итератора — такой же обрыв
-        // транспорта, как штатное завершение и тишина, и лечится тем же
-        // путём. Ронять весь source значило бы закрыть CLOB и остальные
-        // RTDS-потоки из-за одного упавшего прайс-фида — цена несоразмерна
-        // потере, а восстановление у нас есть.
-        this._logger.warn('Polymarket subscription stream failed, restarting', {
-          subscription,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-      this._logger.error('Polymarket subscription stream failed, failing source', {
+      // Обрыв транспорта восстановим у ЛЮБОЙ подписки: у каждой есть spec в
+      // замыкании reopen, поэтому падение итератора лечится тем же путём, что
+      // штатное завершение и тишина. Терминальный отказ остаётся только за
+      // тем, что восстановить нельзя, — отказом шины.
+      this._logger.warn('Polymarket subscription stream failed, restarting', {
         subscription,
         error: error instanceof Error ? error.message : String(error),
       });
-      await this._fail();
     }
   }
 

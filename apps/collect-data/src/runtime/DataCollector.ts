@@ -142,7 +142,7 @@ export type CollectorCexStorage = Pick<CexWindowRecorder, 'cleanup' | 'getStats'
 /** Порт общего PM-source (закрытие + health-сигнал). */
 export type CollectorPolymarketSource = Pick<
   PolymarketSource,
-  'close' | 'hasFailed' | 'isClosed' | 'getSubscriptionHealth'
+  'close' | 'hasFailed' | 'isClosed' | 'getSubscriptionHealth' | 'connectionResets'
 >;
 
 /** Порт официального SDK-клиента в части ЕГО собственных ресурсов. */
@@ -239,6 +239,8 @@ export interface DataCollectorStatus {
     readonly hasFailed: boolean;
     readonly isClosed: boolean;
     readonly feeds: readonly PolymarketSubscriptionHealth[];
+    /** Сколько раз сбрасывалось общее realtime-соединение SDK. */
+    readonly connectionResets: number;
   };
 }
 
@@ -262,6 +264,8 @@ interface ShutdownStep {
 export class DataCollector {
   private readonly _components: DataCollectorComponents;
   private readonly _control: ControlRuntimeConfig;
+  /** Бюджет остановки (мс) — см. {@link ControlRuntimeConfig.shutdownDeadlineMs}. */
+  private readonly _shutdownDeadlineMs: number;
   private readonly _clock: IClock;
   private readonly _logger: ILogger;
 
@@ -280,6 +284,7 @@ export class DataCollector {
   constructor(deps: DataCollectorDependencies) {
     this._components = deps.components;
     this._control = deps.control;
+    this._shutdownDeadlineMs = deps.control.shutdownDeadlineMs;
     this._clock = deps.clock;
     this._logger = deps.logger.child({ component: 'DataCollector' });
   }
@@ -409,6 +414,7 @@ export class DataCollector {
         hasFailed: this._components.polymarketSource.hasFailed,
         isClosed: this._components.polymarketSource.isClosed,
         feeds: this._components.polymarketSource.getSubscriptionHealth(),
+        connectionResets: this._components.polymarketSource.connectionResets,
       },
     };
   }
@@ -558,9 +564,26 @@ export class DataCollector {
       clearTimeout(this._tickTimer);
       this._tickTimer = null;
     }
-    while (this._activeTicks.size > 0) {
-      await Promise.allSettled([...this._activeTicks]);
-    }
+    // Бюджет включается ДО ожидания тиков: зависший control-тик — такой же
+    // повод не ждать, как зависший шаг лестницы, и раньше он обходил дедлайн
+    // с чёрного хода (таймер создавался уже после этого цикла).
+    const startedAtMs = Date.now();
+    let expired = false;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<'deadline'>((resolve) => {
+      deadlineTimer = setTimeout(() => {
+        expired = true;
+        resolve('deadline');
+      }, this._shutdownDeadlineMs);
+      deadlineTimer.unref?.();
+    });
+
+    const drainTicks = (async (): Promise<void> => {
+      while (this._activeTicks.size > 0) {
+        await Promise.allSettled([...this._activeTicks]);
+      }
+    })();
+    await Promise.race([drainTicks, deadline]);
 
     const steps: ShutdownStep[] = [
       // 1. Доводим до конца УЖЕ начатые записи. Истёкшие сессии входят в
@@ -571,7 +594,21 @@ export class DataCollector {
         name: 'lifecycle.awaitAllSettlementCaptures',
         run: async () => this._components.lifecycle.awaitAllSettlementCaptures(),
       },
-      { name: 'finalizer.drain', run: async () => this._components.finalizer.drain() },
+      // ДРЕНАЖА ЗДЕСЬ НЕТ — сознательно. `finalizer.drain()` крутится, пока
+      // `_pending` не опустеет, а `_pending` во время остановки РАСТЁТ: шаг 3
+      // ниже (`lifecycle.close`) идёт позже, поэтому рынки, не истёкшие к
+      // моменту сигнала, продолжают жить по таймерам, доходят до экспирации
+      // уже во время остановки и встают в ту же очередь. Дренаж догоняет
+      // движущуюся цель: замер run-02 — 26 минут, теоретический потолок
+      // ~75 (дожитие 15-минутного рынка + `enrichmentMaxWaitMs`).
+      //
+      // Остановка обязана быть быстрой и предсказуемой, как выдернутое
+      // питание: при выходе за `max_memory_restart` или при зависании ждать
+      // дренажа абсурдно — нужен немедленный рестарт. Всё, что не успело
+      // стать архивом, теряется осознанно: незавершённые датасеты удаляет
+      // `lifecycle.close`, а остатки после жёсткого убийства — startup
+      // cleanup следующего запуска. Claim-ы живут в памяти процесса, поэтому
+      // залипших владельцев после смерти не остаётся.
       // 2. Финализатор закрывается: официальный итог → архив, иначе
       // deterministic fallback, иначе discard (собственная policy пакета).
       { name: 'finalizer.close', run: async () => this._components.finalizer.close() },
@@ -610,12 +647,35 @@ export class DataCollector {
       },
     ];
 
-    for (const step of steps) {
-      await this._runStep(step);
+    const ladder = (async () => {
+      for (const step of steps) {
+        // Истёкший бюджет останавливает ЗАПУСК следующих шагов: продолжать
+        // лестницу после того, как мы перестали её ждать, — чистая работа
+        // в пустоту, а её шаги ходят в сеть.
+        if (expired) {
+          return;
+        }
+        await this._runStep(step);
+      }
+    })();
+    const outcome = await Promise.race([ladder.then(() => 'done' as const), deadline]);
+    if (deadlineTimer !== undefined) {
+      clearTimeout(deadlineTimer);
+    }
+    if (outcome === 'deadline') {
+      // Ждать дальше нельзя: остановка обязана укладываться в бюджет
+      // супервизора. Незакрытые ресурсы освободит выход процесса, а
+      // недописанные файлы — startup cleanup следующего запуска.
+      this._logger.error('Shutdown deadline exceeded, abandoning remaining steps', {
+        deadlineMs: this._shutdownDeadlineMs,
+      });
     }
 
     this._state = 'stopped';
-    this._logger.info('Data collector stopped');
+    this._logger.info('Data collector stopped', {
+      elapsedMs: Date.now() - startedAtMs,
+      completedLadder: outcome === 'done',
+    });
   }
 
   /** Выполняет шаг остановки, поглощая и логируя его отказ. */

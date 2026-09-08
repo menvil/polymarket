@@ -113,11 +113,14 @@ const stopped = installShutdownHandlers({ target: collector, bootstrap, logger }
  * ```
  */
 function rtdsSilenceSeconds(feeds: readonly PolymarketSubscriptionHealth[]): number | null {
-  if (feeds.length === 0) {
+  // ТОЛЬКО наблюдаемые: тихий CLOB — норма, и включать его в этот агрегат
+  // значило бы выдавать спокойный рынок за аварию.
+  const watched = feeds.filter((feed) => feed.watched);
+  if (watched.length === 0) {
     return null;
   }
   const now = Date.now();
-  return Math.max(...feeds.map((feed) => Math.round((now - feed.silentSinceMs) / 1_000)));
+  return Math.max(...watched.map((feed) => Math.round((now - feed.silentSinceMs) / 1_000)));
 }
 
 // Периодический operational-снимок: одна строка вместо набора таймеров.
@@ -132,8 +135,11 @@ const statusInterval = setInterval(() => {
     // ЖИВОСТЬ, а не желаемое состояние: rtdsFeeds — ref-count спроса, он
     // держался равным 6 всё то время, пока RTDS молчал (qualification run-01).
     pmRtdsSilentSec: rtdsSilenceSeconds(status.polymarketSource.feeds),
-    pmRtdsRestarts: status.polymarketSource.feeds.reduce((sum, f) => sum + f.restarts, 0),
-    pmRtdsBroken: status.polymarketSource.feeds.filter((f) => f.broken).length,
+    // Перезапуски и broken считаем по ВСЕМ подпискам, включая CLOB: тишина
+    // стакана законна, а вот его смерть — нет.
+    pmFeedRestarts: status.polymarketSource.feeds.reduce((sum, f) => sum + f.restarts, 0),
+    pmFeedBroken: status.polymarketSource.feeds.filter((f) => f.broken).length,
+    pmConnResets: status.polymarketSource.connectionResets,
     admitted: status.gate.admitted,
     ignoredUnknown: status.gate.ignoredUnknownMarket,
     ignoredByPolicy: status.gate.ignoredByPolicy,

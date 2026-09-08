@@ -159,7 +159,7 @@ describe('граница датасета: что разрешено после 
   it('CLOB после истечения → FAIL', () => {
     const violations = violationsFor([...healthyLines(), bookLine(EXPIRES_AT_MS + 1_000, 4)]);
     expect(violations).toContain(
-      '1 POLYMARKET_MARKET observation(s) recorded after the market expiry boundary',
+      '1 POLYMARKET_MARKET observation(s) recorded more than 500ms after the market expiry boundary',
     );
   });
 
@@ -169,7 +169,7 @@ describe('граница датасета: что разрешено после 
       spotLine('POLYMARKET_CRYPTO_BINANCE', EXPIRES_AT_MS + 1_000, 4),
     ]);
     expect(violations).toContain(
-      '1 POLYMARKET_CRYPTO_BINANCE observation(s) recorded after the market expiry boundary',
+      '1 POLYMARKET_CRYPTO_BINANCE observation(s) recorded more than 500ms after the market expiry boundary',
     );
   });
 
@@ -179,7 +179,7 @@ describe('граница датасета: что разрешено после 
       spotLine('POLYMARKET_CRYPTO_CHAINLINK', EXPIRES_AT_MS + 1_000, 4),
     ]);
     expect(violations).toContain(
-      '1 POLYMARKET_CRYPTO_CHAINLINK observation(s) recorded after the market expiry boundary',
+      '1 POLYMARKET_CRYPTO_CHAINLINK observation(s) recorded more than 500ms after the market expiry boundary',
     );
   });
 
@@ -204,8 +204,8 @@ describe('граница датасета: что разрешено после 
       spotLine('POLYMARKET_CRYPTO_BINANCE', EXPIRES_AT_MS + 1_200, 6),
     ]);
     expect(violations).toEqual([
-      '2 POLYMARKET_CRYPTO_BINANCE observation(s) recorded after the market expiry boundary',
-      '1 POLYMARKET_MARKET observation(s) recorded after the market expiry boundary',
+      '2 POLYMARKET_CRYPTO_BINANCE observation(s) recorded more than 500ms after the market expiry boundary',
+      '1 POLYMARKET_MARKET observation(s) recorded more than 500ms after the market expiry boundary',
     ]);
   });
 });
@@ -318,5 +318,32 @@ describe('обязательное содержимое датасета', () =>
     expect(violations).toContain(
       'observation sequence is not increasing within run run-1: 5 → 5',
     );
+  });
+});
+
+describe('валидация допусков', () => {
+  // Корень намеренно НЕ создаётся: проверка допусков обязана срабатывать
+  // раньше проверки существования каталога — иначе опечатка в опции
+  // маскировалась бы ошибкой пути.
+  const root = '/nonexistent-dataset-root';
+
+  it('невалидный boundaryJitterMs отвергается на границе API', () => {
+    // Без проверки NaN уехал бы в `atMs > expiresAtMs + jitter`, где сделал бы
+    // КАЖДОЕ сравнение ложным и молча отключил всю проверку границы.
+    expect(() => validateDatasetRoot(root, { boundaryJitterMs: Number.NaN })).toThrow(RangeError);
+    expect(() => validateDatasetRoot(root, { boundaryJitterMs: Number.POSITIVE_INFINITY })).toThrow(
+      RangeError,
+    );
+    expect(() => validateDatasetRoot(root, { boundaryJitterMs: -1 })).toThrow(RangeError);
+  });
+
+  it('невалидный settlementGraceMs отвергается так же', () => {
+    expect(() => validateDatasetRoot(root, { settlementGraceMs: Number.NaN })).toThrow(RangeError);
+  });
+
+  it('допуск по умолчанию применяется, когда опция опущена', () => {
+    // Дефолт не должен падать на проверке допусков; до несуществующего
+    // каталога дело дойдёт дальше и это будет ДРУГАЯ ошибка.
+    expect(() => validateDatasetRoot(root, {})).toThrow(/Dataset root does not exist/);
   });
 });

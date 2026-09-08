@@ -155,6 +155,31 @@ export class FakePolymarketClient implements PolymarketSubscribeClient {
   /** Если задан — subscribe разрешается только после этого promise (имитация медленного SDK). */
   public subscribeHold: Promise<void> | undefined;
 
+  /** Сколько раз сбрасывали общее соединение. */
+  public closeSubscriptionsCalls = 0;
+
+  /**
+   * Сбрасывает «общее соединение»: завершает итераторы ВСЕХ выданных handles.
+   *
+   * @remarks
+   * Повторяет контракт SDK — *«ends active subscription iterators and closes
+   * shared websocket connections»*. Итераторы завершаются как со стороны
+   * СЕРВЕРА (`closeCalls` не растёт): для надзорных циклов это неотличимо от
+   * обрыва, и именно так они и должны это воспринимать — переоткрыть себя.
+   */
+  /** Барьер, вешающий closeSubscriptions навсегда. */
+  public holdCloseSubscriptions = false;
+
+  public closeSubscriptions = async (): Promise<void> => {
+    this.closeSubscriptionsCalls += 1;
+    if (this.holdCloseSubscriptions) {
+      await new Promise<void>(() => undefined);
+    }
+    for (const handle of [...this.marketHandles, ...this.cryptoHandles, ...this.twapHandles]) {
+      handle.endFromServer();
+    }
+  };
+
   public subscribe = (async (
     subscriptions: readonly RecordedSubscriptionSpec[],
   ): Promise<unknown> => {

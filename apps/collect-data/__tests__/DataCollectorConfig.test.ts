@@ -43,6 +43,7 @@ function baseConfig(overrides: Partial<CollectorConfig> = {}): CollectorConfig {
     enrichmentRetryMs: undefined,
     enrichmentMaxWaitMs: undefined,
     controlTickMs: 5_000,
+    shutdownDeadlineMs: 10_000,
     ...overrides,
   };
 }
@@ -327,5 +328,69 @@ describe('lifecycle-тайминги окружения: неверное зна
   it('settlementGraceMs = 0 принимается: рынок без settlement-фида не ждёт', () => {
     process.env['COLLECTOR_SETTLEMENT_GRACE_MS'] = '0';
     expect(loadConfig().settlementGraceMs).toBe(0);
+  });
+});
+
+describe('COLLECTOR_SHUTDOWN_DEADLINE_MS', () => {
+  const KEY = 'COLLECTOR_SHUTDOWN_DEADLINE_MS';
+
+  afterEach(() => {
+    delete process.env[KEY];
+    delete process.env['COLLECTOR_KILL_TIMEOUT_MS'];
+  });
+
+  it('не задано → дефолт 30 с доезжает до рантайма', () => {
+    // Замер run-04: полная лестница 15.1 с. Тридцать — с запасом на рост
+    // масштаба, но строго меньше kill_timeout (60 с).
+    expect(toDataCollectorConfig(loadConfig()).control.shutdownDeadlineMs).toBe(30_000);
+  });
+
+  it('валидное значение принимается', () => {
+    process.env[KEY] = '20000';
+    expect(toDataCollectorConfig(loadConfig()).control.shutdownDeadlineMs).toBe(20_000);
+  });
+
+  it('Infinity ОТВЕРГАЕТСЯ, а не проходит как «больше нуля»', () => {
+    // `Infinity > 0` истинно, поэтому наивная проверка пропустила бы его — и
+    // бюджет остановки не сработал бы НИКОГДА: механизм ограничения молча
+    // выключился бы вместо того, чтобы отказать на старте.
+    process.env[KEY] = 'Infinity';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
+  });
+
+  it('ноль отвергается: остановка прервалась бы до первого шага', () => {
+    process.env[KEY] = '0';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
+  });
+
+  it('бюджет НЕ МЕНЬШЕ таймаута супервизора отвергается', () => {
+    // Иначе SIGKILL приходит посреди лестницы, и механизм упорядоченной
+    // остановки выключается молча. Проверяется ОТНОШЕНИЕ, а не абсолютное
+    // число: зашивать таймаут супервизора в код нельзя.
+    process.env['COLLECTOR_KILL_TIMEOUT_MS'] = '60000';
+    process.env[KEY] = '60000';
+    expect(() => loadConfig()).toThrow(/must be less than/);
+    process.env[KEY] = '90000';
+    expect(() => loadConfig()).toThrow(/must be less than/);
+  });
+
+  it('бюджет меньше таймаута супервизора принимается', () => {
+    process.env['COLLECTOR_KILL_TIMEOUT_MS'] = '60000';
+    process.env[KEY] = '45000';
+    expect(toDataCollectorConfig(loadConfig()).control.shutdownDeadlineMs).toBe(45_000);
+  });
+
+  it('без таймаута супервизора сверять не с чем — проверка пропускается', () => {
+    // Локальный запуск без pm2: переменной нет, бюджет принимается как есть.
+    delete process.env['COLLECTOR_KILL_TIMEOUT_MS'];
+    process.env[KEY] = '90000';
+    expect(toDataCollectorConfig(loadConfig()).control.shutdownDeadlineMs).toBe(90_000);
+  });
+
+  it('отрицательное и нечисловое отвергаются', () => {
+    process.env[KEY] = '-1';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
+    process.env[KEY] = 'abc';
+    expect(() => loadConfig()).toThrow(/finite number of milliseconds/);
   });
 });

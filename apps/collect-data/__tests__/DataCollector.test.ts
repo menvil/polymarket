@@ -10,7 +10,12 @@ import { DataCollector } from '../src/runtime/DataCollector.js';
 import type { ControlRuntimeConfig } from '../src/runtime/DataCollectorConfig.js';
 import { CapturingLogger, FakeClock, makeFakeContour } from './helpers/fakes.js';
 
-const CONTROL: ControlRuntimeConfig = { acquireLimit: 20, tickMs: 5_000 };
+const CONTROL: ControlRuntimeConfig = {
+  acquireLimit: 20,
+  tickMs: 5_000,
+  // Короткий бюджет: тест на зависший шаг иначе стоил бы 10 секунд.
+  shutdownDeadlineMs: 500,
+};
 
 function makeCollector(options: { readonly cex?: boolean } = {}) {
   const contour = makeFakeContour(options);
@@ -182,7 +187,6 @@ describe('DataCollector.close() — лестница остановки', () => 
       // Сначала доводятся до конца УЖЕ начатые записи…
       'lifecycle.runOnce',
       'lifecycle.awaitAllSettlementCaptures',
-      'finalizer.drain',
       'finalizer.close',
       'lifecycle.close',
       // …и только потом снимаются физические подписки.
@@ -197,6 +201,35 @@ describe('DataCollector.close() — лестница остановки', () => 
     for (let i = 0; i < order.length - 1; i++) {
       expect(contour.log.orderOf(order[i]!)).toBeLessThan(contour.log.orderOf(order[i + 1]!));
     }
+    expect(collector.state).toBe('stopped');
+  });
+
+  it('НЕ дренирует финализатор: остановка не ждёт дожития рынков', async () => {
+    // `drain()` крутится, пока `_pending` не опустеет, а во время остановки
+    // он РАСТЁТ: активные рынки доходят до экспирации уже после сигнала и
+    // встают в ту же очередь. Замер run-02 — 26 минут при `kill_timeout`
+    // 180 с. Остановка обязана быть быстрой, как выдернутое питание;
+    // недоархивированное теряется осознанно и подметается startup cleanup.
+    const { contour, collector } = makeCollector();
+    await collector.start();
+    await collector.close();
+
+    expect(contour.log.calls).not.toContain('finalizer.drain');
+    // Финализатор при этом ЗАКРЫВАЕТСЯ — иначе остались бы его таймеры.
+    expect(contour.log.calls).toContain('finalizer.close');
+  });
+
+  it('укладывается в бюджет остановки, даже если шаг завис', async () => {
+    // Зависший vendor не имеет права задержать остановку: супервизор
+    // перезапускает процесс и по выходу за память, и по зависанию.
+    const { contour, collector } = makeCollector();
+    await collector.start();
+    contour.polymarketSource.holdClose();
+
+    const startedAt = Date.now();
+    await collector.close();
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
     expect(collector.state).toBe('stopped');
   });
 
@@ -305,5 +338,44 @@ describe('DataCollector.drain() — wind-down финализаций без ос
     expect(contour.lifecycle.closeCalls).toBe(0);
 
     await collector.close();
+  });
+});
+
+describe('бюджет остановки покрывает и зависший control-тик', () => {
+  it('close() не ждёт вечно, если тик застрял до начала лестницы', async () => {
+    // Ожидание `_activeTicks` идёт ПЕРЕД лестницей. Пока таймер бюджета
+    // создавался после него, зависший тик обходил весь механизм с чёрного
+    // хода: остановка вставала до того, как дедлайн вообще начинал считать.
+    const { contour, collector } = makeCollector();
+    await collector.start();
+    contour.polymarketControlRuntime.hold = true;
+    const stuck = collector.tick();
+
+    const startedAt = Date.now();
+    await collector.close();
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(collector.state).toBe('stopped');
+    void stuck.catch(() => undefined);
+  });
+});
+
+describe('истёкший бюджет прекращает лестницу', () => {
+  it('шаг, отпущенный ПОСЛЕ дедлайна, не тянет за собой остальные', async () => {
+    // Продолжать лестницу после того, как мы перестали её ждать, — работа в
+    // пустоту, и её шаги ходят в сеть.
+    const { contour, collector } = makeCollector();
+    await collector.start();
+    contour.polymarketSource.delayCloseMs = 900; // бюджет 500 мс
+
+    await collector.close();
+    // close() вернулся по дедлайну, но задержанный шаг ещё выполняется —
+    // ждём дольше него, иначе ассерт проверял бы «ещё не успело», а не
+    // «прекращено».
+    await new Promise<void>((resolve) => setTimeout(resolve, 700));
+
+    expect(contour.log.calls).toContain('polymarketSource.close');
+    expect(contour.log.calls).not.toContain('bus.close');
+    expect(collector.state).toBe('stopped');
   });
 });

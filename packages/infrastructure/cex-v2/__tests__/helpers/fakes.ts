@@ -149,8 +149,31 @@ export class FakeExchangeInstance implements CcxtProExchangeInstance {
   /** Хронология vendor-вызовов для ассертов mode-selection/routing. */
   public readonly vendorCalls: RecordedVendorCall[] = [];
   public closeCalls = 0;
+  /**
+   * Мутабельные кэши наблюдений, как у ccxt.pro.
+   *
+   * @remarks
+   * Реальный `ArrayCache` наследует `Array`, поэтому здесь это тоже массивы:
+   * освобождение обязано работать через `.length = 0`, а не через замену
+   * ссылки. Наполняются тестом — vendor-петли фейка их не используют.
+   */
+  public readonly trades: Record<string, unknown[]> = {};
+  public readonly orderbooks: Record<string, unknown[]> = {};
   /** Барьер, задерживающий ЗАВЕРШЕНИЕ close() (pending watch уже отклонены). */
   private _closeGate: Promise<void> | null = null;
+
+  /** Наполняет кэши vendor-а, имитируя накопленные наблюдения. */
+  public fillVendorCaches(symbol: string, entries = 100): void {
+    this.trades[symbol] = Array.from({ length: entries }, (_, i) => ({ id: i }));
+    this.orderbooks[symbol] = Array.from({ length: entries }, (_, i) => ({ level: i }));
+  }
+
+  /** Сколько наблюдений сейчас удерживают кэши инстанса. */
+  public get cachedEntries(): number {
+    const count = (map: Record<string, unknown[]>): number =>
+      Object.values(map).reduce((sum, arr) => sum + arr.length, 0);
+    return count(this.trades) + count(this.orderbooks);
+  }
 
   /**
    * Задерживает завершение `close()` до вызова возвращённой функции.

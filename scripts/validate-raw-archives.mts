@@ -138,6 +138,95 @@ const POST_EXPIRY_FORBIDDEN_TYPES: readonly string[] = [
 const DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS = 15_000;
 
 /**
+ * Допуск на джиттер границы датасета для запрещённых после экспирации типов.
+ *
+ * @remarks
+ * Границу датасета держит `setTimeout` на `expiresAt`. Node гарантирует «не
+ * раньше», но никогда «ровно»: колбэк ждёт своей очереди в event loop, а тот
+ * в момент экспирации занят пиковой записью. Поэтому граница ВСЕГДА
+ * опаздывает, и наблюдения, пришедшие в это окно, успевают записаться.
+ *
+ * Величина взята из замера, а не из осторожности. run-02, 48 архивов:
+ * перехлёст CLOB 13–232 мс, причём БЕЗ хвоста — p90, p99 и максимум лежат в
+ * пределах 7 мс друг от друга. 500 мс — это двукратный запас над
+ * наблюдённым максимумом.
+ *
+ * Допуск сознательно НЕ делает правило беззубым: джиттер сверху ничем не
+ * ограничен, и опоздание в секунды означало бы, что таймерный механизм
+ * действительно поехал (GC-пауза, перегруз event loop, ошибка в lifecycle).
+ * Такое обязано оставаться нарушением — именно ради этого допуск конечен, а
+ * не отключает проверку.
+ *
+ * @see docs/guides/collector-qualification-run-01.md — первое обнаружение
+ */
+const DEFAULT_BOUNDARY_JITTER_ALLOWANCE_MS = 500;
+
+/** Маркер невалидного флага: отличает «ошибку» от «не задано». */
+const INVALID_FLAG = Symbol('invalid-flag');
+
+/**
+ * Разбирает числовой флаг в миллисекундах.
+ *
+ * @param args - Аргументы после корня датасета
+ * @param flag - Имя флага, например `--grace-ms`
+ * @returns Значение, `undefined` (флаг не задан) либо {@link INVALID_FLAG}
+ *
+ * @remarks
+ * Отдельная функция нужна ради одного случая, который оба прежних разбора
+ * пропускали одинаково: **флаг последним аргументом**. Тогда значение
+ * оказывалось `undefined`, и это было неотличимо от «флаг не передан», —
+ * скрипт молча применял дефолт вместо того, чтобы сообщить об опечатке.
+ *
+ * @example
+ * ```typescript
+ * parseMsFlag(['--grace-ms'], '--grace-ms');      // INVALID_FLAG
+ * parseMsFlag(['--grace-ms', '10'], '--grace-ms'); // 10
+ * parseMsFlag([], '--grace-ms');                   // undefined
+ * ```
+ */
+function parseMsFlag(
+  args: readonly string[],
+  flag: string,
+): number | undefined | typeof INVALID_FLAG {
+  const index = args.indexOf(flag);
+  if (index === -1) {
+    return undefined;
+  }
+  const raw = args[index + 1];
+  if (raw === undefined || raw.startsWith('--')) {
+    process.stderr.write(`${flag} requires a value\n`);
+    return INVALID_FLAG;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    process.stderr.write(`${flag} must be a finite number >= 0, got ${raw}\n`);
+    return INVALID_FLAG;
+  }
+  return value;
+}
+
+/**
+ * Проверяет допуск, пришедший через API (не через CLI).
+ *
+ * @param value - Значение из опций
+ * @param name - Имя опции для сообщения
+ * @returns Само значение
+ * @throws {RangeError} Если значение не конечное или отрицательное
+ *
+ * @remarks
+ * CLI свои значения уже проверил, но `validateDatasetRoot` — публичная
+ * функция, и вызов из кода мог бы протащить `NaN` прямо в сравнение
+ * `atMs > expiresAtMs + jitter`, где оно молча сделало бы КАЖДОЕ сравнение
+ * ложным и отключило проверку целиком. Отказ громче тихой поломки.
+ */
+function assertAllowanceMs(value: number, name: string): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${name} must be a finite number >= 0, got ${String(value)}`);
+  }
+  return value;
+}
+
+/**
  * Приводит значение к объекту-словарю, отвергая `null` и массивы.
  *
  * @param value - Разобранное JSON-значение
@@ -275,6 +364,7 @@ function validatePolymarketArchive(
   lines: string[],
   completed: boolean,
   settlementGraceMs: number,
+  boundaryJitterMs: number,
 ): FileReport {
   const violations: string[] = [];
   const warnings: string[] = [];
@@ -353,7 +443,11 @@ function validatePolymarketArchive(
       }
       const type = observation.type ?? 'unknown';
       if (POST_EXPIRY_FORBIDDEN_TYPES.includes(type)) {
-        lateByType.set(type, (lateByType.get(type) ?? 0) + 1);
+        // Джиттер таймера границы — не логическая ошибка, а свойство
+        // event loop; нарушением считается только выход за допуск.
+        if (atMs > expiresAtMs + boundaryJitterMs) {
+          lateByType.set(type, (lateByType.get(type) ?? 0) + 1);
+        }
         continue;
       }
       if (type === SETTLEMENT_TWAP_TYPE) {
@@ -368,7 +462,8 @@ function validatePolymarketArchive(
     }
     for (const [type, count] of [...lateByType.entries()].sort()) {
       violations.push(
-        `${String(count)} ${type} observation(s) recorded after the market expiry boundary`,
+        `${String(count)} ${type} observation(s) recorded more than ` +
+          `${String(boundaryJitterMs)}ms after the market expiry boundary`,
       );
     }
     if (lateSettlement > 0) {
@@ -503,9 +598,16 @@ function validateCexPartition(file: string, lines: string[], completed: boolean)
  */
 export function validateDatasetRoot(
   root: string,
-  options: { readonly settlementGraceMs?: number } = {},
+  options: { readonly settlementGraceMs?: number; readonly boundaryJitterMs?: number } = {},
 ): ValidationReport {
-  const settlementGraceMs = options.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS;
+  const settlementGraceMs = assertAllowanceMs(
+    options.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_ALLOWANCE_MS,
+    'settlementGraceMs',
+  );
+  const boundaryJitterMs = assertAllowanceMs(
+    options.boundaryJitterMs ?? DEFAULT_BOUNDARY_JITTER_ALLOWANCE_MS,
+    'boundaryJitterMs',
+  );
   if (!fs.existsSync(root)) {
     throw new Error(`Dataset root does not exist: ${root}`);
   }
@@ -532,7 +634,13 @@ export function validateDatasetRoot(
       files.push(
         archiveKind(firstLine) === 'cex'
           ? validateCexPartition(relative, lines, completed)
-          : validatePolymarketArchive(relative, lines, completed, settlementGraceMs),
+          : validatePolymarketArchive(
+              relative,
+              lines,
+              completed,
+              settlementGraceMs,
+              boundaryJitterMs,
+            ),
       );
     } catch (error) {
       files.push({
@@ -577,24 +685,28 @@ function main(): number {
   if (rootArg === undefined) {
     process.stderr.write(
       'usage: npx tsx scripts/validate-raw-archives.mts <dataset-root> ' +
-        '[--json <report.json>] [--grace-ms <ms>]\n',
+        '[--json <report.json>] [--grace-ms <ms>] [--jitter-ms <ms>]\n',
     );
     return 1;
   }
   const jsonIndex = rest.indexOf('--json');
   const jsonPath = jsonIndex === -1 ? undefined : rest[jsonIndex + 1];
-  const graceIndex = rest.indexOf('--grace-ms');
-  const graceRaw = graceIndex === -1 ? undefined : rest[graceIndex + 1];
-  const settlementGraceMs = graceRaw === undefined ? undefined : Number(graceRaw);
-  if (settlementGraceMs !== undefined && (!Number.isFinite(settlementGraceMs) || settlementGraceMs < 0)) {
-    process.stderr.write(`--grace-ms must be a finite number >= 0, got ${String(graceRaw)}\n`);
+  const grace = parseMsFlag(rest, '--grace-ms');
+  if (grace === INVALID_FLAG) {
     return 1;
   }
+  const settlementGraceMs = grace;
 
-  const report = validateDatasetRoot(
-    path.resolve(rootArg),
-    settlementGraceMs === undefined ? {} : { settlementGraceMs },
-  );
+  const jitter = parseMsFlag(rest, '--jitter-ms');
+  if (jitter === INVALID_FLAG) {
+    return 1;
+  }
+  const boundaryJitterMs = jitter;
+
+  const report = validateDatasetRoot(path.resolve(rootArg), {
+    ...(settlementGraceMs === undefined ? {} : { settlementGraceMs }),
+    ...(boundaryJitterMs === undefined ? {} : { boundaryJitterMs }),
+  });
   for (const file of report.files) {
     if (file.violations.length === 0) {
       continue;

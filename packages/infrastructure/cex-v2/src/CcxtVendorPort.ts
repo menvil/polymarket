@@ -83,6 +83,19 @@ export interface CcxtProExchangeInstance {
   readonly clients?: Readonly<Record<string, CcxtProClientLike | undefined>> | undefined;
   /** Закрытие инстанса (WS-соединения + внутренние ресурсы). */
   readonly close?: (() => Promise<unknown>) | undefined;
+  /**
+   * Внутренние кэши наблюдений CCXT Pro.
+   *
+   * @remarks
+   * Объявлены в порту с единственной целью — ОСВОБОЖДАТЬ их у брошенного
+   * инстанса (см. {@link releaseVendorCaches}). Читать их нельзя: источник
+   * работает со значениями, которые возвращает сам `watch*`, а не с этими
+   * мутабельными структурами.
+   */
+  readonly trades?: unknown;
+  readonly orderbooks?: unknown;
+  readonly myTrades?: unknown;
+  readonly orders?: unknown;
 }
 
 /**
@@ -276,4 +289,110 @@ export async function createCcxtProExchange(
     timeout: constructorArgs.timeout,
     options: { ...constructorArgs.options },
   });
+}
+
+/**
+ * Освобождает одну структуру `ArrayCache` ccxt.pro.
+ *
+ * @param cache - Массив-кэш vendor-а
+ * @returns `true`, если что-то было освобождено
+ *
+ * @remarks
+ * `length = 0` НЕДОСТАТОЧНО. `ArrayCache` наследует `Array`, но подклассы
+ * (`ArrayCacheBySymbolById`, `ArrayCacheBySymbolBySide`) держат ещё и
+ * `hashmap` — индекс `symbol → id → item`, через который ссылки на объекты
+ * переживают опустошение массива.
+ *
+ * При штатной работе `hashmap` чистится вытеснением: `append` удаляет из него
+ * запись вытесненного элемента по достижении `maxSize`. Но `length = 0`
+ * обходит `append` целиком, поэтому после него в индексе остаётся до
+ * `maxSize` объектов на символ — у сделок это `tradesLimit`, то есть тысяча.
+ *
+ * Показательно, что и собственный `BaseCache.clear()` ccxt делает только
+ * `length = 0`: полагаться на «вендор сам всё освободит» здесь нельзя.
+ *
+ * Ссылка на сам массив НЕ заменяется — у него собственный `append`, и подмена
+ * сломала бы vendor-код (ловушка, найденная legacy откатом `d47fb7f6`).
+ */
+function releaseArrayCache(cache: unknown[]): boolean {
+  const hashmap: unknown = (cache as unknown as Record<string, unknown>)['hashmap'];
+  let released = cache.length > 0;
+  cache.length = 0;
+  if (hashmap !== null && typeof hashmap === 'object') {
+    const index = hashmap as Record<string, unknown>;
+    for (const key of Object.keys(index)) {
+      delete index[key];
+      released = true;
+    }
+  }
+  return released;
+}
+
+/** Кэши CCXT Pro, которые освобождаются у брошенного инстанса. */
+const VENDOR_CACHE_PROPERTIES = ['trades', 'orderbooks', 'myTrades', 'orders'] as const;
+
+/**
+ * Освобождает внутренние кэши наблюдений брошенного CCXT-инстанса.
+ *
+ * @param instance - Инстанс, который источник больше не использует
+ * @returns Сколько кэш-структур было опустошено (для диагностики)
+ *
+ * @remarks
+ * ### Зачем
+ *
+ * Инстансы переоткрываются планово (раз в 15 минут на пул) и аварийно.
+ * Закрытие сокета НЕ освобождает накопленные `trades`/`orderbooks`: это
+ * обычные объекты на самом инстансе, и они живут ровно столько, сколько
+ * живёт ссылка на него. Пока `instance.close()` не завершился — а он может
+ * зависнуть, ровно от этого защищает `closeTimeoutMs`, — инстанс жив вместе
+ * со всеми своими стаканами.
+ *
+ * ### Почему не в `finally` закрытия, как было в legacy
+ *
+ * Legacy-сборщик чистил кэши в `.finally()` операции закрытия. Для нас этого
+ * мало: интересующий случай — ЗАВИСШЕЕ закрытие, а у зависшего промиса
+ * `finally` не выполняется никогда. Поэтому освобождение привязано к моменту
+ * «мы перестали ждать», а не «закрытие завершилось».
+ *
+ * ### Почему `.length = 0`, а не переприсваивание
+ *
+ * `instance.trades[symbol]` — это `ArrayCache`, наследник `Array` с
+ * собственным `append`. Замена ссылки на новый массив сломала бы vendor-код,
+ * если он ещё держит эту структуру. Ту же ловушку legacy обнаружил откатом
+ * (`fix: revert ccxt.pro trades cache reset — ArrayCache not a plain array`),
+ * и повторять её не нужно.
+ *
+ * Идемпотентна: повторный вызов на уже очищенном инстансе безвреден.
+ *
+ * @example
+ * ```typescript
+ * releaseVendorCaches(instance); // → 2 (trades и orderbooks были непусты)
+ * ```
+ */
+export function releaseVendorCaches(instance: CcxtProExchangeInstance): number {
+  let released = 0;
+  for (const property of VENDOR_CACHE_PROPERTIES) {
+    const cache: unknown = (instance as Record<string, unknown>)[property];
+    if (cache === null || typeof cache !== 'object') {
+      continue;
+    }
+    if (Array.isArray(cache)) {
+      if (releaseArrayCache(cache)) {
+        released += 1;
+      }
+      continue;
+    }
+    // Карта «символ → ArrayCache»: опустошаем каждую запись НА МЕСТЕ, затем
+    // снимаем сами ключи — сокращается и содержимое, и сама карта.
+    const map = cache as Record<string, unknown>;
+    for (const key of Object.keys(map)) {
+      const entry: unknown = map[key];
+      if (Array.isArray(entry)) {
+        releaseArrayCache(entry);
+      }
+      delete map[key];
+      released += 1;
+    }
+  }
+  return released;
 }

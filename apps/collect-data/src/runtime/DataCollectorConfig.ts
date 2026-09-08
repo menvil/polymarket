@@ -177,6 +177,23 @@ export interface ControlRuntimeConfig {
   readonly acquireLimit: number;
   /** Пауза между control-тиками (мс): один тик = `runOnce` + `reconcile`. */
   readonly tickMs: number;
+  /**
+   * Бюджет остановки (мс): по его истечении оставшиеся шаги бросаются.
+   *
+   * @defaultValue 30_000
+   *
+   * @remarks
+   * Остановка обязана быть быстрой и предсказуемой, как выдернутое питание.
+   * Супервизор перезапускает процесс не только по деплою, но и по выходу за
+   * `max_memory_restart` и по зависанию — в обоих случаях ждать нечего и
+   * некогда. Всё, что не успело стать архивом, теряется осознанно: остатки
+   * подметёт startup cleanup следующего запуска.
+   *
+   * Бюджет обязан быть МЕНЬШЕ `kill_timeout` супервизора: тогда процесс
+   * выходит сам и упорядоченно, а SIGKILL остаётся честным признаком
+   * «завис по-настоящему».
+   */
+  readonly shutdownDeadlineMs: number;
 }
 
 /**
@@ -241,6 +258,22 @@ export interface FinalizationRuntimeConfig {
 
 /** Дефолтная пауза control-тика (мс). */
 const DEFAULT_CONTROL_TICK_MS = 5_000;
+
+/**
+ * Бюджет остановки по умолчанию (мс).
+ *
+ * @remarks
+ * Замер run-04 на рабочем масштабе (16 рынков, 12 CEX-пулов, идущие
+ * settlement-захваты): полная лестница заняла 15.1 с. Прежние 10 обрывали бы
+ * её на закрытии CEX-окон и recorder — то есть ровно на сбросе буферов, ради
+ * которого остановка и упорядочена.
+ *
+ * Тридцать — с запасом на рост масштаба (больше рынков, больше бирж). Бюджет
+ * ОБЯЗАН оставаться строго меньше `kill_timeout` супервизора, иначе SIGKILL
+ * придёт ровно в момент, когда процесс сам решает выходить, и упорядоченность
+ * остановки потеряется. Сейчас в `ecosystem.config.cjs` — 60 с.
+ */
+const DEFAULT_SHUTDOWN_DEADLINE_MS = 30_000;
 
 /**
  * Дефолт boundary grace settlement-потока (мс).
@@ -616,6 +649,14 @@ export function toDataCollectorConfig(config: CollectorConfig): DataCollectorCon
     control: {
       acquireLimit: config.maxMarkets,
       tickMs: config.controlTickMs > 0 ? config.controlTickMs : DEFAULT_CONTROL_TICK_MS,
+      // `> 0` НЕДОСТАТОЧНО: `Infinity > 0` истинно, и бюджет с таким значением
+      // не сработает никогда — ограничение молча выключилось бы.
+      shutdownDeadlineMs:
+        config.shutdownDeadlineMs !== undefined &&
+        Number.isFinite(config.shutdownDeadlineMs) &&
+        config.shutdownDeadlineMs > 0
+          ? config.shutdownDeadlineMs
+          : DEFAULT_SHUTDOWN_DEADLINE_MS,
     },
     collection: {
       settlementGraceMs: config.settlementGraceMs ?? DEFAULT_SETTLEMENT_GRACE_MS,

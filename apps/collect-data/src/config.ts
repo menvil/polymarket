@@ -123,6 +123,14 @@ export interface CollectorConfig {
    * `reconcile`.
    */
   readonly controlTickMs: number;
+  /**
+   * Бюджет остановки (мс) — сколько лестница остановки имеет права занять.
+   *
+   * @remarks
+   * Обязан быть МЕНЬШЕ `kill_timeout` супервизора: тогда процесс выходит сам
+   * и упорядоченно, а SIGKILL остаётся признаком настоящего зависания.
+   */
+  readonly shutdownDeadlineMs: number;
 
   /**
    * Boundary grace settlement-потока (мс): сколько после истечения рынка
@@ -226,6 +234,46 @@ export function loadConfig(): CollectorConfig {
     return n;
   }
 
+  /**
+   * Бюджет остановки, сверенный с таймаутом супервизора.
+   *
+   * @returns Бюджет в миллисекундах
+   * @throws {Error} Если бюджет не меньше `COLLECTOR_KILL_TIMEOUT_MS`
+   *
+   * @remarks
+   * Проверяется ОТНОШЕНИЕ, а не абсолютная величина: зашивать в код число
+   * супервизора нельзя — сегодня pm2, завтра systemd или Docker с другим
+   * таймаутом. Но само знание «мой супервизор убьёт меня через N мс» —
+   * законный контракт окружения, и его достаточно, чтобы отказать на старте
+   * вместо тихой поломки.
+   *
+   * Без этой проверки бюджет больше таймаута выключал бы механизм молча:
+   * SIGKILL приходил бы посреди лестницы, и упорядоченная остановка,
+   * ради которой бюджет и введён, никогда бы не отрабатывала.
+   *
+   * Переменная не задана (локальный запуск без супервизора) — сверять не с
+   * чем, проверка пропускается.
+   *
+   * @example
+   * ```typescript
+   * // COLLECTOR_KILL_TIMEOUT_MS=60000, дефолтный бюджет 30000 → 30000
+   * // COLLECTOR_SHUTDOWN_DEADLINE_MS=90000 при том же таймауте → Error
+   * ```
+   */
+  function shutdownDeadlineMs(): number {
+    const budget =
+      optionalDurationMs('COLLECTOR_SHUTDOWN_DEADLINE_MS', { allowZero: false }) ?? 30_000;
+    const killTimeout = optionalDurationMs('COLLECTOR_KILL_TIMEOUT_MS', { allowZero: false });
+    if (killTimeout !== undefined && budget >= killTimeout) {
+      throw new Error(
+        `COLLECTOR_SHUTDOWN_DEADLINE_MS (${String(budget)}) must be less than ` +
+          `COLLECTOR_KILL_TIMEOUT_MS (${String(killTimeout)}): otherwise the supervisor ` +
+          `kills the process mid-shutdown and the ordered stop never completes`,
+      );
+    }
+    return budget;
+  }
+
   function parseKeywords(name: string): readonly string[] {
     const val = process.env[name];
     if (!val || val.trim() === '') return [];
@@ -294,6 +342,10 @@ export function loadConfig(): CollectorConfig {
     policyDurations:      parseList('COLLECTOR_POLICY_DURATIONS'),
     discoveryWindowHours: optionalNumberOrUndefined('DISCOVERY_WINDOW_HOURS'),
     controlTickMs:        optionalNumber('COLLECTOR_CONTROL_TICK_MS', 5_000),
+    // Через optionalDurationMs, а не optionalNumber: `Infinity` прошёл бы
+    // проверку «> 0», и бюджет остановки не сработал бы НИКОГДА — механизм
+    // ограничения молча выключился бы вместо того, чтобы отказать.
+    shutdownDeadlineMs: shutdownDeadlineMs(),
     settlementGraceMs:    optionalDurationMs('COLLECTOR_SETTLEMENT_GRACE_MS', { allowZero: true }),
     enrichmentRetryMs:    optionalDurationMs('COLLECTOR_ENRICHMENT_RETRY_MS', { allowZero: false }),
     enrichmentMaxWaitMs:  optionalDurationMs('COLLECTOR_ENRICHMENT_MAX_WAIT_MS', { allowZero: false }),
