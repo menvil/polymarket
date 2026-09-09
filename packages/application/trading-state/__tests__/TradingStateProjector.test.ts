@@ -370,7 +370,7 @@ describe('S. Ценовой домен сужается по владельцу 
     expect(sharedTrade?.price.constructor.name).toBe('AssetPrice');
   });
 
-  it('цена чужого домена в рынок не попадает', async () => {
+  it('отвергнутая сделка не оставляет за собой НИЧЕГО', async () => {
     const { bus, view, events } = buildRuntime();
     events.observeAt(1_000);
 
@@ -388,7 +388,73 @@ describe('S. Ценовой домен сужается по владельцу 
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.size()).toBe(0);
+    // Ни рынка, ни инструмента, ни записи индекса: проверка домена идёт ДО
+    // создания. Иначе версия говорила бы «мутации не было», а состояние уже
+    // изменилось бы.
+    expect(view.getMarket(MARKET_X)).toBeUndefined();
+    expect(view.getMarketForInstrument(YES)).toBeUndefined();
+    expect(view.marketIds()).toEqual([]);
+    expect(view.getVersion()).toBe(0);
+  });
+
+  it('после отвергнутой сделки инструмент свободен для другого рынка', async () => {
+    const { bus, view, events } = buildRuntime();
+
+    // Плохое событие пытается связать YES с рынком X.
+    events.observeAt(1_000);
+    const rejected = await bus.publish(
+      events.cexTradeReceived({
+        venueId: POLYMARKET,
+        instrumentId: YES,
+        marketId: MARKET_X,
+        price: 78_468.5,
+        size: 1,
+        side: 'BUY',
+        sourceTimestampMs: 900,
+      }),
+    );
+    expect(rejected.ok).toBe(false);
+
+    // Законное событие связывает YES с рынком Y. Оно обязано пройти:
+    // отвергнутое событие не должно было оставить запись индекса.
+    events.observeAt(1_100);
+    const accepted = await bus.publish(
+      events.tradeReceived({
+        venueId: POLYMARKET,
+        instrumentId: YES,
+        marketId: MARKET_Y,
+        price: 0.62,
+        size: 5,
+        side: 'BUY',
+        sourceTimestampMs: 1_000,
+      }),
+    );
+
+    expect(accepted.ok).toBe(true);
+    expect(view.getMarketForInstrument(YES)).toBe(MARKET_Y);
+    expect(view.getMarket(MARKET_X)).toBeUndefined();
+    expect(view.getVersion()).toBe(1);
+  });
+
+  it('цена исхода в ленту площадки не попадает и площадку не создаёт', async () => {
+    const { bus, view, events } = buildRuntime();
+    events.observeAt(1_000);
+
+    // Доля исхода маршрутизирована в биржевую ленту — обратная ошибка.
+    const result = await bus.publish(
+      events.tradeReceived({
+        venueId: BINANCE,
+        instrumentId: BTC_USDT,
+        price: 0.62,
+        size: 1,
+        side: 'BUY',
+        sourceTimestampMs: 900,
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(view.getSharedInstrument(BINANCE, BTC_USDT)).toBeUndefined();
+    expect(view.sharedVenueIds()).toEqual([]);
     expect(view.getVersion()).toBe(0);
   });
 

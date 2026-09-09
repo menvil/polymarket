@@ -306,7 +306,7 @@ export interface IExchangeClient {
    * Business-исходы (уже matched, уже cancelled, not found, неоднозначный ответ)
    * возвращаются через `Ok(CancelOrderResult)`, а НЕ через `Err`. Вызывающий код
    * не должен парсить текст venue-ошибок — эта классификация выполняется внутри
-   * реализации адаптера (например, `PolymarketExchangeClientAdapter`).
+   * реализации адаптера.
    */
   cancelOrder(orderId: OrderId): Promise<Result<CancelOrderResult, ExchangeError>>;
 

@@ -14,7 +14,6 @@
  * Используется:
  * - BookUpdateHandler — `catalog.get(tokenId)` → `InstrumentInfo.instrumentId`
  * - OrderRiskChecker — `catalog.get(tokenId)?.tickSize` (уже OutcomePrice, не string)
- * - PolymarketExchangeClientAdapter — маппинг параметров ордера
  */
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';

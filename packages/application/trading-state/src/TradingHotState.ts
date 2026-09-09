@@ -297,16 +297,24 @@ export class TradingHotState implements TradingHotStateView {
    * @returns `Ok(true)` после принятия либо несовпадение ценового домена
    *
    * @remarks
-   * Здесь и происходит сужение: маршрут уже определяет домен цены, и
-   * дальше по владельцу она хранится конкретным типом. Проверка —
-   * `instanceof`, без повторной валидации инварианта: значение прошло её
-   * при создании VO (ADR, Решение 9).
+   * Ценовой домен проверяется ПЕРВЫМ — до того, как что-либо создано.
+   * `_resolveMarketInstrument`/`_resolveSharedInstrument` создают рынок,
+   * инструмент и запись индекса, то есть уже мутируют состояние. Проверь мы
+   * домен после них, отвергнутое событие оставило бы за собой рынок,
+   * инструмент и — что хуже всего — запись `instrumentToMarket`, из-за
+   * которой следующее ЗАКОННОЕ событие того же инструмента с другим рынком
+   * упало бы конфликтом владения. Версия при этом говорила бы, что мутации
+   * не было.
+   *
+   * Домен известен из самого маршрута, `instanceof` по состоянию для этого
+   * не нужен: market-scoped — всегда `OutcomePrice`, shared — всегда
+   * `AssetPrice`. Проверка значения — через `instanceof`, без повторной
+   * валидации инварианта (ADR, Решение 9).
    *
    * Замер на записанных данных run-05 (7 163 758 ценовых уровней, 73 284
    * книги, 35 016 сделок Polymarket) показал диапазон [0.001, 0.999] и ни
-   * одного значения вне (0.0001, 0.9999). То есть сужение безопасно, а
-   * отказ ловит настоящую аномалию — ошибку маршрутизации в адаптере, — а
-   * не законный случай.
+   * одного значения вне (0.0001, 0.9999). Сужение безопасно, а отказ ловит
+   * ошибку маршрутизации в адаптере, а не законный случай.
    */
   public applyPublicTrade(
     target: ObservationTarget,
@@ -315,19 +323,22 @@ export class TradingHotState implements TradingHotStateView {
     boolean,
     ValidationError | InstrumentMarketConflictError | PriceDomainMismatchError
   > {
-    const instrument = this._resolveInstrument(target);
-    if (isErr(instrument)) return instrument;
-
-    if (instrument.value instanceof MarketInstrumentState) {
-      if (!(observation.price instanceof OutcomePrice)) {
-        return Err(new PriceDomainMismatchError('OutcomePrice', observation.price));
+    if (target.kind === 'MARKET') {
+      const { price } = observation;
+      if (!(price instanceof OutcomePrice)) {
+        return Err(new PriceDomainMismatchError('OutcomePrice', price));
       }
-      instrument.value.applyPublicTrade({ ...observation, price: observation.price });
+      const instrument = this._resolveMarketInstrument(target.marketId, target.instrumentId);
+      if (isErr(instrument)) return instrument;
+      instrument.value.applyPublicTrade({ ...observation, price });
     } else {
-      if (!(observation.price instanceof AssetPrice)) {
-        return Err(new PriceDomainMismatchError('AssetPrice', observation.price));
+      const { price } = observation;
+      if (!(price instanceof AssetPrice)) {
+        return Err(new PriceDomainMismatchError('AssetPrice', price));
       }
-      instrument.value.applyPublicTrade({ ...observation, price: observation.price });
+      const instrument = this._resolveSharedInstrument(target.venueId, target.instrumentId);
+      if (isErr(instrument)) return instrument;
+      instrument.value.applyPublicTrade({ ...observation, price });
     }
 
     this._version += 1;
@@ -347,9 +358,9 @@ export class TradingHotState implements TradingHotStateView {
     instrumentId: InstrumentId,
     tickSize: TickSizeState,
   ): Result<boolean, ValidationError | InstrumentMarketConflictError> {
-    const instrument = this._resolveInstrument({ kind: 'MARKET', marketId, instrumentId });
+    const instrument = this._resolveMarketInstrument(marketId, instrumentId);
     if (isErr(instrument)) return instrument;
-    (instrument.value as MarketInstrumentState).applyTickSize(tickSize);
+    instrument.value.applyTickSize(tickSize);
     this._version += 1;
     return Ok(true);
   }
@@ -372,17 +383,69 @@ export class TradingHotState implements TradingHotStateView {
   }
 
   /**
-   * Находит инструмент, создавая рынок и инструмент при первом наблюдении.
+   * Находит инструмент рынка, создавая рынок и инструмент при первом наблюдении.
+   *
+   * @param marketId - Рынок
+   * @param instrumentId - Инструмент рынка
+   * @returns Состояние инструмента либо нарушение инварианта владения
+   *
+   * @remarks
+   * **Метод мутирует состояние**: создаёт `MarketRuntimeState`,
+   * `MarketInstrumentState` и запись вторичного индекса. Вызывать его можно
+   * только после того, как все проверки события пройдены — иначе
+   * отвергнутое событие оставит за собой созданные объекты.
+   *
+   * Проверка владения идёт ДО создания: если market-specific инструмент
+   * зарегистрирован за другим рынком, состояние закрывается ошибкой, а не
+   * переносит инструмент молча — молчаливый перенос оставил бы часть
+   * истории на старом рынке и сделал бы оба состояния неверными.
+   */
+  private _resolveMarketInstrument(
+    marketId: MarketId,
+    instrumentId: InstrumentId,
+  ): Result<MarketInstrumentState, ValidationError | InstrumentMarketConflictError> {
+    const registered = this._instrumentToMarket.get(instrumentId);
+    if (registered !== undefined && registered !== marketId) {
+      return Err(new InstrumentMarketConflictError(instrumentId, registered, marketId));
+    }
+
+    let market = this._markets.get(marketId);
+    if (market === undefined) {
+      market = new MarketRuntimeState(marketId, this._config, this._clock);
+      this._markets.set(marketId, market);
+    }
+    const instrument = market.ensureInstrument(instrumentId);
+    if (isErr(instrument)) return instrument;
+    this._instrumentToMarket.set(instrumentId, marketId);
+    return instrument;
+  }
+
+  /**
+   * Находит инструмент площадки, создавая его при первом наблюдении.
+   *
+   * @param venueId - Площадка
+   * @param instrumentId - Инструмент площадки
+   * @returns Состояние инструмента либо ошибка валидации политики хранения
+   *
+   * @remarks
+   * **Метод мутирует состояние** — см. {@link _resolveMarketInstrument}.
+   */
+  private _resolveSharedInstrument(
+    venueId: VenueId,
+    instrumentId: InstrumentId,
+  ): Result<SharedInstrumentState, ValidationError> {
+    return this._shared.ensureInstrument(venueId, instrumentId);
+  }
+
+  /**
+   * Находит инструмент по маршруту наблюдения.
    *
    * @param target - Куда направлено наблюдение
    * @returns Состояние инструмента либо нарушение инварианта владения
    *
    * @remarks
-   * Здесь же поддерживается вторичный индекс `InstrumentId → MarketId`.
-   * Если market-specific инструмент приходит с ДРУГИМ рынком, состояние
-   * закрывается ошибкой, а не переносит инструмент молча: молчаливый
-   * перенос оставил бы часть истории на старом рынке и сделал бы оба
-   * состояния неверными.
+   * **Метод мутирует состояние** — см. {@link _resolveMarketInstrument}.
+   * Используется там, где у наблюдения нет проверок сверх владения.
    */
   private _resolveInstrument(
     target: ObservationTarget,
@@ -390,26 +453,9 @@ export class TradingHotState implements TradingHotStateView {
     MarketInstrumentState | SharedInstrumentState,
     ValidationError | InstrumentMarketConflictError
   > {
-    if (target.kind === 'SHARED') {
-      return this._shared.ensureInstrument(target.venueId, target.instrumentId);
-    }
-
-    const registered = this._instrumentToMarket.get(target.instrumentId);
-    if (registered !== undefined && registered !== target.marketId) {
-      return Err(
-        new InstrumentMarketConflictError(target.instrumentId, registered, target.marketId),
-      );
-    }
-
-    let market = this._markets.get(target.marketId);
-    if (market === undefined) {
-      market = new MarketRuntimeState(target.marketId, this._config, this._clock);
-      this._markets.set(target.marketId, market);
-    }
-    const instrument = market.ensureInstrument(target.instrumentId);
-    if (isErr(instrument)) return instrument;
-    this._instrumentToMarket.set(target.instrumentId, target.marketId);
-    return instrument;
+    return target.kind === 'MARKET'
+      ? this._resolveMarketInstrument(target.marketId, target.instrumentId)
+      : this._resolveSharedInstrument(target.venueId, target.instrumentId);
   }
 }
 
