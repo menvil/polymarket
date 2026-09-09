@@ -1,0 +1,19 @@
+apps/pnl/src/renderers/format.ts
+  s_c99ec2b699d51d::t_9da9b75a8cd206 36,39-52,54-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8f877e7b566486877c3ed1335e6573335e43e6ea",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
