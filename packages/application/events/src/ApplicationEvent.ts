@@ -12,9 +12,38 @@
  * - FILL_RECEIVED — fill со статусом MATCHED → запустить ProcessFillUseCase
  * - FILL_FAILED   — fill со статусом FAILED → alert + reconciliation
  *
- * Lifecycle события:
- * - MARKET_OPENED — рынок открыт, аллоцирован баланс, запустить стратегию
- * - MARKET_CLOSED — рынок закрыт, баланс освобождён, остановить стратегию
+ * ### Два поколения lifecycle-событий рынка
+ *
+ * В union сейчас живут ОБА набора, и они описывают разные вещи. Слить их или
+ * переиспользовать одни вместо других нельзя.
+ *
+ * **Legacy lifecycle старого рантайма** (`market-lifecycle/`):
+ *
+ * ```text
+ * MARKET_OPENED → аллокация баланса, strategyId, запуск старой стратегии
+ * MARKET_CLOSED → остановка стратегии, освобождение аллокации, realized PnL
+ * ```
+ *
+ * Это события УПРАВЛЕНИЯ старым рантаймом, а не жизненного цикла рынка.
+ * Называть их canonical trading lifecycle неверно: у них нет ни admission, ни
+ * резолюции, ни финализации, а `marketId` в них сопровождается аллокацией.
+ * Они остаются, пока у них есть legacy-потребители, и их семантика не меняется.
+ *
+ * **Новый trading runtime lifecycle** (`trading-market-lifecycle/`):
+ *
+ * ```text
+ * TRADING_MARKET_ADMITTED  → рантайм принял рынок; несёт canonical Market
+ * TRADING_MARKET_ACTIVATED → началась торговля (metadata.createdAt >= startsAt)
+ * TRADING_MARKET_CLOSED    → МЫ прекратили торговать
+ * TRADING_MARKET_RESOLVED  → площадка объявила исход; несёт RESOLVED Market
+ * TRADING_MARKET_FINALIZED → работа по рынку закончена, состояние retained
+ * ```
+ *
+ * Это состояние НАШЕГО торгового рантайма, и оно отдельно от внешнего
+ * `Market.state` (`ACTIVE → CLOSED → RESOLVED`), которым владеет площадка.
+ * Комбинация «`market.state = ACTIVE`, наш lifecycle = `TRADING_CLOSED`»
+ * законна: мы уже остановились по `expiresAt`, а площадка ещё показывает
+ * рынок активным.
  *
  * Market-data события:
  * - BOOK_UPDATED / BOOK_DEPTH — верхушка и полный стакан инструмента
@@ -39,6 +68,13 @@ import type {
 } from './market-data/index.js';
 import type { StrategySignalEvent } from './strategy/index.js';
 import type { MarketOpenedEvent, MarketClosedEvent } from './market-lifecycle/index.js';
+import type {
+  TradingMarketAdmittedEvent,
+  TradingMarketActivatedEvent,
+  TradingMarketClosedEvent,
+  TradingMarketResolvedEvent,
+  TradingMarketFinalizedEvent,
+} from './trading-market-lifecycle/index.js';
 import type { OrderUpdateReceivedEvent } from './venue-order/index.js';
 
 export type ApplicationEvent =
@@ -58,6 +94,14 @@ export type ApplicationEvent =
   | TickSizeChangedEvent
   | ReferencePriceUpdatedEvent
   | StrategySignalEvent
+  // Legacy lifecycle старого рантайма — управление аллокацией, не жизненный
+  // цикл рынка. Не переиспользуется новым trading runtime.
   | MarketOpenedEvent
   | MarketClosedEvent
+  // Lifecycle нового trading runtime — отдельный от внешнего `Market.state`.
+  | TradingMarketAdmittedEvent
+  | TradingMarketActivatedEvent
+  | TradingMarketClosedEvent
+  | TradingMarketResolvedEvent
+  | TradingMarketFinalizedEvent
   | OrderUpdateReceivedEvent;

@@ -20,7 +20,12 @@ contracts — leaf-ish application-пакет без единой зависим
   `strategyId: StrategyId`), денежные/временные поля — VO из
   `@polymarket/value-objects`;
 - `ApplicationEvent.ts` — единственное место сборки union; Domain `OrderEvent`
-  участвует по reference и не реэкспортируется.
+  участвует по reference и не реэкспортируется;
+- новое поколение событий одного контура — новая папка, а не расширение
+  существующей: `trading-market-lifecycle/` рядом с legacy `market-lifecycle/`
+  (см. «Два поколения lifecycle» в `../README.md`). Переиспользовать имя
+  события с другой семантикой запрещено — потребители legacy-события молча
+  получили бы чужие данные.
 
 ## Тесты
 

@@ -16,7 +16,9 @@
  * `readonly`, а сами наблюдения immutable по построению.
  */
 import type { InstrumentId, MarketDataSourceId, MarketId, VenueId } from '@polymarket/ids';
+import type { Market } from '@polymarket/market';
 import type { AssetPrice, OutcomePrice } from '@polymarket/value-objects';
+import type { TradingMarketLifecycleView } from './lifecycle.js';
 import type {
   BookObservation,
   PublicTradeObservation,
@@ -95,13 +97,60 @@ export interface MarketInstrumentStateView {
   readonly tickSize: TickSizeState | undefined;
 }
 
-/** Рынок — только чтение. */
+/**
+ * Принятый торговым рантаймом рынок — только чтение.
+ *
+ * @remarks
+ * Состояние такого рынка существует ТОЛЬКО после `TRADING_MARKET_ADMITTED`:
+ * market-data сама рынок не создаёт (см. `TradingHotStateView.getMarket`).
+ *
+ * Отдельного `marketId` здесь нет: идентичность даёт `market.id`, и второе
+ * поле с тем же смыслом пришлось бы держать согласованным с первым. По той же
+ * причине не дублируются `question`, `startsAt`, `expiresAt`, `outcomes`,
+ * `family` и `crypto` — всё это читается из `market`.
+ */
 export interface MarketRuntimeStateView {
-  /** Идентичность рынка */
-  readonly marketId: MarketId;
-  /** Инструмент рынка либо `undefined`, если наблюдений по нему не было */
+  /**
+   * Canonical рынок, каким его знает торговый рантайм.
+   *
+   * @remarks
+   * `Market` immutable, поэтому отдаётся ссылкой без копирования. После
+   * `TRADING_MARKET_RESOLVED` здесь лежит РАЗРЕШЁННЫЙ рынок — то есть
+   * последнее внешнее состояние, включая `resolvedOutcome`.
+   */
+  readonly market: Market;
+  /**
+   * Жизненный цикл рынка в НАШЕМ рантайме.
+   *
+   * @remarks
+   * Это не `market.state`: внешнее состояние площадки и наш торговый цикл —
+   * разные вещи (см. `@polymarket/trading-state` → `lifecycle.ts`).
+   */
+  readonly lifecycle: TradingMarketLifecycleView;
+  /**
+   * Активное тяжёлое состояние инструмента, если оно ещё удерживается.
+   *
+   * @remarks
+   * `undefined` означает не «инструмента у рынка нет», а «активных рыночных
+   * данных по нему больше нет»: после `TRADING_CLOSED` тяжёлые ряды
+   * освобождаются, и метод начинает возвращать `undefined` для обоих исходов.
+   * Структурный состав инструментов рынка даёт {@link instrumentIds}.
+   */
   getInstrument(instrumentId: InstrumentId): MarketInstrumentStateView | undefined;
-  /** Идентичности всех инструментов, по которым есть наблюдения */
+  /**
+   * Структурные инструменты рынка — оба исхода, всегда.
+   *
+   * @remarks
+   * Берутся из canonical `market.outcomes`, а не из ключей текущих рядов,
+   * поэтому состав не меняется на протяжении всей жизни рынка:
+   *
+   * ```text
+   * ADMITTED       → [outcome0, outcome1]
+   * ACTIVE         → [outcome0, outcome1]
+   * TRADING_CLOSED → [outcome0, outcome1]   (но getInstrument уже undefined)
+   * FINALIZED      → [outcome0, outcome1]
+   * ```
+   */
   instrumentIds(): readonly InstrumentId[];
 }
 
@@ -136,18 +185,34 @@ export interface SharedInstrumentStateView {
  * ```
  */
 export interface TradingHotStateView {
-  /** Сколько принятых наблюдений изменило состояние с момента создания */
+  /** Сколько принятых мутаций изменило состояние с момента создания */
   getVersion(): number;
-  /** Состояние рынка либо `undefined`, если наблюдений по нему не было */
+  /**
+   * Состояние принятого рынка либо `undefined`, если рынок не принят.
+   *
+   * @remarks
+   * `undefined` — обычный ответ, а не признак проблемы: на общей шине живут
+   * данные рынков, нужных коллектору или другому владельцу, и торговое
+   * состояние их не хранит.
+   */
   getMarket(marketId: MarketId): MarketRuntimeStateView | undefined;
-  /** Идентичности всех рынков с наблюдениями */
+  /**
+   * Идентичности всех принятых рынков.
+   *
+   * @remarks
+   * Это НЕ вселенная рынков: технически существующие рынки живут в
+   * `MarketUniverse` (их бывают десятки тысяч). Здесь — только те, которые
+   * торговый рантайм явно принял через `TRADING_MARKET_ADMITTED`.
+   */
   marketIds(): readonly MarketId[];
   /**
    * Рынок, которому принадлежит market-scoped инструмент.
    *
    * @remarks
-   * Вторичный индекс для навигации. Владение остаётся за
-   * `markets[marketId].instruments[instrumentId]`.
+   * Вторичный индекс для навигации, заполняемый по обоим исходам при
+   * admission. Владение остаётся за canonical `market.outcomes`. Запись
+   * переживает остановку торгов и финализацию: она структурная, а не
+   * наблюдаемая.
    */
   getMarketForInstrument(instrumentId: InstrumentId): MarketId | undefined;
   /** Инструмент площадки вне рынка */

@@ -44,12 +44,32 @@ export type {
 } from './market-data/index.js';
 /** Сигналы стратегий (см. strategy/). */
 export type { SignalDirection, StrategySignalEvent } from './strategy/index.js';
-/** События жизненного цикла рынка (см. market-lifecycle/). */
+/**
+ * Legacy-события жизненного цикла старого рантайма (см. market-lifecycle/).
+ *
+ * @remarks
+ * Аллокация баланса и запуск/остановка старой стратегии. НЕ canonical trading
+ * lifecycle — новый контур ниже.
+ */
 export type {
   MarketCloseReason,
   MarketOpenedEvent,
   MarketClosedEvent,
 } from './market-lifecycle/index.js';
+/**
+ * Lifecycle рынка в новом торговом рантайме (см. trading-market-lifecycle/).
+ *
+ * @remarks
+ * `ADMITTED → ACTIVE → TRADING_CLOSED → RESOLVED → FINALIZED` — состояние
+ * НАШЕГО рантайма, отдельное от внешнего `Market.state` площадки.
+ */
+export type {
+  TradingMarketAdmittedEvent,
+  TradingMarketActivatedEvent,
+  TradingMarketClosedEvent,
+  TradingMarketResolvedEvent,
+  TradingMarketFinalizedEvent,
+} from './trading-market-lifecycle/index.js';
 /** Venue-обновления ордеров (см. venue-order/). */
 export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './venue-order/index.js';
 /** Canonical union application-owned событий (см. ApplicationEvent.ts). */

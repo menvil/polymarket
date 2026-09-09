@@ -35,6 +35,9 @@
     },
     {
       "path": "../../domain/entities/fill/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/entities/market/tsconfig.build.json"
     }
   ]
 }

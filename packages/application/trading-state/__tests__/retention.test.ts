@@ -17,12 +17,20 @@ import {
   MARKET_X,
   POLYMARKET,
   YES,
+  market,
   retention,
   silentLogger,
 } from './helpers/fixtures.js';
 import type { TradingStateRetentionConfig } from '../src/index.js';
 
-/** Собирает рантайм с заданным хранением. */
+/**
+ * Собирает рантайм с заданным хранением.
+ *
+ * @remarks
+ * Рынок нужно принять до наблюдений: market-data по непринятому рынку
+ * намеренно игнорируется. Admission — первая принятая мутация, поэтому
+ * `version` в тестах ниже считается от единицы.
+ */
 function build(config: TradingStateRetentionConfig) {
   const bus = new EventBus(silentLogger);
   const created = TradingStateProjector.create(bus, config, new PaperClock(new Date(0)));
@@ -31,13 +39,24 @@ function build(config: TradingStateRetentionConfig) {
   return { bus, view: created.value.state(), events: new EventFactory() };
 }
 
-describe('L. Вытеснение по количеству', () => {
+/** Принимает тестовый рынок; отказ здесь — дефект самого теста. */
+async function admit(
+  bus: ReturnType<typeof build>['bus'],
+  events: EventFactory,
+): Promise<void> {
+  events.observeAt(1);
+  const result = await bus.publish(events.marketAdmitted(market()));
+  if (!result.ok) throw new Error('test setup: admission rejected');
+}
+
+describe('MD-L. Вытеснение по количеству', () => {
   it('старейшие наблюдения уходят первыми', async () => {
     const config = retention();
     const { bus, view, events } = build({
       ...config,
       market: { ...config.market, books: { maxCount: 3 } },
     });
+    await admit(bus, events);
 
     for (let i = 0; i < 5; i += 1) {
       events.observeAt(1_000 + i * 100);
@@ -56,18 +75,19 @@ describe('L. Вытеснение по количеству', () => {
     expect(books?.size()).toBe(3);
     // FIFO: остались три последних наблюдения.
     expect(books?.getAll().map((o) => o.observedAt.toNumber())).toEqual([1_200, 1_300, 1_400]);
-    // Версия считает ПРИНЯТЫЕ события, а не выжившие записи.
-    expect(view.getVersion()).toBe(5);
+    // Версия считает ПРИНЯТЫЕ мутации, а не выжившие записи: admission + 5.
+    expect(view.getVersion()).toBe(6);
   });
 });
 
-describe('M. Вытеснение по возрасту', () => {
+describe('MD-M. Вытеснение по возрасту', () => {
   it('наблюдения старше окна удаляются при добавлении нового', async () => {
     const config = retention();
     const { bus, view, events } = build({
       ...config,
       market: { ...config.market, trades: { maxAgeMs: 1_000 } },
     });
+    await admit(bus, events);
 
     const publishAt = async (observedAt: number): Promise<void> => {
       events.observeAt(observedAt);
@@ -94,13 +114,14 @@ describe('M. Вытеснение по возрасту', () => {
   });
 });
 
-describe('N. Обратный ход времени площадки', () => {
+describe('MD-N. Обратный ход времени площадки', () => {
   it('порядок наблюдений и вытеснение не зависят от source timestamp', async () => {
     const config = retention();
     const { bus, view, events } = build({
       ...config,
       market: { ...config.market, trades: { maxAgeMs: 1_000 } },
     });
+    await admit(bus, events);
 
     // Время наблюдения идёт вперёд, время площадки — НАЗАД.
     const rows: ReadonlyArray<readonly [number, number]> = [
@@ -184,6 +205,7 @@ describe('Владение конфигурацией хранения', () => {
     created.value.start();
     const view = created.value.state();
     const events = new EventFactory();
+    await admit(bus, events);
 
     // Проверенная конфигурация подменяется ПОСЛЕ создания.
     booksPolicy.maxCount = 1;

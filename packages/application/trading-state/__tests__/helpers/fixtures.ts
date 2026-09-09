@@ -13,9 +13,11 @@ import { MessageMetadataGenerator } from '@polymarket/messages';
 import { TimestampService } from '@polymarket/timestamp';
 import {
   AssetPrice,
+  MoneyService,
   OutcomePriceService,
   QuantityService,
   type DecimalPrice,
+  type Money,
   type OutcomePrice,
   type Quantity,
   type Side,
@@ -32,12 +34,28 @@ import {
   type VenueId,
   type VenueTradeId,
 } from '@polymarket/ids';
+import {
+  Market,
+  MarketState,
+  asMarketDuration,
+  unsafeCryptoAssetId,
+  type CryptoUpDownSpec,
+  type MarketFamily,
+  type MarketOutcome,
+  type MarketSlug,
+  type OutcomeIndex,
+} from '@polymarket/market';
 import type {
   BookDepthEvent,
   ReferencePriceFeed,
   ReferencePriceUpdatedEvent,
   TickSizeChangedEvent,
   TradeReceivedEvent,
+  TradingMarketActivatedEvent,
+  TradingMarketAdmittedEvent,
+  TradingMarketClosedEvent,
+  TradingMarketFinalizedEvent,
+  TradingMarketResolvedEvent,
 } from '@polymarket/application-events';
 import type { TradingStateRetentionConfig } from '../../src/index.js';
 
@@ -67,6 +85,11 @@ export function assetPrice(value: number): AssetPrice {
   return AssetPrice.of(new Decimal(value));
 }
 
+/** Денежная величина в USDC — нужна только legacy-событиям аллокации. */
+export function money(value: number): Money {
+  return must(MoneyService.create(value));
+}
+
 /** Управляемые часы, с которых снимается время наблюдения. */
 export class TestClock extends PaperClock {}
 
@@ -90,6 +113,18 @@ export class EventFactory {
   /** Конверт с текущим временем наблюдения. */
   private _envelope() {
     return this._metadata.nextRoot();
+  }
+
+  /**
+   * Canonical metadata с текущим временем наблюдения.
+   *
+   * @remarks
+   * Нужна там, где событие собирается вручную, — например для legacy
+   * `MARKET_OPENED`/`MARKET_CLOSED`, фабрик для которых здесь намеренно нет:
+   * их payload несёт аллокацию и realized PnL, а не жизненный цикл рынка.
+   */
+  public metadata() {
+    return this._envelope();
   }
 
   /** `BOOK_DEPTH` для рынка либо для площадки, если `marketId` не задан. */
@@ -218,6 +253,31 @@ export class EventFactory {
     };
   }
 
+  /** `TRADING_MARKET_ADMITTED` — единственный способ создать состояние рынка. */
+  public marketAdmitted(market: Market): TradingMarketAdmittedEvent {
+    return { type: 'TRADING_MARKET_ADMITTED', payload: { market }, metadata: this._envelope() };
+  }
+
+  /** `TRADING_MARKET_ACTIVATED` — начало торговли по принятому рынку. */
+  public marketActivated(marketId: MarketId): TradingMarketActivatedEvent {
+    return { type: 'TRADING_MARKET_ACTIVATED', payload: { marketId }, metadata: this._envelope() };
+  }
+
+  /** `TRADING_MARKET_CLOSED` — МЫ прекратили торговать. */
+  public marketTradingClosed(marketId: MarketId): TradingMarketClosedEvent {
+    return { type: 'TRADING_MARKET_CLOSED', payload: { marketId }, metadata: this._envelope() };
+  }
+
+  /** `TRADING_MARKET_RESOLVED` — площадка объявила исход; несёт весь Market. */
+  public marketResolved(market: Market): TradingMarketResolvedEvent {
+    return { type: 'TRADING_MARKET_RESOLVED', payload: { market }, metadata: this._envelope() };
+  }
+
+  /** `TRADING_MARKET_FINALIZED` — работа по рынку закончена. */
+  public marketFinalized(marketId: MarketId): TradingMarketFinalizedEvent {
+    return { type: 'TRADING_MARKET_FINALIZED', payload: { marketId }, metadata: this._envelope() };
+  }
+
   /** `TICK_SIZE_CHANGED` — по контракту всегда market-scoped. */
   public tickSizeChanged(args: {
     readonly marketId: MarketId;
@@ -263,6 +323,107 @@ export function asset(raw: string): AssetSymbolId {
   return parsed;
 }
 export const BTC_USD = unsafeInstrumentId('BTCUSD');
+
+/**
+ * Расписание рынка по умолчанию.
+ *
+ * @remarks
+ * Все времена в тестах абсолютные и небольшие: admission происходит до
+ * `OPENS_AT`, торговля — между `OPENS_AT` и `EXPIRES_AT`. Так каждый тест
+ * читается без арифметики в голове.
+ */
+export const OPENS_AT_MS = 10_000;
+export const EXPIRES_AT_MS = 310_000;
+
+/** Исходы рынка по умолчанию: UP → YES, DOWN → NO. */
+function defaultOutcomes(): readonly [MarketOutcome, MarketOutcome] {
+  return [
+    { index: 0, label: 'Up', instrumentId: YES },
+    { index: 1, label: 'Down', instrumentId: NO },
+  ];
+}
+
+/**
+ * Спецификация crypto-рынка.
+ *
+ * @param assetId - Базовый актив (`'btc'`, `'eth'`, ...)
+ * @param durationMs - Номинальная длительность серии; по умолчанию 5 минут
+ * @returns Провалидированная спецификация семейства `CRYPTO_UP_DOWN`
+ */
+export function cryptoSpec(assetId = 'btc', durationMs = 300_000): CryptoUpDownSpec {
+  const duration = asMarketDuration(durationMs);
+  if (duration === undefined) throw new Error('fixture: invalid market duration');
+  return { asset: unsafeCryptoAssetId(assetId), duration };
+}
+
+/**
+ * Canonical `Market` для тестов.
+ *
+ * @remarks
+ * Реальная доменная сущность, а не заглушка: admission опирается на её
+ * валидацию (ровно два исхода с различными `InstrumentId`,
+ * `startsAt < expiresAt`, семейство со спецификацией), и подменять её моком
+ * значило бы проверять мок.
+ *
+ * @param overrides - Что изменить относительно рынка по умолчанию
+ * @returns Провалидированный `Market`
+ *
+ * @example
+ * ```typescript
+ * const terminal = market({ state: MarketState.closed() });
+ * const other = market({ id: MARKET_Y, outcomes: [...] });
+ * ```
+ */
+export function market(
+  overrides: {
+    readonly id?: MarketId;
+    readonly venueId?: VenueId;
+    readonly slug?: string;
+    readonly question?: string;
+    readonly startsAtMs?: number;
+    readonly expiresAtMs?: number;
+    readonly state?: MarketState;
+    readonly outcomes?: readonly [MarketOutcome, MarketOutcome];
+    readonly family?: MarketFamily;
+    readonly crypto?: CryptoUpDownSpec;
+  } = {},
+): Market {
+  const family = overrides.family ?? 'CRYPTO_UP_DOWN';
+  const crypto =
+    overrides.crypto ?? (family === 'CRYPTO_UP_DOWN' ? cryptoSpec() : undefined);
+  const created = Market.create({
+    id: overrides.id ?? MARKET_X,
+    venueId: overrides.venueId ?? POLYMARKET,
+    ...(overrides.slug === undefined ? {} : { slug: overrides.slug as MarketSlug }),
+    question: overrides.question ?? 'Bitcoin Up or Down?',
+    startsAt: ts(overrides.startsAtMs ?? OPENS_AT_MS),
+    expiresAt: ts(overrides.expiresAtMs ?? EXPIRES_AT_MS),
+    state: overrides.state ?? MarketState.active(),
+    outcomes: overrides.outcomes ?? defaultOutcomes(),
+    family,
+    ...(crypto === undefined ? {} : { crypto }),
+  });
+  if (!created.ok) throw new Error(`fixture: invalid market — ${created.error.message}`);
+  return created.value;
+}
+
+/**
+ * Тот же рынок в состоянии RESOLVED.
+ *
+ * @param base - Принятый рынок
+ * @param winner - Индекс победившего исхода
+ * @returns Новый `Market` со `state.status === 'RESOLVED'`
+ *
+ * @remarks
+ * Идёт через доменный переход `markResolved()`, а не через `Market.create()` с
+ * готовым состоянием: так тест проверяет ровно тот объект, который придёт из
+ * реального контура резолюции.
+ */
+export function resolvedMarket(base: Market, winner: OutcomeIndex = 0): Market {
+  const resolved = base.markResolved(winner);
+  if (!resolved.ok) throw new Error(`fixture: cannot resolve market — ${resolved.error.message}`);
+  return resolved.value;
+}
 
 /** Щедрая конфигурация хранения — тесты retention задают свою. */
 export function retention(overrides: Partial<TradingStateRetentionConfig> = {}): TradingStateRetentionConfig {
