@@ -14,12 +14,14 @@ import {
   TradingStateProjector,
   BookIdentityMismatchError,
   InstrumentMarketConflictError,
+  PriceDomainMismatchError,
   type TradingHotStateView,
 } from '../src/index.js';
 import {
   BINANCE,
   BTC_USD,
   BTC_USDT,
+  assetPrice as assetPriceOf,
   COINBASE,
   EventFactory,
   MARKET_X,
@@ -327,6 +329,74 @@ describe('R. Идентичность внутри снимка стакана',
     expect(error.inPayload).toBe(YES);
     expect(error.inSnapshot).toBe(NO);
     expect(error.severity).toBe('critical');
+  });
+});
+
+describe('S. Ценовой домен сужается по владельцу ряда', () => {
+  it('сделка рынка хранится с OutcomePrice, сделка площадки — с AssetPrice', async () => {
+    const { bus, view, events } = buildRuntime();
+
+    events.observeAt(1_000);
+    await bus.publish(
+      events.tradeReceived({
+        venueId: POLYMARKET,
+        instrumentId: YES,
+        marketId: MARKET_X,
+        price: 0.62,
+        size: 5,
+        side: 'BUY',
+        sourceTimestampMs: 900,
+      }),
+    );
+    events.observeAt(1_100);
+    await bus.publish(
+      events.cexTradeReceived({
+        venueId: BINANCE,
+        instrumentId: BTC_USDT,
+        price: 78_468.5,
+        size: 0.25,
+        side: 'SELL',
+        sourceTimestampMs: 1_000,
+      }),
+    );
+
+    const marketTrade = view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.getLatest();
+    const sharedTrade = view.getSharedInstrument(BINANCE, BTC_USDT)?.publicTrades.getLatest();
+
+    // Типы сужены: цена рынка сравнима с ценой рынка, цена биржи — с биржевой.
+    expect(marketTrade?.price.value().toNumber()).toBeCloseTo(0.62, 6);
+    expect(sharedTrade?.price.value().toNumber()).toBeCloseTo(78_468.5, 4);
+    expect(marketTrade?.price.constructor.name).toBe('OutcomePrice');
+    expect(sharedTrade?.price.constructor.name).toBe('AssetPrice');
+  });
+
+  it('цена чужого домена в рынок не попадает', async () => {
+    const { bus, view, events } = buildRuntime();
+    events.observeAt(1_000);
+
+    // Цена биржи маршрутизирована в рынок предсказаний — ошибка адаптера.
+    const result = await bus.publish(
+      events.cexTradeReceived({
+        venueId: POLYMARKET,
+        instrumentId: YES,
+        marketId: MARKET_X,
+        price: 78_468.5,
+        size: 1,
+        side: 'BUY',
+        sourceTimestampMs: 900,
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.size()).toBe(0);
+    expect(view.getVersion()).toBe(0);
+  });
+
+  it('ошибка называет ожидаемый домен и фактическую величину', () => {
+    const error = new PriceDomainMismatchError('OutcomePrice', assetPriceOf(78_468.5));
+    expect(error.expected).toBe('OutcomePrice');
+    expect(error.severity).toBe('critical');
+    expect(error.message).toContain('78468.5');
   });
 });
 

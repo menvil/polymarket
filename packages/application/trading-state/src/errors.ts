@@ -8,6 +8,7 @@
  */
 import { TradingError } from '@polymarket/errors';
 import type { InstrumentId, MarketId, VenueId } from '@polymarket/ids';
+import type { DecimalPrice } from '@polymarket/value-objects';
 
 /**
  * Market-scoped инструмент пришёл с другим рынком, чем зарегистрирован.
@@ -15,9 +16,10 @@ import type { InstrumentId, MarketId, VenueId } from '@polymarket/ids';
  * @remarks
  * Молча перенести инструмент между рынками нельзя: это либо ошибка
  * маршрутизации в адаптере, либо коллизия идентификаторов, и в обоих
- * случаях дальнейшее состояние будет неверным. Отказ обязан быть видимым —
- * подписки проектора critical, и такая ошибка останавливает разбор очереди
- * вместо того, чтобы дать торговать по испорченному состоянию.
+ * случаях дальнейшее состояние будет неверным. Подписки проектора critical,
+ * поэтому отказ виден публикующей стороне как `Err` из `publish()`, а не
+ * теряется. Что с ним делает живой контур — вопрос композиции, он решается
+ * отдельно и до включения Strategy.
  *
  * @example
  * ```typescript
@@ -59,8 +61,10 @@ export class InstrumentMarketConflictError extends TradingError {
  * необъяснимым ценам в стратегии.
  *
  * Проверка дешёвая, а последствия молчания — нет, поэтому слой закрывается
- * ошибкой: подписки проектора critical, и такое событие останавливает
- * разбор очереди.
+ * ошибкой. Подписки проектора critical: отказ возвращается публикующей
+ * стороне как `Err` из `publish()`, а не глотается шиной. Что с этим делает
+ * живой контур — вопрос композиции, он решается отдельно и до включения
+ * Strategy.
  *
  * @example
  * ```typescript
@@ -84,6 +88,46 @@ export class BookIdentityMismatchError extends TradingError {
       `BOOK_DEPTH identity mismatch on ${field}: payload has ${String(inPayload)}, ` +
         `snapshot has ${String(inSnapshot)}`,
       { context: { field, inPayload, inSnapshot } },
+    );
+  }
+}
+
+/**
+ * Цена пришла не в том домене, который соответствует владельцу ряда.
+ *
+ * @remarks
+ * Ценовой домен однозначно следует из маршрута: market-scoped наблюдение
+ * принадлежит рынку предсказаний (`OutcomePrice`, диапазон (0, 1)), shared —
+ * площадке актива (`AssetPrice`, без верхней границы). Canonical-событие
+ * несёт общий `DecimalPrice`, и сужение делается на границе.
+ *
+ * Несовпадение означает ошибку маршрутизации в адаптере: цена BTC поехала в
+ * рынок предсказаний либо доля исхода — в ленту биржи. Положить её в ряд
+ * значило бы отдать стратегии величину другой размерности.
+ *
+ * Проверено на записанных данных: 7 163 758 ценовых уровней Polymarket из
+ * run-05 укладываются в [0.001, 0.999], то есть законных нарушений нет.
+ *
+ * @example
+ * ```typescript
+ * throw new PriceDomainMismatchError('OutcomePrice', assetPrice);
+ * ```
+ */
+export class PriceDomainMismatchError extends TradingError {
+  public readonly severity = 'critical' as const;
+
+  /**
+   * @param expected - Домен, которого требует владелец ряда
+   * @param received - Цена, пришедшая в наблюдении
+   */
+  constructor(
+    public readonly expected: 'OutcomePrice' | 'AssetPrice',
+    public readonly received: DecimalPrice,
+  ) {
+    super(
+      `Price domain mismatch: expected ${expected}, got ${received.constructor.name} ` +
+        `with value ${received.value().toString()}`,
+      { context: { expected, actual: received.constructor.name } },
     );
   }
 }

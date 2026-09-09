@@ -61,8 +61,22 @@ export interface BookObservation extends Observation {
   readonly sourceTimestamp: Timestamp;
 }
 
-/** Публичная сделка на площадке в момент наблюдения. */
-export interface PublicTradeObservation extends Observation {
+/**
+ * Публичная сделка на площадке в момент наблюдения.
+ *
+ * @remarks
+ * Параметризована ценовым доменом, потому что домен ОДНОЗНАЧНО следует из
+ * владельца ряда: market-scoped наблюдение принадлежит рынку предсказаний и
+ * несёт `OutcomePrice`, shared — площадке актива и несёт `AssetPrice`.
+ * Canonical-событие приходит с общим `DecimalPrice` (иначе union стал бы
+ * prediction-only и CEX пришлось бы заводить второй тип события), а
+ * сужение делает проектор ровно там, где уже решает маршрут.
+ *
+ * Сужение — через `instanceof`, без повторной проверки инварианта: значение
+ * уже прошло её при создании VO (ADR, Решение 9).
+ */
+export interface PublicTradeObservation<TPrice extends DecimalPrice = DecimalPrice>
+  extends Observation {
   /**
    * Идентификатор сделки у площадки.
    *
@@ -72,8 +86,8 @@ export interface PublicTradeObservation extends Observation {
    * отличить от настоящего.
    */
   readonly venueTradeId: VenueTradeId | undefined;
-  /** Цена исполнения */
-  readonly price: DecimalPrice;
+  /** Цена исполнения в домене владельца ряда */
+  readonly price: TPrice;
   /** Объём */
   readonly size: Quantity;
   /** Сторона агрессора */

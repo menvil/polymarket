@@ -12,6 +12,7 @@
 import { RollingWindow } from '@polymarket/rolling-window';
 import type { IClock } from '@polymarket/time';
 import type { InstrumentId, VenueId } from '@polymarket/ids';
+import type { AssetPrice, DecimalPrice, OutcomePrice } from '@polymarket/value-objects';
 import { Ok, type Result, isErr } from '@polymarket/result';
 import type { ValidationError } from '@polymarket/errors';
 import type { InstrumentRetentionConfig } from './TradingStateRetentionConfig.js';
@@ -39,10 +40,19 @@ export function observedAtMs(observation: Observation): number {
   return observation.observedAt.toNumber();
 }
 
-/** Два ряда наблюдений, общие для рыночного и площадочного инструмента. */
-interface InstrumentSeries {
+/**
+ * Два ряда наблюдений, общие для рыночного и площадочного инструмента.
+ *
+ * @remarks
+ * Параметризованы ценовым доменом: у рынка предсказаний это `OutcomePrice`,
+ * у площадки актива — `AssetPrice`. Стакан остаётся на общем `DecimalPrice`:
+ * сузить `Orderbook` целиком нельзя одним `instanceof`, для этого пришлось бы
+ * проверять каждый уровень, а что делать с книгой, где один уровень не
+ * прошёл, пока решать не на чем — потребителя нет.
+ */
+interface InstrumentSeries<TPrice extends DecimalPrice> {
   readonly books: RollingWindow<BookObservation>;
-  readonly publicTrades: RollingWindow<PublicTradeObservation>;
+  readonly publicTrades: RollingWindow<PublicTradeObservation<TPrice>>;
 }
 
 /**
@@ -52,14 +62,14 @@ interface InstrumentSeries {
  * @param clock - Часы; `append()` их не использует, см. {@link observedAtMs}
  * @returns Ряды либо первая же ошибка валидации политики
  */
-function createSeries(
+function createSeries<TPrice extends DecimalPrice>(
   config: InstrumentRetentionConfig,
   clock: IClock,
-): Result<InstrumentSeries, ValidationError> {
+): Result<InstrumentSeries<TPrice>, ValidationError> {
   const books = RollingWindow.create<BookObservation>(config.books, clock, observedAtMs);
   if (isErr(books)) return books;
 
-  const publicTrades = RollingWindow.create<PublicTradeObservation>(
+  const publicTrades = RollingWindow.create<PublicTradeObservation<TPrice>>(
     config.trades,
     clock,
     observedAtMs,
@@ -75,7 +85,7 @@ export class MarketInstrumentState implements MarketInstrumentStateView {
 
   private constructor(
     public readonly instrumentId: InstrumentId,
-    private readonly _series: InstrumentSeries,
+    private readonly _series: InstrumentSeries<OutcomePrice>,
   ) {}
 
   /**
@@ -91,7 +101,7 @@ export class MarketInstrumentState implements MarketInstrumentStateView {
     config: InstrumentRetentionConfig,
     clock: IClock,
   ): Result<MarketInstrumentState, ValidationError> {
-    const series = createSeries(config, clock);
+    const series = createSeries<OutcomePrice>(config, clock);
     if (isErr(series)) return series;
     return Ok(new MarketInstrumentState(instrumentId, series.value));
   }
@@ -100,7 +110,7 @@ export class MarketInstrumentState implements MarketInstrumentStateView {
     return this._series.books;
   }
 
-  public get publicTrades(): RollingWindow<PublicTradeObservation> {
+  public get publicTrades(): RollingWindow<PublicTradeObservation<OutcomePrice>> {
     return this._series.publicTrades;
   }
 
@@ -122,7 +132,7 @@ export class MarketInstrumentState implements MarketInstrumentStateView {
    *
    * @param observation - Наблюдение сделки
    */
-  public applyPublicTrade(observation: PublicTradeObservation): void {
+  public applyPublicTrade(observation: PublicTradeObservation<OutcomePrice>): void {
     this._series.publicTrades.append(observation);
   }
 
@@ -148,7 +158,7 @@ export class SharedInstrumentState implements SharedInstrumentStateView {
   private constructor(
     public readonly venueId: VenueId,
     public readonly instrumentId: InstrumentId,
-    private readonly _series: InstrumentSeries,
+    private readonly _series: InstrumentSeries<AssetPrice>,
   ) {}
 
   /**
@@ -166,7 +176,7 @@ export class SharedInstrumentState implements SharedInstrumentStateView {
     config: InstrumentRetentionConfig,
     clock: IClock,
   ): Result<SharedInstrumentState, ValidationError> {
-    const series = createSeries(config, clock);
+    const series = createSeries<AssetPrice>(config, clock);
     if (isErr(series)) return series;
     return Ok(new SharedInstrumentState(venueId, instrumentId, series.value));
   }
@@ -175,7 +185,7 @@ export class SharedInstrumentState implements SharedInstrumentStateView {
     return this._series.books;
   }
 
-  public get publicTrades(): RollingWindow<PublicTradeObservation> {
+  public get publicTrades(): RollingWindow<PublicTradeObservation<AssetPrice>> {
     return this._series.publicTrades;
   }
 
@@ -193,7 +203,7 @@ export class SharedInstrumentState implements SharedInstrumentStateView {
    *
    * @param observation - Наблюдение сделки
    */
-  public applyPublicTrade(observation: PublicTradeObservation): void {
+  public applyPublicTrade(observation: PublicTradeObservation<AssetPrice>): void {
     this._series.publicTrades.append(observation);
   }
 }

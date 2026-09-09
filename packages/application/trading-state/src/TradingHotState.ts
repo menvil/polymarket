@@ -20,6 +20,7 @@ import type { IClock } from '@polymarket/time';
 import type { InstrumentId, MarketDataSourceId, MarketId, VenueId } from '@polymarket/ids';
 import { Err, Ok, type Result, isErr } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
+import { AssetPrice, OutcomePrice } from '@polymarket/value-objects';
 import { RollingWindow } from '@polymarket/rolling-window';
 import {
   freezeRetentionConfig,
@@ -28,7 +29,7 @@ import {
 } from './TradingStateRetentionConfig.js';
 import { MarketInstrumentState, SharedInstrumentState } from './instrumentState.js';
 import { ReferencePriceState } from './referencePriceState.js';
-import { InstrumentMarketConflictError } from './errors.js';
+import { InstrumentMarketConflictError, PriceDomainMismatchError } from './errors.js';
 import type {
   BookObservation,
   PublicTradeObservation,
@@ -292,16 +293,43 @@ export class TradingHotState implements TradingHotStateView {
    * Применяет публичную сделку.
    *
    * @param target - Рынок и инструмент либо площадка и инструмент
-   * @param observation - Наблюдение сделки
-   * @returns `Ok(true)` после принятия
+   * @param observation - Наблюдение сделки с ценой в общем домене
+   * @returns `Ok(true)` после принятия либо несовпадение ценового домена
+   *
+   * @remarks
+   * Здесь и происходит сужение: маршрут уже определяет домен цены, и
+   * дальше по владельцу она хранится конкретным типом. Проверка —
+   * `instanceof`, без повторной валидации инварианта: значение прошло её
+   * при создании VO (ADR, Решение 9).
+   *
+   * Замер на записанных данных run-05 (7 163 758 ценовых уровней, 73 284
+   * книги, 35 016 сделок Polymarket) показал диапазон [0.001, 0.999] и ни
+   * одного значения вне (0.0001, 0.9999). То есть сужение безопасно, а
+   * отказ ловит настоящую аномалию — ошибку маршрутизации в адаптере, — а
+   * не законный случай.
    */
   public applyPublicTrade(
     target: ObservationTarget,
     observation: PublicTradeObservation,
-  ): Result<boolean, ValidationError | InstrumentMarketConflictError> {
+  ): Result<
+    boolean,
+    ValidationError | InstrumentMarketConflictError | PriceDomainMismatchError
+  > {
     const instrument = this._resolveInstrument(target);
     if (isErr(instrument)) return instrument;
-    instrument.value.applyPublicTrade(observation);
+
+    if (instrument.value instanceof MarketInstrumentState) {
+      if (!(observation.price instanceof OutcomePrice)) {
+        return Err(new PriceDomainMismatchError('OutcomePrice', observation.price));
+      }
+      instrument.value.applyPublicTrade({ ...observation, price: observation.price });
+    } else {
+      if (!(observation.price instanceof AssetPrice)) {
+        return Err(new PriceDomainMismatchError('AssetPrice', observation.price));
+      }
+      instrument.value.applyPublicTrade({ ...observation, price: observation.price });
+    }
+
     this._version += 1;
     return Ok(true);
   }

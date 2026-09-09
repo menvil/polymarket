@@ -46,12 +46,12 @@ canonical Application Events → IEventBus → TradingStateProjector → Trading
 TradingHotState
 ├── markets: MarketId → MarketRuntimeState
 │   └── instruments: InstrumentId → MarketInstrumentState
-│       ├── books        RollingWindow<BookObservation>         ← BOOK_DEPTH
-│       ├── publicTrades RollingWindow<PublicTradeObservation>  ← TRADE_RECEIVED
-│       └── tickSize     TickSizeState | undefined              ← TICK_SIZE_CHANGED
+│       ├── books        RollingWindow<BookObservation>                       ← BOOK_DEPTH
+│       ├── publicTrades RollingWindow<PublicTradeObservation<OutcomePrice>>  ← TRADE_RECEIVED
+│       └── tickSize     TickSizeState | undefined                            ← TICK_SIZE_CHANGED
 ├── sharedMarketData: VenueId → InstrumentId → SharedInstrumentState
-│       ├── books
-│       └── publicTrades
+│       ├── books        RollingWindow<BookObservation>
+│       └── publicTrades RollingWindow<PublicTradeObservation<AssetPrice>>
 ├── referencePrices: sourceId → baseAsset → quoteAsset → SPOT | TWAP(windowSeconds)
 ├── instrumentToMarket: InstrumentId → MarketId     (вторичный индекс)
 └── version: number
@@ -86,6 +86,36 @@ payload, а в состояние кладётся snapshot — при расх�
 необъяснимым ценам у стратегии. Три сравнения дешевле такой отладки, поэтому
 несовпадение закрывает событие `BookIdentityMismatchError`.
 
+## Что означает `critical: true` — и чего не означает
+
+Подписки проектора объявлены critical. Это значит ровно одно: отказ
+обработчика возвращается публикующей стороне как `Err` из
+`IEventBus.publish()`, а не глотается шиной.
+
+**Остановки торгового рантайма отсюда не следует.** Сегодняшняя цепочка:
+
+```text
+SemanticAdapter → publish() → projector throws → publish() возвращает Err
+                → адаптер логирует, увеличивает счётчик и ПРОДОЛЖАЕТ
+```
+
+Оба семантических адаптера так и задокументированы: отказ публикации не
+прерывает обработку raw-сообщения. Для записи сырых данных это верно —
+коллектор обязан писать дальше. Но состояние при этом может остаться с
+дыркой: наблюдение №101 отвергнуто, №102 принято, и никто не остановился.
+
+Это не дефект hot state, а незакрытый вопрос композиции. **Реакция живого
+торгового контура на отказ семантической публикации обязана быть определена
+fail-closed ДО включения Strategy.** Ожидаемая форма:
+
+```text
+semantic publish failure
+    → Trading Runtime unhealthy
+    → Strategy disabled
+    → Execution остановлен контролируемо
+    → Collector/Recorder продолжают писать raw
+```
+
 ## Маршрутизация
 
 Правило source-agnostic — решает **наличие** `marketId`, а не площадка:
@@ -99,6 +129,33 @@ marketId === undefined  → SharedMarketDataState
 
 `REFERENCE_PRICE_UPDATED` всегда идёт в shared: он описывает актив, а не рынок.
 `TICK_SIZE_CHANGED` всегда market-scoped — так объявлено в его контракте.
+
+## Ценовой домен сужается по владельцу
+
+Canonical-событие несёт общий `DecimalPrice` — иначе union стал бы
+prediction-only и CEX-адаптеру пришлось бы заводить второй тип события. Но
+внутри состояния домен уже однозначен, потому что его определяет маршрут:
+
+```text
+market-scoped → рынок предсказаний → OutcomePrice (0, 1)
+shared        → площадка актива    → AssetPrice   (0, ∞)
+```
+
+Сужение делает проектор ровно там, где решает маршрут, через `instanceof` —
+без повторной проверки инварианта: значение прошло её при создании VO
+(ADR, Решение 9). Несовпадение закрывается `PriceDomainMismatchError`: цена
+BTC в рынке предсказаний означает ошибку маршрутизации в адаптере, и класть
+её в ряд значило бы отдать стратегии величину другой размерности.
+
+Замерено на записанных данных run-05: **7 163 758 ценовых уровней** Polymarket
+(73 284 книги, 35 016 сделок) укладываются в **[0.001, 0.999]**, ни одного
+значения вне (0.0001, 0.9999) и ни одного ровно 0 или 1. Сужение безопасно, а
+отказ ловит настоящую аномалию, а не законный случай.
+
+**Стакан остаётся на общем `DecimalPrice`.** Сузить `Orderbook` целиком одним
+`instanceof` нельзя — пришлось бы проверять каждый уровень, и появился бы
+вопрос, что делать с книгой, где не прошёл один уровень. Решать его без
+потребителя значило бы угадывать требования.
 
 ## Идентичность рядов
 

@@ -158,6 +158,39 @@ export class EventFactory {
     };
   }
 
+  /**
+   * `TRADE_RECEIVED` с ценой БИРЖЕВОГО домена (`AssetPrice`).
+   *
+   * @remarks
+   * Отдельно от {@link EventFactory.tradeReceived}, который строит цену
+   * исхода: у биржи цена не помещается в (0, 1), и это ровно то различие,
+   * ради которого canonical-событие параметризовано общим доменом.
+   */
+  public cexTradeReceived(args: {
+    readonly venueId: VenueId;
+    readonly instrumentId: InstrumentId;
+    readonly marketId?: MarketId;
+    readonly price: number;
+    readonly size: number;
+    readonly side: Side;
+    readonly sourceTimestampMs: number;
+  }): TradeReceivedEvent<DecimalPrice> {
+    const { marketId, ...rest } = args;
+    return {
+      type: 'TRADE_RECEIVED',
+      payload: {
+        venueId: rest.venueId,
+        instrumentId: rest.instrumentId,
+        ...(marketId === undefined ? {} : { marketId }),
+        price: assetPrice(rest.price),
+        size: qty(rest.size),
+        side: rest.side,
+        timestamp: ts(rest.sourceTimestampMs),
+      },
+      metadata: this._envelope(),
+    };
+  }
+
   /** `REFERENCE_PRICE_UPDATED` с полной идентичностью фида. */
   public referencePrice(args: {
     readonly sourceId: MarketDataSourceId;

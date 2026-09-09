@@ -6,8 +6,9 @@
  * а не от конкретной инфраструктурной реализации.
  *
  * Боевой реализации сейчас НЕТ: она жила в legacy-адаптере площадки,
- * удалённом вместе с V1-контуром. Для бектестов — `MockExchangeClient` в
- * `packages/infrastructure/backtesting`.
+ * удалённом вместе с V1-контуром. Сам контракт будет пересмотрен в рамках
+ * будущего рефакторинга execution/application. Для бектестов —
+ * `MockExchangeClient` в `packages/infrastructure/backtesting`.
  *
  * Используется:
  * - PlaceOrderUseCase — `submitOrder()` → получить OrderId от биржи

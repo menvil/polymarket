@@ -37,7 +37,11 @@
  * ```
  */
 export { TradingStateProjector } from './TradingStateProjector.js';
-export { BookIdentityMismatchError, InstrumentMarketConflictError } from './errors.js';
+export {
+  BookIdentityMismatchError,
+  InstrumentMarketConflictError,
+  PriceDomainMismatchError,
+} from './errors.js';
 export {
   freezeRetentionConfig,
   retentionPolicyEntries,

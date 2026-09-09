@@ -16,6 +16,7 @@
  * `readonly`, а сами наблюдения immutable по построению.
  */
 import type { InstrumentId, MarketDataSourceId, MarketId, VenueId } from '@polymarket/ids';
+import type { AssetPrice, OutcomePrice } from '@polymarket/value-objects';
 import type {
   BookObservation,
   PublicTradeObservation,
@@ -76,8 +77,14 @@ export interface MarketInstrumentStateView {
    * Текущий стакан — это `books.getLatest()`. Отдельного `currentBook` нет.
    */
   readonly books: RollingWindowView<BookObservation>;
-  /** История публичных сделок (`TRADE_RECEIVED`) */
-  readonly publicTrades: RollingWindowView<PublicTradeObservation>;
+  /**
+   * История публичных сделок (`TRADE_RECEIVED`).
+   *
+   * @remarks
+   * Цена — `OutcomePrice`: инструмент принадлежит рынку предсказаний, и его
+   * цена по построению лежит в (0, 1). Сужение делает проектор на границе.
+   */
+  readonly publicTrades: RollingWindowView<PublicTradeObservation<OutcomePrice>>;
   /**
    * Действующий шаг цены.
    *
@@ -106,8 +113,14 @@ export interface SharedInstrumentStateView {
   readonly instrumentId: InstrumentId;
   /** История полных снимков стакана */
   readonly books: RollingWindowView<BookObservation>;
-  /** История публичных сделок */
-  readonly publicTrades: RollingWindowView<PublicTradeObservation>;
+  /**
+   * История публичных сделок.
+   *
+   * @remarks
+   * Цена — `AssetPrice`: это лента внешней площадки, где верхней границы у
+   * цены нет.
+   */
+  readonly publicTrades: RollingWindowView<PublicTradeObservation<AssetPrice>>;
 }
 
 /**
