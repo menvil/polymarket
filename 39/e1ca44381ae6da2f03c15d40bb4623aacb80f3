@@ -1,0 +1,44 @@
+packages/application/trading-state/__tests__/TradingStateProjector.test.ts
+  s_c99ec2b699d51d::t_39f8522c3a1af2 17,24,335-399
+packages/application/trading-state/__tests__/helpers/fixtures.ts
+  s_c99ec2b699d51d::t_39f8522c3a1af2 161-193
+packages/application/trading-state/src/observations.ts
+  s_c99ec2b699d51d::t_cf2c9be6a5d092 64-79,89-90
+packages/application/trading-state/src/views.ts
+  s_c99ec2b699d51d::t_cf2c9be6a5d092 19,80-87,116-123
+packages/application/trading-state/src/errors.ts
+  s_c99ec2b699d51d::t_e0a02ac20db687 11,94-130
+  s_c99ec2b699d51d::t_4de26a1f9aeb6f 64-67
+  s_c99ec2b699d51d::t_9bb4d13cdddea1 19-22
+packages/application/trading-state/docs/trading-state.md
+  s_c99ec2b699d51d::t_6c188ccb43eb1d 49-51,53-54,133-158
+  s_c99ec2b699d51d::t_9bb4d13cdddea1 89-118
+packages/application/trading-state/src/TradingHotState.ts
+  s_c99ec2b699d51d::t_e0a02ac20db687 23,32,296-309,314-317,320-332
+packages/application/trading-state/src/instrumentState.ts
+  s_c99ec2b699d51d::t_e42486ea661b8a 15,43-53,55,65,68,72,88,104,113,135,161,179,188,206
+packages/application/trading-state/src/index.ts
+  s_c99ec2b699d51d::t_bd851a52feab67 40-44
+packages/application/ports/src/IExchangeClient.ts
+  s_c99ec2b699d51d::t_ebdce3aa933908 9-11
+packages/application/ports/src/IMarketCatalog.ts
+  s_c99ec2b699d51d::t_ebdce3aa933908 6-9
+packages/application/trading-state/src/TradingStateProjector.ts
+  s_c99ec2b699d51d::t_4de26a1f9aeb6f 11-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "39e1ca44381ae6da2f03c15d40bb4623aacb80f3",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
