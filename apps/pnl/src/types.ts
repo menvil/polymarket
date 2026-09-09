@@ -33,13 +33,17 @@
  * Без VO намеренно остаются:
  * - **счётчики** (`wins`, `losses`, `totalMarkets`, `outcomeIndex`) —
  *   безразмерные, инварианта нет;
- * - **`netShares`** — может быть отрицательным, а `Quantity` запрещает
- *   отрицательные значения; `SignedQuantity` не в публичном API пакета;
  * - **цена резолюции** — это `Ratio`, а не `OutcomePrice`: последний
  *   допускает только диапазон (0, 1), тогда как после резолюции цена равна
  *   ровно 1 или 0.
  */
-import type { Money, OutcomePrice, Quantity, Ratio } from '@polymarket/value-objects';
+import type {
+  Money,
+  OutcomePrice,
+  Quantity,
+  Ratio,
+  SignedQuantity,
+} from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
 
 /**
@@ -189,10 +193,10 @@ export interface MarketPnl {
    * Остаток токенов на резолюции.
    *
    * @remarks
-   * Остаётся `number`: величина знаковая, а `Quantity` запрещает
-   * отрицательные значения.
+   * `SignedQuantity`, а не `Quantity`: величина знаковая. Если внутри окна
+   * отчёта продали больше, чем купили, остаток уходит в минус.
    */
-  netShares: number;
+  netShares: SignedQuantity;
   /** Выплата по резолюции */
   redeemValue: Money;
   /** Комиссия; `null` — недоступна */

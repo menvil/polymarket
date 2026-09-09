@@ -24,12 +24,19 @@ import type { Result } from '@polymarket/result';
 import { isOk } from '@polymarket/result';
 import type { Timestamp } from '@polymarket/timestamp';
 import { TimestampService } from '@polymarket/timestamp';
-import type { Money, OutcomePrice, Quantity, Ratio } from '@polymarket/value-objects';
+import type {
+  Money,
+  OutcomePrice,
+  Quantity,
+  Ratio,
+  SignedQuantity,
+} from '@polymarket/value-objects';
 import {
   MoneyService,
   OutcomePriceService,
   QuantityService,
   RatioService,
+  SignedQuantityService,
 } from '@polymarket/value-objects';
 
 /** Нижняя граница торгуемой цены (базовый тик Polymarket). */
@@ -86,6 +93,27 @@ export function money(value: number): Money {
  */
 export function quantity(value: number): Quantity {
   return expect(QuantityService.create(value), `quantity from ${value}`);
+}
+
+/**
+ * Создаёт знаковое количество токенов.
+ *
+ * @param value - Количество; отрицательное допустимо
+ * @returns `SignedQuantity`
+ * @throws {Error} Если значение не конечное число
+ *
+ * @remarks
+ * Отдельно от {@link quantity}: `Quantity` запрещает отрицательные значения
+ * инвариантом, а нетто-остаток позиции знаковый — продали больше, чем
+ * купили внутри окна, и он уходит в минус.
+ *
+ * @example
+ * ```typescript
+ * signedQuantity(-5);  // SignedQuantity(-5), sign() === -1
+ * ```
+ */
+export function signedQuantity(value: number): SignedQuantity {
+  return expect(SignedQuantityService.create(value), `signed quantity from ${value}`);
 }
 
 /**

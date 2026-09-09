@@ -204,7 +204,7 @@ export class DetailedRenderer {
 
     const redeemLabel = market.won ? '(token won)' : '(token lost)';
     lines.push(
-      `  Redeem:  ${fmtNum(Math.max(0, market.netShares), 1)} shares` +
+      `  Redeem:  ${fmtNum(market.netShares.isPositive() ? market.netShares.toNumber() : 0, 1)} shares` +
       ` × $${fmtNum(market.resolvedPrice.toNumber(), 2)}      =  ${fmtPnl(market.redeemValue)}  ${redeemLabel}`
     );
 

@@ -49,7 +49,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { Money } from '@polymarket/value-objects';
-import { money, ratio, subMoney, sumMoney } from './vo.js';
+import { money, ratio, signedQuantity, subMoney, sumMoney } from './vo.js';
 import {
   POLYMARKET_CRYPTO_TAKER_FEE_RATE,
   calculatePolymarketTakerFeeNumber,
@@ -144,8 +144,11 @@ export class PnlCalculator {
       records.filter((r) => r.side === 'SELL').map((r) => r.notional)
     );
     const entryCost = money(position.avgPrice.toNumber() * position.totalBought.toNumber());
-    const netShares = shares('BUY') - shares('SELL');
-    const redeemValue = money(Math.max(0, netShares) * position.curPrice.toNumber());
+    const netShares = signedQuantity(shares('BUY') - shares('SELL'));
+    // Отрицательный остаток к выплате не идёт: продали больше, чем держим
+    // внутри окна отчёта — значит на резолюцию ничего не осталось.
+    const redeemable = netShares.isPositive() ? netShares.toNumber() : 0;
+    const redeemValue = money(redeemable * position.curPrice.toNumber());
     const netPnl = position.realizedPnl;
 
     return {
