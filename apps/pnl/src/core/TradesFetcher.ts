@@ -37,6 +37,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { ClobTrade } from '@polymarket/bindings/clob';
+import { money, price, quantity, timestamp } from './vo.js';
 import type { NormalizedFill } from '../types.js';
 
 /** Узкий порт: из secure-клиента нужен один метод. */
@@ -119,7 +120,7 @@ export class TradesFetcher {
       fills.push(...this._normalizeTrade(trade, params.makerAddress));
     }
 
-    fills.sort((a, b) => a.matchedAtMs - b.matchedAtMs);
+    fills.sort((a, b) => a.matchedAt.toNumber() - b.matchedAt.toNumber());
     this._logger.info(
       `Fetched ${confirmed.length} trades (${all.length} total) → ${fills.length} fills`
     );
@@ -142,18 +143,19 @@ export class TradesFetcher {
     const fromMakerOrders: NormalizedFill[] = [];
     for (const mo of trade.makerOrders ?? []) {
       if (mo.makerAddress.toLowerCase() !== ours) continue;
-      const size = Number(mo.matchedAmount);
-      if (size <= 0) continue;
+      const matched = Number(mo.matchedAmount);
+      if (matched <= 0) continue;
+      const executionPrice = Number(mo.price);
 
       fromMakerOrders.push({
         transactionHash: trade.transactionHash,
         market: trade.conditionId,
         asset_id: mo.tokenId,
         side: mo.side as NormalizedFill['side'],
-        size,
-        price: Number(mo.price),
-        usdcSize: size * Number(mo.price),
-        matchedAtMs: Date.parse(trade.matchedAt),
+        size: quantity(matched),
+        price: price(executionPrice),
+        usdcSize: money(matched * executionPrice),
+        matchedAt: timestamp(Date.parse(trade.matchedAt)),
         outcome: mo.outcome,
         liquidityRole: 'MAKER',
       });
@@ -173,16 +175,16 @@ export class TradesFetcher {
    */
   private _topLevelFill(trade: ClobTrade): NormalizedFill {
     const size = Number(trade.size);
-    const price = Number(trade.price);
+    const executionPrice = Number(trade.price);
     return {
       transactionHash: trade.transactionHash,
       market: trade.conditionId,
       asset_id: trade.tokenId,
       side: trade.side as NormalizedFill['side'],
-      size,
-      price,
-      usdcSize: size * price,
-      matchedAtMs: Date.parse(trade.matchedAt),
+      size: quantity(size),
+      price: price(executionPrice),
+      usdcSize: money(size * executionPrice),
+      matchedAt: timestamp(Date.parse(trade.matchedAt)),
       outcome: trade.outcome,
       liquidityRole: trade.traderSide === 'TAKER' ? 'TAKER' : 'MAKER',
     };

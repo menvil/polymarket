@@ -30,7 +30,8 @@
  */
 
 import type { PnlReport, DailyPnl } from '../types.js';
-import { fmtMoney, fmtPnl, fmtRoi, fmtOptional, hline } from './format.js';
+import { divMoney, money } from '../core/vo.js';
+import { fmtCost, fmtMoney, fmtPnl, fmtRoi, fmtOptional, hline } from './format.js';
 
 // Ширины колонок
 const W = {
@@ -88,9 +89,8 @@ export class DailyRenderer {
     const winRate = report.totalMarkets > 0
       ? (report.wins / report.totalMarkets * 100).toFixed(1)
       : '0.0';
-    const avgPnl = report.totalMarkets > 0
-      ? report.netPnl / report.totalMarkets
-      : 0;
+    const avgPnl =
+      report.totalMarkets > 0 ? divMoney(report.netPnl, report.totalMarkets) : money(0);
 
     lines.push(`  Win rate:   ${winRate}%  (${report.wins}/${report.totalMarkets})`);
     lines.push(`  Avg PnL:    ${fmtPnl(avgPnl)} per market`);
@@ -143,7 +143,7 @@ export class DailyRenderer {
       String(day.losses).padStart(W.l),
       fmtMoney(day.entryCost).padStart(W.entry),
       fmtMoney(day.totalReturn).padStart(W.redeem),
-      fmtOptional(day.fees, (v) => fmtPnl(-v)).padStart(W.fees),
+      fmtOptional(day.fees, (v) => fmtCost(v)).padStart(W.fees),
       fmtPnl(day.netPnl).padStart(W.pnl),
       fmtRoi(day.roi).padStart(W.roi),
     ].join(' ');
@@ -164,7 +164,7 @@ export class DailyRenderer {
       String(report.losses).padStart(W.l),
       fmtMoney(report.entryCost).padStart(W.entry),
       fmtMoney(report.totalReturn).padStart(W.redeem),
-      fmtOptional(report.fees, (v) => fmtPnl(-v)).padStart(W.fees),
+      fmtOptional(report.fees, (v) => fmtCost(v)).padStart(W.fees),
       fmtPnl(report.netPnl).padStart(W.pnl),
       fmtRoi(report.roi).padStart(W.roi),
     ].join(' ');

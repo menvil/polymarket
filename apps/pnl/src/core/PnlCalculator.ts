@@ -48,6 +48,8 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
+import type { Money } from '@polymarket/value-objects';
+import { money, ratio, subMoney, sumMoney } from './vo.js';
 import {
   POLYMARKET_CRYPTO_TAKER_FEE_RATE,
   calculatePolymarketTakerFeeNumber,
@@ -128,19 +130,22 @@ export class PnlCalculator {
   private _buildMarketPnl(position: PositionPnl, fills: NormalizedFill[]): MarketPnl {
     const records = fills
       .slice()
-      .sort((a, b) => a.matchedAtMs - b.matchedAtMs)
+      .sort((a, b) => a.matchedAt.toNumber() - b.matchedAt.toNumber())
       .map((f) => this._toFillRecord(f, position.outcome));
 
     // Строго: комиссия рынка известна, только если известна у КАЖДОГО fill.
     // Иначе сумма выдавала бы частичное значение за полное.
     const allFeesKnown = records.length > 0 && records.every((r) => r.fee !== null);
-    const buyShares = records.reduce((s, r) => (r.side === 'BUY' ? s + r.size : s), 0);
-    const sellShares = records.reduce((s, r) => (r.side === 'SELL' ? s + r.size : s), 0);
-    const sellProceeds = records.reduce((s, r) => (r.side === 'SELL' ? s + r.notional : s), 0);
 
-    const entryCost = position.avgPrice * position.totalBought;
-    const netShares = buyShares - sellShares;
-    const redeemValue = Math.max(0, netShares) * position.curPrice;
+    const shares = (side: FillRecord['side']): number =>
+      records.reduce((acc, r) => (r.side === side ? acc + r.size.toNumber() : acc), 0);
+
+    const sellProceeds = sumMoney(
+      records.filter((r) => r.side === 'SELL').map((r) => r.notional)
+    );
+    const entryCost = money(position.avgPrice.toNumber() * position.totalBought.toNumber());
+    const netShares = shares('BUY') - shares('SELL');
+    const redeemValue = money(Math.max(0, netShares) * position.curPrice.toNumber());
     const netPnl = position.realizedPnl;
 
     return {
@@ -148,20 +153,23 @@ export class PnlCalculator {
       question: position.title,
       outcomeName: position.outcome,
       resolvedPrice: position.curPrice,
-      won: position.curPrice >= WINNING_PRICE,
-      profitable: netPnl > 0,
+      won: position.curPrice.toNumber() >= WINNING_PRICE,
+      profitable: netPnl.isPositive(),
       fills: records,
       entryCost,
       sellProceeds,
       netShares,
       redeemValue,
-      fees: allFeesKnown ? records.reduce((s, r) => s + (r.fee ?? 0), 0) : null,
-      feeSharesPaid: allFeesKnown
-        ? records.reduce((s, r) => (r.side === 'BUY' ? s + (r.feeShares ?? 0) : s), 0)
+      fees: allFeesKnown
+        ? sumMoney(records.map((r) => r.fee).filter((f): f is Money => f !== null))
         : null,
       netPnl,
-      roi: entryCost > 0 ? netPnl / entryCost : 0,
-      entryDate: this._isoDate(records[0]?.matchTs ?? position.closedAtMs ?? 0),
+      roi: ratio(
+        entryCost.isPositive() ? netPnl.toNumber() / entryCost.toNumber() : 0
+      ),
+      entryDate: this._isoDate(
+        records[0]?.matchedAt.toNumber() ?? position.closedAt?.toNumber() ?? 0
+      ),
     };
   }
 
@@ -173,26 +181,12 @@ export class PnlCalculator {
    * @returns Строка fills в отчёте
    */
   private _toFillRecord(fill: NormalizedFill, fallbackOutcome: string): FillRecord {
-    const notional = fill.usdcSize;
     // Приоритет у измерения: публичная лента отдаёт фактически удержанное.
     // Формула — запасной путь для аутентифицированного пути, где `amount`
-    // не приходит. Роли нет и измерения нет — величина отсутствует, а не
+    // не приходит. Нет ни измерения, ни роли — величина отсутствует, а не
     // равна нулю.
-    const fee =
-      fill.feeUsdc !== undefined
-        ? fill.feeUsdc
-        : fill.liquidityRole === undefined
-          ? null
-          : fill.liquidityRole === 'MAKER'
-            ? 0 // мейкер не платит никогда
-            : calculatePolymarketTakerFeeNumber(
-                fill.size,
-                fill.price,
-                POLYMARKET_CRYPTO_TAKER_FEE_RATE
-              );
-    // Комиссия списывается в USDC, а не в токенах: количество наших токенов
-    // она не уменьшает.
-    const feeShares = fee === null ? null : 0;
+    const fee = this._resolveFee(fill);
+    const matchedAtMs = fill.matchedAt.toNumber();
 
     return {
       id: fill.transactionHash,
@@ -201,15 +195,38 @@ export class PnlCalculator {
       outcomeName: fill.outcome ?? fallbackOutcome,
       size: fill.size,
       price: fill.price,
-      notional,
+      notional: fill.usdcSize,
       fee,
-      feeShares,
-      effectiveSize: fill.size,
-      cashFlow: fill.side === 'BUY' ? -notional : notional,
-      matchTs: fill.matchedAtMs,
-      matchDate: this._isoDate(fill.matchedAtMs),
-      matchTime: new Date(fill.matchedAtMs).toISOString().slice(11, 19),
+      cashFlow:
+        fill.side === 'BUY' ? subMoney(money(0), fill.usdcSize) : fill.usdcSize,
+      matchedAt: fill.matchedAt,
+      matchDate: this._isoDate(matchedAtMs),
+      matchTime: new Date(matchedAtMs).toISOString().slice(11, 19),
     };
+  }
+
+  /**
+   * Определяет комиссию по одному fill.
+   *
+   * @param fill - Наш fill
+   * @returns Комиссия, либо `null` если величина недоступна
+   *
+   * @remarks
+   * Приоритет у измерения (`feeUsdc` из публичной ленты). Формула по
+   * документированной ставке — запасной путь для аутентифицированного
+   * пути, где `amount` не приходит. Мейкер не платит никогда.
+   */
+  private _resolveFee(fill: NormalizedFill): Money | null {
+    if (fill.feeUsdc !== undefined) return fill.feeUsdc;
+    if (fill.liquidityRole === undefined) return null;
+    if (fill.liquidityRole === 'MAKER') return money(0);
+    return money(
+      calculatePolymarketTakerFeeNumber(
+        fill.size.toNumber(),
+        fill.price.toNumber(),
+        POLYMARKET_CRYPTO_TAKER_FEE_RATE
+      )
+    );
   }
 
   /**
@@ -229,19 +246,20 @@ export class PnlCalculator {
     return [...byDate.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, dayMarkets]) => {
-        const entryCost = dayMarkets.reduce((s, m) => s + m.entryCost, 0);
-        const netPnl = dayMarkets.reduce((s, m) => s + m.netPnl, 0);
-        const fees = sumOptional(dayMarkets.map((m) => m.fees));
+        const entryCost = sumMoney(dayMarkets.map((m) => m.entryCost));
+        const netPnl = sumMoney(dayMarkets.map((m) => m.netPnl));
         return {
           date,
           markets: dayMarkets,
           wins: dayMarkets.filter((m) => m.profitable).length,
           losses: dayMarkets.filter((m) => !m.profitable).length,
           entryCost,
-          totalReturn: entryCost + netPnl,
-          fees,
+          totalReturn: sumMoney([entryCost, netPnl]),
+          fees: sumOptionalMoney(dayMarkets.map((m) => m.fees)),
           netPnl,
-          roi: entryCost > 0 ? netPnl / entryCost : 0,
+          roi: ratio(
+            entryCost.isPositive() ? netPnl.toNumber() / entryCost.toNumber() : 0
+          ),
         };
       });
   }
@@ -259,8 +277,8 @@ export class PnlCalculator {
     dailyBreakdown: DailyPnl[],
     params: ComputeParams
   ): PnlReport {
-    const entryCost = markets.reduce((s, m) => s + m.entryCost, 0);
-    const netPnl = markets.reduce((s, m) => s + m.netPnl, 0);
+    const entryCost = sumMoney(markets.map((m) => m.entryCost));
+    const netPnl = sumMoney(markets.map((m) => m.netPnl));
 
     return {
       fromDate: params.fromDate,
@@ -269,16 +287,16 @@ export class PnlCalculator {
       wins: markets.filter((m) => m.profitable).length,
       losses: markets.filter((m) => !m.profitable).length,
       entryCost,
-      totalReturn: entryCost + netPnl,
-      fees: sumOptional(markets.map((m) => m.fees)),
+      totalReturn: sumMoney([entryCost, netPnl]),
+      fees: sumOptionalMoney(markets.map((m) => m.fees)),
       netPnl,
-      roi: entryCost > 0 ? netPnl / entryCost : 0,
+      roi: ratio(entryCost.isPositive() ? netPnl.toNumber() / entryCost.toNumber() : 0),
       bestDay: dailyBreakdown.reduce<DailyPnl | null>(
-        (best, d) => (best === null || d.netPnl > best.netPnl ? d : best),
+        (best, d) => (best === null || d.netPnl.toNumber() > best.netPnl.toNumber() ? d : best),
         null
       ),
       worstDay: dailyBreakdown.reduce<DailyPnl | null>(
-        (worst, d) => (worst === null || d.netPnl < worst.netPnl ? d : worst),
+        (worst, d) => (worst === null || d.netPnl.toNumber() < worst.netPnl.toNumber() ? d : worst),
         null
       ),
       dailyBreakdown,
@@ -309,13 +327,13 @@ export class PnlCalculator {
  *
  * @example
  * ```typescript
- * sumOptional([1, 2]);       // 3
- * sumOptional([1, null, 2]); // null — часть неизвестна
+ * sumOptionalMoney([m1, m2]);       // Money
+ * sumOptionalMoney([m1, null, m2]); // null — часть неизвестна
  * ```
  */
-function sumOptional(values: Array<number | null>): number | null {
+function sumOptionalMoney(values: Array<Money | null>): Money | null {
   // Достаточно одного неизвестного слагаемого, чтобы итог перестал быть
   // суммой: частичное значение, выданное за полное, хуже честного прочерка.
   if (values.length === 0 || values.some((v) => v === null)) return null;
-  return values.reduce<number>((s, v) => s + (v ?? 0), 0);
+  return sumMoney(values as Money[]);
 }

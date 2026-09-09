@@ -2,24 +2,54 @@
  * Типы отчёта PnL.
  *
  * @remarks
- * Wire-формат больше не описывается здесь: его держит официальный SDK
+ * Wire-формат здесь не описывается: его держит официальный SDK
  * (`@polymarket/client` + `@polymarket/bindings`), который валидирует ответы
- * zod-схемами и отдаёт camelCase. Наши типы начинаются там, где заканчивается
- * SDK — с нормализованного fill и агрегатов отчёта.
+ * zod-схемами. Наши типы начинаются там, где заканчивается SDK.
  *
- * Числа намеренно сырые (`number`), а не domain Value Objects: это read-only
- * аналитика, а не торговый движок. Ни один инвариант здесь не защищается —
- * величины только считаются и печатаются.
+ * ### Почему Value Objects, а не сырые числа
+ * Раньше здесь стояли `number` с обоснованием «read-only аналитика, нет
+ * инвариантов». Практика это опровергла — за одну сессию сырые числа дали
+ * три ошибки размерности:
+ *
+ * | ошибка | что ловит тип |
+ * | --- | --- |
+ * | ставка в bps подставлена как доля | `Ratio` |
+ * | ROI-доля напечатана как проценты (в 100 раз меньше) | `Ratio` |
+ * | комиссия в токенах смешана с USDC | `Money` |
+ * | Unix-секунды против миллисекунд | `Timestamp` |
+ *
+ * Ни одна не была ошибкой невнимательности — все четыре возникли на стыке,
+ * где величина меняет представление. Тип на этом стыке делает их
+ * невозможными, а не менее вероятными.
+ *
+ * ### Где VO, а где нет
+ * VO стоят в **типах** — там, где величину передают между слоями и можно
+ * перепутать размерность. Внутри вычислений используются примитивы
+ * (`.toNumber()`), результат заворачивается обратно: арифметика VO идёт
+ * через `*Service` с `Result`, и разворачивать его в каждом шаге `reduce`
+ * значит платить церемонией без выгоды. Это тот же принцип границы, что и в
+ * `docs/architecture/boundary-contract.md`.
+ *
+ * Без VO намеренно остаются:
+ * - **счётчики** (`wins`, `losses`, `totalMarkets`, `outcomeIndex`) —
+ *   безразмерные, инварианта нет;
+ * - **`netShares`** — может быть отрицательным, а `Quantity` запрещает
+ *   отрицательные значения; `SignedQuantity` не в публичном API пакета;
+ * - **цена резолюции** — это `Ratio`, а не `OutcomePrice`: последний
+ *   допускает только диапазон (0, 1), тогда как после резолюции цена равна
+ *   ровно 1 или 0.
  */
+import type { Money, OutcomePrice, Quantity, Ratio } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/timestamp';
 
 /**
- * Один наш fill, приведённый из публичной ленты активности.
+ * Один наш fill.
  *
  * @remarks
- * Источник — `listActivity()` с `type === 'TRADE'`. Публичная лента НЕ несёт
- * ставки комиссии (`feeRateBps`): комиссия уже учтена площадкой внутри
- * `realizedPnl` позиции. Поэтому пофилловой комиссии здесь нет — вместо
- * выдуманного нуля её просто не существует в этой модели.
+ * Публичный путь строит его из `listActivity()`, аутентифицированный —
+ * из `listAccountTrades()`. Разница в двух полях: `feeUsdc` есть только у
+ * первого (лента отдаёт фактически перемещённый USDC), `liquidityRole` —
+ * только у второго.
  */
 export interface NormalizedFill {
   /** Хеш транзакции — единственный стабильный идентификатор в ленте */
@@ -31,18 +61,18 @@ export interface NormalizedFill {
   /** Наша сторона */
   side: 'BUY' | 'SELL';
   /** Размер в токенах */
-  size: number;
+  size: Quantity;
   /** Цена исполнения */
-  price: number;
+  price: OutcomePrice;
   /** Фактически перемещённый USDC */
-  usdcSize: number;
-  /** Момент сделки, epoch-миллисекунды */
-  matchedAtMs: number;
+  usdcSize: Money;
+  /** Момент сделки */
+  matchedAt: Timestamp;
   /** Название нашего outcome (UP/DOWN/YES/NO) */
   outcome?: string;
   /** Индекс исхода в рынке */
   outcomeIndex?: number;
-  /** Заголовок рынка (лента отдаёт его вместе со сделкой) */
+  /** Заголовок рынка */
   title?: string;
   /**
    * Роль по ликвидности.
@@ -53,21 +83,19 @@ export interface NormalizedFill {
    */
   liquidityRole?: 'MAKER' | 'TAKER';
   /**
-   * Фактически удержанная комиссия в USDC.
+   * Фактически удержанная комиссия.
    *
    * @remarks
    * Не расчёт, а **измерение**: публичная лента отдаёт `amount` — реально
-   * перемещённый USDC, уже за вычетом комиссии. Разница между `size × price`
-   * и `amount` и есть то, что площадка удержала.
+   * перемещённый USDC, уже за вычетом комиссии. Разница между
+   * `size × price` и `amount` и есть удержанное. Совпадает с
+   * документированной формулой до пятого знака, но измерение не сломается,
+   * если Polymarket поменяет тариф.
    *
-   * Совпадает с документированной формулой `size × 0.07 × p × (1 − p)` до
-   * пятого знака, но брать измерение надёжнее: оно не сломается, если
-   * Polymarket поменяет ставку или введёт исключения по рынкам.
-   *
-   * Отсутствует только на аутентифицированном пути: `listAccountTrades`
-   * поля `amount` не отдаёт, а `feeRateBps` там приходит `"0"`.
+   * Отсутствует на аутентифицированном пути: `listAccountTrades` поля
+   * `amount` не отдаёт.
    */
-  feeUsdc?: number;
+  feeUsdc?: Money;
 }
 
 /**
@@ -75,11 +103,8 @@ export interface NormalizedFill {
  *
  * @remarks
  * Сводит `listClosedPositions()` и `listPositions()` к одной форме.
- * `realizedPnl` — авторитетный источник: это ровно то число, которое
- * показывает сайт, и оно уже включает комиссии. Наша собственная формула
- * по сырым сделкам больше не нужна и не воспроизводится: публичный контур
- * не отдаёт ставок комиссии, а угадывать их — верный способ разойтись с
- * реальностью на величину, которую никто не заметит.
+ * `realizedPnl` — авторитетный источник: ровно то число, которое показывает
+ * сайт, и оно уже включает комиссии.
  */
 export interface PositionPnl {
   /** Condition ID рынка */
@@ -91,147 +116,145 @@ export interface PositionPnl {
   /** Индекс исхода */
   outcomeIndex: number;
   /** Средняя цена входа */
-  avgPrice: number;
+  avgPrice: OutcomePrice;
   /** Сколько токенов куплено суммарно */
-  totalBought: number;
-  /** Текущая (или расчётная) цена исхода: 1.0/0.0 после резолюции */
-  curPrice: number;
-  /** Реализованный PnL в USDC — как его считает площадка */
-  realizedPnl: number;
+  totalBought: Quantity;
+  /**
+   * Текущая (или расчётная) цена исхода.
+   *
+   * @remarks
+   * `Ratio`, а не `OutcomePrice`: после резолюции цена равна ровно 1 или 0,
+   * а `OutcomePrice` допускает только открытый диапазон (0, 1).
+   */
+  curPrice: Ratio;
+  /** Реализованный PnL — как его считает площадка */
+  realizedPnl: Money;
   /** Позиция закрыта (из `listClosedPositions`) */
   closed: boolean;
-  /** Момент закрытия, epoch-миллисекунды; для открытых позиций отсутствует */
-  closedAtMs?: number;
+  /** Момент закрытия; для открытых позиций отсутствует */
+  closedAt?: Timestamp;
   /** Дата окончания рынка (ISO) */
   endDate?: string;
 }
 
+/** Строка таблицы сделок в подробном отчёте. */
 export interface FillRecord {
   /** Идентификатор сделки */
   id: string;
-  /** BUY — открытие, SELL — досрочный выход */
+  /** Наша сторона */
   side: 'BUY' | 'SELL';
-  /** Роль ликвидности для этого fill */
+  /** Роль по ликвидности */
   liquidityRole: 'MAKER' | 'TAKER';
-  /** Название нашего outcome (UP/DOWN/YES/NO) */
+  /** Название исхода */
   outcomeName: string;
-  /** Количество акций */
-  size: number;
+  /** Размер в токенах */
+  size: Quantity;
   /** Цена исполнения */
-  price: number;
-  /** Номинал = size × price */
-  notional: number;
-  /** Комиссия в USDC-equivalent */
-  fee: number | null;
-  /** Комиссия, удержанная в shares на BUY taker fills */
-  feeShares: number | null;
-  /** Эффективное изменение количества shares после удержания комиссии */
-  effectiveSize: number;
-  /** Эффективный cashflow в USDC после комиссии */
-  cashFlow: number;
-  /** Timestamp в миллисекундах */
-  matchTs: number;
-  /** Дата в формате YYYY-MM-DD */
+  price: OutcomePrice;
+  /** Оборот в USDC */
+  notional: Money;
+  /** Комиссия; `null` — величина недоступна (не путать с нулём) */
+  fee: Money | null;
+  /** Движение денег: отрицательное на покупке, положительное на продаже */
+  cashFlow: Money;
+  /** Момент сделки */
+  matchedAt: Timestamp;
+  /** Дата сделки `YYYY-MM-DD` */
   matchDate: string;
-  /** Время в формате HH:MM:SS */
+  /** Время сделки `HH:MM:SS` */
   matchTime: string;
 }
 
-/**
- * Результат PnL по одному рынку.
- *
- * @remarks
- * Учитываются только resolved рынки (closed=true у Gamma API).
- */
+/** PnL по одному рынку. */
 export interface MarketPnl {
   /** Condition ID */
   conditionId: string;
-  /** Текст вопроса */
+  /** Вопрос рынка */
   question: string;
-  /** Название нашего токена, например "YES" или "UP" */
+  /** Название нашего исхода */
   outcomeName: string;
-  /** Цена резолюции: 1.0 (победа) или 0.0 (поражение) */
-  resolvedPrice: number;
-  /** true — наш токен выиграл на резолюции */
+  /** Цена после резолюции: 1 или 0 */
+  resolvedPrice: Ratio;
+  /** Наш исход выиграл */
   won: boolean;
-  /** true — торговый результат по этому рынку неотрицательный */
+  /** Позиция принесла прибыль */
   profitable: boolean;
-  /** Все исполнения по этому рынку (sorted by time) */
+  /** Наши сделки по рынку */
   fills: FillRecord[];
-  /** Σ notional по BUY-fills */
-  entryCost: number;
-  /** Σ cashflow по SELL-fills (после sell-side fee) */
-  sellProceeds: number;
-  /** Количество акций ушедших в settlement = Σ BUY.effectiveSize − Σ SELL.size */
+  /** Стоимость входа */
+  entryCost: Money;
+  /** Выручка от досрочного выхода */
+  sellProceeds: Money;
+  /**
+   * Остаток токенов на резолюции.
+   *
+   * @remarks
+   * Остаётся `number`: величина знаковая, а `Quantity` запрещает
+   * отрицательные значения.
+   */
   netShares: number;
-  /** Стоимость settlement = netShares × resolvedPrice */
-  redeemValue: number;
-  /** Σ всех комиссий в USDC-equivalent (информационно) */
-  fees: number | null;
-  /** Σ buy-side fees, удержанных в shares */
-  feeSharesPaid: number | null;
-  /** Итоговый PnL = sellProceeds + redeemValue − entryCost */
-  netPnl: number;
-  /** ROI в процентах = netPnl / entryCost × 100 */
-  roi: number;
-  /** Дата первого fill (YYYY-MM-DD) */
+  /** Выплата по резолюции */
+  redeemValue: Money;
+  /** Комиссия; `null` — недоступна */
+  fees: Money | null;
+  /** Итоговый PnL — `realizedPnl` площадки */
+  netPnl: Money;
+  /** Доходность как ДОЛЯ (0.127 = +12.7%) */
+  roi: Ratio;
+  /** Дата отнесения рынка к дню отчёта */
   entryDate: string;
 }
 
-/**
- * Агрегированные данные за один торговый день.
- */
+/** Срез отчёта за один день. */
 export interface DailyPnl {
-  /** Дата YYYY-MM-DD */
+  /** Дата `YYYY-MM-DD` */
   date: string;
-  /** Рынки торгованные в этот день */
+  /** Рынки этого дня */
   markets: MarketPnl[];
-  /** Выигрышные рынки */
+  /** Прибыльных рынков */
   wins: number;
-  /** Проигрышные рынки */
+  /** Убыточных рынков */
   losses: number;
-  /** Суммарный entry cost */
-  entryCost: number;
-  /** Суммарный redeem + досрочные продажи */
-  totalReturn: number;
-  /** Суммарные комиссии */
-  fees: number | null;
-  /** Итоговый PnL за день */
-  netPnl: number;
-  /** ROI за день */
-  roi: number;
+  /** Суммарная стоимость входа */
+  entryCost: Money;
+  /** Стоимость входа плюс PnL */
+  totalReturn: Money;
+  /** Комиссия; `null` — недоступна */
+  fees: Money | null;
+  /** Итоговый PnL дня */
+  netPnl: Money;
+  /** Доходность дня как доля */
+  roi: Ratio;
 }
 
-/**
- * Полный отчёт PnL за период.
- */
+/** Полный отчёт за период. */
 export interface PnlReport {
-  /** Начало периода YYYY-MM-DD */
+  /** Начало периода (ISO-дата) */
   fromDate: string;
-  /** Конец периода YYYY-MM-DD */
+  /** Конец периода (ISO-дата) */
   toDate: string;
-  /** Всего resolved рынков */
+  /** Всего рынков */
   totalMarkets: number;
-  /** Выигрышных */
+  /** Прибыльных */
   wins: number;
-  /** Проигрышных */
+  /** Убыточных */
   losses: number;
-  /** Суммарный entry cost */
-  entryCost: number;
-  /** Суммарный return (redeem + early sells) */
-  totalReturn: number;
-  /** Суммарные комиссии */
-  fees: number | null;
+  /** Суммарная стоимость входа */
+  entryCost: Money;
+  /** Стоимость входа плюс PnL */
+  totalReturn: Money;
+  /** Комиссия; `null` — недоступна */
+  fees: Money | null;
   /** Итоговый PnL */
-  netPnl: number;
-  /** ROI */
-  roi: number;
+  netPnl: Money;
+  /** Доходность как доля */
+  roi: Ratio;
   /** Лучший день */
   bestDay: DailyPnl | null;
   /** Худший день */
   worstDay: DailyPnl | null;
   /** Разбивка по дням */
   dailyBreakdown: DailyPnl[];
-  /** Список всех рынков */
+  /** Все рынки */
   markets: MarketPnl[];
 }

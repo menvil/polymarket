@@ -30,7 +30,8 @@
  */
 
 import type { PnlReport, MarketPnl, FillRecord } from '../types.js';
-import { fmtMoney, fmtPnl, fmtRoi, fmtNum, fmtOptional, hline, truncate } from './format.js';
+import { divMoney, money } from '../core/vo.js';
+import { fmtCost, fmtMoney, fmtPnl, fmtRoi, fmtNum, fmtOptional, hline, truncate } from './format.js';
 
 // Ширина рассчитана точно: 2 (отступ) + 3+1+9+1+8+1+6+1+7+1+7+1+9+1+6 (колонки) + 4 (earlyTag)
 const FILL_TABLE_WIDTH = 68;
@@ -90,12 +91,13 @@ export class DetailedRenderer {
     const winRate = report.totalMarkets > 0
       ? (report.wins / report.totalMarkets * 100).toFixed(1)
       : '0.0';
-    const avgPnl = report.totalMarkets > 0 ? report.netPnl / report.totalMarkets : 0;
+    const avgPnl =
+      report.totalMarkets > 0 ? divMoney(report.netPnl, report.totalMarkets) : money(0);
 
     lines.push(`  Markets:      ${report.totalMarkets}  │  Profitable: ${report.wins}  │  Losing: ${report.losses}  │  Win rate: ${winRate}%`);
     lines.push(`  Entry cost:   ${fmtMoney(report.entryCost)}`);
     lines.push(`  Return value: ${fmtMoney(report.totalReturn)}`);
-    lines.push(`  Fees paid:    ${fmtOptional(report.fees, (v) => fmtPnl(-v))}`);
+    lines.push(`  Fees paid:    ${fmtOptional(report.fees, (v) => fmtCost(v))}`);
     lines.push(`  Net PnL:      ${fmtPnl(report.netPnl)}   ROI: ${fmtRoi(report.roi)}`);
     lines.push(`  Avg PnL:      ${fmtPnl(avgPnl)} per market`);
 
@@ -161,8 +163,8 @@ export class DetailedRenderer {
       const time     = fill.matchTime.padEnd(9);
       const outcome  = fill.outcomeName.padEnd(8);
       const side     = fill.side.padEnd(6);
-      const size     = fmtNum(fill.size, 1).padEnd(7);
-      const price    = fmtNum(fill.price, 3).padEnd(7);
+      const size     = fmtNum(fill.size.toNumber(), 1).padEnd(7);
+      const price    = fmtNum(fill.price.toNumber(), 3).padEnd(7);
       const notional = fmtMoney(fill.notional).padEnd(9);
       const fee      = fmtOptional(fill.fee, fmtMoney).padEnd(6);
       const earlyTag = fill.side === 'SELL' ? ' [!]' : '    ';
@@ -184,34 +186,63 @@ export class DetailedRenderer {
     const lines: string[] = [];
 
     const buyFills  = market.fills.filter(f => f.side === 'BUY');
-    const avgEntry  = buyFills.length > 0
-      ? buyFills.reduce((s, f) => s + f.price, 0) / buyFills.length
-      : 0;
+    const avgEntry  = avgPrice(buyFills);
+    const buyShares = sumShares(buyFills);
 
     lines.push(
-      `  Entry:   ${fmtNum(market.fills.filter(f => f.side === 'BUY').reduce((s, f) => s + f.size, 0), 1)} shares` +
-      ` × avg ${fmtNum(avgEntry, 3)}  =  ${fmtPnl(-market.entryCost)}`
+      `  Entry:   ${fmtNum(buyShares, 1)} shares` +
+      ` × avg ${fmtNum(avgEntry, 3)}  =  ${fmtCost(market.entryCost)}`
     );
 
-    if (market.sellProceeds > 0) {
+    if (market.sellProceeds.isPositive()) {
       const sellFills = market.fills.filter(f => f.side === 'SELL');
-      const avgSell   = sellFills.reduce((s, f) => s + f.price, 0) / sellFills.length;
       lines.push(
-        `  Sold:    ${fmtNum(sellFills.reduce((s, f) => s + f.size, 0), 1)} shares` +
-        ` × avg ${fmtNum(avgSell, 3)}  =  ${fmtPnl(market.sellProceeds)}  (early exit)`
+        `  Sold:    ${fmtNum(sumShares(sellFills), 1)} shares` +
+        ` × avg ${fmtNum(avgPrice(sellFills), 3)}  =  ${fmtPnl(market.sellProceeds)}  (early exit)`
       );
     }
 
     const redeemLabel = market.won ? '(token won)' : '(token lost)';
     lines.push(
       `  Redeem:  ${fmtNum(Math.max(0, market.netShares), 1)} shares` +
-      ` × $${fmtNum(market.resolvedPrice, 2)}      =  ${fmtPnl(market.redeemValue)}  ${redeemLabel}`
+      ` × $${fmtNum(market.resolvedPrice.toNumber(), 2)}      =  ${fmtPnl(market.redeemValue)}  ${redeemLabel}`
     );
 
-    lines.push(`  Fees:    ${' '.repeat(37)}${fmtOptional(market.fees, (v) => fmtPnl(-v))}`);
+    lines.push(`  Fees:    ${' '.repeat(37)}${fmtOptional(market.fees, (v) => fmtCost(v))}`);
     lines.push(`  ${hline(FILL_TABLE_WIDTH + 2)}`);
     lines.push(`  Net PnL:  ${fmtPnl(market.netPnl)}   ROI: ${fmtRoi(market.roi)}`);
 
     return lines;
   }
+}
+
+/**
+ * Средняя цена по набору сделок.
+ *
+ * @param fills - Сделки одной стороны
+ * @returns Средняя цена как число, либо 0 для пустого набора
+ *
+ * @example
+ * ```typescript
+ * avgPrice(buyFills);  // 0.635
+ * ```
+ */
+function avgPrice(fills: FillRecord[]): number {
+  if (fills.length === 0) return 0;
+  return fills.reduce((s, f) => s + f.price.toNumber(), 0) / fills.length;
+}
+
+/**
+ * Суммарный объём в токенах.
+ *
+ * @param fills - Сделки
+ * @returns Сумма размеров
+ *
+ * @example
+ * ```typescript
+ * sumShares(sellFills);  // 5
+ * ```
+ */
+function sumShares(fills: FillRecord[]): number {
+  return fills.reduce((s, f) => s + f.size.toNumber(), 0);
 }

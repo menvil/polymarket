@@ -28,6 +28,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { createPublicClient } from '@polymarket/client';
+import { money, price, quantity, ratio, timestamp } from './vo.js';
 import type { PositionPnl } from '../types.js';
 
 /** Узкий порт: два метода из всего клиента. */
@@ -99,12 +100,13 @@ export class PositionsFetcher {
           title: p.title ?? '',
           outcome: p.outcome ?? '',
           outcomeIndex: p.outcomeIndex ?? 0,
-          avgPrice: Number(p.avgPrice ?? 0),
-          totalBought: Number(p.totalBought ?? 0),
-          curPrice: Number(p.curPrice ?? 0),
-          realizedPnl: Number(p.realizedPnl ?? 0),
+          avgPrice: price(Number(p.avgPrice ?? 0)),
+          totalBought: quantity(Number(p.totalBought ?? 0)),
+          // Цена резолюции равна ровно 1 или 0 — вне диапазона OutcomePrice.
+          curPrice: ratio(Number(p.curPrice ?? 0)),
+          realizedPnl: money(Number(p.realizedPnl ?? 0)),
           closed: true,
-          closedAtMs,
+          closedAt: timestamp(closedAtMs),
           endDate: p.endDate ?? undefined,
         });
       }
@@ -122,10 +124,10 @@ export class PositionsFetcher {
             title: p.title ?? '',
             outcome: p.outcome ?? '',
             outcomeIndex: p.outcomeIndex ?? 0,
-            avgPrice: Number(p.avgPrice ?? 0),
-            totalBought: Number(p.totalBought ?? 0),
-            curPrice: Number(p.curPrice ?? 0),
-            realizedPnl: Number(p.realizedPnl ?? 0),
+            avgPrice: price(Number(p.avgPrice ?? 0)),
+            totalBought: quantity(Number(p.totalBought ?? 0)),
+            curPrice: ratio(Number(p.curPrice ?? 0)),
+            realizedPnl: money(Number(p.realizedPnl ?? 0)),
             closed: false,
             endDate: p.endDate ?? undefined,
           });
@@ -134,7 +136,9 @@ export class PositionsFetcher {
       this._logger.info(`Open positions: ${open}`);
     }
 
-    result.sort((a, b) => (a.closedAtMs ?? Infinity) - (b.closedAtMs ?? Infinity));
+      result.sort(
+      (a, b) => (a.closedAt?.toNumber() ?? Infinity) - (b.closedAt?.toNumber() ?? Infinity)
+    );
     return result;
   }
 }

@@ -34,6 +34,7 @@
 import type { ILogger } from '@polymarket/logger';
 import type { createPublicClient } from '@polymarket/client';
 import { ActivityType } from '@polymarket/bindings/data';
+import { money, price, quantity, timestamp } from './vo.js';
 import type { NormalizedFill } from '../types.js';
 
 /** Узкий порт: из всего клиента нужен один метод. */
@@ -107,24 +108,25 @@ export class ActivityFetcher {
         // v2, а не outcome-токен рынка) и в этот отчёт не входят.
         if (item.isCombo) continue;
 
-        const size = Number(item.shares);
-        const price = Number(item.price);
-        const usdcSize = Number(item.amount);
+        const shares = Number(item.shares);
+        const executionPrice = Number(item.price);
+        const amount = Number(item.amount);
         // `amount` уже за вычетом комиссии — разница и есть удержанное.
-        // Отрицательные значения невозможны, но арифметика с плавающей
-        // точкой даёт −1e-16, поэтому обрезаем снизу нулём.
-        const feeUsdc = Math.max(0, Math.round((size * price - usdcSize) * 1e5) / 1e5);
+        // Клампим снизу нулём и округляем до 5 знаков: величина
+        // неотрицательна по построению, но разность даёт −1e-16 там, где
+        // должна дать 0.
+        const feeUsdc = Math.max(0, Math.round((shares * executionPrice - amount) * 1e5) / 1e5);
 
         fills.push({
           transactionHash: item.transactionHash,
           market: item.conditionId,
           asset_id: item.tokenId,
           side: item.side,
-          size,
-          price,
-          usdcSize,
-          feeUsdc,
-          matchedAtMs: Number(item.timestamp),
+          size: quantity(shares),
+          price: price(executionPrice),
+          usdcSize: money(amount),
+          feeUsdc: money(feeUsdc),
+          matchedAt: timestamp(Number(item.timestamp)),
           outcome: item.outcome,
           outcomeIndex: item.outcomeIndex,
           title: item.title,
@@ -132,7 +134,7 @@ export class ActivityFetcher {
       }
     }
 
-    fills.sort((a, b) => a.matchedAtMs - b.matchedAtMs);
+    fills.sort((a, b) => a.matchedAt.toNumber() - b.matchedAt.toNumber());
     this._logger.info(`Fetched ${fills.length} fills over ${pages} pages`, {
       types: Object.fromEntries(typeCounts),
     });

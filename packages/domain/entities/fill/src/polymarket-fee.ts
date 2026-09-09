@@ -30,11 +30,10 @@
  * `calculatePolymarketTakerFee`/`calculatePolymarketTakerFeeWithRate` принимают
  * `Quantity`/`OutcomePrice` и возвращают `Fee` — по ADR (`docs/architecture/boundary-contract.md`,
  * Решение 1) голый `Decimal` на публичной сигнатуре легитимен только внутри
- * `value-objects`/`math`. `calculatePolymarketTakerFeeNumber` **не переводится** —
- * её сигнатура уже полностью на примитивах (`number`, не `Decimal`), уже ADR-совместима,
- * и у неё были потребители в стратегиях и PnL-инструменте (оба приложения
- * удалены) и в `domain/cross-market`,
- * ожидающих `number`.
+ * `value-objects`/`math`. `calculatePolymarketTakerFeeNumber` остаётся на примитивах:
+ * её потребители (`domain/cross-market`, `apps/pnl`) заворачивают результат в VO у
+ * себя, на границе своего слоя — см. ADR, Решение 14. Прежнее обоснование ссылалось
+ * на удалённые приложения и больше не соответствует действительности.
  */
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
