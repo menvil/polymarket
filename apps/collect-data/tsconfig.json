@@ -42,10 +42,9 @@
       "@polymarket/portfolio":        ["../../packages/domain/entities/portfolio/src/index.ts"],
       "@polymarket/handlers":         ["../../packages/application/handlers/src/index.ts"],
       "@polymarket/event-bus":        ["../../packages/application/event-bus/src/index.ts"],
-      "@polymarket/trade":            ["../../packages/domain/entities/trade/src/index.ts"],
-      "ethers":                       ["../../packages/infrastructure/polymarket/stubs/ethers/index.ts"]
+      "@polymarket/trade":            ["../../packages/domain/entities/trade/src/index.ts"]
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/backfillPolymarketMeta.ts"]
+  "exclude": ["node_modules", "dist"]
 }

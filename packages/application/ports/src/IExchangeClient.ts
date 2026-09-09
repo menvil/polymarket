@@ -5,9 +5,9 @@
  * Dependency Inversion — use-cases зависят от этого интерфейса,
  * а не от конкретной инфраструктурной реализации.
  *
- * Реализация: `PolymarketExchangeClientAdapter` в пакете `@polymarket/exchange`
- * (директория `packages/infrastructure/polymarket`, Phase 8). Для бектестов —
- * `MockExchangeClient` в `packages/infrastructure/backtesting`.
+ * Боевой реализации сейчас НЕТ: она жила в legacy-адаптере площадки,
+ * удалённом вместе с V1-контуром. Для бектестов — `MockExchangeClient` в
+ * `packages/infrastructure/backtesting`.
  *
  * Используется:
  * - PlaceOrderUseCase — `submitOrder()` → получить OrderId от биржи

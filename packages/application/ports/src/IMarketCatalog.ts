@@ -3,8 +3,9 @@
  *
  * @remarks
  * `IMarketCatalog` — application-layer порт (Dependency Inversion).
- * Инфраструктурная реализация `PolymarketMarketCatalog` (@polymarket/exchange)
- * имплементирует этот интерфейс и заполняет каталог из REST API при старте.
+ * Инфраструктурной реализации сейчас НЕТ: единственная жила в legacy-адаптере
+ * площадки, удалённом вместе с V1-контуром. Порт остаётся контрактом для
+ * execution-слоя V2 — тот заполнит каталог из REST при старте.
  *
  * Строки из REST API (tick size, min order size) парсятся в domain VOs
  * на границе инфраструктуры — application layer уже работает с типизированными объектами.
@@ -22,7 +23,7 @@ import type { Timestamp } from '@polymarket/timestamp';
  * Метаданные торгового инструмента.
  *
  * @remarks
- * Заполняется из @polymarket/exchange при старте системы.
+ * Заполняется инфраструктурой при старте системы.
  * Все поля уже типизированы — не нужно парсить строки в application layer.
  */
 export interface InstrumentInfo {
