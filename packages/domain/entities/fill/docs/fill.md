@@ -134,7 +134,7 @@ calculatePolymarketTakerFee(size: Quantity, price: OutcomePrice): Fee
 calculatePolymarketTakerFeeWithRate(size: Quantity, price: OutcomePrice, feeRate: number | Decimal): Fee
 
 // Примитивы (не переводится на VO — сигнатура уже полностью на number,
-// 11+ реальных потребителей в apps/bot/strategies/*, apps/pnl, domain/cross-market)
+// потребители: стратегии и PnL-инструмент (удалены), domain/cross-market)
 calculatePolymarketTakerFeeNumber(size: number, price: number, feeRate?: number): number
 ```
 

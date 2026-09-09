@@ -1,5 +1,12 @@
 # PnL Analytics (`apps/pnl`)
 
+> **LEGACY / HISTORICAL**
+>
+> `apps/pnl` удалён вместе со старым торговым контуром: он использовал прежний
+> discovery API и legacy `@polymarket/exchange`. Если PnL-инструмент
+> понадобится снова, он будет построен поверх нового trading runtime.
+> Документ сохранён ради описанной здесь методики расчёта.
+
 Standalone-скрипт для анализа реализованного PnL по **resolved** рынкам Polymarket.
 
 ## Как запускать
