@@ -1,0 +1,34 @@
+scripts/tsconfig.json
+  s_c99ec2b699d51d::t_baf2871131acb7 37
+legacy-bot/scripts/README-backfill.md
+  s_c99ec2b699d51d::t_baf2871131acb7 1-20
+packages/application/ports/src/IMarketCatalog.ts
+  s_c99ec2b699d51d::t_c3ee090d9a1b9e 6-8,26
+packages/infrastructure/dns-override/src/index.ts
+  s_c99ec2b699d51d::t_c3ee090d9a1b9e 10-12
+packages/application/ports/src/IExchangeClient.ts
+  s_c99ec2b699d51d::t_e8b3977b61e035 9-10
+  s_c99ec2b699d51d::t_c3ee090d9a1b9e 8
+docs/guides/polymarket-venue-lessons.md
+  s_c99ec2b699d51d::t_56c084b8af1962 3-6,8-10
+packages/infrastructure/dns-override/README.md
+  s_c99ec2b699d51d::t_6f30dfedc6e556 13-16
+apps/collect-data/tsconfig.json
+  s_c99ec2b699d51d::t_baf2871131acb7 45,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7e548b4f88d11fa59a77d3d91e878dd5100e2e8c",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
