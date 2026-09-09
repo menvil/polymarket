@@ -1,0 +1,29 @@
+docs/architecture/boundary-contract.md
+  ai_agent 423-426
+apps/pnl/src/core/PnlCalculator.ts
+  s_c99ec2b699d51d::t_000fcd186cb27d 52,147-151
+apps/pnl/src/renderers/DetailedRenderer.ts
+  s_c99ec2b699d51d::t_000fcd186cb27d 207
+docs/guides/pnl-analytics.md
+  ai_agent 169
+apps/pnl/src/core/vo.ts
+  s_c99ec2b699d51d::t_d5b46b1f2732e8 27-33,39,96-116
+apps/pnl/src/types.ts
+  s_c99ec2b699d51d::t_d5b46b1f2732e8 40-46,196-197,199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "994982e6d872260c4f09e6d39e7331a754f0c65a",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
