@@ -1,0 +1,45 @@
+apps/pnl/src/core/EthersSigner.ts
+  s_c99ec2b699d51d::t_eb693c777fe894 1-19,21,32,39-54,56-58,60-63,74-76,78,81-82
+  s_c99ec2b699d51d::t_ceb09b4b6d79ac 33-38,59,73,77
+  s_c99ec2b699d51d::t_dacc80442aae0a 79-80
+  s_c99ec2b699d51d::t_5ad3a50db4f86b 20,22-31,55,64-72
+apps/pnl/src/main.ts
+  s_c99ec2b699d51d::t_dacc80442aae0a 38,93-97
+  s_c99ec2b699d51d::t_9ff109bf3c62ba 37,42-43,82-92,98-103
+apps/pnl/package.json
+  s_c99ec2b699d51d::t_9ff109bf3c62ba 15,17-18
+docs/guides/pnl-analytics.md
+  s_c99ec2b699d51d::t_802413123e6bc4 19,21,23-47,74-84,91-93,95-97,99-101,109-111,123-125
+apps/pnl/src/core/PnlCalculator.ts
+  s_c99ec2b699d51d::t_5bab04594bd8f2 131-133,155-156,291,299-300,304-307
+  s_c99ec2b699d51d::t_36a76a20d18d38 25-36,51,157-158,174-183,187,192-194,221,229,260,286-290,292-298,301-303
+apps/pnl/tsconfig.build.json
+  s_c99ec2b699d51d::t_9ff109bf3c62ba 31-33
+apps/pnl/src/PnlConfig.ts
+  s_c99ec2b699d51d::t_9ff109bf3c62ba 26-37,49-57,145-158,195
+package-lock.json
+  ai_agent 81,83-84
+apps/pnl/tsconfig.json
+  s_c99ec2b699d51d::t_9ff109bf3c62ba 7-8
+apps/pnl/src/core/TradesFetcher.ts
+  s_c99ec2b699d51d::t_5bab04594bd8f2 155-158
+  s_c99ec2b699d51d::t_695b3256d3be5f 1-154,159-191
+apps/pnl/src/types.ts
+  s_c99ec2b699d51d::t_36a76a20d18d38 47-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b4c33c0b1aaa681b19fcbca02267368b8effad05",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
