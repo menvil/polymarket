@@ -1,0 +1,48 @@
+apps/pnl/src/core/TradesFetcher.ts
+  s_c99ec2b699d51d::t_cec8954af1d594 10-14
+packages/domain/cross-market/src/FeeCalculator.ts
+  s_c99ec2b699d51d::t_caec0304c65eed 6,37
+docs/guides/pnl-analytics.md
+  ai_agent 91,93-94,97,100-117,123-125
+packages/domain/cross-market/src/types.ts
+  s_c99ec2b699d51d::t_caec0304c65eed 291,308
+apps/pnl/src/core/ActivityFetcher.ts
+  s_c99ec2b699d51d::t_aa78af1fe17373 17-20,110-117,123-126
+packages/domain/cross-market/__tests__/FeeCalculator.test.ts
+  s_c99ec2b699d51d::t_61e0d79eadd5b6 11-12
+  s_c99ec2b699d51d::t_386f99a43a940c 36
+  s_c99ec2b699d51d::t_caec0304c65eed 6,30
+packages/domain/entities/fill/__tests__/unit/FillMapper.test.ts
+  s_c99ec2b699d51d::t_caec0304c65eed 126,137
+  s_c99ec2b699d51d::t_61e0d79eadd5b6 128
+packages/domain/entities/fill/__tests__/unit/polymarket-fee.test.ts
+  s_c99ec2b699d51d::t_8173242a60649f 29
+  s_c99ec2b699d51d::t_76389d93ac61d1 31,100
+packages/domain/entities/fill/src/mappers/FillMapper.ts
+  s_c99ec2b699d51d::t_caec0304c65eed 60
+packages/domain/entities/fill/src/polymarket-fee.ts
+  s_c99ec2b699d51d::t_8173242a60649f 64,135
+  s_c99ec2b699d51d::t_49eb6d9c7ce961 5,8,10-27
+  s_c99ec2b699d51d::t_caec0304c65eed 44,76
+apps/pnl/src/core/PnlCalculator.ts
+  s_c99ec2b699d51d::t_a7a4cda484c6a5 35,51-54,193-195,207
+  s_c99ec2b699d51d::t_cec8954af1d594 25-29,31-32,34,36,177-180,182-192
+apps/pnl/src/types.ts
+  s_c99ec2b699d51d::t_aa78af1fe17373 56,59-68,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ec819fa7aaff62ba606ce297aa093483b789fc9f",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
