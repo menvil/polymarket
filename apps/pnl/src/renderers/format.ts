@@ -33,13 +33,28 @@ export function fmtPnl(n: number, width = 0): string {
 /**
  * Форматирует ROI со знаком: "+12.7%" или "-53.3%"
  *
- * @param n - Процент (уже умноженный на 100)
+ * @param ratio - ROI как ДОЛЯ (0.127 → "+12.7%"), не как проценты
  * @param width - Минимальная ширина строки
  * @returns Форматированная строка
+ *
+ * @remarks
+ * Здесь стояло «@param n - Процент (уже умноженный на 100)», а все четыре
+ * вызова передавали долю `netPnl / entryCost`. ROI печатался в 100 раз
+ * меньше: −6.0% за период выглядели как −0.1%.
+ *
+ * Умножение на 100 делается ЗДЕСЬ и только здесь — так у величины одна
+ * размерность на всём пути от расчёта до печати.
+ *
+ * @example
+ * ```typescript
+ * fmtRoi(0.127);   // "+12.7%"
+ * fmtRoi(-0.533);  // "-53.3%"
+ * ```
  */
-export function fmtRoi(n: number, width = 0): string {
-  const sign = n >= 0 ? '+' : '-';
-  const s = `${sign}${Math.abs(n).toFixed(1)}%`;
+export function fmtRoi(ratio: number, width = 0): string {
+  const percent = ratio * 100;
+  const sign = percent >= 0 ? '+' : '-';
+  const s = `${sign}${Math.abs(percent).toFixed(1)}%`;
   return width > 0 ? s.padStart(width) : s;
 }
 
