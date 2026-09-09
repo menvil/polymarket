@@ -34,8 +34,7 @@
       "@polymarket/time": ["../packages/foundation/time/src/index.ts"],
       "@polymarket/result": ["../packages/foundation/result/src/index.ts"],
       "@polymarket/timestamp": ["../packages/foundation/timestamp/src/index.ts"],
-      "@polymarket/rolling-window": ["../packages/foundation/rolling-window/src/index.ts"],
-      "@polymarket/exchange/dns": ["../packages/infrastructure/polymarket/dns/index.ts"]
+      "@polymarket/rolling-window": ["../packages/foundation/rolling-window/src/index.ts"]
     }
   },
   "include": ["checkpoint-raw-live.mts", "validate-raw-archives.mts", "__tests__/**/*.ts"],
