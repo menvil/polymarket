@@ -1,0 +1,67 @@
+packages/application/trading-state/__tests__/retention.test.ts
+  s_c99ec2b699d51d::t_4da5074a154ab5 1-165
+packages/application/trading-state/.eslintrc.json
+  s_c99ec2b699d51d::t_dd4a3da00ece45 1-8
+packages/application/trading-state/src/views.ts
+  s_c99ec2b699d51d::t_75ac85f7ea2279 1-144
+packages/application/trading-state/__tests__/TradingStateProjector.test.ts
+  s_c99ec2b699d51d::t_95345e2ae6b2eb 1-8,10-244,246-272,274-362
+  s_c99ec2b699d51d::t_30f088eeef6aa7 9,245,273
+packages/application/trading-state/docs/trading-state.md
+  s_c99ec2b699d51d::t_ffca28a1024c2a 1-143
+packages/application/trading-state/__tests__/replayDeterminism.test.ts
+  s_c99ec2b699d51d::t_35b560a6c7d563 1-117
+packages/application/trading-state/src/index.ts
+  s_c99ec2b699d51d::t_4a7db87c7b3511 1-62
+packages/application/trading-state/__tests__/helpers/fixtures.ts
+  s_c99ec2b699d51d::t_60bce03180ec96 228-237
+  s_c99ec2b699d51d::t_fb2c3ab320424a 255-272
+  s_c99ec2b699d51d::t_5c8bdcdd9c907a 1-227,238-254
+packages/application/trading-state/tsconfig.build.json
+  s_c99ec2b699d51d::t_dd4a3da00ece45 1-33
+package-lock.json
+  ai_agent 2878-2881,9901-9927
+packages/application/trading-state/src/TradingStateProjector.ts
+  s_c99ec2b699d51d::t_53f5a95ad31429 1-289
+packages/application/trading-state/src/observations.ts
+  s_c99ec2b699d51d::t_9fb6585676bfb2 1-139
+packages/application/trading-state/tsconfig.json
+  s_c99ec2b699d51d::t_dd4a3da00ece45 1-13
+packages/application/trading-state/src/TradingStateRetentionConfig.ts
+  s_c99ec2b699d51d::t_f7267a3adc81ac 1-77
+packages/application/trading-state/src/TradingHotState.ts
+  s_c99ec2b699d51d::t_b1be2fc33c2f0a 28,213-215
+  s_c99ec2b699d51d::t_53f5a95ad31429 20,261
+  s_c99ec2b699d51d::t_b1b2ca4bb0fa35 1-19,21-27,29-212,216-260,262-417
+packages/application/trading-state/src/errors.ts
+  s_c99ec2b699d51d::t_f7267a3adc81ac 1-49
+packages/application/trading-state/src/instrumentState.ts
+  s_c99ec2b699d51d::t_70d0b14d4c9ac3 1-11,13-274
+  s_c99ec2b699d51d::t_b1be2fc33c2f0a 12
+packages/application/trading-state/src/referencePriceState.ts
+  s_c99ec2b699d51d::t_10ca51140c2b44 1-199
+packages/application/trading-state/package.json
+  s_c99ec2b699d51d::t_dd4a3da00ece45 1-58
+packages/application/trading-state/__tests__/referencePriceIdentity.test.ts
+  s_c99ec2b699d51d::t_ad550554e2af89 1-102
+packages/application/trading-state/jest.config.js
+  s_c99ec2b699d51d::t_dd4a3da00ece45 1-33
+packages/application/trading-state/README.md
+  s_c99ec2b699d51d::t_ffca28a1024c2a 1-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4274fb4c80aeb126f0ea0fb4f39e1a9361e72536",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
