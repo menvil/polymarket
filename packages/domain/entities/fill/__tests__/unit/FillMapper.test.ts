@@ -123,9 +123,9 @@ describe('FillMapper', () => {
       }
     });
 
-    it('вычисляет fee по текущей формуле Polymarket: C × 0.072 × p × (1-p)', () => {
+    it('вычисляет fee по текущей формуле Polymarket: C × 0.07 × p × (1-p)', () => {
       const accountId = makeAccountId();
-      // feeUSDC = 10 × 0.072 × 0.65 × 0.35 = 0.1638
+      // feeUSDC = 10 × 0.07 × 0.65 × 0.35 = 0.15925
       const result = FillMapper.fromPolymarketTradeEvent(
         makeValidTakerEvent({ fee_rate_bps: '20', price: '0.65', size: '10' }),
         accountId
@@ -134,7 +134,7 @@ describe('FillMapper', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const feeUSDC = result.value.fill.fee.quantity.amount().value().toNumber();
-        const expected = 10 * 0.072 * 0.65 * 0.35;
+        const expected = 10 * 0.07 * 0.65 * 0.35;
         expect(feeUSDC).toBeCloseTo(expected, 8);
         expect(result.value.fill.hasFee()).toBe(true);
       }

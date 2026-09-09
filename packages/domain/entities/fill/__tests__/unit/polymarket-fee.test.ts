@@ -26,9 +26,9 @@ function price(n: number): OutcomePrice {
 }
 
 describe('calculatePolymarketTakerFee()', () => {
-  it('BUY 10 @ 0.50 → fee = 10 × 0.072 × 0.50 × 0.50 = 0.18', () => {
+  it('BUY 10 @ 0.50 → fee = 10 × 0.07 × 0.50 × 0.50 = 0.175', () => {
     const fee = calculatePolymarketTakerFee(qty(10), price(0.5));
-    expect(fee.quantity.amount().value().toNumber()).toBeCloseTo(0.18, 5);
+    expect(fee.quantity.amount().value().toNumber()).toBeCloseTo(0.175, 5);
   });
 
   it('возвращает Fee VO с активом USDC', () => {
@@ -97,7 +97,7 @@ describe('calculatePolymarketTakerFeeNumber()', () => {
   });
 
   it('использует POLYMARKET_CRYPTO_TAKER_FEE_RATE по умолчанию', () => {
-    expect(calculatePolymarketTakerFeeNumber(10, 0.5)).toBeCloseTo(0.18, 5);
+    expect(calculatePolymarketTakerFeeNumber(10, 0.5)).toBeCloseTo(0.175, 5);
   });
 
   it('принимает явную ставку', () => {

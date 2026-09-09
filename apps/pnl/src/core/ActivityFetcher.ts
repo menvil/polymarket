@@ -14,8 +14,10 @@
  * - нормализация sub-maker сделок исчезла вместе с причиной: лента отдаёт
  *   события **от лица нашего кошелька**, а не с точки зрения тейкера, так
  *   что подменять сторону сделки не из чего и незачем;
- * - ставки комиссии в ленте нет. Она учтена площадкой внутри `realizedPnl`
- *   позиции — см. `PositionsFetcher`.
+ * - **комиссия здесь точнее, чем на аутентифицированном пути.** Лента отдаёт
+ *   `amount` — реально перемещённый USDC, уже за вычетом комиссии. Разница
+ *   между `shares × price` и `amount` и есть удержанное. Это измерение, а не
+ *   расчёт по ставке: не сломается, если Polymarket поменяет тариф.
  *
  * @example
  * ```typescript
@@ -105,14 +107,23 @@ export class ActivityFetcher {
         // v2, а не outcome-токен рынка) и в этот отчёт не входят.
         if (item.isCombo) continue;
 
+        const size = Number(item.shares);
+        const price = Number(item.price);
+        const usdcSize = Number(item.amount);
+        // `amount` уже за вычетом комиссии — разница и есть удержанное.
+        // Отрицательные значения невозможны, но арифметика с плавающей
+        // точкой даёт −1e-16, поэтому обрезаем снизу нулём.
+        const feeUsdc = Math.max(0, Math.round((size * price - usdcSize) * 1e5) / 1e5);
+
         fills.push({
           transactionHash: item.transactionHash,
           market: item.conditionId,
           asset_id: item.tokenId,
           side: item.side,
-          size: Number(item.shares),
-          price: Number(item.price),
-          usdcSize: Number(item.amount),
+          size,
+          price,
+          usdcSize,
+          feeUsdc,
           matchedAtMs: Number(item.timestamp),
           outcome: item.outcome,
           outcomeIndex: item.outcomeIndex,

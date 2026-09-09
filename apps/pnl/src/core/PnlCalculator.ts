@@ -22,18 +22,18 @@
  * roi          = netPnl / entryCost
  * ```
  *
- * ### Комиссии
- * `fees` считается ТОЛЬКО когда fills пришли с аутентифицированного пути и
- * несут `feeRateBps`:
+ * ### Комиссии — измерение, а не модель
+ * На публичном пути комиссия берётся **точно**: лента отдаёт `amount` —
+ * реально перемещённый USDC, уже за вычетом комиссии, и разница с
+ * `size × price` и есть удержанное. Сверено с документированной формулой
+ * `size × 0.07 × p × (1 − p)` — совпадение до пятого знака.
  *
- * ```text
- * fee_usdc_eq    = Σ round5(size × feeRate × price × (1 − price))
- * buy_fee_shares = fee_usdc_eq / price   // BUY: комиссия удерживается в токенах
- * ```
+ * На аутентифицированном пути `amount` не приходит, поэтому там работает
+ * формула по роли: TAKER платит, MAKER не платит никогда.
  *
- * На публичном пути ставки нет, и `fees` равен `null` — комиссия при этом
- * никуда не делась, она внутри `realizedPnl`. Ноль здесь означал бы
- * «комиссий не было», что неправда.
+ * Ставку НЕЛЬЗЯ брать из ответа API: `feeRateBps` в записи сделки приходит
+ * `"0"` (поле не заполняется), а `taker_base_fee` рынка равен `1000`, что
+ * противоречит и замеру, и правилу «мейкер не платит».
  *
  * ### Сутки отчёта
  * Рынок относится к дню своего **закрытия** (`closedAtMs`), а не первого
@@ -48,7 +48,10 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
-import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-fee';
+import {
+  POLYMARKET_CRYPTO_TAKER_FEE_RATE,
+  calculatePolymarketTakerFeeNumber,
+} from '@polymarket/fill/polymarket-fee';
 import type {
   DailyPnl,
   FillRecord,
@@ -171,15 +174,25 @@ export class PnlCalculator {
    */
   private _toFillRecord(fill: NormalizedFill, fallbackOutcome: string): FillRecord {
     const notional = fill.usdcSize;
-    // Ставка есть только на аутентифицированном пути. Там, где её нет,
-    // комиссия отсутствует как величина — а не равна нулю.
+    // Приоритет у измерения: публичная лента отдаёт фактически удержанное.
+    // Формула — запасной путь для аутентифицированного пути, где `amount`
+    // не приходит. Роли нет и измерения нет — величина отсутствует, а не
+    // равна нулю.
     const fee =
-      fill.feeRateBps === undefined
-        ? null
-        : calculatePolymarketTakerFeeNumber(fill.size, fill.price, fill.feeRateBps / 10_000);
-    // BUY: комиссия удерживается в токенах, пересчитываем по цене исполнения.
-    const feeShares =
-      fee === null || fill.side !== 'BUY' || fill.price <= 0 ? (fee === null ? null : 0) : fee / fill.price;
+      fill.feeUsdc !== undefined
+        ? fill.feeUsdc
+        : fill.liquidityRole === undefined
+          ? null
+          : fill.liquidityRole === 'MAKER'
+            ? 0 // мейкер не платит никогда
+            : calculatePolymarketTakerFeeNumber(
+                fill.size,
+                fill.price,
+                POLYMARKET_CRYPTO_TAKER_FEE_RATE
+              );
+    // Комиссия списывается в USDC, а не в токенах: количество наших токенов
+    // она не уменьшает.
+    const feeShares = fee === null ? null : 0;
 
     return {
       id: fill.transactionHash,
@@ -191,7 +204,7 @@ export class PnlCalculator {
       notional,
       fee,
       feeShares,
-      effectiveSize: fill.side === 'BUY' ? fill.size - (feeShares ?? 0) : fill.size,
+      effectiveSize: fill.size,
       cashFlow: fill.side === 'BUY' ? -notional : notional,
       matchTs: fill.matchedAtMs,
       matchDate: this._isoDate(fill.matchedAtMs),

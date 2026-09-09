@@ -288,7 +288,7 @@ export interface ArbitrageSignal {
  *
  * @remarks
  * Текущая формула: `fee = round5(size × feeRate × (price × (1 - price))^exponent)`.
- * Для crypto-рынков Polymarket: feeRate=0.072, exponent=1.
+ * Для crypto-рынков Polymarket: feeRate=0.07, exponent=1.
  */
 export interface FeeModel {
   /**
@@ -305,7 +305,7 @@ export interface FeeModel {
 }
 
 /** Текущая модель комиссий для crypto-рынков Polymarket. */
-export const FEE_MODEL_CURRENT: FeeModel = { feeRate: Ratio.of(new Decimal('0.072')), exponent: 1 };
+export const FEE_MODEL_CURRENT: FeeModel = { feeRate: Ratio.of(new Decimal('0.07')), exponent: 1 };
 
 /** @deprecated Use FEE_MODEL_CURRENT. Kept for older configs/scripts. */
 export const FEE_MODEL_MARCH30: FeeModel = FEE_MODEL_CURRENT;

@@ -5,8 +5,12 @@
  * Дополняет `ActivityFetcher`, а не заменяет его. Публичная лента активности
  * даёт сделки без двух вещей, и обе видны только своему аккаунту:
  *
- * - **`feeRateBps`** — ставка комиссии по конкретному fill;
  * - **роль MAKER/TAKER** — публичная лента её не различает.
+ *
+ * Комиссию здесь приходится СЧИТАТЬ по документированной формуле: поля
+ * `amount` (реально перемещённый USDC) этот эндпоинт не отдаёт, а
+ * `feeRateBps` приходит `"0"` — не заполняется. Публичная лента в этом
+ * смысле точнее: там комиссия измеряется, а не моделируется.
  *
  * Ценой за них служит аутентификация: `listAccountTrades` живёт на
  * `createSecureClient`, а тот требует настоящий signer даже с готовыми
@@ -152,10 +156,6 @@ export class TradesFetcher {
         matchedAtMs: Date.parse(trade.matchedAt),
         outcome: mo.outcome,
         liquidityRole: 'MAKER',
-        // У элемента makerOrders ставка часто `null` — тогда действует
-        // ставка самой сделки. Замечено на боевых данных: верхний уровень
-        // отдаёт "0", а вложенный maker-ордер — null.
-        feeRateBps: Number(mo.feeRateBps ?? trade.feeRateBps),
       });
     }
 
@@ -185,7 +185,6 @@ export class TradesFetcher {
       matchedAtMs: Date.parse(trade.matchedAt),
       outcome: trade.outcome,
       liquidityRole: trade.traderSide === 'TAKER' ? 'TAKER' : 'MAKER',
-      feeRateBps: Number(trade.feeRateBps),
     };
   }
 }
