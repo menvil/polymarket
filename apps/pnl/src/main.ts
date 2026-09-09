@@ -58,9 +58,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const clock  = new LiveClock();
-  // В режиме --raw логи заглушаем чтобы stdout был чистым JSON
-  const logger = new ColorConsoleLogger(clock, config.rawOutput ? LogLevel.ERROR : LogLevel.INFO);
+  const clock = new LiveClock();
+  // Логгер пишет info через `console.log`, то есть в stdout. В машинных
+  // режимах (`--json`, `--raw`) это ломает разбор вывода, поэтому там
+  // остаются только ошибки.
+  const machineReadable = config.jsonOutput || config.rawOutput;
+  const logger = new ColorConsoleLogger(clock, machineReadable ? LogLevel.ERROR : LogLevel.INFO);
 
   logger.info('PnL analytics started', {
     from: new Date(config.fromTs * 1000).toISOString().slice(0, 10),
@@ -115,7 +118,9 @@ async function main(): Promise<void> {
     ...period,
   });
 
-  if (closedPositions.length === 0) {
+  // В машинном режиме пустой период — тоже результат: отдаём отчёт
+  // установленной формы с нулями, а не прозу, которую нечем разобрать.
+  if (closedPositions.length === 0 && !config.jsonOutput) {
     console.log('\nNo positions found for the given period.\n');
     return;
   }

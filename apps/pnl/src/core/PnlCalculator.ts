@@ -167,8 +167,13 @@ export class PnlCalculator {
       roi: ratio(
         entryCost.isPositive() ? netPnl.toNumber() / entryCost.toNumber() : 0
       ),
-      entryDate: this._isoDate(
-        records[0]?.matchedAt.toNumber() ?? position.closedAt?.toNumber() ?? 0
+      // День закрытия, а не первого входа: PnL реализуется на выходе или
+      // резолюции. Раньше приоритет был у первой сделки — это расходилось с
+      // документированным правилом. У открытой позиции момента закрытия нет,
+      // тогда берём последнюю активность; если нет и её — дня у рынка нет, и
+      // выдумывать эпоху-0 (1970-01-01 отдельным днём в таблице) нельзя.
+      entryDate: this._isoDateIfKnown(
+        position.closedAt?.toNumber() ?? records.at(-1)?.matchedAt.toNumber()
       ),
     };
   }
@@ -238,6 +243,10 @@ export class PnlCalculator {
   private _buildDailyBreakdown(markets: MarketPnl[]): DailyPnl[] {
     const byDate = new Map<string, MarketPnl[]>();
     for (const m of markets) {
+      // Рынок без даты в дневную разбивку не попадает: отнести его к
+      // какому-то дню значит исказить этот день. В итоговых суммах он
+      // остаётся — они считаются по `markets`, а не по дням.
+      if (m.entryDate === undefined) continue;
       const list = byDate.get(m.entryDate);
       if (list === undefined) byDate.set(m.entryDate, [m]);
       else list.push(m);
@@ -312,6 +321,26 @@ export class PnlCalculator {
    */
   private _isoDate(ms: number): string {
     return new Date(ms).toISOString().slice(0, 10);
+  }
+
+  /**
+   * Форматирует момент как ISO-дату, если он известен.
+   *
+   * @param ms - Момент времени в миллисекундах либо `undefined`
+   * @returns Дата вида `YYYY-MM-DD` либо `undefined`
+   *
+   * @remarks
+   * Отдельно от {@link _isoDate}: у fill момент есть всегда, у рынка —
+   * не обязательно. Раньше отсутствие подменялось нулём, и рынок попадал в
+   * таблицу отдельным днём 1970-01-01.
+   *
+   * @example
+   * ```typescript
+   * this._isoDateIfKnown(undefined);  // undefined
+   * ```
+   */
+  private _isoDateIfKnown(ms: number | undefined): string | undefined {
+    return ms === undefined ? undefined : this._isoDate(ms);
   }
 }
 

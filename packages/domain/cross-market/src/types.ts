@@ -19,6 +19,7 @@ import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
 import { Ratio } from '@polymarket/value-objects';
 import type { Timestamp } from '@polymarket/timestamp';
+import { POLYMARKET_CRYPTO_TAKER_FEE_RATE } from '@polymarket/fill/polymarket-fee';
 
 // ── Recurrence (длительность рынка) ─────────────────────────────────────────
 
@@ -305,7 +306,12 @@ export interface FeeModel {
 }
 
 /** Текущая модель комиссий для crypto-рынков Polymarket. */
-export const FEE_MODEL_CURRENT: FeeModel = { feeRate: Ratio.of(new Decimal('0.07')), exponent: 1 };
+export const FEE_MODEL_CURRENT: FeeModel = {
+  // Ставка берётся из общей константы, а не дублируется числом: две копии
+  // одного тарифа разъезжаются молча — так и случилось с прежними 0.072.
+  feeRate: Ratio.of(new Decimal(POLYMARKET_CRYPTO_TAKER_FEE_RATE)),
+  exponent: 1,
+};
 
 /** @deprecated Use FEE_MODEL_CURRENT. Kept for older configs/scripts. */
 export const FEE_MODEL_MARCH30: FeeModel = FEE_MODEL_CURRENT;

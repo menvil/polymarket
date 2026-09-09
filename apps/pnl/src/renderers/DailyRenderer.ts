@@ -61,7 +61,11 @@ export class DailyRenderer {
     const lines: string[] = [];
 
     lines.push('');
-    lines.push(`=== PnL Report: ${report.fromDate} — ${report.toDate}  [resolved markets only] ===`);
+    // Пометка про «только разрешённые» верна лишь пока в отчёте нет
+    // открытых позиций — с `--include-open` она была бы неправдой.
+    const onlyResolved = report.markets.every((m) => m.valuation.state === 'SETTLED');
+    const scope = onlyResolved ? '  [resolved markets only]' : '  [incl. open positions]';
+    lines.push(`=== PnL Report: ${report.fromDate} — ${report.toDate}${scope} ===`);
     lines.push('');
 
     if (report.totalMarkets === 0) {

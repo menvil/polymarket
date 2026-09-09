@@ -51,7 +51,11 @@ export class DetailedRenderer {
     const lines: string[] = [];
 
     lines.push('');
-    lines.push(`=== Detailed PnL: ${report.fromDate} — ${report.toDate}  [resolved markets only] ===`);
+    // Пометка про «только разрешённые» верна лишь пока в отчёте нет
+    // открытых позиций — с `--include-open` она была бы неправдой.
+    const onlyResolved = report.markets.every((m) => m.valuation.state === 'SETTLED');
+    const scope = onlyResolved ? '  [resolved markets only]' : '  [incl. open positions]';
+    lines.push(`=== Detailed PnL: ${report.fromDate} — ${report.toDate}${scope} ===`);
 
     if (report.totalMarkets === 0) {
       lines.push('');
@@ -123,8 +127,10 @@ export class DetailedRenderer {
    */
   private renderMarket(market: MarketPnl): string[] {
     const lines: string[] = [];
-    const tag   = market.profitable ? '[WIN] ' : '[LOSS]';
     const settled = market.valuation.state === 'SETTLED';
+    // У открытой позиции итога ещё нет: [WIN]/[LOSS] здесь были бы
+    // утверждением о том, чего не произошло.
+    const tag = settled ? (market.profitable ? '[WIN] ' : '[LOSS]') : '[OPEN]';
     const won   = hasWon(market.valuation);
     const check = won ? '✓' : '✗';
     // У открытой позиции исхода ещё нет: показываем котировку, а не
@@ -194,16 +200,20 @@ export class DetailedRenderer {
     const avgEntry  = avgPrice(buyFills);
     const buyShares = sumShares(buyFills);
 
+    // Ни «×», ни «=»: стоимость входа приходит из позиции (avgPrice ×
+    // totalBought за всю её историю), а shares/avg посчитаны по сделкам
+    // ВНУТРИ окна отчёта. Знак равенства обещал бы тождество, которого нет.
     lines.push(
-      `  Entry:   ${fmtNum(buyShares, 1)} shares` +
-      ` × avg ${fmtNum(avgEntry, 3)}  =  ${fmtCost(market.entryCost)}`
+      `  Entry:   ${fmtNum(buyShares, 1)} shares @ avg ${fmtNum(avgEntry, 3)}` +
+      `   cost ${fmtCost(market.entryCost)}`
     );
 
     if (market.sellProceeds.isPositive()) {
       const sellFills = market.fills.filter(f => f.side === 'SELL');
+      // Выручка НЕ равна shares × avg: она уже за вычетом комиссии.
       lines.push(
-        `  Sold:    ${fmtNum(sumShares(sellFills), 1)} shares` +
-        ` × avg ${fmtNum(avgPrice(sellFills), 3)}  =  ${fmtPnl(market.sellProceeds)}  (early exit)`
+        `  Sold:    ${fmtNum(sumShares(sellFills), 1)} shares @ avg ${fmtNum(avgPrice(sellFills), 3)}` +
+        `   proceeds ${fmtPnl(market.sellProceeds)}  (early exit)`
       );
     }
 
@@ -230,7 +240,7 @@ export class DetailedRenderer {
  * Средняя цена по набору сделок.
  *
  * @param fills - Сделки одной стороны
- * @returns Средняя цена как число, либо 0 для пустого набора
+ * @returns Средняя цена, взвешенная по объёму; 0 для пустого набора
  *
  * @example
  * ```typescript
@@ -238,8 +248,13 @@ export class DetailedRenderer {
  * ```
  */
 function avgPrice(fills: FillRecord[]): number {
-  if (fills.length === 0) return 0;
-  return fills.reduce((s, f) => s + f.price.toNumber(), 0) / fills.length;
+  const shares = sumShares(fills);
+  if (shares === 0) return 0;
+  // Взвешивание по объёму, а не среднее арифметическое цен: сделка на 0.78
+  // токена не должна весить столько же, сколько на 4.22 — иначе «средняя»
+  // не соответствует ни одной реальной величине.
+  const notional = fills.reduce((acc, f) => acc + f.price.toNumber() * f.size.toNumber(), 0);
+  return notional / shares;
 }
 
 /**

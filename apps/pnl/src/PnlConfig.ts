@@ -89,6 +89,18 @@ function parseDateToUnixSec(dateStr: string, endOfDay = false): number {
   const d = endOfDay
     ? new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999))
     : new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+
+  // `Date.UTC` молча переносит несуществующие даты: 2026-02-31 становится
+  // 2026-03-03, а месяц 13 — январём следующего года. Регулярка этого не
+  // ловит, она проверяет только форму. Сверяем компоненты обратно.
+  if (
+    d.getUTCFullYear() !== year ||
+    d.getUTCMonth() !== month - 1 ||
+    d.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid calendar date "${dateStr}".`);
+  }
+
   return Math.floor(d.getTime() / 1000);
 }
 
@@ -148,6 +160,25 @@ export function parseConfig(): PnlConfig {
   const apiKey        = process.env['POLYMARKET_API_KEY'];
   const apiSecret     = process.env['POLYMARKET_API_SECRET'];
   const apiPassphrase = process.env['POLYMARKET_API_PASSPHRASE'];
+  const credentialEnv = {
+    PRIVATE_KEY: privateKey,
+    POLYMARKET_API_KEY: apiKey,
+    POLYMARKET_API_SECRET: apiSecret,
+    POLYMARKET_API_PASSPHRASE: apiPassphrase,
+  };
+  const missing = Object.entries(credentialEnv)
+    .filter(([, value]) => value === undefined)
+    .map(([name]) => name);
+
+  // Частично заданные креденшелы — почти наверняка опечатка в окружении, а
+  // не намерение. Молча уйти на публичный путь значит выдать отчёт без
+  // комиссий и не сказать почему.
+  if (missing.length > 0 && missing.length < Object.keys(credentialEnv).length) {
+    console.warn(
+      `Warning: incomplete credentials, falling back to the public path. Missing: ${missing.join(', ')}`
+    );
+  }
+
   const credentials: PnlCredentials | undefined =
     privateKey !== undefined &&
     apiKey !== undefined &&

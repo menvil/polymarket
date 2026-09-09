@@ -31,6 +31,15 @@
     },
     {
       "path": "../../packages/domain/entities/fill/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/result/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/foundation/timestamp/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/domain/value-objects/tsconfig.build.json"
     }
   ]
 }
