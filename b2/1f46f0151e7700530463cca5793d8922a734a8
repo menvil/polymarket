@@ -1,0 +1,23 @@
+docs/guides/pnl-analytics.md
+  s_c99ec2b699d51d::t_954bfca2a917fa 3-9
+packages/domain/entities/fill/src/polymarket-fee.ts
+  s_c99ec2b699d51d::t_954bfca2a917fa 20-21,108,115
+packages/domain/entities/fill/docs/fill.md
+  s_c99ec2b699d51d::t_954bfca2a917fa 137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b21f46f0151e7700530463cca5793d8922a734a8",
+  "prompts": {},
+  "sessions": {
+    "s_c99ec2b699d51d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be5710d8-c561-4978-ac0d-921b526eb0ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
