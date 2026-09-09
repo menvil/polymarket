@@ -3,7 +3,7 @@
  *
  * @remarks
  * Текущая формула комиссии Polymarket для crypto-рынков:
- * `fee = round5(size × 0.072 × price × (1 - price))`
+ * `fee = round5(size × 0.07 × price × (1 - price))`
  *
  * Комиссия взимается только с taker-ордеров. Maker = 0%.
  *
@@ -34,7 +34,7 @@ import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-f
  *
  * @example
  * ```typescript
- * const calc = new FeeCalculator({ feeRate: Ratio.of(new Decimal('0.072')), exponent: 1 });
+ * const calc = new FeeCalculator({ feeRate: Ratio.of(new Decimal('0.07')), exponent: 1 });
  * console.log(calc.takerFee(0.50)); // 0.018
  * ```
  */

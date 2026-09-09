@@ -2,31 +2,45 @@
  * Расчёт taker-комиссии на Polymarket в USDC-equivalent.
  *
  * @remarks
- * Актуальная формула Polymarket:
+ * Формула площадки (docs.polymarket.com/trading/fees):
  *   fee = C × feeRate × p × (1 - p)
  *
- * Для crypto-рынков:
- *   feeRate = 0.072
+ * Для crypto-рынков `feeRate = 0.07`.
  *
- * Комиссия округляется до 5 знаков после запятой.
- * Всё меньше 0.00001 USDC считается нулём.
+ * **Ставку платит только TAKER.** Мейкер не платит никогда — это прямо
+ * сказано в документации и подтверждено замером: позиции, закрытые
+ * мейкерскими филами, дают нулевую разницу с `realizedPnl` площадки.
+ *
+ * Комиссия считается в USDC (не в токенах), округляется до 5 знаков,
+ * всё меньше 0.00001 USDC считается нулём.
+ *
+ * ### Откуда взялась ставка
+ * Здесь стояло `0.072` — величина, не совпадающая ни с документацией, ни с
+ * фактическими списаниями. Проверено на 28 закрытых позициях: отношение
+ * (наша арифметика − `realizedPnl`) к базе `p × (1 - p) × size` держится на
+ * **0.0700–0.0704**, тогда как 0.072 завышает комиссию примерно на 2.9%.
+ *
+ * Ставку **нельзя** брать из ответов API:
+ * - `feeRateBps` в записи сделки приходит `"0"` — поле не заполняется;
+ * - `taker_base_fee`/`maker_base_fee` рынка равны `1000`, что противоречит
+ *   и замеру, и правилу «мейкер не платит»; это конфигурационный потолок,
+ *   а не эффективная ставка.
  *
  * ### VO на публичной границе (Этап 3 плана миграции):
  * `calculatePolymarketTakerFee`/`calculatePolymarketTakerFeeWithRate` принимают
  * `Quantity`/`OutcomePrice` и возвращают `Fee` — по ADR (`docs/architecture/boundary-contract.md`,
  * Решение 1) голый `Decimal` на публичной сигнатуре легитимен только внутри
- * `value-objects`/`math`. `calculatePolymarketTakerFeeNumber` **не переводится** —
- * её сигнатура уже полностью на примитивах (`number`, не `Decimal`), уже ADR-совместима,
- * и у неё были потребители в стратегиях и PnL-инструменте (оба приложения
- * удалены) и в `domain/cross-market`,
- * ожидающих `number`.
+ * `value-objects`/`math`. `calculatePolymarketTakerFeeNumber` остаётся на примитивах:
+ * её потребители (`domain/cross-market`, `apps/pnl`) заворачивают результат в VO у
+ * себя, на границе своего слоя — см. ADR, Решение 14. Прежнее обоснование ссылалось
+ * на удалённые приложения и больше не соответствует действительности.
  */
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { OutcomePrice, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
 import { AssetIdHelpers } from '@polymarket/ids';
 
-export const POLYMARKET_CRYPTO_TAKER_FEE_RATE = 0.072;
+export const POLYMARKET_CRYPTO_TAKER_FEE_RATE = 0.07;
 export const POLYMARKET_MIN_FEE_USDC = 0.00001;
 
 const MIN_FEE_USDC = new Decimal(POLYMARKET_MIN_FEE_USDC);
@@ -46,7 +60,7 @@ const MIN_FEE_USDC = new Decimal(POLYMARKET_MIN_FEE_USDC);
  * ```typescript
  * // TAKER fill: BUY 10 @ 0.50
  * const fee = calculatePolymarketTakerFee(Quantity.of(new Decimal('10')), OutcomePrice.of(new Decimal('0.50')));
- * // fee.quantity.amount().value() = 0.18000 (10 × 0.072 × 0.50 × 0.50)
+ * // fee.quantity.amount().value() = 0.17500 (10 × 0.07 × 0.50 × 0.50)
  * ```
  */
 export function calculatePolymarketTakerFee(size: Quantity, price: OutcomePrice): Fee {
@@ -58,7 +72,7 @@ export function calculatePolymarketTakerFee(size: Quantity, price: OutcomePrice)
  *
  * @param size - Размер ордера (Quantity VO)
  * @param price - Цена исполнения (OutcomePrice VO)
- * @param feeRate - Ставка комиссии (доля, например 0.072); допускает голый `number`/`Decimal` —
+ * @param feeRate - Ставка комиссии (доля, например 0.07); допускает голый `number`/`Decimal` —
  *   ставка не является отдельным VO в текущем коде, приходит из market metadata как примитив
  * @returns Комиссия как `Fee` VO (валюта USDC). Всегда >= 0.
  *
@@ -117,7 +131,7 @@ export function calculatePolymarketTakerFeeWithRate(
  * @example
  * ```typescript
  * const feeDollars = calculatePolymarketTakerFeeNumber(10, 0.5);
- * // 0.18
+ * // 0.175
  * ```
  */
 export function calculatePolymarketTakerFeeNumber(

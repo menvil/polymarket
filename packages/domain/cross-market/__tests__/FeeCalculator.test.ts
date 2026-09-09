@@ -3,13 +3,13 @@ import { FeeCalculator } from '../src/FeeCalculator.js';
 import { FEE_MODEL_CURRENT, FEE_MODEL_MARCH30 } from '../src/types.js';
 
 describe('FeeCalculator', () => {
-  describe('текущая crypto-модель (rate=0.072, exp=1)', () => {
+  describe('текущая crypto-модель (rate=0.07, exp=1)', () => {
     const calc = new FeeCalculator(FEE_MODEL_CURRENT);
 
     it('считает fee по формуле Polymarket для 1 share', () => {
       const fee = calc.takerFee(0.50);
-      // 1 × 0.072 × 0.50 × 0.50 = 0.018
-      expect(fee).toBeCloseTo(0.018, 6);
+      // 1 × 0.07 × 0.50 × 0.50 = 0.0175
+      expect(fee).toBeCloseTo(0.0175, 6);
     });
 
     it('fee=0 при price=0', () => {
@@ -27,13 +27,13 @@ describe('FeeCalculator', () => {
     it('fee симметричен по price: f(0.3) = f(0.7)', () => {
       const f03 = calc.takerFee(0.30);
       const f07 = calc.takerFee(0.70);
-      expect(f03).toBeCloseTo(0.072 * 0.3 * 0.7, 6);
+      expect(f03).toBeCloseTo(0.07 * 0.3 * 0.7, 6);
       expect(f07).toBeCloseTo(f03, 6);
     });
 
     it('поддерживает расчёт на полный size с round5', () => {
       const fee = calc.takerFee(0.65, 10);
-      expect(fee).toBeCloseTo(0.1638, 6);
+      expect(fee).toBeCloseTo(0.15925, 6);
     });
 
     it('deprecated march30 alias совпадает с текущей моделью', () => {

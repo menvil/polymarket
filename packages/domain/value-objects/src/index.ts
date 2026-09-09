@@ -56,6 +56,27 @@ export {
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';
 
+// SignedQuantity модуль (только публичный API)
+//
+// Знаковое количество: нетто-позиции, дельты, P&L. Отличается от `Quantity`
+// тем, что допускает отрицательные значения — `Quantity` их запрещает
+// инвариантом, и построенные над ним типы (`AssetQuantity`) запрет наследуют.
+//
+// Модуль был реализован полностью (core/facade/adapters/rules, тесты, docs) и
+// доступен через subpath `@polymarket/value-objects/signed-quantity`, но в
+// этот бочонок не попал — единственный из тринадцати. Расхождение выглядит
+// недосмотром: у сознательно внутреннего типа не было бы ни публичного
+// фасада, ни subpath-экспорта в package.json.
+export {
+  SignedQuantity,
+  SignedQuantityService,
+  SignedQuantityFormatter,
+  SignedQuantitySerializer,
+  SignedQuantityErrorReason,
+  SignedQuantityInvariantViolation,
+} from './signed-quantity/index.js';
+export type { SignedQuantityJSON } from './signed-quantity/index.js';
+
 // Balance модуль (только публичный API)
 export {
   Balance,
