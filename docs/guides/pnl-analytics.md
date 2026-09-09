@@ -4,17 +4,23 @@ Read-only CLI: сколько мы заработали или потеряли 
 
 ```bash
 # Краткая сводка по дням
-npx tsx apps/pnl/src/main.ts --from 2026-08-01 --to 2026-08-31
+npm run start -w @polymarket/pnl -- --from 2026-08-01 --to 2026-08-31
 
 # Подробный отчёт: блок на день → сделки по каждому рынку
-npx tsx apps/pnl/src/main.ts --from 2026-09-08 --mode detailed
+npm run start -w @polymarket/pnl -- --from 2026-09-08 --mode detailed
 
 # JSON для дальнейшей обработки
-npx tsx apps/pnl/src/main.ts --from 2026-08-01 --json
+npm run start -w @polymarket/pnl -- --from 2026-08-01 --json
 
 # Включить ещё не закрытые позиции
-npx tsx apps/pnl/src/main.ts --from 2026-08-01 --include-open
+npm run start -w @polymarket/pnl -- --from 2026-08-01 --include-open
 ```
+
+Конфиг — `apps/pnl/.env`, шаблон рядом в `.env.example`. Обязателен один
+`WALLET_ADDRESS`; остальное — только за комиссиями.
+
+> `--` перед флагами обязателен: без него npm съест их сам, а не передаст
+> скрипту.
 
 Обязателен один параметр окружения — `WALLET_ADDRESS` (или `FUNDER_ADDRESS`).
 
@@ -33,11 +39,14 @@ npx tsx apps/pnl/src/main.ts --from 2026-08-01 --include-open
 отличается только детализация.
 
 ```bash
-# публичный: достаточно адреса
+# публичный: достаточно WALLET_ADDRESS в apps/pnl/.env
+npm run start -w @polymarket/pnl -- --from 2026-06-01
+
+# разово, вообще без файла конфигурации
 WALLET_ADDRESS=0x… npx tsx apps/pnl/src/main.ts --from 2026-06-01
 
-# аутентифицированный: комиссии и роли
-npx tsx --env-file=.env apps/pnl/src/main.ts --from 2026-06-01 --mode detailed
+# аутентифицированный: взять готовые креды из другого .env
+npx tsx --env-file=apps/bot/.env apps/pnl/src/main.ts --from 2026-06-01 --mode detailed
 ```
 
 ## Почему публичный путь вообще существует
