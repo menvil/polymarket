@@ -100,14 +100,14 @@ describe('MD-A. Наполнение рядов принятого рынка', 
     );
 
     expect(result.ok).toBe(true);
-    const instrument = view.getMarket(MARKET_X)?.getInstrument(YES);
+    const instrument = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES);
     expect(instrument).toBeDefined();
     expect(instrument?.books.size()).toBe(1);
     expect(instrument?.books.getLatest()?.observedAt.toNumber()).toBe(2_000);
     expect(instrument?.books.getLatest()?.sourceTimestamp.toNumber()).toBe(1_900);
     // Admission + наблюдение — две принятые мутации.
     expect(view.getVersion()).toBe(2);
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
   });
 });
 
@@ -129,7 +129,7 @@ describe('MD-B. Несколько наблюдений одного инстр�
       );
     }
 
-    const books = view.getMarket(MARKET_X)?.getInstrument(YES)?.books;
+    const books = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.books;
     expect(books?.size()).toBe(3);
     expect(books?.getAll().map((o) => o.observedAt.toNumber())).toEqual([2_000, 3_000, 4_000]);
     // Текущее значение — это getLatest(), отдельного currentBook не существует.
@@ -153,7 +153,7 @@ describe('MD-C. Изоляция YES и NO', () => {
       events.tradeReceived({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, price: 0.4, size: 5, side: 'BUY', sourceTimestampMs: 1_950 }),
     );
 
-    const runtimeMarket = view.getMarket(MARKET_X);
+    const runtimeMarket = view.getMarket(POLYMARKET, MARKET_X);
     expect(runtimeMarket?.getInstrument(YES)?.books.size()).toBe(1);
     expect(runtimeMarket?.getInstrument(NO)?.books.size()).toBe(1);
     expect(runtimeMarket?.getInstrument(YES)?.publicTrades.size()).toBe(1);
@@ -172,7 +172,7 @@ describe('MD-G. Изоляция площадок в shared-состоянии',
       events.bookDepth({ venueId: COINBASE, instrumentId: BTC_USD, bid: 0.51, sourceTimestampMs: 900 }),
     );
 
-    expect(view.marketIds()).toEqual([]);
+    expect(view.marketIdentities()).toEqual([]);
     expect(view.getSharedInstrument(BINANCE, BTC_USDT)?.books.size()).toBe(1);
     expect(view.getSharedInstrument(COINBASE, BTC_USD)?.books.size()).toBe(1);
     expect(view.sharedVenueIds()).toHaveLength(2);
@@ -216,10 +216,10 @@ describe('MD-H. Рыночный и площадочный инструмент 
       events.bookDepth({ venueId: BINANCE, instrumentId: BTC_USDT, bid: 0.6, sourceTimestampMs: 1_950 }),
     );
 
-    expect(view.getMarket(MARKET_X)?.getInstrument(BTC_USDT)?.books.size()).toBe(1);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(BTC_USDT)?.books.size()).toBe(1);
     expect(view.getSharedInstrument(BINANCE, BTC_USDT)?.books.size()).toBe(1);
     // Индекс отражает только market-scoped принадлежность.
-    expect(view.getMarketForInstrument(BTC_USDT)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(POLYMARKET, BTC_USDT)).toBe(MARKET_X);
   });
 });
 
@@ -241,7 +241,7 @@ describe('MD-I. Публичные сделки', () => {
       }),
     );
 
-    const trade = view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.getLatest();
+    const trade = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.publicTrades.getLatest();
     expect(trade?.price.value().toNumber()).toBeCloseTo(0.62, 6);
     expect(trade?.size.toNumber()).toBe(7);
     expect(trade?.side).toBe('SELL');
@@ -258,7 +258,7 @@ describe('MD-I. Публичные сделки', () => {
       events.tradeReceived({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, price: 0.5, size: 1, side: 'BUY', sourceTimestampMs: 1_900 }),
     );
 
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.getLatest()?.venueTradeId).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.publicTrades.getLatest()?.venueTradeId).toBeUndefined();
   });
 });
 
@@ -268,10 +268,10 @@ describe('MD-K. Шаг цены', () => {
     await admit(bus, events);
     events.observeAt(3_000);
     await bus.publish(
-      events.tickSizeChanged({ marketId: MARKET_X, instrumentId: YES, newTickSize: 0.01, sourceTimestampMs: 2_900 }),
+      events.tickSizeChanged({ venueId: POLYMARKET, marketId: MARKET_X, instrumentId: YES, newTickSize: 0.01, sourceTimestampMs: 2_900 }),
     );
 
-    const instrument = view.getMarket(MARKET_X)?.getInstrument(YES);
+    const instrument = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES);
     expect(instrument?.tickSize?.tickSize.value().toNumber()).toBeCloseTo(0.01, 6);
     expect(instrument?.tickSize?.observedAt.toNumber()).toBe(3_000);
     expect(view.getVersion()).toBe(2);
@@ -313,7 +313,7 @@ describe('MD-P. Жизненный цикл проектора', () => {
       events.bookDepth({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, bid: 0.5, sourceTimestampMs: 1_900 }),
     );
 
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.books.size()).toBe(1);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.books.size()).toBe(1);
     expect(view.getVersion()).toBe(2);
   });
 
@@ -336,7 +336,7 @@ describe('MD-P. Жизненный цикл проектора', () => {
     );
 
     expect(view.getVersion()).toBe(versionAtStop);
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.books.size()).toBe(1);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.books.size()).toBe(1);
   });
 });
 
@@ -360,8 +360,8 @@ describe('MD-R. Идентичность внутри снимка стакан�
 
     expect(result.ok).toBe(false);
     // Ничего не записано: отказ произошёл ДО мутации.
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.books.size()).toBe(0);
-    expect(view.getMarket(MARKET_X)?.getInstrument(NO)?.books.size()).toBe(0);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.books.size()).toBe(0);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(NO)?.books.size()).toBe(0);
     expect(view.getVersion()).toBe(1);
   });
 
@@ -444,7 +444,7 @@ describe('MD-S. Ценовой домен сужается по владельц
       }),
     );
 
-    const marketTrade = view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.getLatest();
+    const marketTrade = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.publicTrades.getLatest();
     const sharedTrade = view.getSharedInstrument(BINANCE, BTC_USDT)?.publicTrades.getLatest();
 
     // Типы сужены: цена рынка сравнима с ценой рынка, цена биржи — с биржевой.
@@ -474,7 +474,7 @@ describe('MD-S. Ценовой домен сужается по владельц
 
     expect(result.ok).toBe(false);
     // Ряд пуст, версия не выросла: проверка домена идёт ДО записи.
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.size()).toBe(0);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.publicTrades.size()).toBe(0);
     expect(view.getVersion()).toBe(1);
   });
 
@@ -510,8 +510,8 @@ describe('MD-S. Ценовой домен сужается по владельц
     );
 
     expect(accepted.ok).toBe(true);
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades.size()).toBe(1);
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.publicTrades.size()).toBe(1);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
     expect(view.getVersion()).toBe(2);
   });
 
@@ -570,14 +570,14 @@ describe('MD-Q. Критическая подписка', () => {
     // Non-critical подписка проглотила бы ошибку и вернула Ok.
     expect(result.ok).toBe(false);
     // Инструмент не переехал на другой рынок молча.
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
-    expect(view.getMarket(MARKET_Y)?.getInstrument(YES)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
+    expect(view.getMarket(POLYMARKET, MARKET_Y)?.getInstrument(YES)).toBeUndefined();
     // Мутации не было: две версии — это два admission.
     expect(view.getVersion()).toBe(2);
   });
 
   it('ошибка несёт рынок, инструмент и состав исходов', () => {
-    const error = new UnknownTradingMarketInstrumentError(MARKET_Y, YES, [BTC_USD, BTC_USDT]);
+    const error = new UnknownTradingMarketInstrumentError(POLYMARKET, MARKET_Y, YES, [BTC_USD, BTC_USDT]);
     expect(error.marketId).toBe(MARKET_Y);
     expect(error.instrumentId).toBe(YES);
     expect(error.marketInstrumentIds).toEqual([BTC_USD, BTC_USDT]);

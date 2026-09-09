@@ -25,6 +25,10 @@ import type { TradingMarketStructureDifference } from './marketStructure.js';
  * инструмент нельзя: часть истории осталась бы за старым рынком, и оба
  * состояния стали бы неправильными.
  *
+ * Владение проверяется В ПРЕДЕЛАХ ПЛОЩАДКИ: `InstrumentId` уникален только
+ * внутри своего пространства имён, поэтому одинаковый идентификатор на двух
+ * площадках — два разных инструмента, и один не блокирует admission другого.
+ *
  * Отказ приходит ДО любой мутации, поэтому конфликт по ВТОРОМУ исходу не
  * оставляет за собой ни первого инструмента, ни самого рынка.
  *
@@ -35,27 +39,29 @@ import type { TradingMarketStructureDifference } from './marketStructure.js';
  * @example
  * ```typescript
  * // instrument YES зарегистрирован за market X, admission market Y заявляет его же
- * throw new InstrumentMarketConflictError(yes, marketX, marketY);
+ * throw new InstrumentMarketConflictError(polymarket, yes, marketX, marketY);
  * ```
  */
 export class InstrumentMarketConflictError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
+   * @param venueId - Площадка, в пределах которой конфликт
    * @param instrumentId - Инструмент, вокруг которого конфликт
    * @param registeredMarketId - Рынок, за которым он уже закреплён
    * @param incomingMarketId - Рынок, который пытались принять
    */
   constructor(
+    public readonly venueId: VenueId,
     public readonly instrumentId: InstrumentId,
     public readonly registeredMarketId: MarketId,
     public readonly incomingMarketId: MarketId,
   ) {
     super(
-      `Instrument ${instrumentId} is owned by market ${registeredMarketId}, ` +
+      `Instrument ${venueId}:${instrumentId} is owned by market ${registeredMarketId}, ` +
         `but market ${incomingMarketId} claims it too`,
       {
-        context: { instrumentId, registeredMarketId, incomingMarketId },
+        context: { venueId, instrumentId, registeredMarketId, incomingMarketId },
       },
     );
   }
@@ -158,24 +164,26 @@ export class PriceDomainMismatchError extends TradingError {
  *
  * @example
  * ```typescript
- * throw new TradingMarketAlreadyAdmittedError(marketId, 'ACTIVE');
+ * throw new TradingMarketAlreadyAdmittedError(venueId, marketId, 'ACTIVE');
  * ```
  */
 export class TradingMarketAlreadyAdmittedError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
+   * @param venueId - Площадка рынка
    * @param marketId - Рынок, по которому пришло повторное admission
    * @param currentStatus - Статус, в котором рынок находится сейчас
    */
   constructor(
+    public readonly venueId: VenueId,
     public readonly marketId: MarketId,
     public readonly currentStatus: TradingMarketLifecycleStatus,
   ) {
     super(
-      `Trading market ${marketId} is already admitted (current lifecycle status ` +
-        `${currentStatus}); admission is not an update`,
-      { context: { marketId, currentStatus } },
+      `Trading market ${venueId}:${marketId} is already admitted (current lifecycle ` +
+        `status ${currentStatus}); admission is not an update`,
+      { context: { venueId, marketId, currentStatus } },
     );
   }
 }
@@ -194,27 +202,34 @@ export class TradingMarketAlreadyAdmittedError extends TradingError {
  *
  * @example
  * ```typescript
- * throw new TradingMarketAdmissionTimingError(marketId, admittedAt, market.startsAt);
+ * throw new TradingMarketAdmissionTimingError(venueId, marketId, admittedAt, market.startsAt);
  * ```
  */
 export class TradingMarketAdmissionTimingError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
+   * @param venueId - Площадка рынка
    * @param marketId - Рынок, который пытались принять
    * @param admittedAt - Момент admission (`metadata.createdAt`)
    * @param startsAt - Начало торгов по расписанию рынка
    */
   constructor(
+    public readonly venueId: VenueId,
     public readonly marketId: MarketId,
     public readonly admittedAt: Timestamp,
     public readonly startsAt: Timestamp,
   ) {
     super(
-      `Trading market ${marketId} must be admitted strictly before startsAt: ` +
+      `Trading market ${venueId}:${marketId} must be admitted strictly before startsAt: ` +
         `admitted at ${admittedAt.toISO()}, market starts at ${startsAt.toISO()}`,
       {
-        context: { marketId, admittedAt: admittedAt.toISO(), startsAt: startsAt.toISO() },
+        context: {
+          venueId,
+          marketId,
+          admittedAt: admittedAt.toISO(),
+          startsAt: startsAt.toISO(),
+        },
       },
     );
   }
@@ -235,24 +250,26 @@ export class TradingMarketAdmissionTimingError extends TradingError {
  *
  * @example
  * ```typescript
- * throw new TradingMarketAdmissionStateError(marketId, 'RESOLVED');
+ * throw new TradingMarketAdmissionStateError(venueId, marketId, 'RESOLVED');
  * ```
  */
 export class TradingMarketAdmissionStateError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
+   * @param venueId - Площадка рынка
    * @param marketId - Рынок, который пытались принять
    * @param venueStatus - Внешнее состояние рынка на площадке
    */
   constructor(
+    public readonly venueId: VenueId,
     public readonly marketId: MarketId,
     public readonly venueStatus: MarketStatus,
   ) {
     super(
-      `Trading market ${marketId} cannot be admitted: venue state is ${venueStatus}, ` +
-        `expected ACTIVE`,
-      { context: { marketId, venueStatus } },
+      `Trading market ${venueId}:${marketId} cannot be admitted: venue state is ` +
+        `${venueStatus}, expected ACTIVE`,
+      { context: { venueId, marketId, venueStatus } },
     );
   }
 }
@@ -282,18 +299,24 @@ export type TradingMarketTransitionViolation = 'NOT_ADMITTED' | 'PHASE' | 'TIMIN
  * Отказ ВСЕГДА возвращается до мутации: рынок, жизненный цикл, инструменты,
  * индексы и версия остаются нетронутыми.
  *
+ * `NOT_ADMITTED` покрывает и случай «рынок с таким `marketId` принят, но у
+ * ДРУГОЙ площадки»: рынок ищется по паре `venueId + marketId`, поэтому
+ * lifecycle-событие чужой площадки не находит ничего — и это правильный ответ,
+ * а не конфликт структуры: `POLYMARKET:X` и `OTHER:X` — разные сущности.
+ *
  * @example
  * ```typescript
  * // Активация из ACTIVE — фаза не та
- * throw new TradingMarketLifecycleTransitionError(marketId, 'ACTIVE', 'ACTIVE', 'PHASE');
+ * throw new TradingMarketLifecycleTransitionError(venueId, marketId, 'ACTIVE', 'ACTIVE', 'PHASE');
  * // Финализация рынка, которого нет в состоянии
- * throw new TradingMarketLifecycleTransitionError(marketId, 'FINALIZED', undefined, 'NOT_ADMITTED');
+ * throw new TradingMarketLifecycleTransitionError(venueId, marketId, 'FINALIZED', undefined, 'NOT_ADMITTED');
  * ```
  */
 export class TradingMarketLifecycleTransitionError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
+   * @param venueId - Площадка рынка
    * @param marketId - Рынок, по которому пришло lifecycle-событие
    * @param target - Статус, в который просили перейти
    * @param current - Текущий статус; `undefined`, если рынок не принят
@@ -301,6 +324,7 @@ export class TradingMarketLifecycleTransitionError extends TradingError {
    * @param detail - Уточнение для лога (нарушенный инвариант, времена)
    */
   constructor(
+    public readonly venueId: VenueId,
     public readonly marketId: MarketId,
     public readonly target: TradingMarketLifecycleStatus,
     public readonly current: TradingMarketLifecycleStatus | undefined,
@@ -308,10 +332,12 @@ export class TradingMarketLifecycleTransitionError extends TradingError {
     public readonly detail?: string,
   ) {
     super(
-      `Trading market ${marketId} cannot transition ${current ?? 'NOT_ADMITTED'} → ${target} ` +
+      `Trading market ${venueId}:${marketId} cannot transition ` +
+        `${current ?? 'NOT_ADMITTED'} → ${target} ` +
         `(${violation})${detail === undefined ? '' : `: ${detail}`}`,
       {
         context: {
+          venueId,
           marketId,
           target,
           current: current ?? null,
@@ -327,7 +353,9 @@ export class TradingMarketLifecycleTransitionError extends TradingError {
  * Наблюдение пришло по инструменту, которого у принятого рынка нет.
  *
  * @remarks
- * Это не «чужой рынок» — рынок как раз наш, принятый. Инструменты рынка
+ * Это не «чужой рынок» — рынок как раз наш, принятый (найден по паре
+ * `venueId + marketId`, поэтому наблюдение другой площадки сюда не попадает —
+ * оно просто игнорируется). Инструменты рынка
  * известны из canonical `Market.outcomes` с самого admission, поэтому третий
  * `instrumentId` под тем же `marketId` означает нарушение canonical
  * маршрутизации: либо адаптер собрал событие неверно, либо идентификаторы
@@ -343,26 +371,35 @@ export class TradingMarketLifecycleTransitionError extends TradingError {
  *
  * @example
  * ```typescript
- * throw new UnknownTradingMarketInstrumentError(marketId, other, [yes, no]);
+ * throw new UnknownTradingMarketInstrumentError(venueId, marketId, other, [yes, no]);
  * ```
  */
 export class UnknownTradingMarketInstrumentError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
+   * @param venueId - Площадка рынка
    * @param marketId - Принятый рынок из события
    * @param instrumentId - Инструмент, которого у рынка нет
    * @param marketInstrumentIds - Инструменты исходов рынка
    */
   constructor(
+    public readonly venueId: VenueId,
     public readonly marketId: MarketId,
     public readonly instrumentId: InstrumentId,
     public readonly marketInstrumentIds: readonly InstrumentId[],
   ) {
     super(
-      `Instrument ${instrumentId} does not belong to admitted trading market ${marketId} ` +
-        `(outcome instruments: ${marketInstrumentIds.join(', ')})`,
-      { context: { marketId, instrumentId, marketInstrumentIds: [...marketInstrumentIds] } },
+      `Instrument ${instrumentId} does not belong to admitted trading market ` +
+        `${venueId}:${marketId} (outcome instruments: ${marketInstrumentIds.join(', ')})`,
+      {
+        context: {
+          venueId,
+          marketId,
+          instrumentId,
+          marketInstrumentIds: [...marketInstrumentIds],
+        },
+      },
     );
   }
 }
@@ -380,9 +417,14 @@ export class UnknownTradingMarketInstrumentError extends TradingError {
  * формулировку, и это не меняет предмет торговли. `state` тем более —
  * его изменение и есть смысл резолюции.
  *
+ * Расхождение по ПЛОЩАДКЕ этой ошибкой не бывает: рынок ищется по паре
+ * `venueId + marketId`, поэтому резолюция `OTHER:X` при принятом `POLYMARKET:X`
+ * не находит рынка и отвергается как `NOT_ADMITTED` — это другая сущность, а
+ * не изменённая структура той же.
+ *
  * @example
  * ```typescript
- * throw new TradingMarketStructureConflictError(marketId, {
+ * throw new TradingMarketStructureConflictError(venueId, marketId, {
  *   field: 'startsAt',
  *   admitted: '2026-09-01T12:00:00.000Z',
  *   incoming: '2026-09-01T12:05:00.000Z',
@@ -393,18 +435,21 @@ export class TradingMarketStructureConflictError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
+   * @param venueId - Площадка рынка
    * @param marketId - Рынок, по которому пришло событие
    * @param difference - Первое найденное расхождение структуры
    */
   constructor(
+    public readonly venueId: VenueId,
     public readonly marketId: MarketId,
     public readonly difference: TradingMarketStructureDifference,
   ) {
     super(
-      `Trading market ${marketId} structure conflict on ${difference.field}: ` +
+      `Trading market ${venueId}:${marketId} structure conflict on ${difference.field}: ` +
         `admitted ${difference.admitted}, incoming ${difference.incoming}`,
       {
         context: {
+          venueId,
           marketId,
           field: difference.field,
           admitted: difference.admitted,

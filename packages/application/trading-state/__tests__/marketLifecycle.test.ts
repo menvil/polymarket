@@ -25,6 +25,7 @@ import {
   TradingMarketAlreadyAdmittedError,
   TradingMarketLifecycleTransitionError,
   TradingMarketStructureConflictError,
+  findTradingMarketStructureDifference,
   sameTradingMarketStructure,
   type TradingHotStateView,
 } from '../src/index.js';
@@ -34,6 +35,9 @@ import {
   BTC_USDT,
   EXPIRES_AT_MS,
   EventFactory,
+  KALSHI,
+  KALSHI_NO,
+  KALSHI_YES,
   MARKET_X,
   MARKET_Y,
   NO,
@@ -110,6 +114,7 @@ async function fillActiveData(
     );
     await publishAt(bus, events, atMs, () =>
       events.tickSizeChanged({
+        venueId: POLYMARKET,
         marketId: MARKET_X,
         instrumentId,
         newTickSize: 0.01,
@@ -126,7 +131,7 @@ async function toActive(
   admitted: Market = market(),
 ): Promise<Market> {
   await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(admitted));
-  await publishAt(bus, events, ACTIVATED_AT, () => events.marketActivated(admitted.id));
+  await publishAt(bus, events, ACTIVATED_AT, () => events.marketActivated(admitted.venueId, admitted.id));
   return admitted;
 }
 
@@ -140,7 +145,7 @@ describe('A. Admission', () => {
     );
 
     expect(result.ok).toBe(true);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state).toBeDefined();
     // Хранится РОВНО тот canonical Market, что пришёл в payload.
     expect(state?.market).toBe(admitted);
@@ -150,9 +155,9 @@ describe('A. Admission', () => {
     expect(state?.instrumentIds()).toEqual([YES, NO]);
     expect(state?.getInstrument(YES)).toBeDefined();
     expect(state?.getInstrument(NO)).toBeDefined();
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
-    expect(view.getMarketForInstrument(NO)).toBe(MARKET_X);
-    expect(view.marketIds()).toEqual([MARKET_X]);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(POLYMARKET, NO)).toBe(MARKET_X);
+    expect(view.marketIdentities()).toEqual([{ venueId: POLYMARKET, marketId: MARKET_X }]);
     expect(view.getVersion()).toBe(1);
   });
 
@@ -161,7 +166,7 @@ describe('A. Admission', () => {
     const admitted = market({ question: 'Bitcoin Up or Down — 12:00 to 12:05?' });
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(admitted));
 
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.market.question).toBe('Bitcoin Up or Down — 12:00 to 12:05?');
     expect(state?.market.startsAt.toNumber()).toBe(OPENS_AT_MS);
     expect(state?.market.expiresAt.toNumber()).toBe(EXPIRES_AT_MS);
@@ -178,7 +183,7 @@ describe('B. Оба инструмента существуют до перво�
     const { bus, view, events } = buildRuntime();
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.instrumentIds()).toEqual([YES, NO]);
     for (const instrumentId of [YES, NO]) {
       const instrument = state?.getInstrument(instrumentId);
@@ -199,10 +204,10 @@ describe('C. Admission после startsAt отвергается', () => {
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)).toBeUndefined();
-    expect(view.getMarketForInstrument(YES)).toBeUndefined();
-    expect(view.getMarketForInstrument(NO)).toBeUndefined();
-    expect(view.marketIds()).toEqual([]);
+    expect(view.getMarket(POLYMARKET, MARKET_X)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, NO)).toBeUndefined();
+    expect(view.marketIdentities()).toEqual([]);
     expect(view.getVersion()).toBe(0);
   });
 
@@ -220,6 +225,7 @@ describe('C. Admission после startsAt отвергается', () => {
   it('ошибка несёт оба времени', () => {
     const admitted = market();
     const error = new TradingMarketAdmissionTimingError(
+      POLYMARKET,
       MARKET_X,
       admitted.startsAt,
       admitted.startsAt,
@@ -239,7 +245,7 @@ describe('D. Терминальный рынок не принимается', (
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)).toBeUndefined();
     expect(view.getVersion()).toBe(0);
   });
 
@@ -251,13 +257,13 @@ describe('D. Терминальный рынок не принимается', (
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)).toBeUndefined();
-    expect(view.getMarketForInstrument(YES)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBeUndefined();
     expect(view.getVersion()).toBe(0);
   });
 
   it('ошибка называет внешнее состояние', () => {
-    const error = new TradingMarketAdmissionStateError(MARKET_X, 'RESOLVED');
+    const error = new TradingMarketAdmissionStateError(POLYMARKET, MARKET_X, 'RESOLVED');
     expect(error.venueStatus).toBe('RESOLVED');
     expect(error.severity).toBe('critical');
   });
@@ -282,14 +288,14 @@ describe('E. Повторный admission отвергается', () => {
     expect(duplicate.ok).toBe(false);
     // Ни версия, ни сохранённый рынок, ни состав инструментов не изменились.
     expect(view.getVersion()).toBe(1);
-    expect(view.getMarket(MARKET_X)?.market).toBe(first);
-    expect(view.getMarket(MARKET_X)?.lifecycle.admittedAt.toNumber()).toBe(ADMITTED_AT);
-    expect(view.getMarket(MARKET_X)?.instrumentIds()).toEqual([YES, NO]);
-    expect(view.marketIds()).toEqual([MARKET_X]);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.market).toBe(first);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.admittedAt.toNumber()).toBe(ADMITTED_AT);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.instrumentIds()).toEqual([YES, NO]);
+    expect(view.marketIdentities()).toEqual([{ venueId: POLYMARKET, marketId: MARKET_X }]);
   });
 
   it('ошибка называет текущий статус', () => {
-    const error = new TradingMarketAlreadyAdmittedError(MARKET_X, 'ACTIVE');
+    const error = new TradingMarketAlreadyAdmittedError(POLYMARKET, MARKET_X, 'ACTIVE');
     expect(error.currentStatus).toBe('ACTIVE');
     expect(error.severity).toBe('critical');
     expect(error.message).toContain('already admitted');
@@ -318,12 +324,12 @@ describe('F. Атомарность: конфликт второго исход�
 
     expect(result.ok).toBe(false);
     // Рынок B не создан вовсе.
-    expect(view.getMarket(MARKET_Y)).toBeUndefined();
-    expect(view.marketIds()).toEqual([MARKET_X]);
+    expect(view.getMarket(POLYMARKET, MARKET_Y)).toBeUndefined();
+    expect(view.marketIdentities()).toEqual([{ venueId: POLYMARKET, marketId: MARKET_X }]);
     // Свободный первый исход НЕ зарегистрирован за отвергнутым рынком.
-    expect(view.getMarketForInstrument(BTC_USD)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, BTC_USD)).toBeUndefined();
     // Занятый исход остался за рынком A.
-    expect(view.getMarketForInstrument(NO)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(POLYMARKET, NO)).toBe(MARKET_X);
     expect(view.getVersion()).toBe(1);
   });
 
@@ -344,14 +350,14 @@ describe('F. Атомарность: конфликт второго исход�
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_Y)).toBeUndefined();
-    expect(view.getMarketForInstrument(BTC_USDT)).toBeUndefined();
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
+    expect(view.getMarket(POLYMARKET, MARKET_Y)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, BTC_USDT)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
     expect(view.getVersion()).toBe(1);
   });
 
   it('ошибка несёт обе стороны конфликта', () => {
-    const error = new InstrumentMarketConflictError(YES, MARKET_X, MARKET_Y);
+    const error = new InstrumentMarketConflictError(POLYMARKET, YES, MARKET_X, MARKET_Y);
     expect(error.registeredMarketId).toBe(MARKET_X);
     expect(error.incomingMarketId).toBe(MARKET_Y);
     expect(error.severity).toBe('critical');
@@ -384,6 +390,7 @@ describe('G. Market-data непринятого рынка игнорирует�
     );
     const tick = await publishAt(bus, events, 1_200, () =>
       events.tickSizeChanged({
+        venueId: POLYMARKET,
         marketId: MARKET_X,
         instrumentId: YES,
         newTickSize: 0.01,
@@ -395,9 +402,9 @@ describe('G. Market-data непринятого рынка игнорирует�
     expect(book.ok).toBe(true);
     expect(trade.ok).toBe(true);
     expect(tick.ok).toBe(true);
-    expect(view.getMarket(MARKET_X)).toBeUndefined();
-    expect(view.marketIds()).toEqual([]);
-    expect(view.getMarketForInstrument(YES)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)).toBeUndefined();
+    expect(view.marketIdentities()).toEqual([]);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBeUndefined();
     expect(view.getVersion()).toBe(0);
   });
 
@@ -417,8 +424,8 @@ describe('G. Market-data непринятого рынка игнорирует�
     );
 
     expect(foreign.ok).toBe(true);
-    expect(view.getMarket(MARKET_Y)).toBeUndefined();
-    expect(view.getMarketForInstrument(BTC_USDT)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_Y)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, BTC_USDT)).toBeUndefined();
     expect(view.getVersion()).toBe(1);
   });
 });
@@ -449,7 +456,7 @@ describe('H. Warm history до активации', () => {
       }),
     );
 
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     // Статус ещё ADMITTED — но данные уже собираются.
     expect(state?.lifecycle.status).toBe('ADMITTED');
     expect(state?.getInstrument(YES)?.books.size()).toBe(1);
@@ -470,7 +477,7 @@ describe('H. Warm history до активации', () => {
         sourceTimestampMs: 1_900,
       }),
     );
-    await publishAt(bus, events, ACTIVATED_AT, () => events.marketActivated(MARKET_X));
+    await publishAt(bus, events, ACTIVATED_AT, () => events.marketActivated(POLYMARKET, MARKET_X));
     await publishAt(bus, events, ACTIVATED_AT + 100, () =>
       events.bookDepth({
         venueId: POLYMARKET,
@@ -481,7 +488,7 @@ describe('H. Warm history до активации', () => {
       }),
     );
 
-    const books = view.getMarket(MARKET_X)?.getInstrument(YES)?.books;
+    const books = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.books;
     expect(books?.getAll().map((o) => o.observedAt.toNumber())).toEqual([
       2_000,
       ACTIVATED_AT + 100,
@@ -505,10 +512,10 @@ describe('I. Неизвестный инструмент принятого ры
     );
 
     expect(result.ok).toBe(false);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.instrumentIds()).toEqual([YES, NO]);
     expect(state?.getInstrument(BTC_USDT)).toBeUndefined();
-    expect(view.getMarketForInstrument(BTC_USDT)).toBeUndefined();
+    expect(view.getMarketForInstrument(POLYMARKET, BTC_USDT)).toBeUndefined();
     expect(view.getVersion()).toBe(1);
   });
 
@@ -529,7 +536,7 @@ describe('I. Неизвестный инструмент принятого ры
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.getInstrument(BTC_USDT)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(BTC_USDT)).toBeUndefined();
     expect(view.getVersion()).toBe(1);
   });
 
@@ -539,6 +546,7 @@ describe('I. Неизвестный инструмент принятого ры
 
     const result = await publishAt(bus, events, 2_000, () =>
       events.tickSizeChanged({
+        venueId: POLYMARKET,
         marketId: MARKET_X,
         instrumentId: BTC_USDT,
         newTickSize: 0.01,
@@ -557,11 +565,11 @@ describe('J. Активация', () => {
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
     const result = await publishAt(bus, events, OPENS_AT_MS, () =>
-      events.marketActivated(MARKET_X),
+      events.marketActivated(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(true);
-    const lifecycle = view.getMarket(MARKET_X)?.lifecycle;
+    const lifecycle = view.getMarket(POLYMARKET, MARKET_X)?.lifecycle;
     expect(lifecycle?.status).toBe('ACTIVE');
     expect(lifecycle?.activatedAt?.toNumber()).toBe(OPENS_AT_MS);
     expect(lifecycle?.admittedAt.toNumber()).toBe(ADMITTED_AT);
@@ -574,11 +582,11 @@ describe('J. Активация', () => {
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
     const result = await publishAt(bus, events, EXPIRES_AT_MS - 1, () =>
-      events.marketActivated(MARKET_X),
+      events.marketActivated(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(true);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ACTIVE');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ACTIVE');
   });
 
   it('повторная активация отвергается и состояние не меняет', async () => {
@@ -587,11 +595,11 @@ describe('J. Активация', () => {
     expect(view.getVersion()).toBe(2);
 
     const again = await publishAt(bus, events, ACTIVATED_AT + 100, () =>
-      events.marketActivated(MARKET_X),
+      events.marketActivated(POLYMARKET, MARKET_X),
     );
 
     expect(again.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.activatedAt?.toNumber()).toBe(ACTIVATED_AT);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.activatedAt?.toNumber()).toBe(ACTIVATED_AT);
     expect(view.getVersion()).toBe(2);
   });
 
@@ -599,11 +607,11 @@ describe('J. Активация', () => {
     const { bus, view, events } = buildRuntime();
 
     const result = await publishAt(bus, events, ACTIVATED_AT, () =>
-      events.marketActivated(MARKET_X),
+      events.marketActivated(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)).toBeUndefined();
     expect(view.getVersion()).toBe(0);
   });
 });
@@ -614,11 +622,11 @@ describe('K. Ранняя активация отвергается', () => {
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
     const result = await publishAt(bus, events, OPENS_AT_MS - 1, () =>
-      events.marketActivated(MARKET_X),
+      events.marketActivated(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
-    const lifecycle = view.getMarket(MARKET_X)?.lifecycle;
+    const lifecycle = view.getMarket(POLYMARKET, MARKET_X)?.lifecycle;
     expect(lifecycle?.status).toBe('ADMITTED');
     expect(lifecycle?.activatedAt).toBeUndefined();
     expect(view.getVersion()).toBe(1);
@@ -631,11 +639,11 @@ describe('L. Активация после истечения отвергает
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
     const result = await publishAt(bus, events, EXPIRES_AT_MS, () =>
-      events.marketActivated(MARKET_X),
+      events.marketActivated(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ADMITTED');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ADMITTED');
     expect(view.getVersion()).toBe(1);
   });
 
@@ -644,7 +652,7 @@ describe('L. Активация после истечения отвергает
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
     const result = await publishAt(bus, events, EXPIRES_AT_MS + 1_000, () =>
-      events.marketActivated(MARKET_X),
+      events.marketActivated(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
@@ -658,12 +666,12 @@ describe('M. Недопустимые переходы', () => {
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
     const result = await publishAt(bus, events, ACTIVATED_AT, () =>
-      events.marketFinalized(MARKET_X),
+      events.marketFinalized(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ADMITTED');
-    expect(view.getMarket(MARKET_X)?.lifecycle.finalizedAt).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ADMITTED');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.finalizedAt).toBeUndefined();
     expect(view.getVersion()).toBe(1);
   });
 
@@ -672,11 +680,11 @@ describe('M. Недопустимые переходы', () => {
     await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
 
     const result = await publishAt(bus, events, ACTIVATED_AT, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ADMITTED');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ADMITTED');
     expect(view.getVersion()).toBe(1);
   });
 
@@ -690,7 +698,7 @@ describe('M. Недопустимые переходы', () => {
     );
 
     expect(result.ok).toBe(false);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.lifecycle.status).toBe('ADMITTED');
     // Сохранённый рынок остался прежним, а не разрешённым.
     expect(state?.market).toBe(admitted);
@@ -703,16 +711,17 @@ describe('M. Недопустимые переходы', () => {
     await toActive(bus, events);
 
     const result = await publishAt(bus, events, ACTIVATED_AT + 100, () =>
-      events.marketFinalized(MARKET_X),
+      events.marketFinalized(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ACTIVE');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ACTIVE');
     expect(view.getVersion()).toBe(2);
   });
 
   it('ошибка называет исходный и целевой статус', () => {
     const error = new TradingMarketLifecycleTransitionError(
+      POLYMARKET,
       MARKET_X,
       'FINALIZED',
       'ACTIVE',
@@ -726,6 +735,7 @@ describe('M. Недопустимые переходы', () => {
 
   it('ошибка непринятого рынка отличима от ошибки фазы', () => {
     const error = new TradingMarketLifecycleTransitionError(
+      POLYMARKET,
       MARKET_X,
       'ACTIVE',
       undefined,
@@ -744,11 +754,11 @@ describe('N. Остановка торговли', () => {
     const closedAt = ACTIVATED_AT + 5_000;
 
     const result = await publishAt(bus, events, closedAt, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(true);
-    const lifecycle = view.getMarket(MARKET_X)?.lifecycle;
+    const lifecycle = view.getMarket(POLYMARKET, MARKET_X)?.lifecycle;
     expect(lifecycle?.status).toBe('TRADING_CLOSED');
     expect(lifecycle?.tradingClosedAt?.toNumber()).toBe(closedAt);
     expect(lifecycle?.activatedAt?.toNumber()).toBe(ACTIVATED_AT);
@@ -761,24 +771,24 @@ describe('N. Остановка торговли', () => {
     await toActive(bus, events);
 
     const result = await publishAt(bus, events, ACTIVATED_AT + 1, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(true);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('TRADING_CLOSED');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('TRADING_CLOSED');
   });
 
   it('повторное закрытие отвергается', async () => {
     const { bus, view, events } = buildRuntime();
     await toActive(bus, events);
-    await publishAt(bus, events, ACTIVATED_AT + 100, () => events.marketTradingClosed(MARKET_X));
+    await publishAt(bus, events, ACTIVATED_AT + 100, () => events.marketTradingClosed(POLYMARKET, MARKET_X));
 
     const again = await publishAt(bus, events, ACTIVATED_AT + 200, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
 
     expect(again.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.tradingClosedAt?.toNumber()).toBe(
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.tradingClosedAt?.toNumber()).toBe(
       ACTIVATED_AT + 100,
     );
     expect(view.getVersion()).toBe(3);
@@ -792,16 +802,16 @@ describe('O. Очистка активных данных на закрытии'
     await fillActiveData(bus, events, ACTIVATED_AT + 1_000);
 
     // Данные действительно были.
-    const before = view.getMarket(MARKET_X);
+    const before = view.getMarket(POLYMARKET, MARKET_X);
     expect(before?.getInstrument(YES)?.books.size()).toBe(1);
     expect(before?.getInstrument(NO)?.publicTrades.size()).toBe(1);
     expect(before?.getInstrument(YES)?.tickSize).toBeDefined();
 
     await publishAt(bus, events, ACTIVATED_AT + 2_000, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
 
-    const after = view.getMarket(MARKET_X);
+    const after = view.getMarket(POLYMARKET, MARKET_X);
     // Тяжёлое активное состояние удалено.
     expect(after?.getInstrument(YES)).toBeUndefined();
     expect(after?.getInstrument(NO)).toBeUndefined();
@@ -810,12 +820,12 @@ describe('O. Очистка активных данных на закрытии'
     expect(after?.market).toBe(admitted);
     expect(after?.market.question).toBe('Bitcoin Up or Down?');
     expect(after?.instrumentIds()).toEqual([YES, NO]);
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
-    expect(view.getMarketForInstrument(NO)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(POLYMARKET, NO)).toBe(MARKET_X);
     expect(after?.lifecycle.status).toBe('TRADING_CLOSED');
     expect(after?.lifecycle.admittedAt.toNumber()).toBe(ADMITTED_AT);
     expect(after?.lifecycle.activatedAt?.toNumber()).toBe(ACTIVATED_AT);
-    expect(view.marketIds()).toEqual([MARKET_X]);
+    expect(view.marketIdentities()).toEqual([{ venueId: POLYMARKET, marketId: MARKET_X }]);
   });
 });
 
@@ -824,7 +834,7 @@ describe('P. Поздние market-data игнорируются', () => {
     const { bus, view, events } = buildRuntime();
     await toActive(bus, events);
     await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
     const versionAtClose = view.getVersion();
 
@@ -850,6 +860,7 @@ describe('P. Поздние market-data игнорируются', () => {
     );
     const tick = await publishAt(bus, events, ACTIVATED_AT + 2_200, () =>
       events.tickSizeChanged({
+        venueId: POLYMARKET,
         marketId: MARKET_X,
         instrumentId: YES,
         newTickSize: 0.001,
@@ -863,15 +874,15 @@ describe('P. Поздние market-data игнорируются', () => {
     expect(tick.ok).toBe(true);
     expect(view.getVersion()).toBe(versionAtClose);
     // Ряды не воссозданы.
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)).toBeUndefined();
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('TRADING_CLOSED');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('TRADING_CLOSED');
   });
 
   it('чужой инструмент остаётся ошибкой и после закрытия', async () => {
     const { bus, view, events } = buildRuntime();
     await toActive(bus, events);
     await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
     const versionAtClose = view.getVersion();
 
@@ -895,7 +906,7 @@ describe('Q. Штатная резолюция', () => {
     const { bus, view, events } = buildRuntime();
     const admitted = await toActive(bus, events);
     await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
     const resolved = resolvedMarket(admitted, 1);
     const resolvedAt = ACTIVATED_AT + 2_000;
@@ -905,7 +916,7 @@ describe('Q. Штатная резолюция', () => {
     );
 
     expect(result.ok).toBe(true);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.lifecycle.status).toBe('RESOLVED');
     expect(state?.lifecycle.resolvedAt?.toNumber()).toBe(resolvedAt);
     // Сохранённый Market заменён РАЗРЕШЁННЫМ.
@@ -933,7 +944,7 @@ describe('R. Резолюция прямо из ACTIVE', () => {
     );
 
     expect(result.ok).toBe(true);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.lifecycle.status).toBe('RESOLVED');
     expect(state?.lifecycle.resolvedAt?.toNumber()).toBe(resolvedAt);
     // Разрешённый рынок не остаётся торгово активным.
@@ -958,7 +969,7 @@ describe('S. Неразрешённый payload отвергается', () => {
     );
 
     expect(result.ok).toBe(false);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.lifecycle.status).toBe('ACTIVE');
     expect(state?.lifecycle.resolvedAt).toBeUndefined();
     expect(state?.lifecycle.tradingClosedAt).toBeUndefined();
@@ -977,8 +988,8 @@ describe('S. Неразрешённый payload отвергается', () => {
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.market).toBe(admitted);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ACTIVE');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.market).toBe(admitted);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ACTIVE');
     expect(view.getVersion()).toBe(2);
   });
 });
@@ -1000,23 +1011,27 @@ describe('T. Резолюция чужого рынка отвергается',
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_Y)).toBeUndefined();
-    expect(view.getMarket(MARKET_X)?.market).toBe(admitted);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ACTIVE');
+    expect(view.getMarket(POLYMARKET, MARKET_Y)).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.market).toBe(admitted);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ACTIVE');
     expect(view.getVersion()).toBe(2);
   });
 
-  it('тот же id на другой площадке — конфликт структуры', async () => {
+  it('тот же id на другой площадке — НЕ наш рынок, а не конфликт структуры', async () => {
     const { bus, view, events } = buildRuntime();
     const admitted = await toActive(bus, events);
-    const foreignVenue = market({ venueId: BINANCE, state: MarketState.resolved(0) });
+    // KALSHI:X — другая СУЩНОСТЬ рынка, а не изменённая структура POLYMARKET:X.
+    const otherVenue = market({ venueId: KALSHI, state: MarketState.resolved(0) });
 
     const result = await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
-      events.marketResolved(foreignVenue),
+      events.marketResolved(otherVenue),
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.market).toBe(admitted);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.market).toBe(admitted);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ACTIVE');
+    // Рынок ищется по паре, поэтому KALSHI:X не найден вовсе.
+    expect(view.getMarket(KALSHI, MARKET_X)).toBeUndefined();
     expect(view.getVersion()).toBe(2);
   });
 });
@@ -1054,7 +1069,7 @@ describe('U. Конфликт структуры при резолюции', () 
       );
 
       expect(result.ok).toBe(false);
-      const state = view.getMarket(MARKET_X);
+      const state = view.getMarket(POLYMARKET, MARKET_X);
       // Состояние осталось полностью прежним.
       expect(state?.market).toBe(admitted);
       expect(state?.lifecycle.status).toBe('ACTIVE');
@@ -1067,7 +1082,7 @@ describe('U. Конфликт структуры при резолюции', () 
   }
 
   it('ошибка называет разошедшееся поле и обе стороны', () => {
-    const error = new TradingMarketStructureConflictError(MARKET_X, {
+    const error = new TradingMarketStructureConflictError(POLYMARKET, MARKET_X, {
       field: 'startsAt',
       admitted: '1970-01-01T00:00:10.000Z',
       incoming: '1970-01-01T00:00:11.000Z',
@@ -1091,7 +1106,7 @@ describe('V. Уточнение question и slug принимается', () => 
     const { bus, view, events } = buildRuntime();
     await toActive(bus, events, market({ question: 'Bitcoin Up?', slug: 'btc-up-1200' }));
     await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
     const clarified = resolvedMarket(
       market({ question: 'Bitcoin Up or Down — 12:00 to 12:05?', slug: 'btc-up-down-1200' }),
@@ -1103,7 +1118,7 @@ describe('V. Уточнение question и slug принимается', () => 
     );
 
     expect(result.ok).toBe(true);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.market).toBe(clarified);
     expect(state?.market.question).toBe('Bitcoin Up or Down — 12:00 to 12:05?');
     expect(state?.market.slug).toBe('btc-up-down-1200');
@@ -1117,26 +1132,26 @@ describe('W. Финализация', () => {
     const { bus, view, events } = buildRuntime();
     const admitted = await toActive(bus, events);
     await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
     const resolved = resolvedMarket(admitted, 0);
     await publishAt(bus, events, ACTIVATED_AT + 2_000, () => events.marketResolved(resolved));
     const finalizedAt = ACTIVATED_AT + 3_000;
 
     const result = await publishAt(bus, events, finalizedAt, () =>
-      events.marketFinalized(MARKET_X),
+      events.marketFinalized(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(true);
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
     expect(state?.lifecycle.status).toBe('FINALIZED');
     expect(state?.lifecycle.finalizedAt?.toNumber()).toBe(finalizedAt);
     // Retained compact market: рынок и структура на месте.
     expect(state?.market).toBe(resolved);
     expect(state?.market.resolvedOutcome?.instrumentId).toBe(YES);
     expect(state?.instrumentIds()).toEqual([YES, NO]);
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
-    expect(view.marketIds()).toEqual([MARKET_X]);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
+    expect(view.marketIdentities()).toEqual([{ venueId: POLYMARKET, marketId: MARKET_X }]);
     expect(view.getVersion()).toBe(5);
   });
 
@@ -1146,15 +1161,15 @@ describe('W. Финализация', () => {
     await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
       events.marketResolved(resolvedMarket(admitted)),
     );
-    await publishAt(bus, events, ACTIVATED_AT + 2_000, () => events.marketFinalized(MARKET_X));
+    await publishAt(bus, events, ACTIVATED_AT + 2_000, () => events.marketFinalized(POLYMARKET, MARKET_X));
     const versionAfterFinalize = view.getVersion();
 
     const again = await publishAt(bus, events, ACTIVATED_AT + 3_000, () =>
-      events.marketFinalized(MARKET_X),
+      events.marketFinalized(POLYMARKET, MARKET_X),
     );
 
     expect(again.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.finalizedAt?.toNumber()).toBe(
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.finalizedAt?.toNumber()).toBe(
       ACTIVATED_AT + 2_000,
     );
     expect(view.getVersion()).toBe(versionAfterFinalize);
@@ -1166,17 +1181,17 @@ describe('X. Финализация до резолюции отвергаетс
     const { bus, view, events } = buildRuntime();
     await toActive(bus, events);
     await publishAt(bus, events, ACTIVATED_AT + 1_000, () =>
-      events.marketTradingClosed(MARKET_X),
+      events.marketTradingClosed(POLYMARKET, MARKET_X),
     );
     const versionBefore = view.getVersion();
 
     const result = await publishAt(bus, events, ACTIVATED_AT + 2_000, () =>
-      events.marketFinalized(MARKET_X),
+      events.marketFinalized(POLYMARKET, MARKET_X),
     );
 
     expect(result.ok).toBe(false);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('TRADING_CLOSED');
-    expect(view.getMarket(MARKET_X)?.lifecycle.finalizedAt).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('TRADING_CLOSED');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.finalizedAt).toBeUndefined();
     expect(view.getVersion()).toBe(versionBefore);
   });
 });
@@ -1216,7 +1231,7 @@ describe('Y. Shared-данные не зависят от принятых ры�
       }),
     );
 
-    expect(view.marketIds()).toEqual([]);
+    expect(view.marketIdentities()).toEqual([]);
     expect(view.getSharedInstrument(BINANCE, BTC_USDT)?.books.size()).toBe(1);
     expect(view.getSharedInstrument(BINANCE, BTC_USDT)?.publicTrades.size()).toBe(1);
     expect(view.referencePriceSeriesKeys()).toHaveLength(1);
@@ -1259,8 +1274,8 @@ describe('Z. Legacy lifecycle не влияет на новое состояни
     expect(opened.ok).toBe(true);
     expect(closed.ok).toBe(true);
     expect(view.getVersion()).toBe(versionBefore);
-    expect(view.getMarket(MARKET_X)?.lifecycle.status).toBe('ACTIVE');
-    expect(view.getMarket(MARKET_X)?.lifecycle.tradingClosedAt).toBeUndefined();
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ACTIVE');
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.tradingClosedAt).toBeUndefined();
   });
 
   it('в списке проецируемых типов только новый lifecycle', () => {
@@ -1273,5 +1288,167 @@ describe('Z. Legacy lifecycle не влияет на новое состояни
     expect(types).not.toContain('MARKET_OPENED');
     expect(types).not.toContain('MARKET_CLOSED');
     expect(types).not.toContain('BOOK_UPDATED');
+  });
+});
+
+describe('AB. Идентичность рынка = площадка + рынок', () => {
+  it('POLYMARKET:X и KALSHI:X принимаются одновременно', async () => {
+    const { bus, view, events } = buildRuntime();
+
+    const polymarket = await toActive(bus, events);
+    const kalshi = market({
+      venueId: KALSHI,
+      outcomes: [
+        { index: 0, label: 'Up', instrumentId: KALSHI_YES },
+        { index: 1, label: 'Down', instrumentId: KALSHI_NO },
+      ],
+    });
+    const admitted = await publishAt(bus, events, ADMITTED_AT + 100, () =>
+      events.marketAdmitted(kalshi),
+    );
+
+    expect(admitted.ok).toBe(true);
+    // Один и тот же MarketId — два РАЗНЫХ рынка.
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.market).toBe(polymarket);
+    expect(view.getMarket(KALSHI, MARKET_X)?.market).toBe(kalshi);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ACTIVE');
+    expect(view.getMarket(KALSHI, MARKET_X)?.lifecycle.status).toBe('ADMITTED');
+    expect(view.marketIdentities()).toEqual([
+      { venueId: POLYMARKET, marketId: MARKET_X },
+      { venueId: KALSHI, marketId: MARKET_X },
+    ]);
+    expect(view.getVersion()).toBe(3);
+  });
+
+  it('одинаковый InstrumentId на разных площадках не блокирует admission', async () => {
+    const { bus, view, events } = buildRuntime();
+    await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
+
+    // ТЕ ЖЕ YES/NO, но у другой площадки — другие инструменты.
+    const kalshi = market({ venueId: KALSHI });
+    const admitted = await publishAt(bus, events, ADMITTED_AT + 100, () =>
+      events.marketAdmitted(kalshi),
+    );
+
+    expect(admitted.ok).toBe(true);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(KALSHI, YES)).toBe(MARKET_X);
+    // Индексы независимы: запись одной площадки не отвечает за другую.
+    expect(view.getMarketForInstrument(BINANCE, YES)).toBeUndefined();
+    expect(view.getVersion()).toBe(2);
+  });
+
+  it('market-data чужой площадки не попадает в наш рынок', async () => {
+    const { bus, view, events } = buildRuntime();
+    await toActive(bus, events);
+    // KALSHI:X с ТЕМИ ЖЕ идентификаторами рынка и инструмента, но не принят.
+    const book = await publishAt(bus, events, ACTIVATED_AT + 100, () =>
+      events.bookDepth({
+        venueId: KALSHI,
+        instrumentId: YES,
+        marketId: MARKET_X,
+        bid: 0.9,
+        sourceTimestampMs: ACTIVATED_AT + 50,
+      }),
+    );
+    const trade = await publishAt(bus, events, ACTIVATED_AT + 200, () =>
+      events.tradeReceived({
+        venueId: KALSHI,
+        instrumentId: YES,
+        marketId: MARKET_X,
+        price: 0.9,
+        size: 1,
+        side: 'BUY',
+        sourceTimestampMs: ACTIVATED_AT + 150,
+      }),
+    );
+    const tick = await publishAt(bus, events, ACTIVATED_AT + 300, () =>
+      events.tickSizeChanged({
+        venueId: KALSHI,
+        marketId: MARKET_X,
+        instrumentId: YES,
+        newTickSize: 0.001,
+        sourceTimestampMs: ACTIVATED_AT + 250,
+      }),
+    );
+
+    // Чужой рынок — игнор, а не запись и не ошибка.
+    expect(book.ok).toBe(true);
+    expect(trade.ok).toBe(true);
+    expect(tick.ok).toBe(true);
+    const ours = view.getMarket(POLYMARKET, MARKET_X);
+    expect(ours?.getInstrument(YES)?.books.size()).toBe(0);
+    expect(ours?.getInstrument(YES)?.publicTrades.size()).toBe(0);
+    expect(ours?.getInstrument(YES)?.tickSize).toBeUndefined();
+    expect(view.getMarket(KALSHI, MARKET_X)).toBeUndefined();
+    expect(view.getVersion()).toBe(2);
+  });
+
+  it('чужой инструмент чужой площадки не даёт ложного аварийного отказа', async () => {
+    const { bus, view, events } = buildRuntime();
+    await toActive(bus, events);
+
+    // Инструмента KALSHI_YES нет ни у одного принятого рынка. Но и рынок
+    // KALSHI:X не принят — значит это чужие данные, а не нарушение routing.
+    const result = await publishAt(bus, events, ACTIVATED_AT + 100, () =>
+      events.bookDepth({
+        venueId: KALSHI,
+        instrumentId: KALSHI_YES,
+        marketId: MARKET_X,
+        bid: 0.5,
+        sourceTimestampMs: ACTIVATED_AT + 50,
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(view.getVersion()).toBe(2);
+  });
+
+  it('lifecycle-событие чужой площадки не двигает наш рынок', async () => {
+    const { bus, view, events } = buildRuntime();
+    await toActive(bus, events);
+    const versionBefore = view.getVersion();
+
+    const closed = await publishAt(bus, events, ACTIVATED_AT + 100, () =>
+      events.marketTradingClosed(KALSHI, MARKET_X),
+    );
+    const finalized = await publishAt(bus, events, ACTIVATED_AT + 200, () =>
+      events.marketFinalized(KALSHI, MARKET_X),
+    );
+
+    // Оба отвергнуты как NOT_ADMITTED: рынок ищется по паре.
+    expect(closed.ok).toBe(false);
+    expect(finalized.ok).toBe(false);
+    const ours = view.getMarket(POLYMARKET, MARKET_X)?.lifecycle;
+    expect(ours?.status).toBe('ACTIVE');
+    expect(ours?.tradingClosedAt).toBeUndefined();
+    expect(ours?.finalizedAt).toBeUndefined();
+    expect(view.getVersion()).toBe(versionBefore);
+  });
+
+  it('активация чужой площадки не активирует наш рынок', async () => {
+    const { bus, view, events } = buildRuntime();
+    await publishAt(bus, events, ADMITTED_AT, () => events.marketAdmitted(market()));
+
+    const result = await publishAt(bus, events, ACTIVATED_AT, () =>
+      events.marketActivated(KALSHI, MARKET_X),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.lifecycle.status).toBe('ADMITTED');
+    expect(view.getVersion()).toBe(1);
+  });
+
+  it('helper сравнения площадку всё же различает — просто состояние до него не доходит', () => {
+    // Сам helper обязан быть честным для любого вызывающего.
+    const difference = findTradingMarketStructureDifference(
+      market(),
+      market({ venueId: KALSHI }),
+    );
+    expect(difference?.field).toBe('venueId');
+    expect(difference?.admitted).toBe(POLYMARKET);
+    expect(difference?.incoming).toBe(KALSHI);
+    // А состояние ищет рынок по паре, поэтому отвечает NOT_ADMITTED (см. тест T).
+    expect(sameTradingMarketStructure(market(), market({ venueId: KALSHI }))).toBe(false);
   });
 });

@@ -302,6 +302,7 @@ export class TradingStateProjector {
    */
   private _onMarketActivated(event: TradingMarketActivatedEvent): void {
     const applied = this._state.activateMarket(
+      event.payload.venueId,
       event.payload.marketId,
       event.metadata.createdAt,
     );
@@ -316,6 +317,7 @@ export class TradingStateProjector {
    */
   private _onMarketTradingClosed(event: TradingMarketClosedEvent): void {
     const applied = this._state.closeMarketTrading(
+      event.payload.venueId,
       event.payload.marketId,
       event.metadata.createdAt,
     );
@@ -342,6 +344,7 @@ export class TradingStateProjector {
    */
   private _onMarketFinalized(event: TradingMarketFinalizedEvent): void {
     const applied = this._state.finalizeMarket(
+      event.payload.venueId,
       event.payload.marketId,
       event.metadata.createdAt,
     );
@@ -352,12 +355,20 @@ export class TradingStateProjector {
    * Куда направить наблюдение стакана или сделки.
    *
    * @param payload - Полезная нагрузка canonical-события
-   * @returns Рынок, если `marketId` есть; иначе площадка
+   * @returns Рынок площадки, если `marketId` есть; иначе инструмент площадки
    *
    * @remarks
    * Правило source-agnostic: решает НАЛИЧИЕ `marketId`, а не то, какая это
    * площадка. Проверок вида `if (venue === BINANCE)` здесь нет и быть не
    * должно — application state не знает вендорских правил.
+   *
+   * **`venueId` сохраняется в ОБОИХ маршрутах.** Раньше market-scoped ветка его
+   * выбрасывала, и это была дыра в идентичности: `MarketId` уникален только
+   * внутри пространства имён своей площадки, поэтому наблюдение `OTHER:X`
+   * находило бы принятый `POLYMARKET:X` и тихо ложилось в его ряды — а при
+   * несовпавшем инструменте давало бы ложный аварийный отказ вместо
+   * игнорирования чужих данных. Canonical-контракт всех market-data событий
+   * несёт `venueId` именно для этого.
    */
   private _target(payload: {
     readonly marketId?: unknown;
@@ -367,6 +378,7 @@ export class TradingStateProjector {
     return payload.marketId !== undefined
       ? {
           kind: 'MARKET',
+          venueId: payload.venueId as never,
           marketId: payload.marketId as never,
           instrumentId: payload.instrumentId as never,
         }
@@ -493,6 +505,7 @@ export class TradingStateProjector {
    */
   private _onTickSizeChanged(event: TickSizeChangedEvent): void {
     const applied = this._state.applyTickSize(
+      event.payload.venueId,
       event.payload.marketId,
       event.payload.instrumentId,
       {

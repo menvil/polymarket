@@ -938,6 +938,7 @@ export class PolymarketSemanticAdapter {
     const published = await this._publish({
       type: 'TICK_SIZE_CHANGED',
       payload: {
+        venueId: KnownVenues.POLYMARKET,
         marketId: identity.marketId,
         instrumentId: identity.instrumentId,
         oldTickSize,

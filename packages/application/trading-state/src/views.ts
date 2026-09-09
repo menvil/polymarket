@@ -36,7 +36,10 @@ import type {
  *
  * @example
  * ```typescript
- * const latest = state.getMarket(marketId)?.getInstrument(instrumentId)?.books.getLatest();
+ * const latest = state
+ *   .getMarket(venueId, marketId)
+ *   ?.getInstrument(instrumentId)
+ *   ?.books.getLatest();
  * ```
  */
 export interface RollingWindowView<T> {
@@ -104,10 +107,11 @@ export interface MarketInstrumentStateView {
  * Состояние такого рынка существует ТОЛЬКО после `TRADING_MARKET_ADMITTED`:
  * market-data сама рынок не создаёт (см. `TradingHotStateView.getMarket`).
  *
- * Отдельного `marketId` здесь нет: идентичность даёт `market.id`, и второе
- * поле с тем же смыслом пришлось бы держать согласованным с первым. По той же
- * причине не дублируются `question`, `startsAt`, `expiresAt`, `outcomes`,
- * `family` и `crypto` — всё это читается из `market`.
+ * Отдельных полей идентичности здесь нет: её даёт пара `market.venueId` +
+ * `market.id`, и вторые поля с тем же смыслом пришлось бы держать
+ * согласованными с первыми. По той же причине не дублируются `question`,
+ * `startsAt`, `expiresAt`, `outcomes`, `family` и `crypto` — всё это читается
+ * из `market`.
  */
 export interface MarketRuntimeStateView {
   /**
@@ -173,6 +177,26 @@ export interface SharedInstrumentStateView {
 }
 
 /**
+ * Идентичность рынка в торговом состоянии — ПАРА, а не один идентификатор.
+ *
+ * @remarks
+ * `MarketId` уникален только внутри пространства имён своей площадки, поэтому
+ * `POLYMARKET:X` и `KALSHI:X` — два РАЗНЫХ рынка, а не один в двух
+ * наблюдениях. То же правило уже действует в `Market.equals()` (сравнивает
+ * `venueId + id`) и в ключе `MarketUniverse`.
+ *
+ * Тип нужен перечислению: `getMarket()` принимает пару аргументов, а вот
+ * `marketIds()` вернул бы список, из которого нельзя построить обратный вызов —
+ * поэтому его заменяет {@link TradingHotStateView.marketIdentities}.
+ */
+export interface TradingMarketIdentity {
+  /** Площадка рынка */
+  readonly venueId: VenueId;
+  /** Идентификатор рынка внутри пространства имён площадки */
+  readonly marketId: MarketId;
+}
+
+/**
  * Hot state — только чтение.
  *
  * @remarks
@@ -181,7 +205,7 @@ export interface SharedInstrumentStateView {
  * @example
  * ```typescript
  * const view: TradingHotStateView = projector.state();
- * const book = view.getMarket(marketId)?.getInstrument(tokenId)?.books.getLatest();
+ * const book = view.getMarket(venueId, marketId)?.getInstrument(tokenId)?.books.getLatest();
  * ```
  */
 export interface TradingHotStateView {
@@ -190,31 +214,48 @@ export interface TradingHotStateView {
   /**
    * Состояние принятого рынка либо `undefined`, если рынок не принят.
    *
+   * @param venueId - Площадка рынка — обязательная часть идентичности
+   * @param marketId - Идентификатор рынка внутри пространства имён площадки
+   *
    * @remarks
    * `undefined` — обычный ответ, а не признак проблемы: на общей шине живут
    * данные рынков, нужных коллектору или другому владельцу, и торговое
    * состояние их не хранит.
+   *
+   * Площадка обязательна: `MarketId` уникален только внутри своего
+   * пространства имён, и поиск по одному идентификатору вернул бы «любой рынок
+   * с таким id» — то есть чужой рынок при совпадении идентификаторов.
    */
-  getMarket(marketId: MarketId): MarketRuntimeStateView | undefined;
+  getMarket(venueId: VenueId, marketId: MarketId): MarketRuntimeStateView | undefined;
   /**
-   * Идентичности всех принятых рынков.
+   * Идентичности всех принятых рынков — парами «площадка + рынок».
    *
    * @remarks
    * Это НЕ вселенная рынков: технически существующие рынки живут в
    * `MarketUniverse` (их бывают десятки тысяч). Здесь — только те, которые
    * торговый рантайм явно принял через `TRADING_MARKET_ADMITTED`.
+   *
+   * Возвращает пары, а не `MarketId[]`: из плоского списка идентификаторов
+   * нельзя вызвать {@link getMarket}, а два рынка разных площадок с одинаковым
+   * `marketId` в нём стали бы неотличимы.
    */
-  marketIds(): readonly MarketId[];
+  marketIdentities(): readonly TradingMarketIdentity[];
   /**
-   * Рынок, которому принадлежит market-scoped инструмент.
+   * Рынок площадки, которому принадлежит market-scoped инструмент.
+   *
+   * @param venueId - Площадка инструмента
+   * @param instrumentId - Инструмент исхода
    *
    * @remarks
    * Вторичный индекс для навигации, заполняемый по обоим исходам при
    * admission. Владение остаётся за canonical `market.outcomes`. Запись
    * переживает остановку торгов и финализацию: она структурная, а не
    * наблюдаемая.
+   *
+   * Индекс тоже venue-scoped: одинаковый `InstrumentId` на двух площадках —
+   * два разных инструмента, и запись одного не должна отвечать за другой.
    */
-  getMarketForInstrument(instrumentId: InstrumentId): MarketId | undefined;
+  getMarketForInstrument(venueId: VenueId, instrumentId: InstrumentId): MarketId | undefined;
   /** Инструмент площадки вне рынка */
   getSharedInstrument(
     venueId: VenueId,

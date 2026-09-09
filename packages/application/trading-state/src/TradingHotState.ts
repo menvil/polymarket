@@ -17,6 +17,24 @@
  * Маршрутизация не знает вендоров: решает наличие `marketId`, а не
  * `venueId === POLYMARKET`.
  *
+ * ### Идентичность рынка — ПАРА «площадка + рынок»
+ *
+ * ```text
+ * markets:            VenueId → MarketId    → MarketRuntimeState
+ * instrumentToMarket: VenueId → InstrumentId → MarketId
+ * ```
+ *
+ * `MarketId` и `InstrumentId` уникальны только внутри пространства имён своей
+ * площадки, поэтому `POLYMARKET:X` и `KALSHI:X` — два РАЗНЫХ рынка. Плоский
+ * `Map<MarketId, …>` означал бы, что стакан чужой площадки с совпавшим
+ * идентификатором тихо ложится в наш рынок, а при несовпавшем инструменте даёт
+ * ложный аварийный отказ вместо игнорирования чужих данных. То же правило уже
+ * действует в `Market.equals()` и в ключе `MarketUniverse`.
+ *
+ * Вложенные `Map`, а не составная строка `"POLYMARKET:X"`: строка теряет типы и
+ * делает совпадение идентификаторов неотличимым от опечатки (та же причина, по
+ * которой так устроено и shared-состояние).
+ *
  * ### Рынок создаётся только через admission
  *
  * ```text
@@ -74,6 +92,7 @@ import type {
   SharedInstrumentStateView,
   RollingWindowView,
   TradingHotStateView,
+  TradingMarketIdentity,
   MarketInstrumentStateView,
 } from './views.js';
 import type { TradingMarketLifecycleView } from './lifecycle.js';
@@ -347,6 +366,7 @@ export class MarketRuntimeState implements MarketRuntimeStateView {
     if (!incoming.isResolved()) {
       return Err(
         new TradingMarketLifecycleTransitionError(
+          this._market.venueId,
           this._market.id,
           'RESOLVED',
           this._status,
@@ -361,7 +381,13 @@ export class MarketRuntimeState implements MarketRuntimeStateView {
 
     const difference = findTradingMarketStructureDifference(this._market, incoming);
     if (difference !== undefined) {
-      return Err(new TradingMarketStructureConflictError(this._market.id, difference));
+      return Err(
+        new TradingMarketStructureConflictError(
+          this._market.venueId,
+          this._market.id,
+          difference,
+        ),
+      );
     }
 
     const notBefore = this._tradingClosedAt ?? this._activatedAt;
@@ -445,6 +471,7 @@ export class MarketRuntimeState implements MarketRuntimeStateView {
     target: TradingMarketLifecycleStatus,
   ): TradingMarketLifecycleTransitionError {
     return new TradingMarketLifecycleTransitionError(
+      this._market.venueId,
       this._market.id,
       target,
       this._status,
@@ -458,6 +485,7 @@ export class MarketRuntimeState implements MarketRuntimeStateView {
     detail: string,
   ): TradingMarketLifecycleTransitionError {
     return new TradingMarketLifecycleTransitionError(
+      this._market.venueId,
       this._market.id,
       target,
       this._status,
@@ -543,8 +571,8 @@ export class SharedMarketDataState {
 
 /** Корень оперативного состояния. */
 export class TradingHotState implements TradingHotStateView {
-  private readonly _markets = new Map<MarketId, MarketRuntimeState>();
-  private readonly _instrumentToMarket = new Map<InstrumentId, MarketId>();
+  private readonly _markets = new Map<VenueId, Map<MarketId, MarketRuntimeState>>();
+  private readonly _instrumentToMarket = new Map<VenueId, Map<InstrumentId, MarketId>>();
   private readonly _shared: SharedMarketDataState;
   private readonly _referencePrices: ReferencePriceState;
   private _version = 0;
@@ -608,16 +636,23 @@ export class TradingHotState implements TradingHotStateView {
     return this._version;
   }
 
-  public getMarket(marketId: MarketId): MarketRuntimeStateView | undefined {
-    return this._markets.get(marketId);
+  public getMarket(venueId: VenueId, marketId: MarketId): MarketRuntimeStateView | undefined {
+    return this._markets.get(venueId)?.get(marketId);
   }
 
-  public marketIds(): readonly MarketId[] {
-    return [...this._markets.keys()];
+  public marketIdentities(): readonly TradingMarketIdentity[] {
+    const identities: TradingMarketIdentity[] = [];
+    for (const [venueId, byMarket] of this._markets) {
+      for (const marketId of byMarket.keys()) identities.push({ venueId, marketId });
+    }
+    return identities;
   }
 
-  public getMarketForInstrument(instrumentId: InstrumentId): MarketId | undefined {
-    return this._instrumentToMarket.get(instrumentId);
+  public getMarketForInstrument(
+    venueId: VenueId,
+    instrumentId: InstrumentId,
+  ): MarketId | undefined {
+    return this._instrumentToMarket.get(venueId)?.get(instrumentId);
   }
 
   public getSharedInstrument(
@@ -692,29 +727,43 @@ export class TradingHotState implements TradingHotStateView {
     | TradingMarketAdmissionStateError
     | TradingMarketAdmissionTimingError
   > {
-    const existing = this._markets.get(market.id);
+    const venueId = market.venueId;
+    const existing = this._markets.get(venueId)?.get(market.id);
     if (existing !== undefined) {
-      return Err(new TradingMarketAlreadyAdmittedError(market.id, existing.lifecycle.status));
+      return Err(
+        new TradingMarketAlreadyAdmittedError(venueId, market.id, existing.lifecycle.status),
+      );
     }
     if (!market.isActive()) {
-      return Err(new TradingMarketAdmissionStateError(market.id, market.state.status));
+      return Err(
+        new TradingMarketAdmissionStateError(venueId, market.id, market.state.status),
+      );
     }
     if (admittedAt.isAfterOrEqual(market.startsAt)) {
-      return Err(new TradingMarketAdmissionTimingError(market.id, admittedAt, market.startsAt));
+      return Err(
+        new TradingMarketAdmissionTimingError(venueId, market.id, admittedAt, market.startsAt),
+      );
     }
+    // Владение инструментом проверяется В ПРЕДЕЛАХ ПЛОЩАДКИ: одинаковый
+    // `InstrumentId` у Polymarket и у другой площадки — два разных инструмента,
+    // и занятость одного не может блокировать admission другого.
+    const venueInstruments = this._instrumentToMarket.get(venueId);
     for (const outcome of market.outcomes) {
-      const owner = this._instrumentToMarket.get(outcome.instrumentId);
+      const owner = venueInstruments?.get(outcome.instrumentId);
       if (owner !== undefined) {
-        return Err(new InstrumentMarketConflictError(outcome.instrumentId, owner, market.id));
+        return Err(
+          new InstrumentMarketConflictError(venueId, outcome.instrumentId, owner, market.id),
+        );
       }
     }
 
     const created = MarketRuntimeState.admit(market, admittedAt, this._config, this._clock);
     if (isErr(created)) return created;
 
-    this._markets.set(market.id, created.value);
+    this._venueMarkets(venueId).set(market.id, created.value);
+    const instrumentIndex = this._venueInstruments(venueId);
     for (const outcome of market.outcomes) {
-      this._instrumentToMarket.set(outcome.instrumentId, market.id);
+      instrumentIndex.set(outcome.instrumentId, market.id);
     }
     this._version += 1;
     return Ok(true);
@@ -728,10 +777,11 @@ export class TradingHotState implements TradingHotStateView {
    * @returns `Ok(true)` после перехода либо причина отказа
    */
   public activateMarket(
+    venueId: VenueId,
     marketId: MarketId,
     activatedAt: Timestamp,
   ): Result<boolean, TradingMarketLifecycleTransitionError> {
-    const market = this._requireMarket(marketId, 'ACTIVE');
+    const market = this._requireMarket(venueId, marketId, 'ACTIVE');
     if (isErr(market)) return market;
     const activated = market.value.activate(activatedAt);
     if (isErr(activated)) return activated;
@@ -752,10 +802,11 @@ export class TradingHotState implements TradingHotStateView {
    * одна принятая мутация состояния.
    */
   public closeMarketTrading(
+    venueId: VenueId,
     marketId: MarketId,
     closedAt: Timestamp,
   ): Result<boolean, TradingMarketLifecycleTransitionError> {
-    const market = this._requireMarket(marketId, 'TRADING_CLOSED');
+    const market = this._requireMarket(venueId, marketId, 'TRADING_CLOSED');
     if (isErr(market)) return market;
     const closed = market.value.closeTrading(closedAt);
     if (isErr(closed)) return closed;
@@ -782,7 +833,7 @@ export class TradingHotState implements TradingHotStateView {
     market: Market,
     resolvedAt: Timestamp,
   ): Result<boolean, TradingMarketTransitionError> {
-    const state = this._requireMarket(market.id, 'RESOLVED');
+    const state = this._requireMarket(market.venueId, market.id, 'RESOLVED');
     if (isErr(state)) return state;
     const resolved = state.value.resolve(market, resolvedAt);
     if (isErr(resolved)) return resolved;
@@ -801,10 +852,11 @@ export class TradingHotState implements TradingHotStateView {
    * Состояние рынка остаётся в памяти: это retained compact market.
    */
   public finalizeMarket(
+    venueId: VenueId,
     marketId: MarketId,
     finalizedAt: Timestamp,
   ): Result<boolean, TradingMarketLifecycleTransitionError> {
-    const market = this._requireMarket(marketId, 'FINALIZED');
+    const market = this._requireMarket(venueId, marketId, 'FINALIZED');
     if (isErr(market)) return market;
     const finalized = market.value.finalize(finalizedAt);
     if (isErr(finalized)) return finalized;
@@ -827,7 +879,11 @@ export class TradingHotState implements TradingHotStateView {
     observation: BookObservation,
   ): Result<boolean, ValidationError | UnknownTradingMarketInstrumentError> {
     if (target.kind === 'MARKET') {
-      const routed = this._routeMarketInstrument(target.marketId, target.instrumentId);
+      const routed = this._routeMarketInstrument(
+        target.venueId,
+        target.marketId,
+        target.instrumentId,
+      );
       if (isErr(routed)) return routed;
       if (routed.value === undefined) return Ok(false);
       routed.value.applyBook(observation);
@@ -879,7 +935,11 @@ export class TradingHotState implements TradingHotStateView {
     ValidationError | UnknownTradingMarketInstrumentError | PriceDomainMismatchError
   > {
     if (target.kind === 'MARKET') {
-      const routed = this._routeMarketInstrument(target.marketId, target.instrumentId);
+      const routed = this._routeMarketInstrument(
+        target.venueId,
+        target.marketId,
+        target.instrumentId,
+      );
       if (isErr(routed)) return routed;
       if (routed.value === undefined) return Ok(false);
       const { price } = observation;
@@ -911,11 +971,12 @@ export class TradingHotState implements TradingHotStateView {
    *   либо нарушение canonical-маршрутизации
    */
   public applyTickSize(
+    venueId: VenueId,
     marketId: MarketId,
     instrumentId: InstrumentId,
     tickSize: TickSizeState,
   ): Result<boolean, UnknownTradingMarketInstrumentError> {
-    const routed = this._routeMarketInstrument(marketId, instrumentId);
+    const routed = this._routeMarketInstrument(venueId, marketId, instrumentId);
     if (isErr(routed)) return routed;
     if (routed.value === undefined) return Ok(false);
     routed.value.applyTickSize(tickSize);
@@ -957,13 +1018,20 @@ export class TradingHotState implements TradingHotStateView {
    * принимал, означает нарушение инварианта, а не постороннюю шину.
    */
   private _requireMarket(
+    venueId: VenueId,
     marketId: MarketId,
     target: TradingMarketLifecycleStatus,
   ): Result<MarketRuntimeState, TradingMarketLifecycleTransitionError> {
-    const market = this._markets.get(marketId);
+    const market = this._markets.get(venueId)?.get(marketId);
     if (market === undefined) {
       return Err(
-        new TradingMarketLifecycleTransitionError(marketId, target, undefined, 'NOT_ADMITTED'),
+        new TradingMarketLifecycleTransitionError(
+          venueId,
+          marketId,
+          target,
+          undefined,
+          'NOT_ADMITTED',
+        ),
       );
     }
     return Ok(market);
@@ -997,26 +1065,70 @@ export class TradingHotState implements TradingHotStateView {
    * событие, ради которого закрывать слой нечестно.
    */
   private _routeMarketInstrument(
+    venueId: VenueId,
     marketId: MarketId,
     instrumentId: InstrumentId,
   ): Result<MarketInstrumentState | undefined, UnknownTradingMarketInstrumentError> {
-    const market = this._markets.get(marketId);
+    const market = this._markets.get(venueId)?.get(marketId);
     if (market === undefined) return Ok(undefined);
     if (!market.hasInstrument(instrumentId)) {
       return Err(
-        new UnknownTradingMarketInstrumentError(marketId, instrumentId, market.instrumentIds()),
+        new UnknownTradingMarketInstrumentError(
+          venueId,
+          marketId,
+          instrumentId,
+          market.instrumentIds(),
+        ),
       );
     }
     if (!market.acceptsMarketData()) return Ok(undefined);
     return Ok(market.activeInstrument(instrumentId));
+  }
+
+  /**
+   * Рынки площадки, создавая пустой уровень при первом рынке.
+   *
+   * @param venueId - Площадка
+   * @returns Изменяемая карта `MarketId → MarketRuntimeState` этой площадки
+   */
+  private _venueMarkets(venueId: VenueId): Map<MarketId, MarketRuntimeState> {
+    let byMarket = this._markets.get(venueId);
+    if (byMarket === undefined) {
+      byMarket = new Map();
+      this._markets.set(venueId, byMarket);
+    }
+    return byMarket;
+  }
+
+  /**
+   * Индекс инструментов площадки, создавая пустой уровень при первом рынке.
+   *
+   * @param venueId - Площадка
+   * @returns Изменяемая карта `InstrumentId → MarketId` этой площадки
+   */
+  private _venueInstruments(venueId: VenueId): Map<InstrumentId, MarketId> {
+    let byInstrument = this._instrumentToMarket.get(venueId);
+    if (byInstrument === undefined) {
+      byInstrument = new Map();
+      this._instrumentToMarket.set(venueId, byInstrument);
+    }
+    return byInstrument;
   }
 }
 
 /** Куда направлено наблюдение: в рынок или в общие данные площадки. */
 export type ObservationTarget =
   | {
-      /** Наблюдение принадлежит конкретному рынку */
+      /**
+       * Наблюдение принадлежит конкретному рынку конкретной площадки.
+       *
+       * @remarks
+       * `venueId` обязателен и здесь: идентичность рынка — пара, и выбросить
+       * площадку значило бы направить стакан чужой площадки в наш рынок при
+       * совпадении `marketId`.
+       */
       readonly kind: 'MARKET';
+      readonly venueId: VenueId;
       readonly marketId: MarketId;
       readonly instrumentId: InstrumentId;
     }

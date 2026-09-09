@@ -258,14 +258,28 @@ export class EventFactory {
     return { type: 'TRADING_MARKET_ADMITTED', payload: { market }, metadata: this._envelope() };
   }
 
-  /** `TRADING_MARKET_ACTIVATED` — начало торговли по принятому рынку. */
-  public marketActivated(marketId: MarketId): TradingMarketActivatedEvent {
-    return { type: 'TRADING_MARKET_ACTIVATED', payload: { marketId }, metadata: this._envelope() };
+  /**
+   * `TRADING_MARKET_ACTIVATED` — начало торговли по принятому рынку.
+   *
+   * @remarks
+   * Идентичность рынка — ПАРА: `MarketId` уникален только внутри пространства
+   * имён своей площадки.
+   */
+  public marketActivated(venueId: VenueId, marketId: MarketId): TradingMarketActivatedEvent {
+    return {
+      type: 'TRADING_MARKET_ACTIVATED',
+      payload: { venueId, marketId },
+      metadata: this._envelope(),
+    };
   }
 
   /** `TRADING_MARKET_CLOSED` — МЫ прекратили торговать. */
-  public marketTradingClosed(marketId: MarketId): TradingMarketClosedEvent {
-    return { type: 'TRADING_MARKET_CLOSED', payload: { marketId }, metadata: this._envelope() };
+  public marketTradingClosed(venueId: VenueId, marketId: MarketId): TradingMarketClosedEvent {
+    return {
+      type: 'TRADING_MARKET_CLOSED',
+      payload: { venueId, marketId },
+      metadata: this._envelope(),
+    };
   }
 
   /** `TRADING_MARKET_RESOLVED` — площадка объявила исход; несёт весь Market. */
@@ -274,12 +288,17 @@ export class EventFactory {
   }
 
   /** `TRADING_MARKET_FINALIZED` — работа по рынку закончена. */
-  public marketFinalized(marketId: MarketId): TradingMarketFinalizedEvent {
-    return { type: 'TRADING_MARKET_FINALIZED', payload: { marketId }, metadata: this._envelope() };
+  public marketFinalized(venueId: VenueId, marketId: MarketId): TradingMarketFinalizedEvent {
+    return {
+      type: 'TRADING_MARKET_FINALIZED',
+      payload: { venueId, marketId },
+      metadata: this._envelope(),
+    };
   }
 
   /** `TICK_SIZE_CHANGED` — по контракту всегда market-scoped. */
   public tickSizeChanged(args: {
+    readonly venueId: VenueId;
     readonly marketId: MarketId;
     readonly instrumentId: InstrumentId;
     readonly newTickSize: number;
@@ -288,6 +307,7 @@ export class EventFactory {
     return {
       type: 'TICK_SIZE_CHANGED',
       payload: {
+        venueId: args.venueId,
         marketId: args.marketId,
         instrumentId: args.instrumentId,
         oldTickSize: undefined,
@@ -308,12 +328,24 @@ function venue(raw: string): VenueId {
 }
 
 export const POLYMARKET = venue('POLYMARKET');
+/**
+ * Вторая площадка предсказаний.
+ *
+ * @remarks
+ * Нужна там, где проверяется, что идентичность рынка — пара: `POLYMARKET:X` и
+ * `KALSHI:X` обязаны быть разными рынками, а одинаковый `InstrumentId` на двух
+ * площадках — разными инструментами.
+ */
+export const KALSHI = venue('KALSHI');
 export const BINANCE = venue('BINANCE');
 export const COINBASE = venue('COINBASE');
 export const MARKET_X = 'market-x' as MarketId;
 export const MARKET_Y = 'market-y' as MarketId;
 export const YES = unsafeInstrumentId('yes-token');
 export const NO = unsafeInstrumentId('no-token');
+/** Инструменты второй площадки — для тестов venue-scoped идентичности. */
+export const KALSHI_YES = unsafeInstrumentId('kalshi-yes');
+export const KALSHI_NO = unsafeInstrumentId('kalshi-no');
 export const BTC_USDT = unsafeInstrumentId('BTCUSDT');
 
 /** Символ актива для тестов: `asAssetSymbolId` — валидирующий парсер. */

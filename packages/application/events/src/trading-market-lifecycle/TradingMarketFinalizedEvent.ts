@@ -23,11 +23,22 @@
  * ```
  */
 import type { MessageEnvelope } from '@polymarket/messages';
-import type { MarketId } from '@polymarket/ids';
+import type { MarketId, VenueId } from '@polymarket/ids';
 
 export type TradingMarketFinalizedEvent = MessageEnvelope<
   'TRADING_MARKET_FINALIZED',
   {
+    /**
+     * Площадка рынка — обязательная часть его идентичности.
+     *
+     * @remarks
+     * `MarketId` уникален только внутри пространства имён своей площадки:
+     * идентичность рынка — это ПАРА `venueId + marketId` (см. `Market.equals()`
+     * и ключ `MarketUniverse`). Без площадки событие «активируй рынок X»
+     * означало бы «активируй любой рынок с таким id», и рынок другой площадки
+     * с совпавшим идентификатором получил бы наш переход.
+     */
+    readonly venueId: VenueId;
     /** Рынок, работа по которому завершена */
     readonly marketId: MarketId;
   }

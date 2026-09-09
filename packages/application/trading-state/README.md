@@ -15,6 +15,18 @@ IEventBus → TradingStateProjector → TradingHotState
                                             └── instruments активные данные
 ```
 
+Идентичность рынка — **пара** `venueId + marketId`:
+
+```typescript
+view.getMarket(venueId, marketId);
+view.getMarketForInstrument(venueId, instrumentId);
+view.marketIdentities(); // [{ venueId, marketId }, …]
+```
+
+`MarketId` уникален только внутри пространства имён своей площадки, поэтому
+`POLYMARKET:X` и `KALSHI:X` — два разных рынка (то же правило, что у
+`Market.equals()` и ключа `MarketUniverse`).
+
 Три вещи, которые важно не спутать:
 
 - **`MarketUniverse`** — какие canonical рынки технически существуют;

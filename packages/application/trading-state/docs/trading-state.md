@@ -15,6 +15,47 @@ IEventBus → TradingStateProjector → TradingHotState
                                             └── instruments  активные данные
 ```
 
+## Идентичность рынка — пара «площадка + рынок»
+
+```text
+markets:            VenueId → MarketId     → MarketRuntimeState
+instrumentToMarket: VenueId → InstrumentId → MarketId
+```
+
+Публичное чтение соответственно:
+
+```typescript
+view.getMarket(venueId, marketId);
+view.getMarketForInstrument(venueId, instrumentId);
+view.marketIdentities(); // [{ venueId, marketId }, …]
+```
+
+`MarketId` и `InstrumentId` уникальны **только внутри пространства имён своей
+площадки** — это уже зафиксировано в `Market.equals()` (сравнивает
+`venueId + id`) и в ключе `MarketUniverse`. Плоский `Map<MarketId, …>` дал бы
+две поломки сразу:
+
+```text
+KALSHI:X приходит, POLYMARKET:X принят, инструмент совпал
+    → чужой стакан тихо ложится в наш рынок
+
+KALSHI:X приходит, POLYMARKET:X принят, инструмент НЕ совпал
+    → ложный аварийный отказ вместо игнорирования чужих данных
+```
+
+Поэтому `venueId` не выбрасывается ни в одном маршруте, а `marketIds()` не
+существует: из плоского списка идентификаторов нельзя вызвать `getMarket()`, и
+два рынка разных площадок в нём стали бы неотличимы.
+
+Вложенные `Map`, а не составная строка `"POLYMARKET:X"`: строка теряет типы и
+делает совпадение идентификаторов неотличимым от опечатки — та же причина, по
+которой так устроено shared-состояние.
+
+Следствие для lifecycle-событий: `TRADING_MARKET_ACTIVATED`/`CLOSED`/
+`FINALIZED` несут `venueId` рядом с `marketId`, а события с целым `Market`
+берут пару из него. `TICK_SIZE_CHANGED` получил `venueId` тем же MR — он был
+единственным market-data событием без площадки.
+
 ## Две вселенные рынков — и это не одно и то же
 
 ```text
@@ -48,8 +89,19 @@ MarketRuntimeState.lifecycle     ADMITTED → ACTIVE → TRADING_CLOSED
 несколько секунд показывает рынок активным. Требовать согласованности значило
 бы ставить торговые решения в зависимость от частоты обновлений площадки.
 
-Внешнее состояние влияет на наш цикл ровно в одной точке — на ВХОДЕ: принять
-можно только рынок, который площадка публикует как `ACTIVE`.
+Внешнее состояние влияет на наш цикл в двух точках, и обе — проверки на входе
+перехода, а не хранимая связь статусов:
+
+```text
+admission   принять можно только market.isActive()
+resolution  принять можно только market.isResolved()  → и этот Market заменяет
+                                                        сохранённый
+```
+
+Резолюция — единственный переход, который ЗАМЕНЯЕТ сохранённый `Market`
+пришедшим, поэтому она же и единственная, где внешнее состояние обязано быть
+конкретным (`RESOLVED`). Между этими двумя точками циклы идут независимо:
+активация и остановка торговли на `market.state` не смотрят вовсе.
 
 Доменный `Market` при этом не меняется: `ADMITTED`/`TRADING_CLOSED`/
 `FINALIZED` — application-концепции, и добавлять их в `MarketState` нельзя.
@@ -231,6 +283,10 @@ ADMITTED ──→ ACTIVE ──→ TRADING_CLOSED ──→ RESOLVED ──→ 
 Всё остальное — `Err` без мутации. `ADMITTED → RESOLVED` тоже: рынок, по
 которому торговля не начиналась, наш рантайм разрешить не может.
 
+Lifecycle-событие с ЧУЖОЙ площадкой отвергается как `NOT_ADMITTED`, а не как
+конфликт структуры: `KALSHI:X` при принятом `POLYMARKET:X` — другая сущность
+рынка, и рынок по паре просто не находится.
+
 Времена переходов берутся **только** из `event.metadata.createdAt`. Ни
 `Date.now()`, ни `clock.now()` в переходах нет — иначе replay той же ленты
 давал бы другие времена. Инвариант:
@@ -303,7 +359,11 @@ canonical `Market` до последнего внешнего состояния
 ```
 
 `Market.equals()` для этого недостаточно — он сравнивает только `venueId + id`
-и пропустил бы рынок с другими `InstrumentId` исходов.
+и пропустил бы рынок с другими `InstrumentId` исходов. Обратное тоже верно:
+расхождение по `venueId` конфликтом структуры **не бывает** — рынок ищется по
+паре, поэтому резолюция чужой площадки не находит рынка и отвергается как
+`NOT_ADMITTED`. Пробы `venueId`/`id` в helper'е остались для вызывающих, которые
+сравнивают два рынка сами.
 `JSON.stringify(market)` не годится тем более: он сравнил бы и `question`, и
 `state`, то есть отверг бы любую законную резолюцию. Поэтому есть
 `sameTradingMarketStructure(a, b)`.
@@ -483,7 +543,7 @@ SPOT и TWAP 30 — разные величины, два источника с 
 | `TradingMarketAlreadyAdmittedError` | повторный `TRADING_MARKET_ADMITTED` |
 | `TradingMarketAdmissionTimingError` | `admittedAt >= market.startsAt` |
 | `TradingMarketAdmissionStateError` | рынок внешне `CLOSED`/`RESOLVED` |
-| `InstrumentMarketConflictError` | инструмент исхода занят другим принятым рынком |
+| `InstrumentMarketConflictError` | инструмент исхода занят другим принятым рынком ТОЙ ЖЕ площадки |
 | `TradingMarketLifecycleTransitionError` | переход запрещён (`PHASE`), нарушает время (`TIMING`), рынок не принят (`NOT_ADMITTED`) либо payload не соответствует переходу (`PAYLOAD`) |
 | `UnknownTradingMarketInstrumentError` | инструмент не из `market.outcomes` принятого рынка |
 | `TradingMarketStructureConflictError` | резолюция принесла другую trading-critical структуру |
@@ -509,12 +569,12 @@ const view: TradingHotStateView = projector.value.state();
 
 // Рынок появляется в состоянии ТОЛЬКО после admission.
 await eventBus.publish(admittedEvent);
-const runtimeMarket = view.getMarket(marketId);
+const runtimeMarket = view.getMarket(venueId, marketId);
 runtimeMarket?.lifecycle.status;      // → 'ADMITTED'
 runtimeMarket?.market.question;       // canonical Market целиком
 runtimeMarket?.instrumentIds();       // → оба исхода, ещё до первой книги
 
-const book = view.getMarket(marketId)?.getInstrument(tokenId)?.books.getLatest();
+const book = view.getMarket(venueId, marketId)?.getInstrument(tokenId)?.books.getLatest();
 const recent = view
   .getSharedInstrument(binance, btcUsdt)
   ?.publicTrades.getRecent(5_000, decisionMadeAtMs);

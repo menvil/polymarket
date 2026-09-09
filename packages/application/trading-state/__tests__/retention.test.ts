@@ -71,7 +71,7 @@ describe('MD-L. Вытеснение по количеству', () => {
       );
     }
 
-    const books = view.getMarket(MARKET_X)?.getInstrument(YES)?.books;
+    const books = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.books;
     expect(books?.size()).toBe(3);
     // FIFO: остались три последних наблюдения.
     expect(books?.getAll().map((o) => o.observedAt.toNumber())).toEqual([1_200, 1_300, 1_400]);
@@ -109,7 +109,7 @@ describe('MD-M. Вытеснение по возрасту', () => {
     // Это наблюдение на 1500 мс новее первого — первое выпадает из окна.
     await publishAt(11_500);
 
-    const trades = view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades;
+    const trades = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.publicTrades;
     expect(trades?.getAll().map((o) => o.observedAt.toNumber())).toEqual([10_500, 11_500]);
   });
 });
@@ -144,7 +144,7 @@ describe('MD-N. Обратный ход времени площадки', () => 
       );
     }
 
-    const trades = view.getMarket(MARKET_X)?.getInstrument(YES)?.publicTrades;
+    const trades = view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.publicTrades;
     // Вытеснение считалось по времени наблюдения, а не по времени площадки.
     expect(trades?.getAll().map((o) => o.observedAt.toNumber())).toEqual([10_500, 11_500]);
     // Время площадки сохранено как данные, включая ход назад.
@@ -224,6 +224,6 @@ describe('Владение конфигурацией хранения', () => {
     }
 
     // Осталось три записи, как было настроено при создании, а не одна.
-    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.books.size()).toBe(3);
+    expect(view.getMarket(POLYMARKET, MARKET_X)?.getInstrument(YES)?.books.size()).toBe(3);
   });
 });

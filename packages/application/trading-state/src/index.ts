@@ -26,6 +26,18 @@
  * TradingHotState.markets   только те, которые рантайм принял сам
  * ```
  *
+ * ### Идентичность рынка — ПАРА «площадка + рынок»
+ *
+ * ```text
+ * getMarket(venueId, marketId)
+ * getMarketForInstrument(venueId, instrumentId)
+ * marketIdentities() → [{ venueId, marketId }, …]
+ * ```
+ *
+ * `MarketId` и `InstrumentId` уникальны только внутри пространства имён своей
+ * площадки, поэтому `POLYMARKET:X` и `KALSHI:X` — два РАЗНЫХ рынка (то же
+ * правило, что у `Market.equals()` и ключа `MarketUniverse`).
+ *
  * Market-data по непринятому рынку намеренно ИГНОРИРУЕТСЯ: `IEventBus` общий,
  * и на нём живут данные, нужные коллектору или другому владельцу. Canonical
  * событие не означает автоматически событие торгового состояния.
@@ -63,10 +75,10 @@
  * projector.value.start();
  *
  * const view: TradingHotStateView = projector.value.state();
- * await eventBus.publish(admittedEvent);       // рынок появляется в состоянии
- * const market = view.getMarket(marketId);
- * market?.lifecycle.status;                    // → 'ADMITTED'
- * market?.instrumentIds();                     // → оба исхода, сразу
+ * await eventBus.publish(admittedEvent);          // рынок появляется в состоянии
+ * const market = view.getMarket(venueId, marketId);
+ * market?.lifecycle.status;                       // → 'ADMITTED'
+ * market?.instrumentIds();                        // → оба исхода, сразу
  * const book = market?.getInstrument(tokenId)?.books.getLatest();
  * ```
  */
@@ -113,4 +125,5 @@ export type {
   RollingWindowView,
   SharedInstrumentStateView,
   TradingHotStateView,
+  TradingMarketIdentity,
 } from './views.js';

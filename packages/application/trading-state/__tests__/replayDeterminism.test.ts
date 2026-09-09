@@ -63,7 +63,7 @@ function buildTape(): readonly EventBusEvent[] {
 
   // Активация ровно на startsAt.
   events.observeAt(OPENS_AT_MS);
-  tape.push(events.marketActivated(MARKET_X));
+  tape.push(events.marketActivated(POLYMARKET, MARKET_X));
 
   // Торговля.
   events.observeAt(OPENS_AT_MS + 100);
@@ -71,7 +71,7 @@ function buildTape(): readonly EventBusEvent[] {
   events.observeAt(OPENS_AT_MS + 200);
   tape.push(events.tradeReceived({ venueId: POLYMARKET, instrumentId: NO, marketId: MARKET_X, price: 0.6, size: 3, side: 'SELL', sourceTimestampMs: OPENS_AT_MS + 150 }));
   events.observeAt(OPENS_AT_MS + 300);
-  tape.push(events.tickSizeChanged({ marketId: MARKET_X, instrumentId: YES, newTickSize: 0.01, sourceTimestampMs: OPENS_AT_MS + 250 }));
+  tape.push(events.tickSizeChanged({ venueId: POLYMARKET, marketId: MARKET_X, instrumentId: YES, newTickSize: 0.01, sourceTimestampMs: OPENS_AT_MS + 250 }));
 
   // Shared-наблюдения: от admission не зависят.
   events.observeAt(OPENS_AT_MS + 400);
@@ -81,7 +81,7 @@ function buildTape(): readonly EventBusEvent[] {
 
   // Остановка торговли: тяжёлые ряды освобождаются.
   events.observeAt(OPENS_AT_MS + 1_000);
-  tape.push(events.marketTradingClosed(MARKET_X));
+  tape.push(events.marketTradingClosed(POLYMARKET, MARKET_X));
 
   // Поздние наблюдения — игнорируются, версию не двигают.
   events.observeAt(OPENS_AT_MS + 1_100);
@@ -91,7 +91,7 @@ function buildTape(): readonly EventBusEvent[] {
   events.observeAt(OPENS_AT_MS + 2_000);
   tape.push(events.marketResolved(resolvedMarket(admitted, 1)));
   events.observeAt(OPENS_AT_MS + 3_000);
-  tape.push(events.marketFinalized(MARKET_X));
+  tape.push(events.marketFinalized(POLYMARKET, MARKET_X));
 
   return tape;
 }
@@ -116,10 +116,10 @@ async function project(tape: readonly EventBusEvent[]): Promise<TradingHotStateV
 function snapshot(view: TradingHotStateView): unknown {
   return {
     version: view.getVersion(),
-    markets: view.marketIds().map((marketId) => {
-      const runtimeMarket = view.getMarket(marketId);
+    markets: view.marketIdentities().map(({ venueId, marketId }) => {
+      const runtimeMarket = view.getMarket(venueId, marketId);
       return {
-        marketId,
+        identity: { venueId, marketId },
         market: {
           id: runtimeMarket?.market.id,
           venueId: runtimeMarket?.market.venueId,
@@ -141,7 +141,7 @@ function snapshot(view: TradingHotStateView): unknown {
         structuralInstruments: runtimeMarket?.instrumentIds(),
         owners: runtimeMarket?.instrumentIds().map((instrumentId) => [
           instrumentId,
-          view.getMarketForInstrument(instrumentId),
+          view.getMarketForInstrument(venueId, instrumentId),
         ]),
         retainedInstruments: runtimeMarket?.instrumentIds().map((instrumentId) => {
           const instrument = runtimeMarket.getInstrument(instrumentId);
@@ -188,7 +188,7 @@ describe('AA. Детерминизм проекции', () => {
 
   it('после полного цикла остаётся retained compact market', async () => {
     const view = await project(buildTape());
-    const state = view.getMarket(MARKET_X);
+    const state = view.getMarket(POLYMARKET, MARKET_X);
 
     expect(state?.lifecycle.status).toBe('FINALIZED');
     expect(state?.market.resolvedOutcome?.instrumentId).toBe(NO);
@@ -196,7 +196,7 @@ describe('AA. Детерминизм проекции', () => {
     expect(state?.instrumentIds()).toEqual([YES, NO]);
     expect(state?.getInstrument(YES)).toBeUndefined();
     expect(state?.getInstrument(NO)).toBeUndefined();
-    expect(view.getMarketForInstrument(YES)).toBe(MARKET_X);
+    expect(view.getMarketForInstrument(POLYMARKET, YES)).toBe(MARKET_X);
     // Shared-данные жизненным циклом рынка не затронуты.
     expect(view.getSharedInstrument(BINANCE, BTC_USDT)?.books.size()).toBe(1);
     expect(view.referencePriceSeriesKeys()).toHaveLength(1);

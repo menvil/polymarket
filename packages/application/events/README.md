@@ -123,6 +123,13 @@ TradingMarketLifecycle   ADMITTED → ACTIVE → TRADING_CLOSED → RESOLVED →
                          что наш рантайм делает с этим рынком
 ```
 
+Идентичность рынка во всём новом контуре — **пара** `venueId + marketId`:
+`MarketId` уникален только внутри пространства имён площадки (то же правило,
+что у `Market.equals()` и ключа `MarketUniverse`). События с `Market` дают её
+через сам рынок, `TRADING_MARKET_ACTIVATED`/`CLOSED`/`FINALIZED` — двумя полями
+payload. По той же причине `TICK_SIZE_CHANGED` получил `venueId`: он был
+единственным market-data событием без площадки.
+
 `TRADING_MARKET_ADMITTED` и `TRADING_MARKET_RESOLVED` несут canonical
 `Market` целиком: он уже является границей «инфраструктура → приложение», и
 второе представление рынка (`TradingMarketDto`) пришлось бы синхронизировать
