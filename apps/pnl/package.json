@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "npx tsx --env-file=.env src/main.ts",
-    "dev": "npx tsx --env-file=.env src/main.ts",
     "build": "tsc -b tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts"
+    "dev": "npx tsx --env-file=.env src/main.ts",
+    "lint": "eslint src --ext .ts",
+    "start": "npx tsx --env-file=.env src/main.ts",
+    "test": "node --experimental-vm-modules ../../node_modules/.bin/jest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@polymarket/bindings": "0.6.0",

@@ -33,9 +33,9 @@
  * Без VO намеренно остаются:
  * - **счётчики** (`wins`, `losses`, `totalMarkets`, `outcomeIndex`) —
  *   безразмерные, инварианта нет;
- * - **цена резолюции** — это `Ratio`, а не `OutcomePrice`: последний
- *   допускает только диапазон (0, 1), тогда как после резолюции цена равна
- *   ровно 1 или 0.
+ * - **оценка позиции** — не VO, а размеченное объединение
+ *   {@link PositionValuation}: вендорское `curPrice` означает разные вещи до
+ *   и после резолюции, и одним типом это не описать.
  */
 import type {
   Money,
@@ -103,6 +103,81 @@ export interface NormalizedFill {
 }
 
 /**
+ * Оценка позиции: живая котировка или итог резолюции.
+ *
+ * @remarks
+ * Поле `curPrice` у Polymarket **полиморфно**: у открытой позиции это
+ * рыночная цена в (0, 1), у закрытой — выплата, ровно 1 или 0. Это два
+ * разных понятия под одним вендорским именем, и одним типом они не
+ * покрываются:
+ *
+ * - `OutcomePrice` не берёт 1 и 0 — по таким ценам ордер не выставить, и
+ *   для КОТИРОВКИ этот инвариант верный;
+ * - булево не описывает открытую позицию, у которой исхода ещё нет.
+ *
+ * Поэтому здесь размеченное объединение, а не новый примитив. После
+ * резолюции хранится **исход**, а не цена: выплата 1.0/0.0 — следствие
+ * того, кто выиграл, а не самостоятельная величина. Домен уже моделирует
+ * это так же (`finalization.winning` в архиве несёт identity победителя и
+ * провенанс, но не цену).
+ *
+ * @example
+ * ```typescript
+ * const open: PositionValuation = { state: 'OPEN', price: price(0.62) };
+ * const won:  PositionValuation = { state: 'SETTLED', won: true };
+ * ```
+ */
+export type PositionValuation =
+  | {
+      /** Позиция ещё торгуется */
+      readonly state: 'OPEN';
+      /** Текущая рыночная цена исхода */
+      readonly price: OutcomePrice;
+    }
+  | {
+      /** Рынок разрешён */
+      readonly state: 'SETTLED';
+      /** Наш исход выиграл */
+      readonly won: boolean;
+    };
+
+/**
+ * Выплата на один токен при закрытии позиции.
+ *
+ * @param valuation - Оценка позиции
+ * @returns Цена погашения: 1 или 0 после резолюции, текущая цена до неё
+ *
+ * @example
+ * ```typescript
+ * redemptionPrice({ state: 'SETTLED', won: true });  // 1
+ * redemptionPrice({ state: 'OPEN', price: p(0.62) }); // 0.62
+ * ```
+ */
+export function redemptionPrice(valuation: PositionValuation): number {
+  return valuation.state === 'SETTLED' ? (valuation.won ? 1 : 0) : valuation.price.toNumber();
+}
+
+/**
+ * Выиграл ли наш исход.
+ *
+ * @param valuation - Оценка позиции
+ * @returns `true` только для разрешённого рынка с выигравшим исходом
+ *
+ * @remarks
+ * Открытая позиция не выиграла и не проиграла — до резолюции такого факта
+ * не существует, поэтому здесь `false`, а не «пока неизвестно».
+ *
+ * @example
+ * ```typescript
+ * hasWon({ state: 'SETTLED', won: true });  // true
+ * hasWon({ state: 'OPEN', price: p(0.98) }); // false — исхода ещё нет
+ * ```
+ */
+export function hasWon(valuation: PositionValuation): boolean {
+  return valuation.state === 'SETTLED' && valuation.won;
+}
+
+/**
  * Позиция по рынку с PnL, посчитанным самой площадкой.
  *
  * @remarks
@@ -123,14 +198,8 @@ export interface PositionPnl {
   avgPrice: OutcomePrice;
   /** Сколько токенов куплено суммарно */
   totalBought: Quantity;
-  /**
-   * Текущая (или расчётная) цена исхода.
-   *
-   * @remarks
-   * `Ratio`, а не `OutcomePrice`: после резолюции цена равна ровно 1 или 0,
-   * а `OutcomePrice` допускает только открытый диапазон (0, 1).
-   */
-  curPrice: Ratio;
+  /** Живая котировка либо итог резолюции */
+  valuation: PositionValuation;
   /** Реализованный PnL — как его считает площадка */
   realizedPnl: Money;
   /** Позиция закрыта (из `listClosedPositions`) */
@@ -177,10 +246,8 @@ export interface MarketPnl {
   question: string;
   /** Название нашего исхода */
   outcomeName: string;
-  /** Цена после резолюции: 1 или 0 */
-  resolvedPrice: Ratio;
-  /** Наш исход выиграл */
-  won: boolean;
+  /** Живая котировка либо итог резолюции */
+  valuation: PositionValuation;
   /** Позиция принесла прибыль */
   profitable: boolean;
   /** Наши сделки по рынку */

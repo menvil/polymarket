@@ -28,7 +28,7 @@
 
 import type { ILogger } from '@polymarket/logger';
 import type { createPublicClient } from '@polymarket/client';
-import { money, price, quantity, ratio, timestamp } from './vo.js';
+import { money, price, quantity, timestamp } from './vo.js';
 import type { PositionPnl } from '../types.js';
 
 /** Узкий порт: два метода из всего клиента. */
@@ -36,6 +36,9 @@ export type PositionsClient = Pick<
   ReturnType<typeof createPublicClient>,
   'listClosedPositions' | 'listPositions'
 >;
+
+/** Цена, выше которой исход считается выигравшим. */
+const WINNING_PRICE = 0.99;
 
 /** Параметры запроса позиций. */
 export interface FetchPositionsParams {
@@ -102,8 +105,9 @@ export class PositionsFetcher {
           outcomeIndex: p.outcomeIndex ?? 0,
           avgPrice: price(Number(p.avgPrice ?? 0)),
           totalBought: quantity(Number(p.totalBought ?? 0)),
-          // Цена резолюции равна ровно 1 или 0 — вне диапазона OutcomePrice.
-          curPrice: ratio(Number(p.curPrice ?? 0)),
+          // Закрытая позиция несёт исход, а не цену: вендорские 1/0 —
+          // это выплата, следствие резолюции.
+          valuation: { state: 'SETTLED', won: Number(p.curPrice ?? 0) >= WINNING_PRICE },
           realizedPnl: money(Number(p.realizedPnl ?? 0)),
           closed: true,
           closedAt: timestamp(closedAtMs),
@@ -126,7 +130,8 @@ export class PositionsFetcher {
             outcomeIndex: p.outcomeIndex ?? 0,
             avgPrice: price(Number(p.avgPrice ?? 0)),
             totalBought: quantity(Number(p.totalBought ?? 0)),
-            curPrice: ratio(Number(p.curPrice ?? 0)),
+            // Открытая позиция ещё торгуется — здесь настоящая котировка.
+            valuation: { state: 'OPEN', price: price(Number(p.curPrice ?? 0)) },
             realizedPnl: money(Number(p.realizedPnl ?? 0)),
             closed: false,
             endDate: p.endDate ?? undefined,

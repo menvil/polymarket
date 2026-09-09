@@ -17,7 +17,7 @@
  * entryCost    = avgPrice × totalBought        // из позиции
  * sellProceeds = Σ SELL.usdcSize               // из ленты сделок
  * netShares    = Σ BUY.size − Σ SELL.size      // из ленты сделок
- * redeemValue  = netShares × curPrice          // 0.0 или 1.0 после резолюции
+ * redeemValue  = netShares × redemptionPrice   // 1/0 после резолюции, котировка до
  * netPnl       = realizedPnl                   // ← авторитет площадки
  * roi          = netPnl / entryCost
  * ```
@@ -62,6 +62,7 @@ import type {
   PnlReport,
   PositionPnl,
 } from '../types.js';
+import { redemptionPrice } from '../types.js';
 
 /** Входные данные расчёта. */
 export interface ComputeParams {
@@ -74,9 +75,6 @@ export interface ComputeParams {
   /** Конец периода (ISO-дата) */
   toDate: string;
 }
-
-/** Цена, выше которой исход считается выигравшим. */
-const WINNING_PRICE = 0.99;
 
 /**
  * Считает отчёт PnL.
@@ -148,15 +146,14 @@ export class PnlCalculator {
     // Отрицательный остаток к выплате не идёт: продали больше, чем держим
     // внутри окна отчёта — значит на резолюцию ничего не осталось.
     const redeemable = netShares.isPositive() ? netShares.toNumber() : 0;
-    const redeemValue = money(redeemable * position.curPrice.toNumber());
+    const redeemValue = money(redeemable * redemptionPrice(position.valuation));
     const netPnl = position.realizedPnl;
 
     return {
       conditionId: position.conditionId,
       question: position.title,
       outcomeName: position.outcome,
-      resolvedPrice: position.curPrice,
-      won: position.curPrice.toNumber() >= WINNING_PRICE,
+      valuation: position.valuation,
       profitable: netPnl.isPositive(),
       fills: records,
       entryCost,

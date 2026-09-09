@@ -30,6 +30,7 @@
  */
 
 import type { PnlReport, MarketPnl, FillRecord } from '../types.js';
+import { hasWon, redemptionPrice } from '../types.js';
 import { divMoney, money } from '../core/vo.js';
 import { fmtCost, fmtMoney, fmtPnl, fmtRoi, fmtNum, fmtOptional, hline, truncate } from './format.js';
 
@@ -123,13 +124,17 @@ export class DetailedRenderer {
   private renderMarket(market: MarketPnl): string[] {
     const lines: string[] = [];
     const tag   = market.profitable ? '[WIN] ' : '[LOSS]';
-    const check = market.won ? '✓' : '✗';
+    const settled = market.valuation.state === 'SETTLED';
+    const won   = hasWon(market.valuation);
+    const check = won ? '✓' : '✗';
+    // У открытой позиции исхода ещё нет: показываем котировку, а не
+    // выдуманную выплату.
+    const outcomeLine = settled
+      ? `Resolved: ${market.outcomeName} ${check}  (${won ? 'redeems $1.00' : 'redeems $0.00'})`
+      : `Open: ${market.outcomeName}  (mark $${fmtNum(redemptionPrice(market.valuation), 2)})`;
 
     lines.push(`  ${tag}  ${truncate(market.question, QUESTION_MAX_LEN)}`);
-    lines.push(
-      `         Token: ${market.outcomeName}  →  Resolved: ${market.outcomeName} ${check}` +
-      `  (${market.won ? 'redeems $1.00' : 'redeems $0.00'})`
-    );
+    lines.push(`         Token: ${market.outcomeName}  →  ${outcomeLine}`);
 
     if (market.fills.length > 0) {
       lines.push(...this.renderFillTable(market.fills));
@@ -202,10 +207,15 @@ export class DetailedRenderer {
       );
     }
 
-    const redeemLabel = market.won ? '(token won)' : '(token lost)';
+    const redeemLabel =
+      market.valuation.state === 'SETTLED'
+        ? hasWon(market.valuation)
+          ? '(token won)'
+          : '(token lost)'
+        : '(open position)';
     lines.push(
       `  Redeem:  ${fmtNum(market.netShares.isPositive() ? market.netShares.toNumber() : 0, 1)} shares` +
-      ` × $${fmtNum(market.resolvedPrice.toNumber(), 2)}      =  ${fmtPnl(market.redeemValue)}  ${redeemLabel}`
+      ` × $${fmtNum(redemptionPrice(market.valuation), 2)}      =  ${fmtPnl(market.redeemValue)}  ${redeemLabel}`
     );
 
     lines.push(`  Fees:    ${' '.repeat(37)}${fmtOptional(market.fees, (v) => fmtCost(v))}`);
