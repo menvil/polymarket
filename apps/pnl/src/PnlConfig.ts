@@ -23,6 +23,18 @@ export type ReportMode = 'daily' | 'detailed';
 /**
  * Итоговая конфигурация скрипта.
  */
+/** Креденшелы аутентифицированного пути. */
+export interface PnlCredentials {
+  /** Приватный ключ EOA — нужен signer'у SDK */
+  readonly privateKey: string;
+  /** API-ключ L2 */
+  readonly apiKey: string;
+  /** Секрет L2 */
+  readonly apiSecret: string;
+  /** Passphrase L2 */
+  readonly apiPassphrase: string;
+}
+
 export interface PnlConfig {
   // ── Auth ────────────────────────────────────────────────────────────────────
   /**
@@ -34,6 +46,15 @@ export interface PnlConfig {
    * `WALLET_ADDRESS`, а если его нет — из `FUNDER_ADDRESS`.
    */
   readonly wallet: string;
+  /**
+   * Креденшелы для аутентифицированного пути, если они есть в окружении.
+   *
+   * @remarks
+   * Нужны ровно за двумя вещами, которых нет в публичных данных: ставкой
+   * комиссии (`feeRateBps`) и ролью MAKER/TAKER. Без них отчёт строится по
+   * публичному пути и печатает `—` в колонке комиссий.
+   */
+  readonly credentials: PnlCredentials | undefined;
   /** Включать ли ещё не закрытые позиции (`--include-open`) */
   readonly includeOpen: boolean;
   /** Начало периода в секундах Unix */
@@ -121,6 +142,20 @@ export function parseConfig(): PnlConfig {
   // Достаточно адреса кошелька — позиции и активность публичны.
   const wallet = process.env['WALLET_ADDRESS'] ?? requireEnv('FUNDER_ADDRESS');
 
+  // Аутентифицированный путь включается сам, когда в окружении есть всё
+  // необходимое. Нет — отчёт строится по публичным данным, без комиссий.
+  const privateKey    = process.env['PRIVATE_KEY'];
+  const apiKey        = process.env['POLYMARKET_API_KEY'];
+  const apiSecret     = process.env['POLYMARKET_API_SECRET'];
+  const apiPassphrase = process.env['POLYMARKET_API_PASSPHRASE'];
+  const credentials: PnlCredentials | undefined =
+    privateKey !== undefined &&
+    apiKey !== undefined &&
+    apiSecret !== undefined &&
+    apiPassphrase !== undefined
+      ? { privateKey, apiKey, apiSecret, apiPassphrase }
+      : undefined;
+
   // ── CLI args ─────────────────────────────────────────────────────────────────
   const args = process.argv.slice(2);
 
@@ -157,6 +192,7 @@ export function parseConfig(): PnlConfig {
 
   return {
     wallet,
+    credentials,
     includeOpen,
     fromTs,
     toTs,

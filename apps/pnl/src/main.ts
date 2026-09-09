@@ -34,10 +34,13 @@
 
 import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
 import { LiveClock } from '@polymarket/time';
-import { createPublicClient } from '@polymarket/client';
+import { createPublicClient, createSecureClient } from '@polymarket/client';
+import { toApiKey } from '@polymarket/bindings';
 import { parseConfig } from './PnlConfig.js';
 import { ActivityFetcher } from './core/ActivityFetcher.js';
 import { PositionsFetcher } from './core/PositionsFetcher.js';
+import { TradesFetcher } from './core/TradesFetcher.js';
+import { createEthersSigner } from './core/EthersSigner.js';
 import { PnlCalculator } from './core/PnlCalculator.js';
 import { DailyRenderer } from './renderers/DailyRenderer.js';
 import { DetailedRenderer } from './renderers/DetailedRenderer.js';
@@ -76,8 +79,28 @@ async function main(): Promise<void> {
 
   const period = { fromTs: config.fromTs, toTs: config.toTs };
 
-  // ── Шаг 1: Сделки из публичной ленты ────────────────────────────────────────
-  const fills = await activity.fetchAll({ wallet: config.wallet, ...period });
+  // ── Шаг 1: Сделки ───────────────────────────────────────────────────────────
+  // С креденшелами берём аутентифицированный путь — только он несёт ставку
+  // комиссии и роль MAKER/TAKER. Без них публичная лента: те же сделки,
+  // но комиссия останется внутри realizedPnl и в отчёте будет `—`.
+  const fills = config.credentials === undefined
+    ? await activity.fetchAll({ wallet: config.wallet, ...period })
+    : await (async () => {
+        const { privateKey, apiKey, apiSecret, apiPassphrase } = config.credentials!;
+        const secure = await createSecureClient({
+          signer: createEthersSigner(privateKey),
+          wallet: config.wallet,
+          credentials: {
+            key: toApiKey(apiKey),
+            secret: apiSecret,
+            passphrase: apiPassphrase,
+          },
+        });
+        return new TradesFetcher(secure, logger).fetchAll({
+          makerAddress: config.wallet,
+          ...period,
+        });
+      })();
 
   // Режим --raw: вывод приведённых сделок и выход
   if (config.rawOutput) {

@@ -22,8 +22,18 @@
  * roi          = netPnl / entryCost
  * ```
  *
- * `fees` и `feeSharesPaid` равны `null`: комиссия уже внутри `realizedPnl`,
- * а отдельной строкой публичный API её не показывает.
+ * ### Комиссии
+ * `fees` считается ТОЛЬКО когда fills пришли с аутентифицированного пути и
+ * несут `feeRateBps`:
+ *
+ * ```text
+ * fee_usdc_eq    = Σ round5(size × feeRate × price × (1 − price))
+ * buy_fee_shares = fee_usdc_eq / price   // BUY: комиссия удерживается в токенах
+ * ```
+ *
+ * На публичном пути ставки нет, и `fees` равен `null` — комиссия при этом
+ * никуда не делась, она внутри `realizedPnl`. Ноль здесь означал бы
+ * «комиссий не было», что неправда.
  *
  * ### Сутки отчёта
  * Рынок относится к дню своего **закрытия** (`closedAtMs`), а не первого
@@ -38,6 +48,7 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
+import { calculatePolymarketTakerFeeNumber } from '@polymarket/fill/polymarket-fee';
 import type {
   DailyPnl,
   FillRecord,
@@ -117,6 +128,9 @@ export class PnlCalculator {
       .sort((a, b) => a.matchedAtMs - b.matchedAtMs)
       .map((f) => this._toFillRecord(f, position.outcome));
 
+    // Строго: комиссия рынка известна, только если известна у КАЖДОГО fill.
+    // Иначе сумма выдавала бы частичное значение за полное.
+    const allFeesKnown = records.length > 0 && records.every((r) => r.fee !== null);
     const buyShares = records.reduce((s, r) => (r.side === 'BUY' ? s + r.size : s), 0);
     const sellShares = records.reduce((s, r) => (r.side === 'SELL' ? s + r.size : s), 0);
     const sellProceeds = records.reduce((s, r) => (r.side === 'SELL' ? s + r.notional : s), 0);
@@ -138,8 +152,10 @@ export class PnlCalculator {
       sellProceeds,
       netShares,
       redeemValue,
-      fees: null,
-      feeSharesPaid: null,
+      fees: allFeesKnown ? records.reduce((s, r) => s + (r.fee ?? 0), 0) : null,
+      feeSharesPaid: allFeesKnown
+        ? records.reduce((s, r) => (r.side === 'BUY' ? s + (r.feeShares ?? 0) : s), 0)
+        : null,
       netPnl,
       roi: entryCost > 0 ? netPnl / entryCost : 0,
       entryDate: this._isoDate(records[0]?.matchTs ?? position.closedAtMs ?? 0),
@@ -155,21 +171,27 @@ export class PnlCalculator {
    */
   private _toFillRecord(fill: NormalizedFill, fallbackOutcome: string): FillRecord {
     const notional = fill.usdcSize;
+    // Ставка есть только на аутентифицированном пути. Там, где её нет,
+    // комиссия отсутствует как величина — а не равна нулю.
+    const fee =
+      fill.feeRateBps === undefined
+        ? null
+        : calculatePolymarketTakerFeeNumber(fill.size, fill.price, fill.feeRateBps / 10_000);
+    // BUY: комиссия удерживается в токенах, пересчитываем по цене исполнения.
+    const feeShares =
+      fee === null || fill.side !== 'BUY' || fill.price <= 0 ? (fee === null ? null : 0) : fee / fill.price;
+
     return {
       id: fill.transactionHash,
       side: fill.side,
-      // Публичная лента не различает мейкера и тейкера. Прежний
-      // аутентифицированный путь различал; здесь честнее сказать TAKER
-      // только там, где это известно, а не додумывать — поэтому роль
-      // приводится к TAKER как к нейтральному значению по умолчанию.
-      liquidityRole: 'TAKER',
+      liquidityRole: fill.liquidityRole ?? 'TAKER',
       outcomeName: fill.outcome ?? fallbackOutcome,
       size: fill.size,
       price: fill.price,
       notional,
-      fee: null,
-      feeShares: null,
-      effectiveSize: fill.size,
+      fee,
+      feeShares,
+      effectiveSize: fill.side === 'BUY' ? fill.size - (feeShares ?? 0) : fill.size,
       cashFlow: fill.side === 'BUY' ? -notional : notional,
       matchTs: fill.matchedAtMs,
       matchDate: this._isoDate(fill.matchedAtMs),
@@ -196,6 +218,7 @@ export class PnlCalculator {
       .map(([date, dayMarkets]) => {
         const entryCost = dayMarkets.reduce((s, m) => s + m.entryCost, 0);
         const netPnl = dayMarkets.reduce((s, m) => s + m.netPnl, 0);
+        const fees = sumOptional(dayMarkets.map((m) => m.fees));
         return {
           date,
           markets: dayMarkets,
@@ -203,7 +226,7 @@ export class PnlCalculator {
           losses: dayMarkets.filter((m) => !m.profitable).length,
           entryCost,
           totalReturn: entryCost + netPnl,
-          fees: null,
+          fees,
           netPnl,
           roi: entryCost > 0 ? netPnl / entryCost : 0,
         };
@@ -234,7 +257,7 @@ export class PnlCalculator {
       losses: markets.filter((m) => !m.profitable).length,
       entryCost,
       totalReturn: entryCost + netPnl,
-      fees: null,
+      fees: sumOptional(markets.map((m) => m.fees)),
       netPnl,
       roi: entryCost > 0 ? netPnl / entryCost : 0,
       bestDay: dailyBreakdown.reduce<DailyPnl | null>(
@@ -259,4 +282,27 @@ export class PnlCalculator {
   private _isoDate(ms: number): string {
     return new Date(ms).toISOString().slice(0, 10);
   }
+}
+
+/**
+ * Суммирует величины, часть которых может отсутствовать.
+ *
+ * @param values - Значения, где `null` означает «источник её не даёт»
+ * @returns Сумма — только если известны ВСЕ значения; иначе `null`
+ *
+ * @remarks
+ * Отсутствие отличается от нуля: если ставок комиссии не было ни у одного
+ * fill, итог — не «$0.00», а «величина недоступна».
+ *
+ * @example
+ * ```typescript
+ * sumOptional([1, 2]);       // 3
+ * sumOptional([1, null, 2]); // null — часть неизвестна
+ * ```
+ */
+function sumOptional(values: Array<number | null>): number | null {
+  // Достаточно одного неизвестного слагаемого, чтобы итог перестал быть
+  // суммой: частичное значение, выданное за полное, хуже честного прочерка.
+  if (values.length === 0 || values.some((v) => v === null)) return null;
+  return values.reduce<number>((s, v) => s + (v ?? 0), 0);
 }
