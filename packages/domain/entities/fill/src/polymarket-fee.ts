@@ -17,7 +17,8 @@
  * Решение 1) голый `Decimal` на публичной сигнатуре легитимен только внутри
  * `value-objects`/`math`. `calculatePolymarketTakerFeeNumber` **не переводится** —
  * её сигнатура уже полностью на примитивах (`number`, не `Decimal`), уже ADR-совместима,
- * и у неё 11+ реальных потребителей в `apps/bot/strategies/*`/`apps/pnl`/`domain/cross-market`,
+ * и у неё были потребители в стратегиях и PnL-инструменте (оба приложения
+ * удалены) и в `domain/cross-market`,
  * ожидающих `number`.
  */
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
@@ -104,14 +105,14 @@ export function calculatePolymarketTakerFeeWithRate(
  *
  * @remarks
  * Сигнатура уже полностью на примитивах — не переводится на VO (см. докблок файла).
- * Используется для строчных вычислений/бэктестов в `apps/bot`/`apps/pnl`, где
+ * Используется для строчных вычислений/бэктестов, где
  * весь остальной расчёт уже ведётся на `number`.
  *
  * Guard-проверки на невалидный вход (size/price вне диапазона, feeRate <= 0) выполняются
  * ЗДЕСЬ, на сырых значениях, ДО конструирования `Quantity`/`OutcomePrice` VO — эти VO бросают
  * исключение при значении вне инварианта (`OutcomePrice` — диапазон [0.0001, 0.9999]), а эта
  * функция должна сохранить прежний контракт "невалидный вход → тихо 0", не throw
- * (вызывающий код в `apps/bot`/`apps/pnl` полагается на graceful zero, не try/catch).
+ * (вызывающий код полагался на graceful zero, не try/catch).
  *
  * @example
  * ```typescript
