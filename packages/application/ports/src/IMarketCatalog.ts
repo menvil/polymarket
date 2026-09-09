@@ -3,8 +3,10 @@
  *
  * @remarks
  * `IMarketCatalog` — application-layer порт (Dependency Inversion).
- * Инфраструктурная реализация `PolymarketMarketCatalog` (@polymarket/exchange)
- * имплементирует этот интерфейс и заполняет каталог из REST API при старте.
+ * Боевой реализации сейчас НЕТ: единственная жила в legacy-адаптере
+ * площадки, удалённом вместе с V1-контуром. Сам контракт будет пересмотрен
+ * в рамках будущего рефакторинга execution/application — считать его
+ * заранее принятым для V2 оснований нет.
  *
  * Строки из REST API (tick size, min order size) парсятся в domain VOs
  * на границе инфраструктуры — application layer уже работает с типизированными объектами.
@@ -12,7 +14,6 @@
  * Используется:
  * - BookUpdateHandler — `catalog.get(tokenId)` → `InstrumentInfo.instrumentId`
  * - OrderRiskChecker — `catalog.get(tokenId)?.tickSize` (уже OutcomePrice, не string)
- * - PolymarketExchangeClientAdapter — маппинг параметров ордера
  */
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import type { Money, OutcomePrice, Quantity } from '@polymarket/value-objects';
@@ -22,7 +23,7 @@ import type { Timestamp } from '@polymarket/timestamp';
  * Метаданные торгового инструмента.
  *
  * @remarks
- * Заполняется из @polymarket/exchange при старте системы.
+ * Заполняется инфраструктурой при старте системы.
  * Все поля уже типизированы — не нужно парсить строки в application layer.
  */
 export interface InstrumentInfo {

@@ -5,8 +5,9 @@
  * Dependency Inversion — use-cases зависят от этого интерфейса,
  * а не от конкретной инфраструктурной реализации.
  *
- * Реализация: `PolymarketExchangeClientAdapter` в пакете `@polymarket/exchange`
- * (директория `packages/infrastructure/polymarket`, Phase 8). Для бектестов —
+ * Боевой реализации сейчас НЕТ: она жила в legacy-адаптере площадки,
+ * удалённом вместе с V1-контуром. Сам контракт будет пересмотрен в рамках
+ * будущего рефакторинга execution/application. Для бектестов —
  * `MockExchangeClient` в `packages/infrastructure/backtesting`.
  *
  * Используется:
@@ -305,7 +306,7 @@ export interface IExchangeClient {
    * Business-исходы (уже matched, уже cancelled, not found, неоднозначный ответ)
    * возвращаются через `Ok(CancelOrderResult)`, а НЕ через `Err`. Вызывающий код
    * не должен парсить текст venue-ошибок — эта классификация выполняется внутри
-   * реализации адаптера (например, `PolymarketExchangeClientAdapter`).
+   * реализации адаптера.
    */
   cancelOrder(orderId: OrderId): Promise<Result<CancelOrderResult, ExchangeError>>;
 
