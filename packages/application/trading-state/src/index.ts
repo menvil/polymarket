@@ -11,6 +11,16 @@
  * canonical Application Events → IEventBus → TradingStateProjector → TradingHotState
  * ```
  *
+ * ### Что видно снаружи
+ *
+ * Только проектор, read-only проекции, конфигурация хранения, типы
+ * наблюдений и ошибки инвариантов. Конкретные mutable-классы состояния
+ * (`TradingHotState`, `MarketRuntimeState`, `MarketInstrumentState`,
+ * `SharedMarketDataState`, `SharedInstrumentState`, `ReferencePriceState`)
+ * НЕ экспортируются: иначе правило «единственный писатель — проектор»
+ * осталось бы комментарием, а любой потребитель мог бы вызвать `applyBook()`
+ * без единого приведения типов.
+ *
  * Стратегия, features, decisions, intents, risk и execution в этот слой не
  * входят — они строятся НАД готовым состоянием отдельными этапами.
  *
@@ -18,27 +28,18 @@
  *
  * @example
  * ```typescript
- * const state = TradingHotState.create(retention, clock);
- * if (isErr(state)) throw state.error;
+ * const projector = TradingStateProjector.create(eventBus, retention, clock);
+ * if (isErr(projector)) throw projector.error;
+ * projector.value.start();
  *
- * const projector = new TradingStateProjector(eventBus, state.value);
- * projector.start();
- *
- * const view: TradingHotStateView = projector.state();
+ * const view: TradingHotStateView = projector.value.state();
  * const book = view.getMarket(marketId)?.getInstrument(tokenId)?.books.getLatest();
  * ```
  */
 export { TradingStateProjector } from './TradingStateProjector.js';
+export { BookIdentityMismatchError, InstrumentMarketConflictError } from './errors.js';
 export {
-  TradingHotState,
-  MarketRuntimeState,
-  SharedMarketDataState,
-  type ObservationTarget,
-} from './TradingHotState.js';
-export { MarketInstrumentState, SharedInstrumentState } from './instrumentState.js';
-export { ReferencePriceState } from './referencePriceState.js';
-export { InstrumentMarketConflictError } from './errors.js';
-export {
+  freezeRetentionConfig,
   retentionPolicyEntries,
   type InstrumentRetentionConfig,
   type TradingStateRetentionConfig,
@@ -49,9 +50,7 @@ export type {
   PublicTradeObservation,
   ReferencePriceObservation,
   ReferencePriceSeriesKey,
-  SharedInstrumentKey,
   TickSizeState,
-  TopOfBookObservation,
 } from './observations.js';
 export type {
   MarketInstrumentStateView,

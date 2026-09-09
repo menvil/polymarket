@@ -20,7 +20,6 @@ import type {
   Observation,
   PublicTradeObservation,
   TickSizeState,
-  TopOfBookObservation,
 } from './observations.js';
 import type { MarketInstrumentStateView, SharedInstrumentStateView } from './views.js';
 
@@ -36,35 +35,27 @@ import type { MarketInstrumentStateView, SharedInstrumentStateView } from './vie
  * `metadata.createdAt`, повтор той же последовательности событий даёт то же
  * состояние — независимо от того, когда его запускают.
  */
-function observedAtMs(observation: Observation): number {
+export function observedAtMs(observation: Observation): number {
   return observation.observedAt.toNumber();
 }
 
-/** Три ряда наблюдений, общие для рыночного и площадочного инструмента. */
+/** Два ряда наблюдений, общие для рыночного и площадочного инструмента. */
 interface InstrumentSeries {
-  readonly topOfBooks: RollingWindow<TopOfBookObservation>;
   readonly books: RollingWindow<BookObservation>;
   readonly publicTrades: RollingWindow<PublicTradeObservation>;
 }
 
 /**
- * Создаёт три ряда по конфигу хранения.
+ * Создаёт ряды по конфигу хранения.
  *
- * @param config - Политики для верхушки, снимков и сделок
- * @param clock - Часы (используются только чтением `getRecent()` без явного `nowMs`)
+ * @param config - Политики для снимков и сделок
+ * @param clock - Часы; `append()` их не использует, см. {@link observedAtMs}
  * @returns Ряды либо первая же ошибка валидации политики
  */
 function createSeries(
   config: InstrumentRetentionConfig,
   clock: IClock,
 ): Result<InstrumentSeries, ValidationError> {
-  const topOfBooks = RollingWindow.create<TopOfBookObservation>(
-    config.topOfBooks,
-    clock,
-    observedAtMs,
-  );
-  if (isErr(topOfBooks)) return topOfBooks;
-
   const books = RollingWindow.create<BookObservation>(config.books, clock, observedAtMs);
   if (isErr(books)) return books;
 
@@ -75,34 +66,7 @@ function createSeries(
   );
   if (isErr(publicTrades)) return publicTrades;
 
-  return Ok({
-    topOfBooks: topOfBooks.value,
-    books: books.value,
-    publicTrades: publicTrades.value,
-  });
-}
-
-/**
- * Решает, принимать ли обновление верхушки стакана.
- *
- * @param series - Ряд верхушек одного логического потока
- * @param sequenceNumber - Номер пришедшего обновления
- * @returns `true`, если обновление новее последнего принятого
- *
- * @remarks
- * Логический поток — это «рынок + инструмент» либо «площадка + инструмент».
- * Номер последнего принятого берётся из самого ряда: отдельное поле было бы
- * вторым источником правды о том же.
- *
- * Устаревшее или повторное обновление не добавляется, не меняет последнее
- * значение и не увеличивает версию состояния.
- */
-function acceptsSequence(
-  series: RollingWindow<TopOfBookObservation>,
-  sequenceNumber: number,
-): boolean {
-  const latest = series.getLatest();
-  return latest === undefined || sequenceNumber > latest.sequenceNumber;
+  return Ok({ books: books.value, publicTrades: publicTrades.value });
 }
 
 /** Инструмент, принадлежащий конкретному рынку. */
@@ -121,11 +85,6 @@ export class MarketInstrumentState implements MarketInstrumentStateView {
    * @param config - Политики хранения рыночных рядов
    * @param clock - Часы
    * @returns Состояние либо ошибка валидации политики
-   *
-   * @example
-   * ```typescript
-   * const state = MarketInstrumentState.create(tokenId, retention.market, clock);
-   * ```
    */
   public static create(
     instrumentId: InstrumentId,
@@ -135,10 +94,6 @@ export class MarketInstrumentState implements MarketInstrumentStateView {
     const series = createSeries(config, clock);
     if (isErr(series)) return series;
     return Ok(new MarketInstrumentState(instrumentId, series.value));
-  }
-
-  public get topOfBooks(): RollingWindow<TopOfBookObservation> {
-    return this._series.topOfBooks;
   }
 
   public get books(): RollingWindow<BookObservation> {
@@ -151,18 +106,6 @@ export class MarketInstrumentState implements MarketInstrumentStateView {
 
   public get tickSize(): TickSizeState | undefined {
     return this._tickSize;
-  }
-
-  /**
-   * Принимает обновление верхушки стакана, если оно не устарело.
-   *
-   * @param observation - Наблюдение с монотонным номером
-   * @returns `true`, если наблюдение принято и состояние изменилось
-   */
-  public applyTopOfBook(observation: TopOfBookObservation): boolean {
-    if (!acceptsSequence(this._series.topOfBooks, observation.sequenceNumber)) return false;
-    this._series.topOfBooks.append(observation);
-    return true;
   }
 
   /**
@@ -228,28 +171,12 @@ export class SharedInstrumentState implements SharedInstrumentStateView {
     return Ok(new SharedInstrumentState(venueId, instrumentId, series.value));
   }
 
-  public get topOfBooks(): RollingWindow<TopOfBookObservation> {
-    return this._series.topOfBooks;
-  }
-
   public get books(): RollingWindow<BookObservation> {
     return this._series.books;
   }
 
   public get publicTrades(): RollingWindow<PublicTradeObservation> {
     return this._series.publicTrades;
-  }
-
-  /**
-   * Принимает обновление верхушки стакана, если оно не устарело.
-   *
-   * @param observation - Наблюдение с монотонным номером
-   * @returns `true`, если наблюдение принято и состояние изменилось
-   */
-  public applyTopOfBook(observation: TopOfBookObservation): boolean {
-    if (!acceptsSequence(this._series.topOfBooks, observation.sequenceNumber)) return false;
-    this._series.topOfBooks.append(observation);
-    return true;
   }
 
   /**
@@ -270,5 +197,3 @@ export class SharedInstrumentState implements SharedInstrumentStateView {
     this._series.publicTrades.append(observation);
   }
 }
-
-export { observedAtMs };

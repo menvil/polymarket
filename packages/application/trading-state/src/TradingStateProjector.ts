@@ -20,16 +20,19 @@
  * чужих гарантиях.
  */
 import type { IEventBus } from '@polymarket/event-bus';
+import type { IClock } from '@polymarket/time';
+import type { ValidationError } from '@polymarket/errors';
+import { Ok, type Result, isErr } from '@polymarket/result';
 import type {
   BookDepthEvent,
-  BookUpdatedEvent,
   ReferencePriceUpdatedEvent,
   TickSizeChangedEvent,
   TradeReceivedEvent,
 } from '@polymarket/application-events';
 import type { DecimalPrice } from '@polymarket/value-objects';
-import { isErr } from '@polymarket/result';
-import type { TradingHotState, ObservationTarget } from './TradingHotState.js';
+import { TradingHotState, type ObservationTarget } from './TradingHotState.js';
+import { BookIdentityMismatchError } from './errors.js';
+import type { TradingStateRetentionConfig } from './TradingStateRetentionConfig.js';
 import type { TradingHotStateView } from './views.js';
 import type { ReferencePriceSeriesKey } from './observations.js';
 
@@ -39,9 +42,15 @@ import type { ReferencePriceSeriesKey } from './observations.js';
  * @remarks
  * Только canonical market data. Strategy/Features/Risk/Execution и
  * `MARKET_OPENED`/`MARKET_CLOSED` сюда не входят намеренно.
+ *
+ * `BOOK_UPDATED` тоже не входит: оба семантических адаптера выводят его из
+ * ТОГО ЖЕ снимка, что публикуют как `BOOK_DEPTH`, и только при изменении
+ * верхушки. Для состояния это дублирование — верхушка получается из
+ * `books.getLatest().snapshot` вычислением. Само событие в
+ * `@polymarket/application-events` остаётся: оно может пригодиться
+ * потребителю, которому нужно дешёвое уведомление без хранения стакана.
  */
 const PROJECTED_EVENT_TYPES = [
-  'BOOK_UPDATED',
   'BOOK_DEPTH',
   'TRADE_RECEIVED',
   'REFERENCE_PRICE_UPDATED',
@@ -63,14 +72,42 @@ const PROJECTED_EVENT_TYPES = [
 export class TradingStateProjector {
   private _unsubscribes: Array<() => void> = [];
 
-  /**
-   * @param _eventBus - Шина canonical-событий приложения
-   * @param _state - Состояние, которым проектор владеет единолично
-   */
-  constructor(
+  private constructor(
     private readonly _eventBus: IEventBus,
     private readonly _state: TradingHotState,
   ) {}
+
+  /**
+   * Создаёт проектор вместе с состоянием, которым он владеет.
+   *
+   * @param eventBus - Шина canonical-событий приложения
+   * @param config - Конфигурация хранения (проверяется здесь)
+   * @param clock - Часы
+   * @returns Проектор либо первая непройденная политика хранения
+   *
+   * @remarks
+   * Состояние создаётся ВНУТРИ и наружу отдаётся только как
+   * {@link TradingHotStateView}. Конкретный mutable-класс из пакета не
+   * экспортируется вовсе — иначе правило «единственный писатель» осталось бы
+   * комментарием: любой потребитель мог бы вызвать `applyBook()` без единого
+   * приведения типов.
+   *
+   * @example
+   * ```typescript
+   * const projector = TradingStateProjector.create(bus, retention, clock);
+   * if (isErr(projector)) throw projector.error;
+   * projector.value.start();
+   * ```
+   */
+  public static create(
+    eventBus: IEventBus,
+    config: TradingStateRetentionConfig,
+    clock: IClock,
+  ): Result<TradingStateProjector, ValidationError> {
+    const state = TradingHotState.create(config, clock);
+    if (isErr(state)) return state;
+    return Ok(new TradingStateProjector(eventBus, state.value));
+  }
 
   /**
    * Состояние только для чтения.
@@ -103,13 +140,6 @@ export class TradingStateProjector {
     if (this.isRunning()) return;
 
     this._unsubscribes = [
-      this._eventBus.subscribe(
-        'BOOK_UPDATED',
-        (event) => {
-          this._onBookUpdated(event as BookUpdatedEvent<DecimalPrice>);
-        },
-        { critical: true },
-      ),
       this._eventBus.subscribe(
         'BOOK_DEPTH',
         (event) => {
@@ -188,15 +218,15 @@ export class TradingStateProjector {
   }
 
   /**
-   * Принимает обновление верхушки стакана.
+   * Принимает снимок стакана.
    *
-   * @param event - Canonical `BOOK_UPDATED`
+   * @param event - Canonical `BOOK_DEPTH`
    * @throws {Error} При нарушении инварианта владения инструментом
    */
-  private _onBookUpdated(event: BookUpdatedEvent<DecimalPrice>): void {
-    const applied = this._state.applyTopOfBook(this._target(event.payload), {
-      topOfBook: event.payload.topOfBook,
-      sequenceNumber: event.payload.sequenceNumber,
+  private _onBookDepth(event: BookDepthEvent<DecimalPrice>): void {
+    this._assertBookIdentity(event);
+    const applied = this._state.applyBook(this._target(event.payload), {
+      snapshot: event.payload.snapshot,
       sourceTimestamp: event.payload.timestamp,
       observedAt: event.metadata.createdAt,
     });
@@ -204,18 +234,34 @@ export class TradingStateProjector {
   }
 
   /**
-   * Принимает снимок стакана.
+   * Сверяет идентичность снимка с идентичностью события.
    *
    * @param event - Canonical `BOOK_DEPTH`
-   * @throws {Error} При нарушении инварианта владения инструментом
+   * @throws {BookIdentityMismatchError} При расхождении любого из трёх полей
+   *
+   * @remarks
+   * Контракт события требует, чтобы `venueId`/`marketId`/`instrumentId`
+   * повторяли те же поля `Orderbook`. Маршрутизация берётся из payload, а в
+   * состояние кладётся snapshot: при расхождении книга одного инструмента
+   * тихо легла бы под ключом другого, и обнаружилось бы это только по
+   * необъяснимым ценам у стратегии. Три сравнения дешевле такой отладки.
    */
-  private _onBookDepth(event: BookDepthEvent<DecimalPrice>): void {
-    const applied = this._state.applyBook(this._target(event.payload), {
-      snapshot: event.payload.snapshot,
-      sourceTimestamp: event.payload.timestamp,
-      observedAt: event.metadata.createdAt,
-    });
-    if (isErr(applied)) throw applied.error;
+  private _assertBookIdentity(event: BookDepthEvent<DecimalPrice>): void {
+    const { payload } = event;
+    const { snapshot } = payload;
+    if (payload.venueId !== snapshot.venueId) {
+      throw new BookIdentityMismatchError('venueId', payload.venueId, snapshot.venueId);
+    }
+    if (payload.instrumentId !== snapshot.instrumentId) {
+      throw new BookIdentityMismatchError(
+        'instrumentId',
+        payload.instrumentId,
+        snapshot.instrumentId,
+      );
+    }
+    if (payload.marketId !== snapshot.marketId) {
+      throw new BookIdentityMismatchError('marketId', payload.marketId, snapshot.marketId);
+    }
   }
 
   /**

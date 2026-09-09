@@ -9,7 +9,11 @@
  * sourceId → baseAsset → quoteAsset → SPOT | TWAP(windowSeconds)
  * ```
  *
- * Склеивать нельзя ничего из этого: `BTC/USD` и `BTC/USDT` — разные пары,
+ * Тип ключа — размеченное объединение: у TWAP окно усреднения обязано
+ * существовать, и раньше это было лишь комментарием, а `windowSeconds ?? 0`
+ * молча заводил ряд с окном, которого не бывает.
+ *
+ * Склеивать нельзя ничего: `BTC/USD` и `BTC/USDT` — разные пары,
  * Chainlink SPOT и Chainlink TWAP 30 — разные величины, а два источника с
  * одинаковой парой могут расходиться, и именно расхождение бывает сигналом.
  *
@@ -95,7 +99,7 @@ export class ReferencePriceState {
       return Ok(undefined);
     }
 
-    const windowSeconds = key.windowSeconds ?? 0;
+    const { windowSeconds } = key;
     let series = pair.twapByWindowSeconds.get(windowSeconds);
     if (series === undefined) {
       const created = this._createWindow();
@@ -116,14 +120,9 @@ export class ReferencePriceState {
   public getSeries(
     key: ReferencePriceSeriesKey,
   ): RollingWindowView<ReferencePriceObservation> | undefined {
-    const pair = this._bySource
-      .get(key.sourceId)
-      ?.get(key.baseAsset as AssetSymbolId)
-      ?.get(key.quoteAsset as AssetSymbolId);
+    const pair = this._bySource.get(key.sourceId)?.get(key.baseAsset)?.get(key.quoteAsset);
     if (pair === undefined) return undefined;
-    return key.kind === 'SPOT'
-      ? pair.spot
-      : pair.twapByWindowSeconds.get(key.windowSeconds ?? 0);
+    return key.kind === 'SPOT' ? pair.spot : pair.twapByWindowSeconds.get(key.windowSeconds);
   }
 
   /**
@@ -169,17 +168,15 @@ export class ReferencePriceState {
       byBase = new Map();
       this._bySource.set(key.sourceId, byBase);
     }
-    const base = key.baseAsset as AssetSymbolId;
-    let byQuote = byBase.get(base);
+    let byQuote = byBase.get(key.baseAsset);
     if (byQuote === undefined) {
       byQuote = new Map();
-      byBase.set(base, byQuote);
+      byBase.set(key.baseAsset, byQuote);
     }
-    const quote = key.quoteAsset as AssetSymbolId;
-    let pair = byQuote.get(quote);
+    let pair = byQuote.get(key.quoteAsset);
     if (pair === undefined) {
       pair = { twapByWindowSeconds: new Map() };
-      byQuote.set(quote, pair);
+      byQuote.set(key.quoteAsset, pair);
     }
     return pair;
   }

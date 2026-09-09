@@ -11,8 +11,8 @@ import { EventBus, type IEventBus } from '@polymarket/event-bus';
 import { PaperClock } from '@polymarket/time';
 import { isErr } from '@polymarket/result';
 import {
-  TradingHotState,
   TradingStateProjector,
+  BookIdentityMismatchError,
   InstrumentMarketConflictError,
   type TradingHotStateView,
 } from '../src/index.js';
@@ -40,11 +40,10 @@ function buildRuntime(config: TradingStateRetentionConfig = retention()): {
   events: EventFactory;
 } {
   const bus = new EventBus(silentLogger);
-  const created = TradingHotState.create(config, new PaperClock(new Date(0)));
+  const created = TradingStateProjector.create(bus, config, new PaperClock(new Date(0)));
   if (isErr(created)) throw created.error;
-  const projector = new TradingStateProjector(bus, created.value);
-  projector.start();
-  return { bus, view: projector.state(), projector, events: new EventFactory() };
+  created.value.start();
+  return { bus, view: created.value.state(), projector: created.value, events: new EventFactory() };
 }
 
 describe('A. Ленивое создание рынка', () => {
@@ -74,22 +73,28 @@ describe('A. Ленивое создание рынка', () => {
 });
 
 describe('B. Несколько наблюдений одного инструмента', () => {
-  it('оба снимка лежат в истории, текущий — последний', async () => {
+  it('все снимки в истории по порядку, текущий — последний, версия по числу событий', async () => {
     const { bus, view, events } = buildRuntime();
-    events.observeAt(1_000);
-    await bus.publish(
-      events.bookDepth({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, bid: 0.4, sourceTimestampMs: 900 }),
-    );
-    events.observeAt(2_000);
-    await bus.publish(
-      events.bookDepth({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, bid: 0.6, sourceTimestampMs: 1_900 }),
-    );
+
+    for (const [index, observedAt] of [1_000, 2_000, 3_000].entries()) {
+      events.observeAt(observedAt);
+      await bus.publish(
+        events.bookDepth({
+          venueId: POLYMARKET,
+          instrumentId: YES,
+          marketId: MARKET_X,
+          bid: 0.4 + index * 0.1,
+          sourceTimestampMs: observedAt - 100,
+        }),
+      );
+    }
 
     const books = view.getMarket(MARKET_X)?.getInstrument(YES)?.books;
-    expect(books?.size()).toBe(2);
+    expect(books?.size()).toBe(3);
+    expect(books?.getAll().map((o) => o.observedAt.toNumber())).toEqual([1_000, 2_000, 3_000]);
     // Текущее значение — это getLatest(), отдельного currentBook не существует.
-    expect(books?.getLatest()?.observedAt.toNumber()).toBe(2_000);
-    expect(books?.getAll()[0]?.observedAt.toNumber()).toBe(1_000);
+    expect(books?.getLatest()?.observedAt.toNumber()).toBe(3_000);
+    expect(view.getVersion()).toBe(3);
   });
 });
 
@@ -112,65 +117,6 @@ describe('C. Изоляция YES и NO', () => {
     expect(market?.getInstrument(NO)?.books.size()).toBe(1);
     expect(market?.getInstrument(YES)?.publicTrades.size()).toBe(1);
     expect(market?.getInstrument(NO)?.publicTrades.size()).toBe(0);
-  });
-});
-
-describe('D. Верхушка стакана отдельно от полного снимка', () => {
-  it('BOOK_UPDATED и BOOK_DEPTH ведут независимые ряды', async () => {
-    const { bus, view, events } = buildRuntime();
-    events.observeAt(1_000);
-    await bus.publish(
-      events.bookUpdated({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, sequenceNumber: 1, bestBid: 0.4, bestAsk: 0.6, sourceTimestampMs: 900 }),
-    );
-    events.observeAt(1_100);
-    await bus.publish(
-      events.bookDepth({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, bid: 0.4, sourceTimestampMs: 950 }),
-    );
-
-    const instrument = view.getMarket(MARKET_X)?.getInstrument(YES);
-    expect(instrument?.topOfBooks.size()).toBe(1);
-    expect(instrument?.books.size()).toBe(1);
-  });
-});
-
-describe('E. Устаревший BOOK_UPDATED', () => {
-  it('повторный номер не откатывает состояние и не двигает версию', async () => {
-    const { bus, view, events } = buildRuntime();
-    const publish = async (sequenceNumber: number, observedAt: number): Promise<void> => {
-      events.observeAt(observedAt);
-      await bus.publish(
-        events.bookUpdated({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, sequenceNumber, bestBid: 0.4, sourceTimestampMs: observedAt - 100 }),
-      );
-    };
-
-    await publish(10, 1_000);
-    await publish(11, 1_100);
-    const versionBeforeStale = view.getVersion();
-    await publish(10, 1_200);
-
-    const topOfBooks = view.getMarket(MARKET_X)?.getInstrument(YES)?.topOfBooks;
-    expect(topOfBooks?.size()).toBe(2);
-    expect(topOfBooks?.getAll().map((o) => o.sequenceNumber)).toEqual([10, 11]);
-    expect(topOfBooks?.getLatest()?.sequenceNumber).toBe(11);
-    expect(view.getVersion()).toBe(versionBeforeStale);
-  });
-});
-
-describe('F. Разрыв в номерах BOOK_UPDATED', () => {
-  it('оба обновления принимаются, восстановление не изобретается', async () => {
-    const { bus, view, events } = buildRuntime();
-    events.observeAt(1_000);
-    await bus.publish(
-      events.bookUpdated({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, sequenceNumber: 10, bestBid: 0.4, sourceTimestampMs: 900 }),
-    );
-    events.observeAt(1_100);
-    await bus.publish(
-      events.bookUpdated({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, sequenceNumber: 15, bestBid: 0.45, sourceTimestampMs: 1_000 }),
-    );
-
-    const topOfBooks = view.getMarket(MARKET_X)?.getInstrument(YES)?.topOfBooks;
-    expect(topOfBooks?.getAll().map((o) => o.sequenceNumber)).toEqual([10, 15]);
-    expect(view.getVersion()).toBe(2);
   });
 });
 
@@ -330,6 +276,57 @@ describe('P. Жизненный цикл проектора', () => {
 
     expect(view.getVersion()).toBe(versionAtStop);
     expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.books.size()).toBe(1);
+  });
+});
+
+describe('R. Идентичность внутри снимка стакана', () => {
+  it('снимок чужого инструмента не ложится под ключ события', async () => {
+    const { bus, view, events } = buildRuntime();
+    events.observeAt(1_000);
+
+    const result = await bus.publish(
+      events.bookDepth({
+        venueId: POLYMARKET,
+        instrumentId: YES,
+        marketId: MARKET_X,
+        bid: 0.5,
+        sourceTimestampMs: 900,
+        // Внутри снимка — ДРУГОЙ инструмент.
+        snapshotOverride: { instrumentId: NO },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    // Ничего не создано: отказ произошёл ДО мутации.
+    expect(view.getMarket(MARKET_X)).toBeUndefined();
+    expect(view.getVersion()).toBe(0);
+  });
+
+  it('снимок чужого рынка тоже отвергается', async () => {
+    const { bus, view, events } = buildRuntime();
+    events.observeAt(1_000);
+
+    const result = await bus.publish(
+      events.bookDepth({
+        venueId: POLYMARKET,
+        instrumentId: YES,
+        marketId: MARKET_X,
+        bid: 0.5,
+        sourceTimestampMs: 900,
+        snapshotOverride: { marketId: MARKET_Y },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(view.getVersion()).toBe(0);
+  });
+
+  it('ошибка называет разошедшееся поле и обе стороны', () => {
+    const error = new BookIdentityMismatchError('instrumentId', YES, NO);
+    expect(error.field).toBe('instrumentId');
+    expect(error.inPayload).toBe(YES);
+    expect(error.inSnapshot).toBe(NO);
+    expect(error.severity).toBe('critical');
   });
 });
 

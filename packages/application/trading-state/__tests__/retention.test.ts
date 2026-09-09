@@ -11,7 +11,7 @@ import { describe, expect, it } from '@jest/globals';
 import { EventBus } from '@polymarket/event-bus';
 import { PaperClock } from '@polymarket/time';
 import { isErr, isOk } from '@polymarket/result';
-import { TradingHotState, TradingStateProjector } from '../src/index.js';
+import { TradingStateProjector } from '../src/index.js';
 import {
   EventFactory,
   MARKET_X,
@@ -25,11 +25,10 @@ import type { TradingStateRetentionConfig } from '../src/index.js';
 /** Собирает рантайм с заданным хранением. */
 function build(config: TradingStateRetentionConfig) {
   const bus = new EventBus(silentLogger);
-  const created = TradingHotState.create(config, new PaperClock(new Date(0)));
+  const created = TradingStateProjector.create(bus, config, new PaperClock(new Date(0)));
   if (isErr(created)) throw created.error;
-  const projector = new TradingStateProjector(bus, created.value);
-  projector.start();
-  return { bus, view: projector.state(), events: new EventFactory() };
+  created.value.start();
+  return { bus, view: created.value.state(), events: new EventFactory() };
 }
 
 describe('L. Вытеснение по количеству', () => {
@@ -135,7 +134,8 @@ describe('N. Обратный ход времени площадки', () => {
 describe('Валидация политик хранения', () => {
   it('пустая политика отвергается при создании состояния, а не на живом событии', () => {
     const config = retention();
-    const created = TradingHotState.create(
+    const created = TradingStateProjector.create(
+      new EventBus(silentLogger),
       { ...config, market: { ...config.market, books: {} } },
       new PaperClock(new Date(0)),
     );
@@ -148,7 +148,8 @@ describe('Валидация политик хранения', () => {
 
   it('отрицательный maxCount отвергается с указанием пути в конфиге', () => {
     const config = retention();
-    const created = TradingHotState.create(
+    const created = TradingStateProjector.create(
+      new EventBus(silentLogger),
       { ...config, referencePrices: { maxCount: -1 } },
       new PaperClock(new Date(0)),
     );
@@ -160,6 +161,47 @@ describe('Валидация политик хранения', () => {
   });
 
   it('корректный конфиг проходит', () => {
-    expect(isOk(TradingHotState.create(retention(), new PaperClock(new Date(0))))).toBe(true);
+    expect(
+      isOk(TradingStateProjector.create(new EventBus(silentLogger), retention(), new PaperClock(new Date(0)))),
+    ).toBe(true);
+  });
+});
+
+describe('Владение конфигурацией хранения', () => {
+  it('изменение исходного конфига после создания на состояние не влияет', async () => {
+    // Вызывающий держит MUTABLE-ссылку на политику. `readonly` — свойство
+    // типа, а не объекта, и такое изменение легально.
+    const booksPolicy = { maxCount: 3 };
+    const config: TradingStateRetentionConfig = {
+      market: { books: booksPolicy, trades: { maxCount: 100 } },
+      shared: { books: { maxCount: 100 }, trades: { maxCount: 100 } },
+      referencePrices: { maxCount: 100 },
+    };
+
+    const bus = new EventBus(silentLogger);
+    const created = TradingStateProjector.create(bus, config, new PaperClock(new Date(0)));
+    if (isErr(created)) throw created.error;
+    created.value.start();
+    const view = created.value.state();
+    const events = new EventFactory();
+
+    // Проверенная конфигурация подменяется ПОСЛЕ создания.
+    booksPolicy.maxCount = 1;
+
+    for (const [index, observedAt] of [1_000, 1_100, 1_200].entries()) {
+      events.observeAt(observedAt);
+      await bus.publish(
+        events.bookDepth({
+          venueId: POLYMARKET,
+          instrumentId: YES,
+          marketId: MARKET_X,
+          bid: 0.4 + index * 0.05,
+          sourceTimestampMs: observedAt - 50,
+        }),
+      );
+    }
+
+    // Осталось три записи, как было настроено при создании, а не одна.
+    expect(view.getMarket(MARKET_X)?.getInstrument(YES)?.books.size()).toBe(3);
   });
 });

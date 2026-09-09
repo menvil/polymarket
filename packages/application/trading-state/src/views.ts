@@ -3,13 +3,13 @@
  *
  * @remarks
  * Стратегия читает hot state, но дописывать в него не должна: единственный
- * writer — {@link TradingStateProjector}. Если отдать наружу
- * `RollingWindow` или `Map`, любой потребитель сможет незаметно изменить
- * состояние, и владелец перестанет быть единственным.
+ * writer — `TradingStateProjector`. Поэтому наружу из пакета выходят только
+ * эти интерфейсы, а конкретные mutable-классы не экспортируются вовсе —
+ * иначе правило «один писатель» осталось бы комментарием, который ничто не
+ * проверяет.
  *
- * Поэтому наружу выходят интерфейсы без мутаций. `RollingWindow<T>`
- * структурно реализует {@link RollingWindowView} — приведение бесплатно,
- * копирования нет.
+ * `RollingWindow<T>` структурно реализует {@link RollingWindowView} —
+ * приведение бесплатно, копирования нет.
  *
  * Глубоких копий при чтении НЕ делается: это горячий путь, а окно может
  * содержать десятки тысяч записей. Возвращаемые массивы объявлены
@@ -22,7 +22,6 @@ import type {
   ReferencePriceObservation,
   ReferencePriceSeriesKey,
   TickSizeState,
-  TopOfBookObservation,
 } from './observations.js';
 
 /**
@@ -40,11 +39,23 @@ import type {
 export interface RollingWindowView<T> {
   /** Последнее наблюдение либо `undefined` для пустого ряда */
   getLatest(): T | undefined;
-  /** Наблюдения за последние `durationMs` относительно `nowMs` (или часов) */
-  getRecent(durationMs: number, nowMs?: number): readonly T[];
+  /**
+   * Наблюдения за последние `durationMs` относительно `nowMs`.
+   *
+   * @remarks
+   * `nowMs` ОБЯЗАТЕЛЕН — в отличие от `RollingWindow`, где он необязателен и
+   * при отсутствии берётся из часов. Через эту проекцию состояние не должно
+   * незаметно обращаться к живым часам: тогда одна и та же история давала бы
+   * разные ответы в зависимости от момента чтения, и replay перестал бы
+   * совпадать с торговлей.
+   *
+   * Момент отсчёта — забота вызывающего: будущий `TradingContext` возьмёт
+   * его из времени наблюдения, на котором принимается решение.
+   */
+  getRecent(durationMs: number, nowMs: number): readonly T[];
   /** Последние `n` наблюдений */
   getLast(n: number): readonly T[];
-  /** Наблюдения в полуинтервале времени */
+  /** Наблюдения в интервале времени */
   getWindow(fromMs: number, toMs: number): readonly T[];
   /** Все наблюдения ряда */
   getAll(): readonly T[];
@@ -58,9 +69,12 @@ export interface RollingWindowView<T> {
 export interface MarketInstrumentStateView {
   /** Идентичность инструмента */
   readonly instrumentId: InstrumentId;
-  /** История верхушки стакана (`BOOK_UPDATED`) */
-  readonly topOfBooks: RollingWindowView<TopOfBookObservation>;
-  /** История полных снимков стакана (`BOOK_DEPTH`) */
+  /**
+   * История полных снимков стакана (`BOOK_DEPTH`).
+   *
+   * @remarks
+   * Текущий стакан — это `books.getLatest()`. Отдельного `currentBook` нет.
+   */
   readonly books: RollingWindowView<BookObservation>;
   /** История публичных сделок (`TRADE_RECEIVED`) */
   readonly publicTrades: RollingWindowView<PublicTradeObservation>;
@@ -90,8 +104,6 @@ export interface SharedInstrumentStateView {
   readonly venueId: VenueId;
   /** Инструмент площадки */
   readonly instrumentId: InstrumentId;
-  /** История верхушки стакана */
-  readonly topOfBooks: RollingWindowView<TopOfBookObservation>;
   /** История полных снимков стакана */
   readonly books: RollingWindowView<BookObservation>;
   /** История публичных сделок */
@@ -102,8 +114,7 @@ export interface SharedInstrumentStateView {
  * Hot state — только чтение.
  *
  * @remarks
- * Это тип, который получают потребители. Конкретный `TradingHotState`
- * реализует его и добавляет мутации, доступные только проектору.
+ * Единственный тип состояния, доступный за пределами пакета.
  *
  * @example
  * ```typescript

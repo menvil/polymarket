@@ -16,11 +16,16 @@
  *
  * Wall-clock (`Date.now()`) не используется нигде.
  */
-import type { InstrumentId, MarketDataSourceId, VenueTradeId } from '@polymarket/ids';
+import type { AssetSymbolId, MarketDataSourceId, VenueTradeId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { Orderbook } from '@polymarket/orderbook';
-import type { TopOfBook } from '@polymarket/application-events';
-import type { AssetPrice, DecimalPrice, Quantity, Side } from '@polymarket/value-objects';
+import type {
+  AssetPrice,
+  DecimalPrice,
+  OutcomePrice,
+  Quantity,
+  Side,
+} from '@polymarket/value-objects';
 
 /** Общая часть любого наблюдения: когда мы его увидели. */
 export interface Observation {
@@ -34,28 +39,15 @@ export interface Observation {
 }
 
 /**
- * Верхушка стакана в момент наблюдения.
+ * Снимок полного стакана в момент наблюдения.
  *
  * @remarks
- * Не путать с полным стаканом: `BOOK_UPDATED` несёт только лучшие цены и
- * их объёмы, а `BOOK_DEPTH` — снимок целиком. Это разные ряды.
+ * Единственный источник состояния стакана. Отдельного ряда «верхушки» нет:
+ * оба семантических адаптера публикуют `BOOK_DEPTH` на каждое принятое
+ * изменение книги, а `BOOK_UPDATED` выводят из ТОГО ЖЕ снимка и только при
+ * изменении верхушки. Держать оба ряда значило бы хранить одни и те же
+ * данные дважды — верхушка получается из `snapshot` вычислением.
  */
-export interface TopOfBookObservation extends Observation {
-  /** Лучшие bid/ask и их объёмы */
-  readonly topOfBook: TopOfBook<DecimalPrice>;
-  /**
-   * Монотонный номер обновления для одного инструмента.
-   *
-   * @remarks
-   * По нему отбрасываются устаревшие и повторные обновления — см.
-   * {@link MarketInstrumentState}.
-   */
-  readonly sequenceNumber: number;
-  /** Время площадки из payload — данные, не порядок */
-  readonly sourceTimestamp: Timestamp;
-}
-
-/** Снимок полного стакана в момент наблюдения. */
 export interface BookObservation extends Observation {
   /**
    * Снимок стакана.
@@ -100,40 +92,58 @@ export interface ReferencePriceObservation extends Observation {
   readonly receivedAt: Timestamp;
 }
 
-/** Текущий шаг цены инструмента. */
+/**
+ * Текущий шаг цены инструмента.
+ *
+ * @remarks
+ * `OutcomePrice`, а не более широкий `DecimalPrice`: canonical
+ * `TICK_SIZE_CHANGED` объявлен market-scoped и несёт именно цену исхода.
+ * Расширять тип здесь значило бы ослабить границу, на которую будет
+ * опираться execution-слой.
+ */
 export interface TickSizeState {
   /** Действующий шаг */
-  readonly tickSize: DecimalPrice;
+  readonly tickSize: OutcomePrice;
   /** Время площадки из payload */
   readonly sourceTimestamp: Timestamp;
   /** Момент наблюдения смены */
   readonly observedAt: Timestamp;
 }
 
-/** Ключ инструмента внутри shared-состояния. */
-export interface SharedInstrumentKey {
-  /** Площадка */
-  readonly venueId: string;
-  /** Инструмент площадки */
-  readonly instrumentId: InstrumentId;
-}
-
-/** Идентичность ряда референсных цен. */
-export interface ReferencePriceSeriesKey {
+/** Общая часть идентичности ряда референсных цен. */
+interface ReferencePriceSeriesIdentity {
   /** Источник данных */
   readonly sourceId: MarketDataSourceId;
   /** Базовый актив */
-  readonly baseAsset: string;
+  readonly baseAsset: AssetSymbolId;
   /** Котируемый актив */
-  readonly quoteAsset: string;
-  /** Вид фида */
-  readonly kind: 'SPOT' | 'TWAP';
-  /**
-   * Окно усреднения TWAP в секундах.
-   *
-   * @remarks
-   * Обязателен для `TWAP` и отсутствует у `SPOT`. TWAP 30 и TWAP 60 —
-   * разные ряды, склеивать их нельзя.
-   */
-  readonly windowSeconds?: number;
+  readonly quoteAsset: AssetSymbolId;
 }
+
+/**
+ * Идентичность ряда референсных цен.
+ *
+ * @remarks
+ * Размеченное объединение, а не «`kind` + необязательное окно»: у TWAP окно
+ * усреднения обязано существовать, и тип обязан это гарантировать. Прежняя
+ * форма разрешала бессмысленное `{ kind: 'TWAP' }`, а реализация молча
+ * подставляла окно `0` — то есть заводила ряд, которого в природе нет.
+ *
+ * @example
+ * ```typescript
+ * const spot: ReferencePriceSeriesKey = { sourceId, baseAsset, quoteAsset, kind: 'SPOT' };
+ * const twap: ReferencePriceSeriesKey = { sourceId, baseAsset, quoteAsset, kind: 'TWAP', windowSeconds: 30 };
+ * // Не компилируется: { sourceId, baseAsset, quoteAsset, kind: 'TWAP' }
+ * ```
+ */
+export type ReferencePriceSeriesKey =
+  | (ReferencePriceSeriesIdentity & {
+      /** Спотовая цена — окна усреднения нет */
+      readonly kind: 'SPOT';
+    })
+  | (ReferencePriceSeriesIdentity & {
+      /** Усреднённая цена */
+      readonly kind: 'TWAP';
+      /** Окно усреднения в секундах: TWAP 30 и TWAP 60 — разные ряды */
+      readonly windowSeconds: number;
+    });

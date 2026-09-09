@@ -18,8 +18,6 @@ import type { RetentionPolicy } from '@polymarket/rolling-window';
 
 /** Глубина рядов для одного набора инструментов. */
 export interface InstrumentRetentionConfig {
-  /** История верхушки стакана (`BOOK_UPDATED`) */
-  readonly topOfBooks: RetentionPolicy;
   /** История полных снимков стакана (`BOOK_DEPTH`) */
   readonly books: RetentionPolicy;
   /** История публичных сделок (`TRADE_RECEIVED`) */
@@ -38,16 +36,8 @@ export interface InstrumentRetentionConfig {
  * @example
  * ```typescript
  * const retention: TradingStateRetentionConfig = {
- *   market: {
- *     topOfBooks: { maxCount: 512 },
- *     books:      { maxCount: 64 },
- *     trades:     { maxCount: 256, maxAgeMs: 600_000 },
- *   },
- *   shared: {
- *     topOfBooks: { maxAgeMs: 300_000 },
- *     books:      { maxCount: 32 },
- *     trades:     { maxAgeMs: 900_000 },
- *   },
+ *   market: { books: { maxCount: 64 }, trades: { maxCount: 256, maxAgeMs: 600_000 } },
+ *   shared: { books: { maxCount: 32 }, trades: { maxAgeMs: 900_000 } },
  *   referencePrices: { maxCount: 1_024 },
  * };
  * ```
@@ -66,12 +56,51 @@ export function retentionPolicyEntries(
   config: TradingStateRetentionConfig,
 ): ReadonlyArray<readonly [string, RetentionPolicy]> {
   return [
-    ['market.topOfBooks', config.market.topOfBooks],
     ['market.books', config.market.books],
     ['market.trades', config.market.trades],
-    ['shared.topOfBooks', config.shared.topOfBooks],
     ['shared.books', config.shared.books],
     ['shared.trades', config.shared.trades],
     ['referencePrices', config.referencePrices],
   ];
+}
+
+/**
+ * Делает собственную неизменяемую копию конфигурации.
+ *
+ * @param config - Конфигурация, переданная вызывающим
+ * @returns Копия, на которую внешний код не может повлиять
+ *
+ * @remarks
+ * `readonly` в TypeScript — свойство ТИПА, а не объекта: вызывающий может
+ * держать mutable-ссылку на тот же литерал и изменить `maxCount` после
+ * того, как конфигурация уже проверена и по ней созданы ряды. Тогда
+ * поведение рантайма поменялось бы без единого события.
+ *
+ * Поэтому значения копируются, а результат замораживается. `RollingWindow`
+ * получает уже нашу копию политики, а не чужую ссылку.
+ *
+ * @example
+ * ```typescript
+ * const policy = { maxCount: 100 };
+ * const owned = freezeRetentionConfig({ market: { books: policy, … }, … });
+ * policy.maxCount = 1;          // на состояние больше не влияет
+ * ```
+ */
+export function freezeRetentionConfig(
+  config: TradingStateRetentionConfig,
+): TradingStateRetentionConfig {
+  const policy = (source: RetentionPolicy): RetentionPolicy =>
+    Object.freeze({
+      ...(source.maxCount === undefined ? {} : { maxCount: source.maxCount }),
+      ...(source.maxAgeMs === undefined ? {} : { maxAgeMs: source.maxAgeMs }),
+    });
+
+  const instruments = (source: InstrumentRetentionConfig): InstrumentRetentionConfig =>
+    Object.freeze({ books: policy(source.books), trades: policy(source.trades) });
+
+  return Object.freeze({
+    market: instruments(config.market),
+    shared: instruments(config.shared),
+    referencePrices: policy(config.referencePrices),
+  });
 }

@@ -22,6 +22,7 @@ import { Err, Ok, type Result, isErr } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { RollingWindow } from '@polymarket/rolling-window';
 import {
+  freezeRetentionConfig,
   retentionPolicyEntries,
   type TradingStateRetentionConfig,
 } from './TradingStateRetentionConfig.js';
@@ -34,7 +35,6 @@ import type {
   ReferencePriceObservation,
   ReferencePriceSeriesKey,
   TickSizeState,
-  TopOfBookObservation,
 } from './observations.js';
 import type {
   MarketRuntimeStateView,
@@ -192,6 +192,9 @@ export class TradingHotState implements TradingHotStateView {
    * конфигурация должна падать при сборке рантайма, а не посреди торгов,
    * когда первый рынок наконец пришлёт стакан.
    *
+   * Проверенный конфиг копируется и замораживается — состояние владеет
+   * своей копией и не зависит от того, что вызывающий сделает со своей.
+   *
    * @example
    * ```typescript
    * const state = TradingHotState.create(retention, clock);
@@ -216,7 +219,10 @@ export class TradingHotState implements TradingHotStateView {
         );
       }
     }
-    return Ok(new TradingHotState(config, clock));
+    // Собственная замороженная копия: `readonly` — свойство типа, а не
+    // объекта, и вызывающий мог бы изменить уже проверенный конфиг через
+    // свою mutable-ссылку, поменяв поведение рантайма без единого события.
+    return Ok(new TradingHotState(freezeRetentionConfig(config), clock));
   }
 
   // ── Read API ────────────────────────────────────────────────────────────────
@@ -263,28 +269,6 @@ export class TradingHotState implements TradingHotStateView {
   }
 
   // ── Мутации (только для проектора) ─────────────────────────────────────────
-
-  /**
-   * Применяет наблюдение верхушки стакана.
-   *
-   * @param target - Рынок и инструмент либо площадка и инструмент
-   * @param observation - Наблюдение с монотонным номером
-   * @returns `Ok(true)`, если наблюдение принято и версия увеличена
-   *
-   * @remarks
-   * Устаревшее или повторное обновление возвращает `Ok(false)`: состояние не
-   * меняется и версия не растёт.
-   */
-  public applyTopOfBook(
-    target: ObservationTarget,
-    observation: TopOfBookObservation,
-  ): Result<boolean, ValidationError | InstrumentMarketConflictError> {
-    const instrument = this._resolveInstrument(target);
-    if (isErr(instrument)) return instrument;
-    const accepted = instrument.value.applyTopOfBook(observation);
-    if (accepted) this._version += 1;
-    return Ok(accepted);
-  }
 
   /**
    * Применяет снимок стакана.

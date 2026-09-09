@@ -16,7 +16,7 @@ import { PaperClock } from '@polymarket/time';
 import { isErr } from '@polymarket/result';
 import type { EventBusEvent } from '@polymarket/event-bus';
 import type { MarketDataSourceId } from '@polymarket/ids';
-import { TradingHotState, TradingStateProjector, type TradingHotStateView } from '../src/index.js';
+import { TradingStateProjector, type TradingHotStateView } from '../src/index.js';
 import {
   BINANCE,
   BTC_USDT,
@@ -25,6 +25,7 @@ import {
   NO,
   POLYMARKET,
   YES,
+  asset,
   retention,
   silentLogger,
 } from './helpers/fixtures.js';
@@ -39,15 +40,15 @@ function buildTape(): readonly EventBusEvent[] {
   events.observeAt(1_000);
   tape.push(events.bookDepth({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, bid: 0.4, sourceTimestampMs: 900 }));
   events.observeAt(1_100);
-  tape.push(events.bookUpdated({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, sequenceNumber: 1, bestBid: 0.41, sourceTimestampMs: 1_000 }));
+  tape.push(events.bookDepth({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, bid: 0.41, sourceTimestampMs: 1_000 }));
   events.observeAt(1_200);
-  tape.push(events.bookUpdated({ venueId: POLYMARKET, instrumentId: YES, marketId: MARKET_X, sequenceNumber: 1, bestBid: 0.42, sourceTimestampMs: 1_100 }));
+  tape.push(events.bookDepth({ venueId: POLYMARKET, instrumentId: NO, marketId: MARKET_X, bid: 0.59, sourceTimestampMs: 1_100 }));
   events.observeAt(1_300);
   tape.push(events.tradeReceived({ venueId: POLYMARKET, instrumentId: NO, marketId: MARKET_X, price: 0.6, size: 3, side: 'SELL', sourceTimestampMs: 1_250 }));
   events.observeAt(1_400);
   tape.push(events.bookDepth({ venueId: BINANCE, instrumentId: BTC_USDT, bid: 0.5, sourceTimestampMs: 1_350 }));
   events.observeAt(1_500);
-  tape.push(events.referencePrice({ sourceId: SOURCE, baseAsset: 'BTC', quoteAsset: 'USD', nativeSymbol: 'BTCUSD', feed: { kind: 'TWAP', windowSeconds: 30 }, value: 70_000, venueTimestampMs: 1_450, receivedAtMs: 1_480 }));
+  tape.push(events.referencePrice({ sourceId: SOURCE, baseAsset: asset('BTC'), quoteAsset: asset('USD'), nativeSymbol: 'BTCUSD', feed: { kind: 'TWAP', windowSeconds: 30 }, value: 70_000, venueTimestampMs: 1_450, receivedAtMs: 1_480 }));
   events.observeAt(1_600);
   tape.push(events.tickSizeChanged({ marketId: MARKET_X, instrumentId: YES, newTickSize: 0.01, sourceTimestampMs: 1_550 }));
 
@@ -57,12 +58,11 @@ function buildTape(): readonly EventBusEvent[] {
 /** Применяет ленту к свежему состоянию. */
 async function project(tape: readonly EventBusEvent[]): Promise<TradingHotStateView> {
   const bus = new EventBus(silentLogger);
-  const created = TradingHotState.create(retention(), new PaperClock(new Date(0)));
+  const created = TradingStateProjector.create(bus, retention(), new PaperClock(new Date(0)));
   if (isErr(created)) throw created.error;
-  const projector = new TradingStateProjector(bus, created.value);
-  projector.start();
+  created.value.start();
   for (const event of tape) await bus.publish(event);
-  return projector.state();
+  return created.value.state();
 }
 
 /** Снимает читаемый срез состояния для сравнения. */
@@ -77,7 +77,6 @@ function snapshot(view: TradingHotStateView): unknown {
           const instrument = market.getInstrument(instrumentId);
           return {
             instrumentId,
-            topOfBooks: instrument?.topOfBooks.getAll().map((o) => [o.sequenceNumber, o.observedAt.toNumber()]),
             books: instrument?.books.getAll().map((o) => o.observedAt.toNumber()),
             trades: instrument?.publicTrades.getAll().map((o) => [o.side, o.size.toNumber(), o.observedAt.toNumber()]),
             tickSize: instrument?.tickSize?.tickSize.value().toString(),
@@ -106,12 +105,11 @@ describe('Детерминизм проекции', () => {
     expect(second).toEqual(first);
   });
 
-  it('версия отражает принятые события, а не длину ленты', async () => {
+  it('версия равна числу принятых наблюдений', async () => {
     const tape = buildTape();
     const view = await project(tape);
 
-    // В ленте 7 событий, но одно BOOK_UPDATED — повтор номера 1 и отвергнуто.
     expect(tape).toHaveLength(7);
-    expect(view.getVersion()).toBe(6);
+    expect(view.getVersion()).toBe(7);
   });
 });
