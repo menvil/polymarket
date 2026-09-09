@@ -1,0 +1,13 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@polymarket/rolling-window":     ["../../foundation/rolling-window/dist/index.d.ts"],
+      "@polymarket/application-events": ["../events/dist/index.d.ts"],
+      "@polymarket/event-bus":          ["../event-bus/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
