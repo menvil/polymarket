@@ -1,0 +1,32 @@
+packages/application/use-cases/__tests__/PortfolioService.test.ts
+  s_73852eac4506dc::t_8f3766867def25 68-76,89-91
+  s_73852eac4506dc::t_6dbab499384492 32
+  s_73852eac4506dc::t_e6020b5feb308c 173-180,182-185,189,191-218
+packages/application/use-cases/__tests__/ProcessFillUseCase.test.ts
+  s_73852eac4506dc::t_9852de3f59e3ea 61-64
+  s_73852eac4506dc::t_9e0912340cf7ab 131-144,146,153,157-158,160-169
+packages/application/use-cases/src/services/PortfolioService.ts
+  s_73852eac4506dc::t_468b4c0bfbc891 11-12,14,16-18,21-22,25-27,29-31,355,701,888-889
+  s_73852eac4506dc::t_a7b8494d25c475 796-802,807-808,822-824
+  s_73852eac4506dc::t_4cf79fdfef3140 869-870
+  s_73852eac4506dc::t_0c91568aa4885a 927-937,939
+  s_73852eac4506dc::t_aeea7e380e9e03 430-446,449-451,466-482
+docs/guides/polymarket-fee-settlement.md
+  ai_agent 88-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c88f7cc5cfcf6ca27e5aed7a570729599730de32",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
