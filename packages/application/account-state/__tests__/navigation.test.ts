@@ -12,8 +12,8 @@
  * `Set`) исчезли вместе с ними.
  */
 import { describe, expect, it } from '@jest/globals';
-import { TERMINAL_STATUSES, type OrderStatus } from '@polymarket/order';
-import { OPEN_ORDER_STATUSES, type AccountRuntimeStateView } from '../src/index.js';
+import { OPEN_ORDER_STATUSES, TERMINAL_STATUSES, type OrderStatus } from '@polymarket/order';
+import { type AccountRuntimeStateView } from '../src/index.js';
 import {
   DOWN_TOKEN,
   UP_TOKEN,

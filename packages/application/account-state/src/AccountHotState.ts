@@ -18,6 +18,19 @@
  * └── version        принятые мутации по ВСЕМ аккаунтам
  * ```
  *
+ * ### Две оси у исполнения
+ *
+ * ```text
+ * status       APPLIED → CONFIRMED | REVERTED   что сделали МЫ с деньгами
+ * venueStatus  MATCHED → MINED → CONFIRMED      что говорит ПЛОЩАДКА
+ *                     ↘ RETRYING ↘ FAILED       (canonical TradeStatus)
+ * ```
+ *
+ * Схлопнуть их в одну нельзя: `MATCHED` — матчер Polymarket, `MINED` — блок
+ * Polygon, это утверждения о разных системах. А `REVERTED` — наше действие,
+ * которое может не иметь венного двойника вовсе (сверка откатит исполнение,
+ * которого на площадке не было).
+ *
  * ### Навигация — производные представления, а не хранимое состояние
  *
  * ```text
@@ -75,15 +88,27 @@ import {
   assetIdToInstrumentId,
   assetIdToString,
   AssetIdHelpers,
+  embeddedVenueId,
   type AccountId,
   type FillId,
   type InstrumentId,
   type OrderId,
   type VenueId,
 } from '@polymarket/ids';
-import type { Fill } from '@polymarket/fill';
-import type { Order, OrderStatus } from '@polymarket/order';
-import type { IPosition, Portfolio } from '@polymarket/portfolio';
+import {
+  classifyTradeStatusObservation,
+  findFillFactDifference,
+  type Fill,
+  type TradeStatus,
+} from '@polymarket/fill';
+import {
+  findOrderIdentityDifference,
+  sameOrderState,
+  OPEN_ORDER_STATUSES,
+  type Order,
+} from '@polymarket/order';
+import type { Portfolio } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import { Err, Ok, type Result } from '@polymarket/result';
 import type { Timestamp } from '@polymarket/timestamp';
 import {
@@ -97,40 +122,19 @@ import {
   AccountNotInitializedError,
   AccountOrderAccountMissingError,
   AccountOrderIdentityConflictError,
+  AccountFillTerminalVenueStatusConflictError,
   AccountPortfolioIdentityMismatchError,
   type AccountFillAction,
   type AccountStateError,
 } from './errors.js';
-import { findFillFactDifference } from './fillIdentity.js';
-import { accountKey, embeddedVenueId } from './identity.js';
-import { findOrderIdentityDifference, sameOrderState } from './orderIdentity.js';
+import { accountKey } from './identity.js';
+import { classifyFillTransition } from './records.js';
 import type { AccountFillRecord, AccountOrderRecord } from './records.js';
 import type {
   AccountHotStateView,
   AccountRuntimeStateView,
   TradingAccountIdentity,
 } from './views.js';
-
-/**
- * Статусы заявки, которые считаются живой экспозицией.
- *
- * @remarks
- * Перечислены ЯВНО, а не выведены как дополнение `TERMINAL_STATUSES`. Дело не
- * в текущем составе — сегодня это в точности дополнение, и тест полноты по
- * `TERMINAL_STATUSES` за этим следит. Дело в том, что новый нетерминальный
- * статус, добавленный в `@polymarket/order` завтра, при выводе через
- * отрицание молча стал бы «открытым». Здесь он сломает тест полноты и
- * потребует осознанного решения.
- *
- * `PENDING` входит СОЗНАТЕЛЬНО: заявка отправлена, деньги или токены под неё
- * зарезервированы, и для риска это уже принятое обязательство — независимо от
- * того, ответила площадка или нет.
- */
-export const OPEN_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus>([
-  'PENDING',
-  'OPEN',
-  'PARTIALLY_FILLED',
-]);
 
 /**
  * Изменения одной принятой мутации, вычисленные ДО записи.
@@ -255,7 +259,7 @@ class AccountRuntimeState implements AccountRuntimeStateView {
   }
 
   /** {@inheritDoc AccountRuntimeStateView.getPosition} */
-  public getPosition(instrumentId: InstrumentId): IPosition | undefined {
+  public getPosition(instrumentId: InstrumentId): Position | undefined {
     return this._portfolio.getPosition(instrumentId);
   }
 
@@ -546,20 +550,110 @@ export class AccountHotState implements AccountHotStateView {
     if (!stored.ok) return stored;
 
     const { account, record } = stored.value;
-    if (record.status === 'CONFIRMED') return Ok(undefined);
-    if (record.status === 'REVERTED') {
-      return Err(
-        new AccountFillTransitionError(
-          account.venueId,
-          account.accountId,
-          fill.id,
-          record.status,
-          'CONFIRMED',
-        ),
-      );
+    switch (classifyFillTransition(record.status, 'CONFIRMED')) {
+      case 'DUPLICATE':
+        return Ok(undefined);
+      case 'CONFLICT':
+        return Err(
+          new AccountFillTransitionError(
+            account.venueId,
+            account.accountId,
+            fill.id,
+            record.status,
+            'CONFIRMED',
+          ),
+        );
+      case 'ACCEPT':
+        break;
     }
 
     account.commit({ fill: { ...record, status: 'CONFIRMED', confirmedAt: at } }, at);
+    this._version += 1;
+    return Ok(undefined);
+  }
+
+  /**
+   * Записывает статус, о котором сообщила площадка.
+   *
+   * @param fill - Тот же canonical факт, что был применён
+   * @param venueStatus - Статус из наблюдения площадки
+   * @param at - `metadata.createdAt` события
+   * @returns `Ok(void)` при успехе или при дубликате, иначе непройденная проверка
+   *
+   * @remarks
+   * Ни портфель, ни заявка, ни runtime-статус НЕ меняются: это вторая,
+   * независимая ось. `MATCHED` говорит, что исполнение сматчил матчер
+   * Polymarket; `MINED` — что расчётная транзакция попала в блок Polygon. Оба
+   * наблюдения оставляют деньги ровно там, где они уже есть.
+   *
+   * Именно поэтому событие отдельное: `MINED` и `RETRYING` не имеют
+   * экономических двойников, и без него они бы просто терялись.
+   *
+   * ### Порядок доставки против порядка на площадке
+   *
+   * Площадка назад не ходит, но СООБЩЕНИЯ приходят не по порядку, и различать
+   * это обязательно:
+   *
+   * ```text
+   * current == incoming                      повтор            no-op
+   * терминальный → нетерминальный            запоздавшее старое no-op
+   * CONFIRMED ↔ FAILED                       два исхода         Err
+   * нетерминальный → любой                   принять
+   * ```
+   *
+   * `MINED` после `CONFIRMED` — это не «сделка перестала быть подтверждённой»,
+   * а наблюдение, сделанное РАНЬШЕ и доехавшее позже. Отвергать его нельзя:
+   * подписки проектора `critical`, и одно запоздавшее сообщение превращалось
+   * бы в аварийный отказ торгового контура.
+   *
+   * Единственное, что задержкой не объясняется, — два РАЗНЫХ терминальных
+   * исхода у одной сделки.
+   *
+   * @example
+   * ```typescript
+   * state.observeFillVenueStatus(fill, 'MINED', createdAt);
+   * ```
+   */
+  public observeFillVenueStatus(
+    fill: Fill,
+    venueStatus: TradeStatus,
+    at: Timestamp,
+  ): Result<void, AccountStateError> {
+    const stored = this._resolveStoredFill(fill, 'OBSERVE_VENUE_STATUS');
+    if (!stored.ok) return stored;
+
+    const { account, record } = stored.value;
+    const current = record.venueStatus;
+
+    // Само правило живёт в домене: оно выводится из контракта `TradeStatus` и
+    // одинаково для любого наблюдателя. Здесь остаётся только то, что домену
+    // знать неоткуда, — чем обернуть каждый исход в ЭТОМ состоянии.
+    if (current !== undefined) {
+      switch (classifyTradeStatusObservation(current, venueStatus)) {
+        case 'DUPLICATE':
+        case 'STALE':
+          // Состояние не меняется: либо повтор доставки, либо наблюдение,
+          // сделанное раньше и доехавшее позже. Записанный терминальный исход
+          // затирать промежуточным нечем.
+          return Ok(undefined);
+
+        case 'CONFLICT':
+          return Err(
+            new AccountFillTerminalVenueStatusConflictError(
+              account.venueId,
+              account.accountId,
+              fill.id,
+              current,
+              venueStatus,
+            ),
+          );
+
+        case 'ACCEPT':
+          break;
+      }
+    }
+
+    account.commit({ fill: { ...record, venueStatus, venueStatusAt: at } }, at);
     this._version += 1;
     return Ok(undefined);
   }
@@ -604,17 +698,21 @@ export class AccountHotState implements AccountHotStateView {
         new AccountFillNotFoundError(account.venueId, account.accountId, fill.id, 'REVERT'),
       );
     }
-    if (record.status === 'REVERTED') return Ok(undefined);
-    if (record.status === 'CONFIRMED') {
-      return Err(
-        new AccountFillTransitionError(
-          account.venueId,
-          account.accountId,
-          fill.id,
-          record.status,
-          'REVERTED',
-        ),
-      );
+    switch (classifyFillTransition(record.status, 'REVERTED')) {
+      case 'DUPLICATE':
+        return Ok(undefined);
+      case 'CONFLICT':
+        return Err(
+          new AccountFillTransitionError(
+            account.venueId,
+            account.accountId,
+            fill.id,
+            record.status,
+            'REVERTED',
+          ),
+        );
+      case 'ACCEPT':
+        break;
     }
 
     account.commit(
@@ -740,19 +838,26 @@ export class AccountHotState implements AccountHotStateView {
    * @returns Аккаунт и запись либо первая непройденная проверка
    *
    * @remarks
-   * Используется подтверждением: оно не несёт ни портфеля, ни заявки, поэтому
-   * его валидация короче — аккаунт, наличие записи, совпадение факта.
+   * Используется подтверждением и наблюдением статуса площадки: ни то, ни
+   * другое не несёт портфеля или заявки, поэтому валидация короче — аккаунт,
+   * наличие записи, совпадение факта.
    */
   private _resolveStoredFill(
     fill: Fill,
-    action: Extract<AccountFillAction, 'CONFIRM'>,
+    action: Extract<AccountFillAction, 'CONFIRM' | 'OBSERVE_VENUE_STATUS'>,
   ): Result<{ account: AccountRuntimeState; record: AccountFillRecord }, AccountStateError> {
     const venueId = fill.venueId;
     const accountId = fill.accountId;
 
     const account = this._resolve(venueId, accountId);
     if (account === undefined) {
-      return Err(new AccountNotInitializedError(venueId, accountId, 'FILL_CONFIRMED'));
+      return Err(
+        new AccountNotInitializedError(
+          venueId,
+          accountId,
+          action === 'CONFIRM' ? 'FILL_CONFIRMED' : 'FILL_VENUE_STATUS_OBSERVED',
+        ),
+      );
     }
 
     const record = account.getFill(fill.id);

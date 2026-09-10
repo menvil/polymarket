@@ -874,3 +874,49 @@ export function isVenueAccount(id: AccountId): id is Extract<AccountId, { kind: 
 export function isSubaccount(id: AccountId): id is Extract<AccountId, { kind: 'SUBACCOUNT' }> {
   return id.kind === 'SUBACCOUNT';
 }
+
+/**
+ * Площадка, «встроенная» в сам `AccountId`, если она там есть.
+ *
+ * @param id - Идентификатор аккаунта
+ * @returns `VenueId` для VENUE-аккаунта и для SUBACCOUNT с VENUE-корнем;
+ *   `undefined` для WALLET-аккаунта и для SUBACCOUNT с WALLET-корнем
+ *
+ * @remarks
+ * `AccountId` бывает трёх видов, и площадку содержит только один из них:
+ *
+ * ```text
+ * WALLET       0x1234…              venue НЕ задан
+ * VENUE        POLYMARKET:user_1    venue задан явно
+ * SUBACCOUNT   base + name          venue = venue корня
+ * ```
+ *
+ * У WALLET-аккаунта отсутствие площадки — норма, а не дефект: один и тот же
+ * кошелёк торгует на нескольких площадках. Поэтому `undefined` означает
+ * «проверять нечего», а не «проверка не прошла», и вызывающий на нём обычно
+ * просто пропускает venue-сверку.
+ *
+ * Раскрутка ограничена тем же числом итераций, что и
+ * {@link getSubaccountDepth}: испорченная структура даёт `undefined`, а не
+ * бесконечный цикл. Отдельного `WeakSet` здесь не нужно — в отличие от
+ * подсчёта глубины, различать «цикл» и «слишком глубоко» незачем: оба случая
+ * означают ровно одно — площадку из такого идентификатора не достать.
+ *
+ * @example
+ * ```typescript
+ * embeddedVenueId(accountIdFromWallet(address));               // → undefined
+ * embeddedVenueId(venueAccount);                               // → 'POLYMARKET'
+ * embeddedVenueId(accountIdForSubaccount(venueAccount, 'a'));  // → 'POLYMARKET'
+ * ```
+ */
+export function embeddedVenueId(id: AccountId): VenueId | undefined {
+  const MAX_ITERATIONS = MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN;
+
+  let current: AccountId = id;
+  for (let step = 0; step < MAX_ITERATIONS; step += 1) {
+    if (isVenueAccount(current)) return current.venueId;
+    if (!isSubaccount(current)) return undefined;
+    current = current.base;
+  }
+  return undefined;
+}

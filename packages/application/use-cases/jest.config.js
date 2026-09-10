@@ -21,6 +21,7 @@ export default {
     '^@polymarket/fill$':                    '<rootDir>/../../domain/entities/fill/src/index.ts',
     '^@polymarket/portfolio$':               '<rootDir>/../../domain/entities/portfolio/src/index.ts',
     '^@polymarket/position$':                '<rootDir>/../../domain/entities/position/src/index.ts',
+    '^@polymarket/orderbook$':               '<rootDir>/../../domain/entities/orderbook/src/index.ts',
     '^@polymarket/ledger$':                  '<rootDir>/../../domain/accounting/ledger/src/index.ts',
     '^@polymarket/ports$':                   '<rootDir>/../ports/src/index.ts',
     '^@polymarket/event-bus$':               '<rootDir>/../event-bus/src/index.ts',

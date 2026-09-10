@@ -13,7 +13,7 @@ import type { TypedMessage } from '@polymarket/messages';
 import type { DecimalPrice } from '@polymarket/value-objects';
 import type { MarketId } from '@polymarket/ids';
 import type { Market, MarketOutcome } from '@polymarket/market';
-import type { Fill } from '@polymarket/fill';
+import type { Fill, TradeStatus } from '@polymarket/fill';
 import type { Order } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
 import type {
@@ -41,6 +41,7 @@ import type {
   TradingAccountFillAppliedEvent,
   TradingAccountFillConfirmedEvent,
   TradingAccountFillRevertedEvent,
+  TradingAccountFillVenueStatusObservedEvent,
   VenueOrderUpdate,
   OrderUpdateReceivedEvent,
 } from '../src/index.js';
@@ -71,9 +72,10 @@ describe('ApplicationEvent union contract', () => {
       (e: TradingAccountFillAppliedEvent): ApplicationEvent => e,
       (e: TradingAccountFillConfirmedEvent): ApplicationEvent => e,
       (e: TradingAccountFillRevertedEvent): ApplicationEvent => e,
+      (e: TradingAccountFillVenueStatusObservedEvent): ApplicationEvent => e,
       (e: OrderUpdateReceivedEvent): ApplicationEvent => e,
     ];
-    expect(checks.length).toBe(21);
+    expect(checks.length).toBe(22);
   });
 
   it('каждый member — canonical MessageEnvelope (compile-time)', () => {
@@ -173,6 +175,13 @@ describe('ApplicationEvent union contract', () => {
           void fill.accountId;
           void order?.id;
           void event.payload.portfolio;
+          return event.type;
+        }
+        case 'TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED': {
+          // Вторая ось: canonical TradeStatus площадки, без портфеля и заявки.
+          const venueStatus: TradeStatus = event.payload.venueStatus;
+          void venueStatus;
+          void event.payload.fill.venueId;
           return event.type;
         }
         case 'TRADING_ACCOUNT_FILL_CONFIRMED': {

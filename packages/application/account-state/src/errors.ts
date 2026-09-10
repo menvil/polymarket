@@ -24,8 +24,8 @@
  */
 import { TradingError } from '@polymarket/errors';
 import { accountIdToString, type AccountId, type FillId, type OrderId, type VenueId } from '@polymarket/ids';
-import type { AccountFillFactDifference } from './fillIdentity.js';
-import type { AccountOrderIdentityDifference } from './orderIdentity.js';
+import type { FillFactDifference, TradeStatus } from '@polymarket/fill';
+import type { OrderIdentityDifference } from '@polymarket/order';
 import type { AccountFillStatus } from './records.js';
 
 /** Общий контекст ошибки: пара, адресующая аккаунт. */
@@ -304,19 +304,19 @@ export class AccountOrderIdentityConflictError extends TradingError {
     public readonly venueId: VenueId,
     public readonly accountId: AccountId,
     public readonly orderId: OrderId,
-    public readonly difference: AccountOrderIdentityDifference,
+    public readonly difference: OrderIdentityDifference,
   ) {
     super(
       `Order ${orderId} identity conflict on ${difference.field} for trading account ` +
-        `${describeAccount(venueId, accountId)}: stored ${difference.stored}, ` +
-        `incoming ${difference.incoming}`,
+        `${describeAccount(venueId, accountId)}: stored ${difference.left}, ` +
+        `incoming ${difference.right}`,
       {
         context: {
           ...accountContext(venueId, accountId),
           orderId,
           field: difference.field,
-          stored: difference.stored,
-          incoming: difference.incoming,
+          stored: difference.left,
+          incoming: difference.right,
         },
       },
     );
@@ -424,7 +424,7 @@ export class AccountFillOrderLinkError extends TradingError {
 }
 
 /** Событие, при обработке которого обнаружен конфликт факта исполнения. */
-export type AccountFillAction = 'APPLY' | 'CONFIRM' | 'REVERT';
+export type AccountFillAction = 'APPLY' | 'CONFIRM' | 'REVERT' | 'OBSERVE_VENUE_STATUS';
 
 /**
  * Тот же `FillId` пришёл с другим фактом сделки.
@@ -460,20 +460,20 @@ export class AccountFillIdentityConflictError extends TradingError {
     public readonly accountId: AccountId,
     public readonly fillId: FillId,
     public readonly action: AccountFillAction,
-    public readonly difference: AccountFillFactDifference,
+    public readonly difference: FillFactDifference,
   ) {
     super(
       `Fill ${fillId} identity conflict on ${difference.field} during ${action} for trading ` +
-        `account ${describeAccount(venueId, accountId)}: stored ${difference.stored}, ` +
-        `incoming ${difference.incoming}`,
+        `account ${describeAccount(venueId, accountId)}: stored ${difference.left}, ` +
+        `incoming ${difference.right}`,
       {
         context: {
           ...accountContext(venueId, accountId),
           fillId,
           action,
           field: difference.field,
-          stored: difference.stored,
-          incoming: difference.incoming,
+          stored: difference.left,
+          incoming: difference.right,
         },
       },
     );
@@ -576,6 +576,62 @@ export class AccountFillTransitionError extends TradingError {
   }
 }
 
+/**
+ * У одного исполнения два РАЗНЫХ терминальных исхода на площадке.
+ *
+ * @remarks
+ * Это единственный настоящий конфликт venue-оси. Всё остальное объясняется
+ * порядком доставки:
+ *
+ * ```text
+ * CONFIRMED → MINED     запоздавшее старое наблюдение   no-op
+ * FAILED    → MATCHED   то же самое                     no-op
+ * CONFIRMED → FAILED    ДВА исхода одной сделки         Err  ← этот класс
+ * FAILED    → CONFIRMED то же самое                     Err
+ * ```
+ *
+ * Разница принципиальна. Площадка не ходит назад — но сообщения приходят не
+ * по порядку, и `MINED` после `CONFIRMED` означает не «сделка расстала
+ * подтверждённой», а «до нас поздно дошло наблюдение, сделанное раньше».
+ * Отвергать его нельзя: подписки проектора `critical`, и одно запоздавшее
+ * сообщение превращалось бы в аварийный отказ торгового контура.
+ *
+ * А вот два разных ТЕРМИНАЛЬНЫХ исхода задержкой не объясняются: по контракту
+ * площадки `CONFIRMED` — «finality достигнута, транзакция успешна», `FAILED` —
+ * «окончательно упала, повторов не будет». Одна сделка не может быть и тем, и
+ * другим, поэтому здесь мы действительно ничего не понимаем и обязаны
+ * остановиться.
+ *
+ * @example
+ * ```typescript
+ * throw new AccountFillTerminalVenueStatusConflictError(venueId, accountId, fillId, 'CONFIRMED', 'FAILED');
+ * ```
+ */
+export class AccountFillTerminalVenueStatusConflictError extends TradingError {
+  public readonly severity = 'critical' as const;
+
+  /**
+   * @param venueId - Площадка владельца
+   * @param accountId - Аккаунт владельца
+   * @param fillId - Исполнение, по которому пришло наблюдение
+   * @param current - Терминальный исход, уже записанный в состоянии
+   * @param incoming - Другой терминальный исход из наблюдения
+   */
+  constructor(
+    public readonly venueId: VenueId,
+    public readonly accountId: AccountId,
+    public readonly fillId: FillId,
+    public readonly current: TradeStatus,
+    public readonly incoming: TradeStatus,
+  ) {
+    super(
+      `Fill ${fillId} has two different terminal venue outcomes for trading account ` +
+        `${describeAccount(venueId, accountId)}: already ${current}, observed ${incoming}`,
+      { context: { ...accountContext(venueId, accountId), fillId, current, incoming } },
+    );
+  }
+}
+
 /** Любой отказ приватного состояния аккаунта. */
 export type AccountStateError =
   | AccountAlreadyInitializedError
@@ -588,4 +644,5 @@ export type AccountStateError =
   | AccountFillOrderLinkError
   | AccountFillIdentityConflictError
   | AccountFillNotFoundError
-  | AccountFillTransitionError;
+  | AccountFillTransitionError
+  | AccountFillTerminalVenueStatusConflictError;

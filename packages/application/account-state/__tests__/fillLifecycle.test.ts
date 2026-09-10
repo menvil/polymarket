@@ -7,8 +7,12 @@
  * (`CONFIRMED → REVERTED` запрещён — финальность на то и финальность).
  */
 import { describe, expect, it } from '@jest/globals';
-import type { Fill } from '@polymarket/fill';
+import type { Fill, FillFactField } from '@polymarket/fill';
 import {
+  classifyFillTransition,
+  isTerminalFillStatus,
+  TERMINAL_FILL_STATUSES,
+  type AccountFillStatus,
   AccountFillIdentityConflictError,
   AccountFillNotFoundError,
   AccountFillOrderLinkError,
@@ -18,7 +22,6 @@ import {
   AccountNotInitializedError,
   AccountOrderAccountMissingError,
   AccountOrderIdentityConflictError,
-  type AccountFillFactField,
 } from '../src/index.js';
 import {
   DOWN_TOKEN,
@@ -327,7 +330,7 @@ describe('X. повторный APPLY со старым снимком не от
 describe('Y. тот же FillId с другим фактом — конфликт', () => {
   /** Способы подменить факт исполнения под тем же `FillId`. */
   const conflicts: ReadonlyArray<{
-    field: AccountFillFactField;
+    field: FillFactField;
     make: (accountId: ReturnType<typeof walletAccount>) => Fill;
   }> = [
     { field: 'size', make: (a) => makeFill({ accountId: a, size: 41 }) },
@@ -641,3 +644,63 @@ function expectUntouched(
   expect(view.getVersion()).toBe(1);
   expect(account?.lastMutationAt.equals(ts(1_000))).toBe(true);
 }
+
+/**
+ * Политика переходов, вынесенная из тела `confirmFill`/`revertFill`.
+ *
+ * @remarks
+ * Раньше правило существовало только россыпью сравнений внутри двух методов —
+ * прочитать его целиком было негде, а проверялось оно лишь косвенно, через
+ * поведение состояния. Тесты выше это поведение по-прежнему проверяют; здесь
+ * же зафиксировано само правило.
+ */
+describe('политика переходов по нашей оси исполнения', () => {
+  const ALL: readonly AccountFillStatus[] = ['APPLIED', 'CONFIRMED', 'REVERTED'];
+  const TARGETS = ['CONFIRMED', 'REVERTED'] as const;
+
+  it('незавершён ровно APPLIED', () => {
+    expect([...TERMINAL_FILL_STATUSES].sort()).toEqual(['CONFIRMED', 'REVERTED']);
+    expect(isTerminalFillStatus('APPLIED')).toBe(false);
+  });
+
+  it.each(TARGETS)('APPLIED → %s принимается', (target) => {
+    expect(classifyFillTransition('APPLIED', target)).toBe('ACCEPT');
+  });
+
+  it.each(TARGETS)('%s сам в себя — дубликат, а не ошибка', (target) => {
+    // Повторная доставка того же события: подтверждать подтверждённое нечего,
+    // но и отказывать не за что.
+    expect(classifyFillTransition(target, target)).toBe('DUPLICATE');
+  });
+
+  it('переход между двумя финальными запрещён в обе стороны', () => {
+    expect(classifyFillTransition('CONFIRMED', 'REVERTED')).toBe('CONFLICT');
+    expect(classifyFillTransition('REVERTED', 'CONFIRMED')).toBe('CONFLICT');
+  });
+
+  it('CONFLICT возникает ТОЛЬКО между разными финальными', () => {
+    const conflicts: Array<[AccountFillStatus, AccountFillStatus]> = [];
+    for (const current of ALL) {
+      for (const target of TARGETS) {
+        if (classifyFillTransition(current, target) === 'CONFLICT') {
+          conflicts.push([current, target]);
+        }
+      }
+    }
+    expect(conflicts.sort()).toEqual([
+      ['CONFIRMED', 'REVERTED'],
+      ['REVERTED', 'CONFIRMED'],
+    ]);
+  });
+
+  it('STALE на этой оси не бывает', () => {
+    // В отличие от venue-оси, переход инициируем МЫ, а не сеть: «запоздавшего»
+    // перехода не существует, и молчаливого проглатывания не должно быть нигде,
+    // кроме точного дубликата.
+    const verdicts = new Set<string>();
+    for (const current of ALL) {
+      for (const target of TARGETS) verdicts.add(classifyFillTransition(current, target));
+    }
+    expect([...verdicts].sort()).toEqual(['ACCEPT', 'CONFLICT', 'DUPLICATE']);
+  });
+});

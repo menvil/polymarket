@@ -8,8 +8,27 @@
  * - Исполнении fill (дебет/кредит баланса + обновление позиции)
  *
  * ### Схема обновления баланса при Fill:
- * - BUY fill: `applyDebit(price × size)` — снимает из зарезервированных средств
- * - SELL fill: `applyCredit(price × size)` — зачисляет на доступный баланс
+ * - BUY fill: `applyDebit(price × size)` из reserved + комиссия из available
+ * - SELL fill: `applyCredit(price × size − комиссия)` — зачисляет на available
+ *
+ * ### Комиссия
+ *
+ * Платит только тейкер, платит ДЕНЬГАМИ и из того, что получает; количество
+ * шар не изменяется никогда. Измерено на 2898 реальных сделках —
+ * `docs/guides/polymarket-fee-settlement.md`.
+ *
+ * ```text
+ * BUY   номинал из reserved + комиссия из available   позиция +ПОЛНЫЙ size
+ * SELL  зачисляем номинал − комиссию                  позиция −ПОЛНЫЙ size
+ * ```
+ *
+ * Комиссия на покупке снимается отдельным шагом из `available`, потому что её
+ * никто не резервировал: в момент размещения ордера ещё неизвестно, окажемся
+ * мы тейкером или мейкером.
+ *
+ * Здесь стоял пересчёт `feeInTokens = feeUSDC / price` с ростом позиции на
+ * `size − feeInTokens` — механизм, которого не существует. Ни одна из 1888
+ * измеренных покупок не показала уменьшенного количества.
  *
  * ### Резервации токенов (SELL ордера):
  * - SELL order placed:    `reserveTokensForOrder(accountId, instrumentId, size)` → tokenReservations[id] += size
@@ -21,18 +40,16 @@
  * BUY добавляет лот (`addLots`), SELL закрывает по FIFO (`position.close(..., 'FIFO', ...)`),
  * накапливая `realizedPnL` (логируется). LONG-only: quantity увеличивается при BUY,
  * уменьшается при SELL — SHORT не поддерживается (см. `docs/portfolio-entity.md`).
- * `IPosition`/`Portfolio` сами не знают о конкретном классе `Position` — структурная
- * типизация (см. `IPosition` в `@polymarket/portfolio`); `_applyPositionUpdate` читает
- * существующую позицию через `instanceof Position`, поскольку `IPosition` не выставляет
- * `lots[]`/`close()`/`addLots()`.
- * `reverseFill()` **не переведён** на lot-based — редкий path (on-chain FAILED) остаётся
- * на `SimplePosition`, уже с задокументированной неточностью восстановления. Если
- * `_applyPositionUpdate` встречает существующую позицию, которая НЕ является `Position`
- * (т.е. оставленную `reverseFill()`, либо структурный тестовый мок) — `_toLotBasedPosition`
- * graceful-реконструирует её в `Position` с единственным лотом из известных
- * `quantity`/`averageEntryPrice` (детализация по историческим лотам теряется только для
- * этой части позиции — приемлемо, у источника её и не было), а не возвращает `Err`
- * (см. TSDoc `_toLotBasedPosition`).
+ * `Portfolio` хранит канонический `Position` напрямую: интерфейс `IPosition` и
+ * `SimplePosition` удалены — подставлять оказалось нечего. Вместе с ними исчезли
+ * `instanceof Position` в `_applyPositionUpdate` и метод `_toLotBasedPosition`,
+ * который реконструировал лоты из плоской позиции: реконструировать больше не из
+ * чего, тип в портфеле теперь ровно один.
+ *
+ * `reverseFill()` по-прежнему НЕ ведёт lot-историю — редкий path (on-chain FAILED)
+ * собирает позицию ОДНИМ лотом из известных `quantity`/`averageEntryPrice`. Это та же
+ * задокументированная неточность, что была раньше: у источника истории лотов и не
+ * было. Изменился только тип результата — теперь это канонический `Position`.
  *
  * @example
  * ```typescript
@@ -54,8 +71,7 @@ import type { AccountId, InstrumentId } from '@polymarket/ids';
 import { assetIdToInstrumentId, accountIdToString, AssetIdHelpers, asPositionId } from '@polymarket/ids';
 import { Money, Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { type Timestamp } from '@polymarket/timestamp';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
-import { SimplePosition } from '@polymarket/portfolio';
+import type { Portfolio } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
 import type { Fill } from '@polymarket/fill';
 import type { Order } from '@polymarket/order';
@@ -336,9 +352,8 @@ export class PortfolioService {
    * ### BUY fill:
    * 1. `applyDebit(orderPrice × size)` — дебетует зарезервированные средства
    *    (используем цену ордера, а не цену fill, чтобы точно совпасть с резервацией)
-   * 2. Позиция LONG: quantity += size - feeInTokens, пересчёт averageEntryPrice по VWAP
+   * 2. Позиция LONG: quantity += size (ВАЛОВОЕ), пересчёт averageEntryPrice по VWAP
    *    (averageEntryPrice считается по fill.price — реальная цена исполнения)
-   *    feeInTokens = feeUSDC / price (Polymarket списывает fee в shares при BUY)
    *
    * ### SELL fill:
    * 1. Снимаем токенную резервацию **строго** (НЕ best-effort): это local-order
@@ -412,10 +427,28 @@ export class PortfolioService {
       storeVersion: version,
     });
 
-    // Обновить баланс
+    // Обновить баланс.
+    //
+    // Комиссию платит только тейкер, платит ДЕНЬГАМИ и из того, что получает
+    // (`docs/guides/polymarket-fee-settlement.md`):
+    //
+    //   BUY   отдаём  номинал + fee
+    //   SELL  получаем номинал − fee
+    //
+    // На SELL это ровно `fill.getNetCashFlow()` — домен уже умеет складывать
+    // поток с комиссией, пересчитывать нечего.
+    //
+    // На BUY взять его нельзя: `notional` здесь считается по цене ОРДЕРА, а не
+    // фила, чтобы точно совпасть с зарезервированной суммой (биржа округляет
+    // цену в fill-событии). Поэтому номинал по-прежнему снимается из reserved,
+    // а комиссия — отдельно из available: её никто не резервировал, потому что
+    // в момент размещения ордера ещё неизвестно, окажемся мы тейкером или
+    // мейкером.
     const balanceResult = fill.side === 'BUY'
       ? portfolioAfterTokenRelease.applyDebit(money)
-      : portfolioAfterTokenRelease.applyCredit(money);
+      : portfolioAfterTokenRelease.applyCredit(
+          Money.of(fill.getNetCashFlow().amount.value(), 'USDC'),
+        );
 
     if (!balanceResult.ok) {
       this._logger.error('Balance change failed', {
@@ -430,8 +463,23 @@ export class PortfolioService {
       ));
     }
 
-    // Обновить позицию (с учётом fee deduction для BUY)
-    const positionResult = this._applyPositionUpdate(balanceResult.value, instrumentId, fill);
+    // BUY: комиссия сверх номинала, из available. Ноль у мейкера — тогда
+    // шаг вырождается и портфель не меняется.
+    let portfolioAfterFee = balanceResult.value;
+    if (fill.side === 'BUY' && !fill.fee.isZero()) {
+      const feeDebit = portfolioAfterFee.applyDirectDebit(
+        Money.of(fill.fee.quantity.amount().value(), 'USDC'),
+      );
+      if (!feeDebit.ok) {
+        return Err(new TradingError(
+          `Failed to debit taker fee: ${feeDebit.error.message}`,
+          { context: { fillId: String(fill.id), side: fill.side } },
+        ));
+      }
+      portfolioAfterFee = feeDebit.value;
+    }
+
+    const positionResult = this._applyPositionUpdate(portfolioAfterFee, instrumentId, fill);
     if (!positionResult.ok) {
       return Err(new TradingError(
         `Failed to update position: ${positionResult.error.message}`,
@@ -650,7 +698,7 @@ export class PortfolioService {
    * Вызывается FillOrchestrator при получении FILL_FAILED после MATCHED.
    *
    * ### BUY fill reversal:
-   * 1. Позиция LONG: quantity -= (fillQty - feeInTokens) — снимаем то что было добавлено
+   * 1. Позиция LONG: quantity -= fillQty — снимаем ровно то, что было добавлено
    * 2. `applyCredit(price × size)` — возвращаем USDC на available баланс
    *    (резервация уже была consumed при applyFill, кредитуем в available)
    *
@@ -663,6 +711,69 @@ export class PortfolioService {
    * - Если позиция была закрыта (SELL) и удалена из Portfolio — создаётся заново
    * - FAILED — крайне редкое событие, точность reversal достаточна
    */
+  /**
+   * Строит однолотовую позицию для пути отката.
+   *
+   * @param fill - Исполнение, которое откатывается (даёт владельца, актив, время)
+   * @param instrumentId - Инструмент позиции
+   * @param quantity - Итоговое количество; `0` даёт позицию без лотов
+   * @param averageEntryPrice - Средняя цена входа, которую нужно сохранить
+   * @returns Канонический `Position`
+   *
+   * @remarks
+   * `SimplePosition` удалён вместе с `IPosition`: в портфеле теперь живёт один
+   * тип позиции. Здесь он собирается ОДНИМ лотом — количество и средняя цена у
+   * `Position` выводятся из лотов, и лот `(quantity, averageEntryPrice)` даёт
+   * ровно те же значения, что давал прежний плоский объект.
+   *
+   * Историю лотов это, разумеется, не восстанавливает — но и не ухудшает:
+   * путь отката её и раньше терял, что задокументировано в шапке сервиса.
+   *
+   * Нулевое количество выражается ПУСТЫМ списком лотов: `Position` с нулевым
+   * количеством считается закрытым, и `upsertPosition` его удаляет.
+   */
+  private _reversalPosition(
+    fill: Fill,
+    instrumentId: InstrumentId,
+    quantity: Decimal,
+    averageEntryPrice: Decimal,
+  ): Result<Position, PortfolioSaveError> {
+    const positionId = asPositionId(`reversal:${String(instrumentId)}`);
+    if (positionId === undefined) {
+      return Err(new TradingError(
+        `Cannot build reversal position id for instrument ${String(instrumentId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const lots = quantity.lte(0)
+      ? []
+      : [
+          PositionLot.create({
+            quantity: Quantity.of(quantity),
+            entryPrice: OutcomePrice.of(averageEntryPrice),
+            timestamp: fill.timestamp,
+          }),
+        ];
+
+    const created = Position.create({
+      id: positionId,
+      accountId: fill.accountId,
+      instrumentId,
+      asset: fill.tokenId,
+      side: 'LONG',
+      openedAt: fill.timestamp,
+      lots,
+    });
+    if (!created.ok) {
+      return Err(new TradingError(
+        `Failed to build reversal position: ${created.error.message}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+    return Ok(created.value);
+  }
+
   public reverseFill(fill: Fill): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(fill.accountId);
     const portfolio = this._store.get(fill.accountId);
@@ -682,13 +793,19 @@ export class PortfolioService {
     }
 
     const fillQty = fill.size.value();
-    const notional = fill.price.value().times(fillQty);
-    const money = Money.of(notional, 'USDC');
+    // Откат обязан зеркалить применение. Оно движет деньги на нетто-поток
+    // `Fill` (номинал с учётом комиссии) и количество на ВАЛОВОЙ размер —
+    // значит и возврат считается так же. Знак у `getNetCashFlow()` уже
+    // правильный по стороне, поэтому берётся модуль: здесь поток
+    // разворачивается.
+    const netCash = fill.getNetCashFlow().amount.value();
+    const money = Money.of(netCash.abs(), 'USDC');
 
     let portfolioAfterBalance: Portfolio;
 
     if (fill.side === 'BUY') {
-      // BUY reversal: кредитуем USDC обратно (резервация была consumed, возвращаем в available)
+      // BUY reversal: возвращаем в available то, что было списано, — номинал
+      // из reserved плюс комиссию из available.
       const creditResult = portfolio.applyCredit(money);
       if (!creditResult.ok) {
         return Err(new TradingError(
@@ -702,32 +819,22 @@ export class PortfolioService {
       const existing = portfolioAfterBalance.getPosition(instrumentId);
       const currentQty = existing?.quantity.value() ?? new Decimal(0);
 
-      let feeInTokens = new Decimal(0);
-      if (!fill.fee.isZero()) {
-        const feeUSDC = fill.fee.quantity.amount().value();
-        feeInTokens = feeUSDC.div(fill.price.value());
-      }
-      const netFillQty = fillQty.minus(feeInTokens);
-      const newQty = currentQty.minus(netFillQty);
+      // Снимаем ровно столько, сколько добавляли: комиссия количество не
+      // трогает (`docs/guides/polymarket-fee-settlement.md`).
+      const newQty = currentQty.minus(fillQty);
 
       if (newQty.lte(0)) {
-        // Позиция полностью обнулилась — SimplePosition с qty=0 будет удалена upsertPosition
-        const zeroPosition = new SimplePosition({
-          instrumentId,
-          quantity: new Decimal(0),
-          averageEntryPrice: new Decimal(0),
-          side: 'LONG',
-        });
-        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(zeroPosition);
+        // Позиция полностью обнулилась — Position без лотов будет удалена upsertPosition
+        const zeroPosition = this._reversalPosition(
+          fill, instrumentId, new Decimal(0), new Decimal(0),
+        );
+        if (!zeroPosition.ok) return zeroPosition;
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(zeroPosition.value);
       } else {
         const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
-        const reversePosition = new SimplePosition({
-          instrumentId,
-          quantity: newQty,
-          averageEntryPrice: avgPrice,
-          side: 'LONG',
-        });
-        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(reversePosition);
+        const reversePosition = this._reversalPosition(fill, instrumentId, newQty, avgPrice);
+        if (!reversePosition.ok) return reversePosition;
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(reversePosition.value);
       }
     } else {
       // SELL reversal: дебетуем USDC (снимаем зачисленную выручку)
@@ -746,13 +853,9 @@ export class PortfolioService {
       const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
       const newQty = currentQty.plus(fillQty);
 
-      const restorePosition = new SimplePosition({
-        instrumentId,
-        quantity: newQty,
-        averageEntryPrice: avgPrice,
-        side: 'LONG',
-      });
-      portfolioAfterBalance = portfolioAfterBalance.upsertPosition(restorePosition);
+      const restorePosition = this._reversalPosition(fill, instrumentId, newQty, avgPrice);
+      if (!restorePosition.ok) return restorePosition;
+      portfolioAfterBalance = portfolioAfterBalance.upsertPosition(restorePosition.value);
     }
 
     const saveResult = this._store.save(portfolioAfterBalance, version);
@@ -763,7 +866,8 @@ export class PortfolioService {
       fillId: String(fill.id),
       side: fill.side,
       size: fillQty.toString(),
-      notional: notional.toString(),
+      netCash: money.value().toString(),
+      feeUSDC: fill.fee.quantity.amount().value().toString(),
     });
     return Ok(undefined);
   }
@@ -781,26 +885,35 @@ export class PortfolioService {
    * @remarks
    * ### Алгоритм:
    * - BUY: добавляет новый лот (`PositionLot`) — `Position.create()` (первый лот) или
-   *   `existing.addLots()` (позиция уже открыта). Комиссия вычитается из quantity лота
-   *   (`feeInTokens = feeUSDC / price`) — та же логика, что была в SimplePosition-версии.
+   *   `existing.addLots()` (позиция уже открыта). Количество лота ВАЛОВОЕ:
+   *   комиссия удерживается деньгами, а не шарами.
    * - SELL: проверяет наличие позиции и достаточность количества, затем
    *   `existing.close(qty, price, 'FIFO', timestamp)` — закрывает старейшие лоты первыми,
    *   накопленный `realizedPnL` логируется (не возвращается наружу — публичная сигнатура
    *   `applyFill`/`applyDirectFill` остаётся `Result<void, ...>`, не меняется этим этапом;
    *   `realizedPnL` виден через логи, как и остальное состояние позиции в этом файле).
    *
-   * ### Известное ограничение — non-lot-based позиция (`reverseFill()`, тестовые моки):
-   * `reverseFill()` (rollback при on-chain FAILED, редкий путь) не переведён на lot-based —
-   * остаётся на `SimplePosition` с уже задокументированной неточностью восстановления
-   * (см. TSDoc `reverseFill`). `Portfolio`/`IPosition` — структурная типизация (см.
-   * `@polymarket/portfolio`), поэтому существующая позиция МОЖЕТ прийти как
-   * `SimplePosition`, любой другой структурно совместимый `IPosition` (в т.ч. тестовые
-   * моки — распространённый существующий паттерн) или сам `Position`. `_toLotBasedPosition()`
-   * обрабатывает все три случая: реальный `Position` используется напрямую (полная
-   * lot-история сохраняется); любой другой `IPosition` — "переоткрывает" lot-учёт,
-   * реконструируя ОДИН лот из известных `quantity`/`averageEntryPrice` (та же цена входа
-   * — детализация по историческим лотам теряется ТОЛЬКО для этой части позиции, что
-   * приемлемо: у source и так этой истории не было).
+   * ### Откуда берётся существующая позиция
+   *
+   * Только из `Portfolio`, и только каноническим `Position` — с полной
+   * lot-историей. Разбирать случаи больше не нужно: интерфейс `IPosition` и
+   * его единственная реализация `SimplePosition` удалены, структурная
+   * типизация вместе с ними, и подставить сюда позицию без лотов нечем.
+   *
+   * Вместе с ними исчез `_toLotBasedPosition()`: он существовал ровно затем,
+   * чтобы приводить не-`Position` к lot-based, и после удаления интерфейса
+   * выродился в тождество.
+   *
+   * ### Известное ограничение — восстановление позиции в `reverseFill()`
+   *
+   * Ограничение осталось, но причина у него другая. `reverseFill()` (rollback
+   * при on-chain FAILED, редкий путь) пересобирает позицию из известных
+   * `quantity` и `averageEntryPrice` — см. `_reversalPosition()`, — то есть
+   * складывает ОДИН лот вместо восстановления исходной их последовательности.
+   *
+   * Дело не в типе позиции, а в том, что источник отката историей лотов не
+   * располагает: он знает итоговое количество и среднюю цену. Детализация
+   * теряется только для откатываемой части (см. TSDoc `reverseFill`).
    */
   private _applyPositionUpdate(
     portfolio: Portfolio,
@@ -809,35 +922,21 @@ export class PortfolioService {
   ): Result<Portfolio, TradingError> {
     const existing = portfolio.getPosition(instrumentId);
     const fillQty = fill.size.value();
-    const fillPrice = fill.price.value();
 
     if (fill.side === 'BUY') {
-      // Polymarket on-chain settlement списывает fee из получаемых токенов при BUY.
-      // feeInTokens = feeUSDC / price — конвертация из USDC в shares.
-      // Если fee = 0 (MAKER или zero-fee рынок) → feeInTokens = 0, ничего не вычитается.
-      let feeInTokens = new Decimal(0);
-      if (!fill.fee.isZero()) {
-        const feeUSDC = fill.fee.quantity.amount().value();
-        feeInTokens = feeUSDC.div(fillPrice);
-      }
-      const netFillQty = fillQty.minus(feeInTokens);
-
-      if (netFillQty.lte(0)) {
-        return Err(new TradingError(
-          'BUY fill net quantity (after fee) is non-positive — fee exceeds fill size',
-          {
-            context: {
-              fillId: String(fill.id),
-              instrumentId: String(instrumentId),
-              fillQty: fillQty.toString(),
-              feeInTokens: feeInTokens.toString(),
-            },
-          },
-        ));
-      }
-
+      // Количество ВАЛОВОЕ: комиссия его не трогает.
+      //
+      // Здесь стоял пересчёт `feeInTokens = feeUSDC / price` и рост позиции на
+      // `size − feeInTokens`. Механизма, который он описывал, не существует:
+      // измерение публичной ленты на 2898 реальных сделках не нашло ни одной
+      // покупки с уменьшенным количеством шар. Комиссия удерживается деньгами
+      // и снята выше, из available.
+      //
+      // Вместе с пересчётом исчезла и проверка «fee превышает размер фила» —
+      // сравнивать было нечего: комиссия и количество живут в разных
+      // величинах. См. `docs/guides/polymarket-fee-settlement.md`.
       const newLot = PositionLot.create({
-        quantity: Quantity.of(netFillQty),
+        quantity: Quantity.of(fillQty),
         entryPrice: fill.price,
         timestamp: fill.timestamp,
       });
@@ -853,15 +952,7 @@ export class PortfolioService {
         return Ok(portfolio.upsertPosition(positionResult.value));
       }
 
-      const lotBasedResult = this._toLotBasedPosition(existing, portfolio, instrumentId, fill.timestamp);
-      if (!lotBasedResult.ok) {
-        return Err(new TradingError(
-          `Failed to resolve lot-based position: ${lotBasedResult.error.message}`,
-          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
-        ));
-      }
-
-      const addResult = lotBasedResult.value.addLots([newLot], fill.timestamp);
+      const addResult = existing.addLots([newLot], fill.timestamp);
       if (!addResult.ok) {
         return Err(new TradingError(
           `Failed to add lot to position: ${addResult.error.message}`,
@@ -892,15 +983,7 @@ export class PortfolioService {
         ));
       }
 
-      const lotBasedResult = this._toLotBasedPosition(existing, portfolio, instrumentId, fill.timestamp);
-      if (!lotBasedResult.ok) {
-        return Err(new TradingError(
-          `Failed to resolve lot-based position: ${lotBasedResult.error.message}`,
-          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
-        ));
-      }
-
-      const closeResult = lotBasedResult.value.close(
+      const closeResult = existing.close(
         Quantity.of(fillQty), fill.price, 'FIFO', fill.timestamp,
       );
       if (!closeResult.ok) {
@@ -955,44 +1038,4 @@ export class PortfolioService {
     });
   }
 
-  /**
-   * Возвращает существующую позицию как lot-based `Position` для мутации (`addLots`/`close`).
-   *
-   * @param existing - Текущая позиция из `Portfolio.getPosition()` (структурный `IPosition`)
-   * @param portfolio - Portfolio (источник accountId)
-   * @param instrumentId - ID инструмента
-   * @param asOfTimestamp - Timestamp текущей операции (используется как `openedAt`
-   *   реконструированной позиции, если применимо)
-   * @returns Result<Position, ValidationError>
-   *
-   * @remarks
-   * `existing instanceof Position` — используется напрямую, без изменений (полная
-   * lot-история сохраняется). Иначе — реконструирует единственный лот из `quantity`/
-   * `averageEntryPrice` (см. TSDoc `_applyPositionUpdate`, раздел "Известное ограничение").
-   */
-  private _toLotBasedPosition(
-    existing: IPosition,
-    portfolio: Portfolio,
-    instrumentId: InstrumentId,
-    asOfTimestamp: Timestamp,
-  ): Result<Position, ValidationError> {
-    if (existing instanceof Position) {
-      return Ok(existing);
-    }
-
-    const qty = existing.quantity.value();
-    if (qty.lte(0)) {
-      return Err(new ValidationError('Cannot reconstruct Position: quantity is non-positive', {
-        context: { instrumentId: String(instrumentId), quantity: qty.toString() },
-      }));
-    }
-
-    const reconstructedLot = PositionLot.create({
-      quantity: Quantity.of(qty),
-      entryPrice: OutcomePrice.of(existing.averageEntryPrice.value()),
-      timestamp: asOfTimestamp,
-    });
-
-    return this._openPosition(portfolio, instrumentId, asOfTimestamp, reconstructedLot);
-  }
 }

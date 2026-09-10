@@ -42,6 +42,7 @@
  * сравнение в виде их внутреннего представления, и порядок ключей влиял бы на
  * результат.
  */
+import type { FieldDifference } from '@polymarket/errors';
 import type { Market, MarketOutcome } from '@polymarket/market';
 
 /** Поле структуры, по которому рынки могут разойтись. */
@@ -63,47 +64,45 @@ export type TradingMarketStructuralField =
  * Первое найденное расхождение структуры.
  *
  * @remarks
- * Значения приведены к строкам сразу: контекст ошибки уходит в логи, а
- * `Timestamp` и branded-типы в сериализованном виде читаются хуже, чем ISO и
- * сам идентификатор.
+ * Общая форма `FieldDifference` — та же, что у факта исполнения и у
+ * идентичности заявки.
+ *
+ * Пара значений называется нейтрально, хотя ЗДЕСЬ роли как раз известны:
+ * первый аргумент — уже принятый рынок, второй — пришедший. Роли называет
+ * `TradingMarketStructureConflictError`, и в логах они видны ровно как
+ * `admitted` и `incoming`. Форма же остаётся общей, чтобы четвёртое место
+ * сравнения не завело пятую пару имён.
  */
-export interface TradingMarketStructureDifference {
-  /** Какое поле разошлось */
-  readonly field: TradingMarketStructuralField;
-  /** Значение у уже принятого рынка */
-  readonly admitted: string;
-  /** Значение у пришедшего рынка */
-  readonly incoming: string;
-}
+export type TradingMarketStructureDifference = FieldDifference<TradingMarketStructuralField>;
 
 /** Пара сравниваемых значений одного поля. */
 interface FieldProbe {
   readonly field: TradingMarketStructuralField;
-  readonly admitted: string;
-  readonly incoming: string;
+  readonly left: string;
+  readonly right: string;
   readonly equal: boolean;
 }
 
 /** Проба по строковому (или branded-строковому) полю. */
 function sameString(
   field: TradingMarketStructuralField,
-  admitted: string,
-  incoming: string,
+  left: string,
+  right: string,
 ): FieldProbe {
-  return { field, admitted, incoming, equal: admitted === incoming };
+  return { field, left, right, equal: left === right };
 }
 
 /** Проба по числовому полю. */
 function sameNumber(
   field: TradingMarketStructuralField,
-  admitted: number,
-  incoming: number,
+  left: number,
+  right: number,
 ): FieldProbe {
   return {
     field,
-    admitted: String(admitted),
-    incoming: String(incoming),
-    equal: admitted === incoming,
+    left: String(left),
+    right: String(right),
+    equal: left === right,
   };
 }
 
@@ -145,8 +144,8 @@ function cryptoProbes(admitted: Market, incoming: Market): readonly FieldProbe[]
     return [
       {
         field: 'crypto',
-        admitted: a === undefined ? 'absent' : 'present',
-        incoming: b === undefined ? 'absent' : 'present',
+        left: a === undefined ? 'absent' : 'present',
+        right: b === undefined ? 'absent' : 'present',
         equal: (a === undefined) === (b === undefined),
       },
     ];
@@ -189,14 +188,14 @@ export function findTradingMarketStructureDifference(
     sameString('id', admitted.id, incoming.id),
     {
       field: 'startsAt',
-      admitted: admitted.startsAt.toISO(),
-      incoming: incoming.startsAt.toISO(),
+      left: admitted.startsAt.toISO(),
+      right: incoming.startsAt.toISO(),
       equal: admitted.startsAt.equals(incoming.startsAt),
     },
     {
       field: 'expiresAt',
-      admitted: admitted.expiresAt.toISO(),
-      incoming: incoming.expiresAt.toISO(),
+      left: admitted.expiresAt.toISO(),
+      right: incoming.expiresAt.toISO(),
       equal: admitted.expiresAt.equals(incoming.expiresAt),
     },
     ...outcomeProbes(0, admitted.outcomes[0], incoming.outcomes[0]),
@@ -209,8 +208,8 @@ export function findTradingMarketStructureDifference(
   if (difference === undefined) return undefined;
   return {
     field: difference.field,
-    admitted: difference.admitted,
-    incoming: difference.incoming,
+    left: difference.left,
+    right: difference.right,
   };
 }
 

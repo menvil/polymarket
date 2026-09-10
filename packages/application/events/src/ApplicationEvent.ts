@@ -59,7 +59,15 @@
  * TRADING_ACCOUNT_FILL_APPLIED      экономика исполнения УЖЕ применена
  * TRADING_ACCOUNT_FILL_CONFIRMED    исполнение достигло финальности
  * TRADING_ACCOUNT_FILL_REVERTED     применённое исполнение откачено
+ *
+ * TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED
+ *                                   площадка сообщила статус, экономика та же
  * ```
+ *
+ * У исполнения ДВЕ независимые оси: что сделали мы с деньгами и что говорит
+ * площадка (`TradeStatus`: MATCHED → MINED → CONFIRMED, RETRYING, FAILED).
+ * `MATCHED` — матчер Polymarket, `MINED` — блок Polygon; это утверждения о
+ * разных системах, и схлопывать их нельзя.
  *
  * Это ФАКТЫ О НАС, а не о рынке, и они образуют отдельный read-model
  * (`AccountHotState`), который с рыночным (`TradingHotState`) не сливается.
@@ -106,6 +114,7 @@ import type {
   TradingAccountFillAppliedEvent,
   TradingAccountFillConfirmedEvent,
   TradingAccountFillRevertedEvent,
+  TradingAccountFillVenueStatusObservedEvent,
 } from './trading-account/index.js';
 import type { OrderUpdateReceivedEvent } from './venue-order/index.js';
 
@@ -142,4 +151,5 @@ export type ApplicationEvent =
   | TradingAccountFillAppliedEvent
   | TradingAccountFillConfirmedEvent
   | TradingAccountFillRevertedEvent
+  | TradingAccountFillVenueStatusObservedEvent
   | OrderUpdateReceivedEvent;

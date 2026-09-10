@@ -9,12 +9,25 @@
  * вызвать `applyFill()` без единого приведения типов.
  *
  * Глубоких копий при чтении НЕ делается: это горячий путь. Возвращаемые
- * массивы объявлены `readonly`, а `Order`, `Fill` и `Portfolio` immutable по
- * построению. Порядок во всех перечисляющих методах — порядок принятия
- * записей состоянием; отдельной сортировки не вводится.
+ * массивы объявлены `readonly`; `Fill` и `Portfolio` immutable по построению.
+ * Порядок во всех перечисляющих методах — порядок принятия записей
+ * состоянием; отдельной сортировки не вводится.
+ *
+ * ### Оговорка про `Order`
+ *
+ * `Order` immutable по ТОРГОВОМУ состоянию — все переходы возвращают новый
+ * экземпляр, — но несёт внутренний буфер драфтов доменных событий, который
+ * `pullEvents()` опустошает МУТАЦИЕЙ. Состояние этот буфер не читает и в
+ * сравнение идентичности он не входит, поэтому на семантику проекции он не
+ * влияет.
+ *
+ * Тем не менее вызывать `pullEvents()` на заявке, полученной отсюда, нельзя:
+ * это изменит объект, лежащий в состоянии. Драфты обязан слить producer ДО
+ * публикации `TRADING_ACCOUNT_ORDER_COMMITTED` — см. контракт события.
  */
 import type { AccountId, FillId, InstrumentId, OrderId, VenueId } from '@polymarket/ids';
-import type { IPosition, Portfolio } from '@polymarket/portfolio';
+import type { Portfolio } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { AccountFillRecord, AccountOrderRecord } from './records.js';
 
@@ -168,7 +181,7 @@ export interface AccountRuntimeStateView {
    * `positions: Map` в состоянии аккаунта нет. Удобный доступ — да, второй
    * источник истины — нет.
    */
-  getPosition(instrumentId: InstrumentId): IPosition | undefined;
+  getPosition(instrumentId: InstrumentId): Position | undefined;
 }
 
 /**

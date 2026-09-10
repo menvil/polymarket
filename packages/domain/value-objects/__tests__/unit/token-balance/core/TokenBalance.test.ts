@@ -2,27 +2,18 @@ import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import {
   parseWalletAddress,
-  KnownOnChainProtocols,
-  KnownChainIds,
-  BinaryOutcome,
-  KnownVenues,
+    KnownVenues,
   accountIdFromWallet,
+  unsafeInstrumentId,
 } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@polymarket/ids';
-import { OutcomeToken } from '../../../../src/outcome-token/core/OutcomeToken.js';
+import type { AccountId, VenueId } from '@polymarket/ids';
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import { TokenBalance } from '../../../../src/token-balance/core/TokenBalance.js';
 import { TokenBalanceInvariantViolation } from '../../../../src/token-balance/core/TokenBalanceInvariantViolation.js';
 
 describe('TokenBalance Core', () => {
-  const conditionRef: OnChainConditionRef = {
-    kind: 'ONCHAIN',
-    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: KnownChainIds.POLYGON,
-    conditionId: '0xabc123def4560000000000000000000000000000000000000000000000000000' as ConditionId,
-  };
 
-  const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
+  const token = unsafeInstrumentId('instrument-up');
   const qty100 = Quantity.of(new Decimal(100));
   const qty50 = Quantity.of(new Decimal(50));
   const qty200 = Quantity.of(new Decimal(200));
@@ -38,7 +29,7 @@ describe('TokenBalance Core', () => {
       const balance = TokenBalance.of(token, qty100, qty50, accountId, venueId);
 
       expect(balance).toBeInstanceOf(TokenBalance);
-      expect(balance.token()).toBe(token);
+      expect(balance.instrumentId()).toBe(token);
       expect(balance.available()).toBe(qty100);
       expect(balance.reserved()).toBe(qty50);
     });
@@ -114,17 +105,9 @@ describe('TokenBalance Core', () => {
         TokenBalance.of(token, qty100, qtyZero, accountId, undefined as any);
       }).toThrow(TokenBalanceInvariantViolation);
     });
-
-    it('бросает TokenBalanceInvariantViolation если token не OutcomeToken instance', () => {
-      const fakeToken = { assetId: () => 'fake' };
-
-      expect(() => {
-        TokenBalance.of(fakeToken as any, qty100, qtyZero, accountId, venueId);
-      }).toThrow(TokenBalanceInvariantViolation);
-      expect(() => {
-        TokenBalance.of(fakeToken as any, qty100, qtyZero, accountId, venueId);
-      }).toThrow('token must be OutcomeToken instance');
-    });
+    // Тест «token не OutcomeToken instance» удалён: VO больше не принимает
+    // `OutcomeToken`. `InstrumentId` — branded-строка, и проверять её через
+    // `instanceof` нечем; обязательность поля покрыта тестом ниже.
 
     it('бросает TokenBalanceInvariantViolation если available не Quantity instance', () => {
       const fakeAmount = { value: () => 100 };
@@ -173,9 +156,8 @@ describe('TokenBalance Core', () => {
   describe('Accessors', () => {
     const balance = TokenBalance.of(token, qty100, qty50, accountId, venueId);
 
-    it('token() возвращает OutcomeToken', () => {
-      expect(balance.token()).toBe(token);
-      expect(balance.token()).toBeInstanceOf(OutcomeToken);
+    it('instrumentId() возвращает идентичность инструмента', () => {
+      expect(balance.instrumentId()).toBe(token);
     });
 
     it('available() возвращает Quantity', () => {
@@ -204,31 +186,11 @@ describe('TokenBalance Core', () => {
     });
   });
 
-  describe('Helper accessors', () => {
-    const balance = TokenBalance.of(token, qty100, qty50, accountId, venueId);
-
-    it('assetId() делегирует к token.assetId()', () => {
-      const assetId = balance.assetId();
-
-      expect(assetId).toEqual(token.assetId());
-      expect(assetId.type).toBe('OUTCOME_TOKEN');
-    });
-
-    it('conditionRef() делегирует к token.conditionRef()', () => {
-      const ref = balance.conditionRef();
-
-      expect(ref).toEqual(conditionRef);
-      expect(ref.kind).toBe('ONCHAIN');
-      expect(ref.protocolId).toBe(KnownOnChainProtocols.POLYMARKET_CTF);
-      expect(ref.chainId).toBe(KnownChainIds.POLYGON);
-    });
-
-    it('outcomeKey() делегирует к token.outcomeKey()', () => {
-      const key = balance.outcomeKey();
-
-      expect(key).toBe(BinaryOutcome.UP);
-    });
-  });
+  // Блок «Helper accessors» удалён вместе с `assetId()`, `conditionRef()` и
+  // `outcomeKey()`. Это были делегаты к `OutcomeToken` — on-chain идентичности,
+  // на которой `TokenBalance` больше не построен: он ключуется `InstrumentId`,
+  // как и весь остальной контур. Off-chain площадка `conditionRef` не имеет
+  // вовсе, поэтому такие аксессоры на общем VO были неуместны.
 
   describe('total()', () => {
     it('возвращает сумму available + reserved', () => {
@@ -323,29 +285,29 @@ describe('TokenBalance Core', () => {
   });
 
   describe('hasSameToken()', () => {
-    const token1 = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-    const token2 = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-    const token3 = OutcomeToken.of(conditionRef, BinaryOutcome.DOWN);
+    const token1 = unsafeInstrumentId('instrument-up');
+    const token2 = unsafeInstrumentId('instrument-up');
+    const token3 = unsafeInstrumentId('instrument-down');
 
     it('возвращает true для одинаковых токенов', () => {
       const balance1 = TokenBalance.of(token1, qty100, qty50, accountId, venueId);
       const balance2 = TokenBalance.of(token2, qty200, qtyZero, accountId, venueId);
 
-      expect(balance1.hasSameToken(balance2)).toBe(true);
+      expect(balance1.hasSameInstrument(balance2)).toBe(true);
     });
 
     it('возвращает false для разных токенов', () => {
       const balance1 = TokenBalance.of(token1, qty100, qty50, accountId, venueId);
       const balance3 = TokenBalance.of(token3, qty100, qty50, accountId, venueId);
 
-      expect(balance1.hasSameToken(balance3)).toBe(false);
+      expect(balance1.hasSameInstrument(balance3)).toBe(false);
     });
   });
 
   describe('equals()', () => {
-    const token1 = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-    const token2 = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-    const token3 = OutcomeToken.of(conditionRef, BinaryOutcome.DOWN);
+    const token1 = unsafeInstrumentId('instrument-up');
+    const token2 = unsafeInstrumentId('instrument-up');
+    const token3 = unsafeInstrumentId('instrument-down');
 
     it('возвращает true для одинаковых token, available и reserved', () => {
       const balance1 = TokenBalance.of(token1, qty100, qty50, accountId, venueId);

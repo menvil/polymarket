@@ -73,6 +73,7 @@ export {
   isVenueAccount,
   isSubaccount,
   getSubaccountDepth,
+  embeddedVenueId,
 } from './AccountId.js';
 
 // Venue

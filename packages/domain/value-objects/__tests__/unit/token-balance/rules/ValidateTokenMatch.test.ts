@@ -1,73 +1,43 @@
+/**
+ * Совпадение инструментов у двух `TokenBalance`.
+ *
+ * @remarks
+ * Правило раньше сравнивало `OutcomeToken`, и его случаи были названы в
+ * терминах on-chain полей: `outcomeKey`, `conditionId`, `chainId`. `TokenBalance`
+ * переведён на `InstrumentId` — идентичность, которой адресует исход весь
+ * остальной контур, — поэтому сравнивать теперь нечего, кроме самого
+ * идентификатора. Off-chain площадка `conditionRef` не имеет вовсе, и различать
+ * инструменты по нему было бы неверно.
+ *
+ * Осталось ровно два случая: инструменты совпадают или нет.
+ */
 import { describe, it, expect } from '@jest/globals';
+import { unsafeInstrumentId } from '@polymarket/ids';
 import { ValidateTokenMatch } from '../../../../src/token-balance/rules/ValidateTokenMatch.js';
-import { OutcomeToken } from '../../../../src/outcome-token/core/OutcomeToken.js';
 import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
-import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
+
+const UP = unsafeInstrumentId('instrument-up');
+const DOWN = unsafeInstrumentId('instrument-down');
 
 describe('ValidateTokenMatch', () => {
-  const conditionRef1: OnChainConditionRef = {
-    kind: 'ONCHAIN',
-    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
-    conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
-  };
-
-  const conditionRef2: OnChainConditionRef = {
-    kind: 'ONCHAIN',
-    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
-    conditionId: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd' as ConditionId,
-  };
-
   describe('успешная валидация', () => {
-    it('проходит если токены идентичны (тот же объект)', () => {
-      const token = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
-
-      const result = ValidateTokenMatch.check(token, token);
-
-      expect(result.ok).toBe(true);
+    it('проходит для одного и того же значения', () => {
+      expect(ValidateTokenMatch.check(UP, UP).ok).toBe(true);
     });
 
-    it('проходит если токены равны (разные объекты, одинаковые данные)', () => {
-      const token1 = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
-      const token2 = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
+    it('проходит для равных значений, полученных по отдельности', () => {
+      // `InstrumentId` — branded-строка: равенство значений, а не ссылок.
+      const first = unsafeInstrumentId('instrument-up');
+      const second = unsafeInstrumentId('instrument-up');
 
-      const result = ValidateTokenMatch.check(token1, token2);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('проходит для DOWN токенов', () => {
-      const token1 = OutcomeToken.of(conditionRef1, BinaryOutcome.DOWN);
-      const token2 = OutcomeToken.of(conditionRef1, BinaryOutcome.DOWN);
-
-      const result = ValidateTokenMatch.check(token1, token2);
-
-      expect(result.ok).toBe(true);
+      expect(first).not.toBe(UP === first ? DOWN : UP);
+      expect(ValidateTokenMatch.check(first, second).ok).toBe(true);
     });
   });
 
   describe('ошибка TOKEN_MISMATCH', () => {
-    it('возвращает ошибку если outcomeKey разные (UP vs DOWN)', () => {
-      const tokenUp = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
-      const tokenDown = OutcomeToken.of(conditionRef1, BinaryOutcome.DOWN);
-
-      const result = ValidateTokenMatch.check(tokenUp, tokenDown);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.TOKEN_MISMATCH);
-        expect(result.error.context?.token1OutcomeKey).toBe('UP');
-        expect(result.error.context?.token2OutcomeKey).toBe('DOWN');
-      }
-    });
-
-    it('возвращает ошибку если conditionId разные', () => {
-      const token1 = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
-      const token2 = OutcomeToken.of(conditionRef2, BinaryOutcome.UP);
-
-      const result = ValidateTokenMatch.check(token1, token2);
+    it('возвращает ошибку для разных инструментов', () => {
+      const result = ValidateTokenMatch.check(UP, DOWN);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -75,41 +45,13 @@ describe('ValidateTokenMatch', () => {
       }
     });
 
-    it('содержит читаемое сообщение об ошибке', () => {
-      const tokenUp = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
-      const tokenDown = OutcomeToken.of(conditionRef1, BinaryOutcome.DOWN);
-
-      const result = ValidateTokenMatch.check(tokenUp, tokenDown);
+    it('сообщение об ошибке называет оба инструмента', () => {
+      const result = ValidateTokenMatch.check(UP, DOWN);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Token mismatch');
-      }
-    });
-
-    it('возвращает ошибку для разных chainId', () => {
-      const conditionRefPolygon: OnChainConditionRef = {
-        kind: 'ONCHAIN',
-        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-        chainId: 137 as any,
-        conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
-      };
-
-      const conditionRefEthereum: OnChainConditionRef = {
-        kind: 'ONCHAIN',
-        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-        chainId: 1 as any,  // Ethereum mainnet
-        conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
-      };
-
-      const token1 = OutcomeToken.of(conditionRefPolygon, BinaryOutcome.UP);
-      const token2 = OutcomeToken.of(conditionRefEthereum, BinaryOutcome.UP);
-
-      const result = ValidateTokenMatch.check(token1, token2);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.TOKEN_MISMATCH);
+        expect(result.error.message).toContain('instrument-up');
+        expect(result.error.message).toContain('instrument-down');
       }
     });
   });

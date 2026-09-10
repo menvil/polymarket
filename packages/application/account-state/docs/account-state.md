@@ -158,10 +158,12 @@ interface AccountOrderRecord {
 
 interface AccountFillRecord {
   readonly fill: Fill;             // canonical факт, immutable
-  readonly status: 'APPLIED' | 'CONFIRMED' | 'REVERTED';
+  readonly status: 'APPLIED' | 'CONFIRMED' | 'REVERTED';   // ось: что сделали МЫ
+  readonly venueStatus?: TradeStatus;                      // ось: что говорит ПЛОЩАДКА
   readonly appliedAt: Timestamp;
   readonly confirmedAt?: Timestamp;
   readonly revertedAt?: Timestamp;
+  readonly venueStatusAt?: Timestamp;
   readonly revertReason?: string;
 }
 ```
@@ -178,6 +180,23 @@ appliedAt/confirmedAt/revertedAt  КОГДА рантайм принял соо�
 вовсе: повтор той же ленты событий обязан давать то же состояние, иначе replay
 перестал бы совпадать с торговлей.
 
+### Буфер драфтов у заявки
+
+`Order` immutable по торговому состоянию, но несёт внутренний буфер драфтов
+`OrderEvent`, который `pullEvents()` опустошает **мутацией**. Состояние этот
+буфер не читает, в сравнение идентичности он не входит (есть регрессионный
+тест в `@polymarket/order`), и на семантику проекции не влияет.
+
+Но producer обязан слить драфты ДО публикации `TRADING_ACCOUNT_ORDER_COMMITTED`
+— иначе в состояние попадёт заявка с неслитым буфером, и любой, кто позже
+вызовет на ней `pullEvents()`, мутирует объект внутри состояния.
+
+Проверить это на стороне потребителя нельзя: read-only доступа к буферу нет,
+единственный способ прочитать — опустошить. Контракт держится соглашением.
+
+По той же причине **не** вызывайте `pullEvents()` на заявке, полученной из
+проекции.
+
 ### `marketId` у заявки
 
 Его нет. `Order` не содержит `marketId`, и добавлять поле без canonical
@@ -189,6 +208,124 @@ venueId + assetIdToInstrumentId(order.asset) + владение инструме
 ```
 
 У `Fill` `marketId` есть — он приходит из canonical факта исполнения.
+
+## Две оси у исполнения
+
+### Проблема
+
+Соблазн — один статус на исполнение. Он не работает, потому что площадка и наш
+рантайм утверждают РАЗНОЕ, и одно не выводится из другого.
+
+```text
+status       APPLIED → CONFIRMED | REVERTED   что сделали МЫ с деньгами
+venueStatus  MATCHED → MINED → CONFIRMED      что говорит ПЛОЩАДКА
+                    ↘ RETRYING ↘ FAILED       canonical TradeStatus
+```
+
+`MATCHED` — исполнение сматчил матчер Polymarket, off-chain. `MINED` —
+расчётная транзакция включена в блок Polygon. **Это утверждения о разных
+системах**, и разница между ними — реальная разница в риске отката, а не
+оформление. Схлопнув их в «применено», мы теряем ровно тот сигнал, ради
+которого площадка их и различает.
+
+В обратную сторону симметрии тоже нет: `REVERTED` — наше действие, и венного
+двойника у него может не быть вовсе. Сверка (#98) откатит исполнение, которого
+на площадке не оказалось, и никакого `FAILED` за таким откатом не стоит.
+
+### Отображение
+
+```text
+venue        →  наша ось          событие
+MATCHED         APPLIED           FILL_APPLIED + VENUE_STATUS_OBSERVED
+MINED           (не меняется)     VENUE_STATUS_OBSERVED
+CONFIRMED       CONFIRMED         FILL_CONFIRMED + VENUE_STATUS_OBSERVED
+RETRYING        (не меняется)     VENUE_STATUS_OBSERVED
+FAILED          REVERTED          FILL_REVERTED + VENUE_STATUS_OBSERVED
+—               REVERTED          FILL_REVERTED   (откат от сверки)
+```
+
+`MINED` и `RETRYING` не меняют ни портфель, ни заявку — экономических
+двойников у них нет. Без отдельного события они бы просто терялись; это и есть
+причина, по которой `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED` существует.
+
+Экономические события venue-ось **не трогают**: смешав их, мы получили бы то
+самое схлопывание, ради предотвращения которого оси разделены. Producer,
+наблюдающий `MATCHED`, публикует два события — это два разных факта.
+
+### Почему `TradeStatus`, а не свой enum
+
+`TradeStatus` уже существует в `@polymarket/fill` как канонический контракт
+on-chain статуса Polymarket, а `ExecutionMetadata.tradeStatus` — его штатный
+носитель. Поверх него уже построена политика
+`venueTradeStatusPolicy` (`@polymarket/use-cases`) с профилями
+`recovery` (`CONFIRMED`, `MATCHED`) и `settlement` (только `CONFIRMED`).
+
+Завести рядом третий набор тех же пяти строк было бы прямым дублированием:
+второй уже есть — `VenueTradeStatus` в `@polymarket/ports`. Это расхождение
+существует до нас и здесь только фиксируется.
+
+### Порядок доставки ≠ порядок на площадке
+
+Площадка назад не ходит. Но сообщения приходят не по порядку, и смешивать эти
+две вещи нельзя:
+
+```text
+current == incoming              повтор                        no-op
+терминальный → нетерминальный    запоздавшее старое сообщение  no-op
+CONFIRMED ↔ FAILED               два исхода одной сделки       Err
+нетерминальный → любой           принять
+```
+
+Само правило живёт **не здесь**, а в `@polymarket/fill`:
+
+```typescript
+classifyTradeStatusObservation(current, incoming);
+// → 'ACCEPT' | 'DUPLICATE' | 'STALE' | 'CONFLICT'
+```
+
+Оно выводится целиком из контракта `TradeStatus` — какие статусы финальны и
+куда площадка из них ходит — и не зависит ни от наблюдателя, ни от того, где
+хранится результат. Держать его рядом с состоянием аккаунта значило бы
+повторить в каждом следующем потребителе.
+
+Здесь остаётся ровно то, чего домен знать не может: **чем обернуть** каждый
+исход в этом состоянии — `Ok(undefined)`, `Err` или запись. Функция ничего не
+решает за вызывающего: не бросает, не логирует и не знает, что `CONFLICT`
+станет `AccountFillTerminalVenueStatusConflictError`.
+
+Аргумент `current` НЕ принимает `undefined` намеренно. Отсутствие наблюдений —
+не вопрос политики: первое наблюдение принимается всегда. Будь аргумент
+необязательным, вызывающему пришлось бы приводить тип в ветке `CONFLICT` —
+компилятор не проносит сужение через вызов, — а приведение типа в денежном
+пути проверить нечем.
+
+Реальный случай:
+
+```text
+площадка:   MATCHED → MINED → CONFIRMED
+доставка:   MATCHED → CONFIRMED → MINED
+                                  ↑ старое наблюдение доехало последним
+```
+
+`MINED` здесь не означает, что сделка перестала быть подтверждённой. Отвергать
+его **нельзя**: подписки проектора `critical`, и одно запоздавшее сообщение
+превращалось бы в аварийный отказ торгового контура из-за нормальной сетевой
+перестановки.
+
+Терминальные статусы поглощающие — записанный `CONFIRMED`/`FAILED` больше не
+затирается. А вот два РАЗНЫХ терминальных исхода у одной сделки задержкой не
+объясняются:
+
+```text
+CONFIRMED  «finality достигнута, транзакция успешна»
+FAILED     «окончательно упала, повторов не будет»
+```
+
+Одна сделка не может быть и тем, и другим — это единственный настоящий
+конфликт venue-оси.
+
+Тот же контракт подтверждает и запрет `CONFIRMED → REVERTED` на нашей оси: он
+вводился из общего принципа, а оказался подкреплён документацией площадки.
 
 ## Идентичность аккаунта
 
@@ -472,7 +609,15 @@ DIRECT_FILL_APPLIED   эффект применён вне обычного flow
 заявку без гарантии, что соответствующие резервации уже материализованы.
 
 Будущий command/domain-процессор после успешного commit'а публикует именно
-`TRADING_ACCOUNT_ORDER_COMMITTED`.
+`TRADING_ACCOUNT_ORDER_COMMITTED` — но `pullEvents()` при этом вызвать обязан
+(см. «Буфер драфтов у заявки»). Куда пойдут полученные `OrderEvent` — его
+решение; приватное состояние на них не подписано.
+
+Механика событий агрегата сегодня используется только старым контуром:
+`pullEvents()` вызывают `PlaceOrderUseCase`, `CancelOrderUseCase`,
+`UpdateOrderStatusUseCase` и `ProcessFillUseCase`. `Order.fromEvents()` —
+восстановление из лога событий — в продакшене не вызывается нигде: это
+дремлющая возможность, а не действующий путь.
 
 ## Что означает `critical: true`
 
@@ -527,4 +672,22 @@ objects, и структурная заглушка проверяла бы не
 | `atomicity.test.ts` | полный отпечаток состояния до и после 13 невалидных событий, `Err` из `publish()`, `stop()`/повторный `start()` |
 | `replayDeterminism.test.ts` | одна лента на двух свежих рантаймах даёт эквивалентное состояние |
 | `eventIsolation.test.ts` | старые application-события и Domain `OrderEvent` не проецируются |
-| `identityHelpers.test.ts` | `accountKey`, `embeddedVenueId`, `sameOrderIdentity`/`sameOrderState`, `sameFillFact` — по каждому полю |
+| `venueStatus.test.ts` | вторая ось: доставка `MINED`/`RETRYING`, независимость осей, порядок наблюдений, терминальность, валидация |
+| `identityHelpers.test.ts` | `accountKey` — идентичность аккаунта |
+
+Сравнение заявок и исполнений живёт в своих доменных пакетах и там же
+тестируется: `@polymarket/order` → `orderIdentity.test.ts`,
+`@polymarket/fill` → `fillFactIdentity.test.ts`.
+
+Туда же уехали три правила, которые какое-то время жили здесь:
+
+| правило | теперь в | тест |
+| --- | --- | --- |
+| `classifyTradeStatusObservation`, `isTerminalTradeStatus` | `@polymarket/fill` | `tradeStatus.test.ts` |
+| `OPEN_ORDER_STATUSES` | `@polymarket/order` | `navigation.test.ts` (потребитель) |
+| `embeddedVenueId` | `@polymarket/ids` | `core.test.ts` |
+
+Критерий переезда один: правило выводится из контракта самой сущности и не
+зависит от того, кто спрашивает. Политика переходов по НАШЕЙ оси
+(`classifyFillTransition`) этому критерию не отвечает и осталась здесь —
+`AccountFillStatus` придуман этим пакетом, а не площадкой.

@@ -18,7 +18,8 @@ import type {
   IOrderedEventOutbox,
 } from '@polymarket/ports';
 import { VersionConflictError } from '@polymarket/ports';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
+import type { Portfolio, } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import type { AccountId, InstrumentId, OrderId } from '@polymarket/ids';
 import { asPolymarketCtfToken } from '@polymarket/ids';
 import { OutcomePrice, Quantity } from '@polymarket/value-objects';
@@ -104,7 +105,7 @@ function makePortfolioMock(): Portfolio {
     },
     version: 0,
     getPosition: (_id: InstrumentId) => undefined,
-    getPositions: () => ([] as IPosition[]).values(),
+    getPositions: () => ([] as Position[]).values(),
     getPositionCount: () => 0,
     reserveForOrder: jest.fn<Portfolio['reserveForOrder']>(),
     releaseReservation: jest.fn<Portfolio['releaseReservation']>(),

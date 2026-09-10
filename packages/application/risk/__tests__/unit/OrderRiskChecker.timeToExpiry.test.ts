@@ -18,7 +18,8 @@ import { RiskPolicy } from '../../src/RiskPolicy.js';
 import type { RiskParams } from '../../src/RiskParams.js';
 import type { PreOrderCheckInput } from '../../src/PreOrderCheckInput.js';
 import type { ILogger } from '@polymarket/logger';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
+import type { Portfolio, } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import type { InstrumentId } from '@polymarket/ids';
 import type { OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
@@ -66,7 +67,7 @@ function makePortfolio(): Portfolio {
       total: () => ({ value: () => available }),
     },
     getPosition: () => undefined,
-    getPositions: () => new Map<InstrumentId, IPosition>().values(),
+    getPositions: () => new Map<InstrumentId, Position>().values(),
     getPositionCount: () => 0,
   } as unknown as Portfolio;
 }

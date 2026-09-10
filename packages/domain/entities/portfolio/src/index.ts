@@ -36,7 +36,7 @@
 
 // Aggregate
 export { Portfolio } from './Portfolio.js';
-export type { PortfolioParams, IPosition } from './Portfolio.js';
+export type { PortfolioParams } from './Portfolio.js';
 
 // Value Objects
 export { type PortfolioId, parsePortfolioId, asPortfolioId } from './value-objects/index.js';
@@ -50,7 +50,3 @@ export {
   getTotalUnrealizedPnL,
   type PriceProvider,
 } from './services/PortfolioValuationService.js';
-
-// Simple Position
-export { SimplePosition } from './SimplePosition.js';
-export type { SimplePositionParams } from './SimplePosition.js';

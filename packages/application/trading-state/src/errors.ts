@@ -445,15 +445,19 @@ export class TradingMarketStructureConflictError extends TradingError {
     public readonly difference: TradingMarketStructureDifference,
   ) {
     super(
+      // Роли называются ЗДЕСЬ: форма расхождения нейтральна, потому что
+      // сравнение не знает, какой из двух рынков принят, а какой пришёл.
+      // Для читателя лога это знание существенно, и формат сообщения с
+      // ключами контекста от переноса не изменился.
       `Trading market ${venueId}:${marketId} structure conflict on ${difference.field}: ` +
-        `admitted ${difference.admitted}, incoming ${difference.incoming}`,
+        `admitted ${difference.left}, incoming ${difference.right}`,
       {
         context: {
           venueId,
           marketId,
           field: difference.field,
-          admitted: difference.admitted,
-          incoming: difference.incoming,
+          admitted: difference.left,
+          incoming: difference.right,
         },
       },
     );

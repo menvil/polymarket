@@ -1,7 +1,7 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { wrapOp, rewrap } from '@polymarket/errors';
 import type { AccountId, VenueId } from '@polymarket/ids';
-import { OutcomeToken } from '../../outcome-token/core/index.js';
+import type { InstrumentId } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/index.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { TokenBalance } from '../core/index.js';
@@ -26,7 +26,7 @@ import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
  * - context.opChain - цепочка операций (внутренние op не теряются)
  * - context.available/reserved/qty - входные параметры (если применимо)
  * - context.reason - типизированная причина из TokenBalanceErrorReason enum (root, не перетирается)
- * - context.token - информация о токене
+ * - context.token - идентификатор инструмента
  *
  * **Правило возвращаемых типов:**
  * ВСЕ операции возвращают Result<T, InvalidTokenBalanceError>
@@ -39,11 +39,11 @@ import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
  * @example
  * ```typescript
  * import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
- * import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
+ * import { unsafeInstrumentId } from '@polymarket/ids';
  * import { QuantityService } from '@polymarket/value-objects/quantity';
  * import { BinaryOutcome, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
  *
- * const token = expectOk(OutcomeTokenService.create(conditionRef, BinaryOutcome.UP));
+ * const token = unsafeInstrumentId('100…001');
  * const available = expectOk(QuantityService.create(100));
  * const reserved = expectOk(QuantityService.create(20));
  * const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
@@ -70,7 +70,7 @@ export class TokenBalanceService {
   private static readonly SERVICE_NAME = 'TokenBalanceService';
 
   /**
-   * Создаёт TokenBalance из OutcomeToken, available, reserved, AccountId и VenueId
+   * Создаёт TokenBalance из InstrumentId, available, reserved, AccountId и VenueId
    *
    * @param token - Outcome token
    * @param available - Количество доступных токенов (>= 0, finite, not NaN)
@@ -99,7 +99,7 @@ export class TokenBalanceService {
    * ```typescript
    * import { accountIdFromWallet, parseWalletAddress, KnownVenues } from '@polymarket/ids';
    *
-   * const token = expectOk(OutcomeTokenService.create(conditionRef, BinaryOutcome.UP));
+   * const token = unsafeInstrumentId('100…001');
    * const available = Quantity.of(new Decimal(100));
    * const reserved = Quantity.of(new Decimal(20));
    * const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
@@ -119,7 +119,7 @@ export class TokenBalanceService {
    * ```
    */
   public static create(
-    token: OutcomeToken,
+    token: InstrumentId,
     available: Quantity,
     reserved: Quantity,
     accountId: AccountId,
@@ -129,7 +129,7 @@ export class TokenBalanceService {
       TokenBalanceService.SERVICE_NAME,
       'create',
       {
-        token: token?.assetId?.() ?? 'null',
+        token: String(token ?? 'null'),
         available: available?.value?.()?.toString() ?? 'null',
         reserved: reserved?.value?.()?.toString() ?? 'null',
         accountId: accountId ?? 'null',
@@ -173,7 +173,7 @@ export class TokenBalanceService {
    * ```
    */
   public static createWithZeroReserved(
-    token: OutcomeToken,
+    token: InstrumentId,
     available: Quantity,
     accountId: AccountId,
     venueId: VenueId
@@ -182,7 +182,7 @@ export class TokenBalanceService {
       TokenBalanceService.SERVICE_NAME,
       'createWithZeroReserved',
       {
-        token: token?.assetId?.() ?? 'null',
+        token: String(token ?? 'null'),
         available: available?.value?.()?.toString() ?? 'null',
         accountId: accountId ?? 'null',
         venueId: venueId ?? 'null'
@@ -248,7 +248,7 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'reserve';
     const ctx = {
-      token: balance?.assetId?.() ?? 'null',
+      token: String(balance?.instrumentId?.() ?? 'null'),
       available: balance?.available?.()?.value?.()?.toString() ?? 'null',
       reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null',
       qty: qty?.value?.()?.toString() ?? 'null'
@@ -274,7 +274,7 @@ export class TokenBalanceService {
 
       // Создаём новый TokenBalance (сохраняем token, accountId и venueId)
       return this.create(
-        balance.token(),
+        balance.instrumentId(),
         newAvailableResult.value,
         newReservedResult.value,
         balance.accountId(),
@@ -339,7 +339,7 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'unfreezeReserved';
     const ctx = {
-      token: balance?.assetId?.() ?? 'null',
+      token: String(balance?.instrumentId?.() ?? 'null'),
       available: balance?.available?.()?.value?.()?.toString() ?? 'null',
       reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null',
       qty: qty?.value?.()?.toString() ?? 'null'
@@ -365,7 +365,7 @@ export class TokenBalanceService {
 
       // Создаём новый TokenBalance (сохраняем token, accountId и venueId)
       return this.create(
-        balance.token(),
+        balance.instrumentId(),
         newAvailableResult.value,
         newReservedResult.value,
         balance.accountId(),
@@ -438,7 +438,7 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'consumeReserved';
     const ctx = {
-      token: balance?.assetId?.() ?? 'null',
+      token: String(balance?.instrumentId?.() ?? 'null'),
       available: balance?.available?.()?.value?.()?.toString() ?? 'null',
       reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null',
       qty: qty?.value?.()?.toString() ?? 'null'
@@ -459,7 +459,7 @@ export class TokenBalanceService {
 
       // Создаём новый TokenBalance (available не изменился)
       return this.create(
-        balance.token(),
+        balance.instrumentId(),
         balance.available(), // не меняется
         newReservedResult.value,
         balance.accountId(),
@@ -514,7 +514,7 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'updateAvailable';
     const ctx = {
-      token: balance?.assetId?.() ?? 'null',
+      token: String(balance?.instrumentId?.() ?? 'null'),
       currentAvailable: balance?.available?.()?.value?.()?.toString() ?? 'null',
       newAvailable: newAvailable?.value?.()?.toString() ?? 'null',
       reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null'
@@ -523,7 +523,7 @@ export class TokenBalanceService {
     return wrapOp(TokenBalanceService.SERVICE_NAME, op, ctx, () => {
       // Создаём новый TokenBalance (reserved не меняется)
       return this.create(
-        balance.token(),
+        balance.instrumentId(),
         newAvailable,
         balance.reserved(), // не меняется
         balance.accountId(),

@@ -61,6 +61,7 @@ import type {
   TradingAccountFillAppliedEvent,
   TradingAccountFillConfirmedEvent,
   TradingAccountFillRevertedEvent,
+  TradingAccountFillVenueStatusObservedEvent,
   TradingAccountInitializedEvent,
   TradingAccountOrderCommittedEvent,
 } from '@polymarket/application-events';
@@ -82,6 +83,7 @@ const PROJECTED_EVENT_TYPES = [
   'TRADING_ACCOUNT_FILL_APPLIED',
   'TRADING_ACCOUNT_FILL_CONFIRMED',
   'TRADING_ACCOUNT_FILL_REVERTED',
+  'TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED',
 ] as const;
 
 /**
@@ -203,6 +205,13 @@ export class AccountStateProjector {
         },
         { critical: true },
       ),
+      this._eventBus.subscribe(
+        'TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED',
+        (event) => {
+          this._onFillVenueStatusObserved(event as TradingAccountFillVenueStatusObservedEvent);
+        },
+        { critical: true },
+      ),
     ];
   }
 
@@ -298,6 +307,30 @@ export class AccountStateProjector {
    */
   private _onFillConfirmed(event: TradingAccountFillConfirmedEvent): void {
     const applied = this._state.confirmFill(event.payload.fill, event.metadata.createdAt);
+    if (isErr(applied)) throw applied.error;
+  }
+
+  /**
+   * Записывает статус, о котором сообщила площадка.
+   *
+   * @param event - Canonical `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED`
+   * @throws {Error} При неизвестном аккаунте, неизвестном исполнении,
+   *   конфликте факта либо двух разных терминальных исходах одной сделки
+   *
+   * @remarks
+   * Вторая ось: ни портфель, ни заявка, ни runtime-статус не меняются.
+   * Единственный путь, которым в состояние попадают `MINED` и `RETRYING` —
+   * экономических двойников у них нет.
+   *
+   * Запоздавшее наблюдение после терминального исхода — не ошибка, а обычная
+   * перестановка доставки: оно игнорируется, а не роняет публикацию.
+   */
+  private _onFillVenueStatusObserved(event: TradingAccountFillVenueStatusObservedEvent): void {
+    const applied = this._state.observeFillVenueStatus(
+      event.payload.fill,
+      event.payload.venueStatus,
+      event.metadata.createdAt,
+    );
     if (isErr(applied)) throw applied.error;
   }
 

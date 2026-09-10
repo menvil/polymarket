@@ -167,8 +167,9 @@ Discovery и Planner о них не знают. Единственный под�
 | `TRADING_ACCOUNT_FILL_APPLIED` | `Fill`, `Portfolio`, `Order?` | экономика исполнения УЖЕ применена |
 | `TRADING_ACCOUNT_FILL_CONFIRMED` | `Fill` | исполнение достигло финальности |
 | `TRADING_ACCOUNT_FILL_REVERTED` | `Fill`, `Portfolio`, `Order?`, `reason` | применённое исполнение откачено |
+| `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED` | `Fill`, `TradeStatus` | площадка сообщила статус; экономика не меняется |
 
-Все пять — **POST-COMMIT**:
+Первые пять — **POST-COMMIT**:
 
 ```text
 приватное наблюдение / команда
@@ -181,6 +182,26 @@ TRADING_ACCOUNT_*                  ← здесь уже только итог
   ↓
 IEventBus → AccountStateProjector → AccountHotState
 ```
+
+### Две оси у исполнения
+
+```text
+что сделали МЫ        APPLIED → CONFIRMED | REVERTED    экономика
+что говорит ПЛОЩАДКА  MATCHED → MINED → CONFIRMED       TradeStatus
+                             ↘ RETRYING ↘ FAILED
+```
+
+`MATCHED` — матчер Polymarket (off-chain), `MINED` — блок Polygon. Утверждения
+о разных системах, и разница между ними — реальная разница в риске отката.
+
+`MINED` и `RETRYING` не имеют экономических двойников: они не меняют ни
+портфель, ни заявку. `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED` — единственное
+событие, которым они могут приехать.
+
+Статус типизирован существующим `TradeStatus` из `@polymarket/fill` (его штатный
+носитель — `ExecutionMetadata.tradeStatus`), а не своим enum: тот же union уже
+продублирован как `VenueTradeStatus` в `@polymarket/ports`, и третья копия была
+бы лишней.
 
 ### Почему не переиспользованы старые события
 

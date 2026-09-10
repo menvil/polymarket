@@ -1,6 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
-import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
+import type { InstrumentId } from '@polymarket/ids';
 import { InvalidTokenBalanceError } from '../errors/InvalidTokenBalanceError.js';
 import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
 
@@ -42,23 +42,23 @@ import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
  */
 export class ValidateTokenMatch {
   public static check(
-    token1: OutcomeToken,
-    token2: OutcomeToken
+    token1: InstrumentId,
+    token2: InstrumentId
   ): Result<void, InvalidTokenBalanceError> {
-    // Проверка: токены должны совпадать
-    if (!token1.equals(token2)) {
+    // Проверка: инструменты должны совпадать
+    if (token1 !== token2) {
       return Err(
         new InvalidTokenBalanceError(
           (ctx: Record<string, unknown>) =>
-            `Token mismatch: ${ctx.token1OutcomeKey} vs ${ctx.token2OutcomeKey}`,
+            `Token mismatch: ${ctx.token1} vs ${ctx.token2}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: TokenBalanceErrorReason.TOKEN_MISMATCH,
-              token1OutcomeKey: token1.outcomeKey(),
-              token2OutcomeKey: token2.outcomeKey(),
-              token1AssetId: token1.assetId(),
-              token2AssetId: token2.assetId()
+              token1: String(token1),
+              token2: String(token2),
+              token1AssetId: String(token1),
+              token2AssetId: String(token2)
             }
           }
         )

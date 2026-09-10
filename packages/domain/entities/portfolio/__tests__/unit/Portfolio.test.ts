@@ -14,7 +14,9 @@
 
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
+import type { Position } from '@polymarket/position';
 import { Portfolio } from '../../src/Portfolio.js';
+import { closedPosition, position } from '../positionFixture.js';
 import { asPortfolioId } from '../../src/value-objects/index.js';
 import { PortfolioValidationError } from '@polymarket/errors/portfolio';
 import { InvalidBalanceError } from '@polymarket/errors';
@@ -58,30 +60,15 @@ function makeInstrumentId(raw: string): InstrumentId {
   return raw as InstrumentId;
 }
 
-const ZERO = { value: () => new Decimal(0) };
-const PRICE = { value: () => new Decimal(0.65) };
-const QTY   = { value: () => new Decimal(100) };
-
-function makeOpenPosition(instrumentId: InstrumentId) {
-  return {
-    instrumentId,
-    quantity: QTY,
-    side: 'LONG' as const,
-    averageEntryPrice: PRICE,
-    isClosed: () => false,
-    getUnrealizedPnL: () => ZERO,
-  };
+// Позиции строятся НАСТОЯЩИМ `Position`: структурных заглушек больше нет —
+// вместе с `IPosition` исчезла и возможность подставить объект, которого в
+// проде не существует.
+function makeOpenPosition(instrumentId: InstrumentId): Position {
+  return position(instrumentId, { quantity: 100, entryPrice: 0.65 });
 }
 
-function makeClosedPosition(instrumentId: InstrumentId) {
-  return {
-    instrumentId,
-    quantity: ZERO,
-    side: 'LONG' as const,
-    averageEntryPrice: PRICE,
-    isClosed: () => true,
-    getUnrealizedPnL: () => ZERO,
-  };
+function makeClosedPosition(instrumentId: InstrumentId): Position {
+  return closedPosition(instrumentId);
 }
 
 // ==================== Тесты ====================
@@ -287,10 +274,12 @@ describe('Portfolio.upsertPosition()', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const newPosition = { ...makeOpenPosition(instrumentId), extraField: 'updated' };
+    // Другая позиция того же инструмента — upsert обязан заменить, а не добавить.
+    const newPosition = position(instrumentId, { quantity: 250, entryPrice: 0.7 });
     const updated = result.value.upsertPosition(newPosition);
     expect(updated.getPositionCount()).toBe(1);
     expect(updated.getPosition(instrumentId)).toBe(newPosition);
+    expect(updated.getPosition(instrumentId)?.quantity.value().toNumber()).toBe(250);
   });
 
   it('удаляет закрытую позицию', () => {

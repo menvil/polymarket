@@ -2,19 +2,26 @@
  * Сравнение заявок: неизменяемая идентичность отдельно от изменяемого состояния.
  *
  * @remarks
- * `TRADING_ACCOUNT_ORDER_COMMITTED` доставляется по общей шине и может прийти
- * повторно. Поэтому по одному и тому же `OrderId` состояние обязано различать
- * ТРИ разных случая, и по-разному на них реагировать:
+ * У заявки, в отличие от исполнения, изменяемая часть ЕСТЬ: `status`,
+ * `filledSize`, `averagePrice`, `fillIds`, `reason` меняются по ходу её жизни.
+ * Поэтому по одному и тому же `OrderId` различимы ТРИ случая, а не два:
  *
  * ```text
- * та же идентичность, другое состояние   законное обновление  → применить
- * та же идентичность, то же состояние    дубликат             → no-op
- * другая идентичность                    конфликт             → Err
+ * идентичность ==, состояние !=   та же заявка, продвинувшаяся дальше
+ * идентичность ==, состояние ==   та же заявка в том же состоянии
+ * идентичность !=                 ДРУГАЯ заявка под чужим идентификатором
  * ```
  *
- * Без этого различия повторно доставленный старый event откатил бы состояние
- * назад: он несёт УСТАРЕВШИЙ портфель, и слепое применение вернуло бы уже
- * потраченные деньги в available.
+ * Что делать с каждым исходом — решает потребитель. Приватное состояние,
+ * например, применяет первый, считает второй дубликатом доставки, а третий
+ * отвергает; но само это решение здесь не зашито.
+ *
+ * ### Почему это живёт в домене
+ *
+ * «Что делает две заявки одной и той же» — знание о заявке, а не о конкретном
+ * потребителе. Сверка с площадкой, приватное состояние и восстановление после
+ * разрыва задают один и тот же вопрос, и три независимых ответа на него
+ * разошлись бы.
  *
  * ### Что считается неизменяемым
  *
@@ -46,11 +53,12 @@ import {
   accountIdToString,
   assetIdToString,
 } from '@polymarket/ids';
-import type { Order } from '@polymarket/order';
+import type { FieldDifference } from '@polymarket/errors';
+import type { Order } from './Order.js';
 import { SideService } from '@polymarket/value-objects';
 
 /** Поле неизменяемой идентичности заявки, по которому нашлось расхождение. */
-export type AccountOrderIdentityField =
+export type OrderIdentityField =
   | 'id'
   | 'accountId'
   | 'asset'
@@ -64,25 +72,19 @@ export type AccountOrderIdentityField =
  * Первое найденное расхождение неизменяемой идентичности заявки.
  *
  * @remarks
- * Значения приводятся к строкам ДЛЯ ЛОГА — сравнение выполняется по value
- * objects, а не по этим строкам.
+ * Общая форма `FieldDifference` — та же, что у факта исполнения и у структуры
+ * рынка. Почему пара значений называется нейтрально и кто называет роли,
+ * объяснено там же.
  */
-export interface AccountOrderIdentityDifference {
-  /** Поле, по которому заявки разошлись */
-  readonly field: AccountOrderIdentityField;
-  /** Значение в уже сохранённой заявке */
-  readonly stored: string;
-  /** Значение в пришедшей заявке */
-  readonly incoming: string;
-}
+export type OrderIdentityDifference = FieldDifference<OrderIdentityField>;
 
 /**
  * Читаемое представление возможно отсутствующего значения.
  *
  * @remarks
- * `accountIdToString` в этом модуле используется ТОЛЬКО для текста ошибки.
- * Сравнение аккаунтов делает `accountIdEquals` — canonical-равенство, а не
- * совпадение строк.
+ * `accountIdToString` в этом модуле используется ТОЛЬКО для текста
+ * расхождения. Сравнение аккаунтов делает `accountIdEquals` —
+ * canonical-равенство, а не совпадение строк.
  */
 function show(value: string | undefined): string {
   return value ?? '<none>';
@@ -91,8 +93,8 @@ function show(value: string | undefined): string {
 /**
  * Ищет расхождение неизменяемой идентичности двух заявок.
  *
- * @param stored - Заявка, уже сохранённая в состоянии
- * @param incoming - Заявка из пришедшего события
+ * @param left - Первая заявка
+ * @param right - Вторая заявка
  * @returns Первое расхождение либо `undefined`, если идентичность совпала
  *
  * @remarks
@@ -102,77 +104,78 @@ function show(value: string | undefined): string {
  *
  * @example
  * ```typescript
- * const difference = findOrderIdentityDifference(stored.order, incoming);
+ * const difference = findOrderIdentityDifference(stored, incoming);
  * if (difference !== undefined) {
- *   return Err(new AccountOrderIdentityConflictError(venueId, accountId, id, difference));
+ *   logger.warn(`order ${stored.id} differs on ${difference.field}`);
  * }
  * ```
  */
 export function findOrderIdentityDifference(
-  stored: Order,
-  incoming: Order,
-): AccountOrderIdentityDifference | undefined {
-  if (stored.id !== incoming.id) {
-    return { field: 'id', stored: stored.id, incoming: incoming.id };
+  left: Order,
+  right: Order,
+): OrderIdentityDifference | undefined {
+  if (left.id !== right.id) {
+    return { field: 'id', left: left.id, right: right.id };
   }
 
   // accountId сравнивается canonical-равенством: два эквивалентных
-  // AccountId — это разные JS-объекты, и `===` дал бы ложный конфликт.
-  const storedAccount = stored.accountId;
-  const incomingAccount = incoming.accountId;
+  // accountId сравнивается canonical-равенством: два эквивалентных
+  // AccountId — это разные JS-объекты, и `===` дал бы ложное расхождение.
+  const leftAccount = left.accountId;
+  const rightAccount = right.accountId;
   const sameAccount =
-    storedAccount === undefined || incomingAccount === undefined
-      ? storedAccount === incomingAccount
-      : accountIdEquals(storedAccount, incomingAccount);
+    leftAccount === undefined || rightAccount === undefined
+      ? leftAccount === rightAccount
+      : accountIdEquals(leftAccount, rightAccount);
   if (!sameAccount) {
     return {
       field: 'accountId',
-      stored: show(storedAccount && accountIdToString(storedAccount)),
-      incoming: show(incomingAccount && accountIdToString(incomingAccount)),
+      left: show(leftAccount && accountIdToString(leftAccount)),
+      right: show(rightAccount && accountIdToString(rightAccount)),
     };
   }
 
-  if (!AssetIdHelpers.equals(stored.asset, incoming.asset)) {
+  if (!AssetIdHelpers.equals(left.asset, right.asset)) {
     return {
       field: 'asset',
-      stored: assetIdToString(stored.asset),
-      incoming: assetIdToString(incoming.asset),
+      left: assetIdToString(left.asset),
+      right: assetIdToString(right.asset),
     };
   }
 
-  if (!SideService.equals(stored.side, incoming.side)) {
-    return { field: 'side', stored: stored.side, incoming: incoming.side };
+  if (!SideService.equals(left.side, right.side)) {
+    return { field: 'side', left: left.side, right: right.side };
   }
 
-  if (!stored.price.equals(incoming.price)) {
+  if (!left.price.equals(right.price)) {
     return {
       field: 'price',
-      stored: stored.price.value().toString(),
-      incoming: incoming.price.value().toString(),
+      left: left.price.value().toString(),
+      right: right.price.value().toString(),
     };
   }
 
-  if (!stored.size.equals(incoming.size)) {
+  if (!left.size.equals(right.size)) {
     return {
       field: 'size',
-      stored: stored.size.value().toString(),
-      incoming: incoming.size.value().toString(),
+      left: left.size.value().toString(),
+      right: right.size.value().toString(),
     };
   }
 
-  if (!stored.timestamp.equals(incoming.timestamp)) {
+  if (!left.timestamp.equals(right.timestamp)) {
     return {
       field: 'timestamp',
-      stored: stored.timestamp.toISO(),
-      incoming: incoming.timestamp.toISO(),
+      left: left.timestamp.toISO(),
+      right: right.timestamp.toISO(),
     };
   }
 
-  if (stored.strategyId !== incoming.strategyId) {
+  if (left.strategyId !== right.strategyId) {
     return {
       field: 'strategyId',
-      stored: show(stored.strategyId),
-      incoming: show(incoming.strategyId),
+      left: show(left.strategyId),
+      right: show(right.strategyId),
     };
   }
 
@@ -207,9 +210,9 @@ export function sameOrderIdentity(a: Order, b: Order): boolean {
  * @returns `true`, если совпала и идентичность, и всё изменяемое состояние
  *
  * @remarks
- * Это и есть критерий ДУБЛИКАТА: событие с полностью эквивалентной заявкой
- * ничего не добавляет к состоянию, поэтому применять его нельзя — в нём
- * лежит устаревший портфель.
+ * Полная эквивалентность означает, что вторая заявка ничего не добавляет к
+ * первой. Потребитель, у которого первая уже сохранена, на этом основании
+ * может ничего не делать.
  *
  * Сверх идентичности сравниваются `status`, `filledSize`, `averagePrice`,
  * `fillIds` и `reason`. `fillIds` сравнивается ПО ПОРЯДКУ: агрегат
@@ -218,7 +221,7 @@ export function sameOrderIdentity(a: Order, b: Order): boolean {
  *
  * @example
  * ```typescript
- * if (sameOrderState(stored.order, incoming)) return Ok(undefined); // no-op
+ * if (sameOrderState(stored, incoming)) return; // ничего нового
  * ```
  */
 export function sameOrderState(a: Order, b: Order): boolean {

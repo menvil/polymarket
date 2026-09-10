@@ -8,6 +8,12 @@
  */
 
 import type { ILogger } from '@polymarket/logger';
+import {
+  midpoint,
+  microprice as topOfBookMicroprice,
+  imbalance as topOfBookImbalance,
+  spreadBps as topOfBookSpreadBps,
+} from '@polymarket/orderbook';
 
 /**
  * Источник цены базового крипто-актива.
@@ -507,11 +513,19 @@ export class CryptoMarketDataStore {
 
     // Деривативы считаем до out-of-order ветки, чтобы #M2: в price-history писать
     // microprice (а не mid) в обоих путях — иначе серия цен биржи смешивала бы их.
-    const mid = (bid + ask) / 2;
-    const sizeSum = bidSize + askSize;
-    const microprice = sizeSum > 0 ? (ask * bidSize + bid * askSize) / sizeSum : mid;
-    const spreadBps = ((ask - bid) / mid) * 10_000;
-    const imbalanceTop = sizeSum > 0 ? (bidSize - askSize) / sizeSum : 0;
+    // Формулы — из домена (`@polymarket/orderbook`). Здесь они считаются по
+    // сырым числам, а не по сущности `Orderbook`: горячий путь держит top-N
+    // уровней числами ради памяти, и собирать стакан на каждое обновление
+    // книги слишком дорого. Согласие числового пути с `Decimal`-путём
+    // закреплено тестом `topOfBookMath.test.ts`.
+    //
+    // `bid`/`ask` уже прошли `normalizeLevels` (NaN/Inf/≤0 отсеяны) и оба
+    // положительны, поэтому вырожденные ветки здесь недостижимы — запасные
+    // значения стоят ради тотальности, а не как ожидаемый случай.
+    const mid = midpoint(bid, ask);
+    const microprice = topOfBookMicroprice(bid, ask, bidSize, askSize) ?? mid;
+    const spreadBps = topOfBookSpreadBps(bid, ask) ?? 0;
+    const imbalanceTop = topOfBookImbalance(bidSize, askSize) ?? 0;
 
     const existingState = this._venueStates.get(asset)?.get(input.venue);
     if (existingState && input.exchangeTsMs < existingState.lastBookTsMs) {

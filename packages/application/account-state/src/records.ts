@@ -11,7 +11,7 @@
  * Запись добавляет к сущности только то, чего у неё быть не может:
  * ВРЕМЯ РАНТАЙМА и, для исполнения, его runtime-статус.
  */
-import type { Fill } from '@polymarket/fill';
+import type { Fill, TradeStatus } from '@polymarket/fill';
 import type { Order } from '@polymarket/order';
 import type { Timestamp } from '@polymarket/timestamp';
 
@@ -36,10 +36,104 @@ import type { Timestamp } from '@polymarket/timestamp';
  * ```
  *
  * `CONFIRMED → REVERTED` запрещён: финальность на то и финальность.
- * Коррекция после финальности, если она понадобится, будет отдельным явным
- * recovery-контрактом, а не тихим переходом.
+ * Подтверждено контрактом площадки — `TradeStatus.CONFIRMED` документирован
+ * как «finality достигнута, транзакция успешна», то есть обратно площадка не
+ * ходит. Коррекция после финальности, если она понадобится, будет отдельным
+ * явным recovery-контрактом, а не тихим переходом.
+ *
+ * ### Это НЕ статус площадки
+ *
+ * Вторая ось — {@link AccountFillRecord.venueStatus} — живёт отдельно и
+ * типизирована canonical `TradeStatus`. Совпадают оси не всегда: сверка (#98)
+ * откатит исполнение, которого на площадке не оказалось вовсе, и никакого
+ * `FAILED` за таким `REVERTED` не стоит.
  */
 export type AccountFillStatus = 'APPLIED' | 'CONFIRMED' | 'REVERTED';
+
+/**
+ * Статусы нашей оси, из которых исполнение уже не выходит.
+ *
+ * @remarks
+ * `APPLIED` — единственный незавершённый статус: исполнение учтено в деньгах,
+ * но чем оно кончится, ещё не решено. Оба остальных финальны, и переход между
+ * ними запрещён в обе стороны.
+ */
+export const TERMINAL_FILL_STATUSES: ReadonlySet<AccountFillStatus> =
+  new Set<AccountFillStatus>(['CONFIRMED', 'REVERTED']);
+
+/**
+ * Достигло ли исполнение статуса, из которого уже не выйдет.
+ *
+ * @param status - Статус исполнения на НАШЕЙ оси
+ * @returns `true`, если статус финальный
+ *
+ * @example
+ * ```typescript
+ * isTerminalFillStatus('APPLIED');   // false
+ * isTerminalFillStatus('REVERTED');  // true
+ * ```
+ */
+export function isTerminalFillStatus(status: AccountFillStatus): boolean {
+  return TERMINAL_FILL_STATUSES.has(status);
+}
+
+/**
+ * Как поступить с требуемым переходом.
+ *
+ * @remarks
+ * Форма намеренно совпадает с `classifyTradeStatusObservation` из
+ * `@polymarket/fill`: обе оси отвечают на один вопрос — «применить, промолчать
+ * или отказать». Совпадает не всё: у venue-оси есть `STALE`, потому что там
+ * наблюдения приходят по сети и переупорядочиваются. Здесь `STALE` не бывает —
+ * переход инициируем МЫ, и «запоздавшего» перехода не существует.
+ */
+export type AccountFillTransition =
+  /** Переход допустим — применить */
+  | 'ACCEPT'
+  /** Целевой статус уже стоит — ничего не делать */
+  | 'DUPLICATE'
+  /** Исполнение уже финализировано ИНАЧЕ — отказать */
+  | 'CONFLICT';
+
+/**
+ * Классифицирует требуемый переход по нашей оси исполнения.
+ *
+ * @param current - Текущий статус записи
+ * @param target - Куда переходим: `CONFIRMED` или `REVERTED`
+ * @returns Что обязан сделать вызывающий
+ *
+ * @remarks
+ * Правило целиком:
+ *
+ * ```text
+ * current == target              DUPLICATE
+ * current == APPLIED             ACCEPT
+ * иначе (оба финальны, разные)   CONFLICT
+ * ```
+ *
+ * Дубликат — нормальная доставка, а не ошибка: одно и то же событие
+ * приходит повторно, и повторное подтверждение уже подтверждённого ничего не
+ * меняет. А вот `CONFIRMED → REVERTED` и обратный ему — настоящий конфликт:
+ * финальность на то и финальность.
+ *
+ * Функция ничего не решает за вызывающего — не бросает и не логирует.
+ *
+ * @example
+ * ```typescript
+ * switch (classifyFillTransition(record.status, 'CONFIRMED')) {
+ *   case 'ACCEPT':    return commit();
+ *   case 'DUPLICATE': return Ok(undefined);
+ *   case 'CONFLICT':  return Err(new AccountFillTransitionError(...));
+ * }
+ * ```
+ */
+export function classifyFillTransition(
+  current: AccountFillStatus,
+  target: Extract<AccountFillStatus, 'CONFIRMED' | 'REVERTED'>,
+): AccountFillTransition {
+  if (current === target) return 'DUPLICATE';
+  return current === 'APPLIED' ? 'ACCEPT' : 'CONFLICT';
+}
 
 /**
  * Исполнение в приватном состоянии: canonical факт + runtime-жизненный цикл.
@@ -50,6 +144,7 @@ export type AccountFillStatus = 'APPLIED' | 'CONFIRMED' | 'REVERTED';
  * ```text
  * fill.timestamp                   КОГДА исполнение произошло на площадке
  * appliedAt/confirmedAt/revertedAt КОГДА рантайм принял соответствующее событие
+ * venueStatusAt                    КОГДА рантайм принял наблюдение площадки
  * ```
  *
  * Времена перехода берутся из `event.metadata.createdAt`, а не из часов: иначе
@@ -69,12 +164,29 @@ export interface AccountFillRecord {
   readonly fill: Fill;
   /** Что с этим фактом сделал наш рантайм */
   readonly status: AccountFillStatus;
+  /**
+   * Последний статус, о котором сообщила ПЛОЩАДКА.
+   *
+   * @remarks
+   * Вторая, независимая ось (`MATCHED → MINED → CONFIRMED`, плюс `RETRYING` и
+   * `FAILED`). `MATCHED` — матчер Polymarket, `MINED` — блок Polygon: разные
+   * системы, разный риск отката.
+   *
+   * `undefined` означает «площадка ничего не сообщала» — норма для площадки
+   * без on-chain расчётов, а не пропуск.
+   *
+   * Меняется ТОЛЬКО событием `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED`:
+   * экономические события эту ось не трогают.
+   */
+  readonly venueStatus?: TradeStatus;
   /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_APPLIED` */
   readonly appliedAt: Timestamp;
   /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_CONFIRMED` */
   readonly confirmedAt?: Timestamp;
   /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_REVERTED` */
   readonly revertedAt?: Timestamp;
+  /** `metadata.createdAt` наблюдения, установившего {@link venueStatus} */
+  readonly venueStatusAt?: Timestamp;
   /**
    * Причина отката, как её передал producer.
    *

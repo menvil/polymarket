@@ -92,13 +92,13 @@
  * ```
  */
 export { AccountStateProjector } from './AccountStateProjector.js';
-export { OPEN_ORDER_STATUSES } from './AccountHotState.js';
 export {
   AccountAlreadyInitializedError,
   AccountFillIdentityConflictError,
   AccountFillNotFoundError,
   AccountFillOrderLinkError,
   AccountFillTransitionError,
+  AccountFillTerminalVenueStatusConflictError,
   AccountIdentityMismatchError,
   AccountInstrumentResolutionError,
   AccountNotInitializedError,
@@ -112,23 +112,16 @@ export {
   type AccountPortfolioIdentityField,
   type AccountStateError,
 } from './errors.js';
+export { accountKey } from './identity.js';
 export {
-  findFillFactDifference,
-  sameFillFact,
-  type AccountFillFactDifference,
-  type AccountFillFactField,
-} from './fillIdentity.js';
-export {
-  findOrderIdentityDifference,
-  sameOrderIdentity,
-  sameOrderState,
-  type AccountOrderIdentityDifference,
-  type AccountOrderIdentityField,
-} from './orderIdentity.js';
-export { accountKey, embeddedVenueId } from './identity.js';
+  TERMINAL_FILL_STATUSES,
+  isTerminalFillStatus,
+  classifyFillTransition,
+} from './records.js';
 export type {
   AccountFillRecord,
   AccountFillStatus,
+  AccountFillTransition,
   AccountOrderRecord,
 } from './records.js';
 export type {

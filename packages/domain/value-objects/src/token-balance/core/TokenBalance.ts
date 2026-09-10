@@ -1,7 +1,6 @@
 import Decimal from 'decimal.js';
-import type { AssetId, OnChainConditionRef, OutcomeKey, AccountId, VenueId } from '@polymarket/ids';
+import type { InstrumentId, AccountId, VenueId } from '@polymarket/ids';
 import { accountIdEquals } from '@polymarket/ids';
-import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalanceInvariantViolation } from './TokenBalanceInvariantViolation.js';
 import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
@@ -10,8 +9,26 @@ import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
  * Core TokenBalance Value Object - баланс токенов с разделением на available/reserved
  *
  * @remarks
- * Представляет баланс outcome token на кошельке/venue конкретного пользователя
- * с разделением на доступные и зарезервированные токены.
+ * Представляет баланс токенов исхода на кошельке/venue конкретного пользователя
+ * с разделением на доступные и зарезервированные.
+ *
+ * ### Идентичность — `InstrumentId`, а не `OutcomeToken`
+ *
+ * Раньше VO ключевался `OutcomeToken` — on-chain идентичностью
+ * (`conditionRef` + `outcomeKey`). Из-за этого он не мог представить то, чем
+ * рантайм реально торгует: Polymarket отдаёт числовой `asset_id` без
+ * `conditionId`/`outcomeKey`, то есть `POLYMARKET_CTF_TOKEN`, который в
+ * `OutcomeToken` не превращается.
+ *
+ * Это и была причина, по которой у VO не оказалось ни одного потребителя:
+ * весь контур адресует исход через `InstrumentId` (см. `MarketOutcome` —
+ * `OutcomeToken` убран оттуда сознательно, чтобы не держать две canonical
+ * identity одной сущности), а `TokenBalance` остался на идентичности, от
+ * которой отказались.
+ *
+ * Теперь он ключуется тем же `InstrumentId`, что и позиция в `Portfolio`, и
+ * потому пригоден для любой площадки — включая off-chain, у которой
+ * `conditionRef` нет вовсе.
  *
  * **Модель available/reserved:**
  * - **available** - доступные для использования токены (можно резервировать для ордеров)
@@ -33,7 +50,7 @@ import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
  * - Для изменений создавайте новый TokenBalance через TokenBalanceService
  *
  * **Инварианты (проверяются в constructor):**
- * - token должен быть валидным OutcomeToken
+ * - instrumentId должен быть задан
  * - available должен быть валидным Quantity (>= 0, finite, not NaN)
  * - reserved должен быть валидным Quantity (>= 0, finite, not NaN)
  * - accountId должен быть валидным AccountId
@@ -52,14 +69,14 @@ import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
  * // ✅ В Core/Facade layer
  * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
  *
- * const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
+ * const instrumentId = unsafeInstrumentId('100…001');
  * const available = Quantity.of(new Decimal(100));
  * const reserved = Quantity.of(new Decimal(20));
  * const accountId = accountIdFromWallet('0x1234...').unwrap();
- * const balance = TokenBalance.of(token, available, reserved, accountId, KnownVenues.POLYMARKET);
+ * const balance = TokenBalance.of(instrumentId, available, reserved, accountId, KnownVenues.POLYMARKET);
  *
  * // ❌ В публичном коде - используй TokenBalanceService
- * const result = TokenBalanceService.create(token, available, reserved, accountId, venueId);
+ * const result = TokenBalanceService.create(instrumentId, available, reserved, accountId, venueId);
  * if (result.ok) {
  *   const balance = result.value;
  *   console.log(balance.available().toNumber()); // 100
@@ -71,7 +88,7 @@ import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
  */
 export class TokenBalance {
   private constructor(
-    private readonly _token: OutcomeToken,
+    private readonly _instrumentId: InstrumentId,
     private readonly _available: Quantity,
     private readonly _reserved: Quantity,
     private readonly _accountId: AccountId,
@@ -111,7 +128,7 @@ export class TokenBalance {
   }
 
   /**
-   * Создаёт TokenBalance из OutcomeToken, available, reserved, AccountId и VenueId
+   * Создаёт TokenBalance из InstrumentId, available, reserved, AccountId и VenueId
    *
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
@@ -134,36 +151,28 @@ export class TokenBalance {
    * // ✅ В Core/Facade
    * import { accountIdFromWallet, parseWalletAddress, KnownVenues } from '@polymarket/ids';
    *
-   * const token = OutcomeToken.of(conditionRef, outcomeKey);
+   * const instrumentId = unsafeInstrumentId('100…001');
    * const available = Quantity.of(new Decimal(100));
    * const reserved = Quantity.of(new Decimal(20));
    * const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
    * const accountId = accountIdFromWallet(walletAddress);
-   * const balance = TokenBalance.of(token, available, reserved, accountId, KnownVenues.POLYMARKET);
+   * const balance = TokenBalance.of(instrumentId, available, reserved, accountId, KnownVenues.POLYMARKET);
    *
    * // ❌ В публичном коде - используй TokenBalanceService
-   * const result = TokenBalanceService.create(token, available, reserved, accountId, venueId);
+   * const result = TokenBalanceService.create(instrumentId, available, reserved, accountId, venueId);
    * ```
    */
   public static of(
-    token: OutcomeToken,
+    instrumentId: InstrumentId,
     available: Quantity,
     reserved: Quantity,
     accountId: AccountId,
     venueId: VenueId
   ): TokenBalance {
     // Минимальная валидация на null/undefined
-    if (!token) {
+    if (!instrumentId) {
       throw new TokenBalanceInvariantViolation(
-        'TokenBalance.of: token is required',
-        TokenBalanceErrorReason.INVALID_TOKEN
-      );
-    }
-
-    // Валидация что token это действительно OutcomeToken (не просто объект)
-    if (!(token instanceof OutcomeToken)) {
-      throw new TokenBalanceInvariantViolation(
-        'TokenBalance.of: token must be OutcomeToken instance',
+        'TokenBalance.of: instrumentId is required',
         TokenBalanceErrorReason.INVALID_TOKEN
       );
     }
@@ -213,7 +222,7 @@ export class TokenBalance {
     }
 
     // Инварианты проверяются в constructor
-    return new TokenBalance(token, available, reserved, accountId, venueId);
+    return new TokenBalance(instrumentId, available, reserved, accountId, venueId);
   }
 
   /**
@@ -236,7 +245,7 @@ export class TokenBalance {
    * @example
    * ```typescript
    * const balance = TokenBalance.withZeroReserved(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(100)),
    *   accountId,
    *   venueId
@@ -245,29 +254,29 @@ export class TokenBalance {
    * ```
    */
   public static withZeroReserved(
-    token: OutcomeToken,
+    instrumentId: InstrumentId,
     available: Quantity,
     accountId: AccountId,
     venueId: VenueId
   ): TokenBalance {
     // Делегируем к of() для полной валидации (не bypass конструктор!)
-    return TokenBalance.of(token, available, Quantity.ZERO, accountId, venueId);
+    return TokenBalance.of(instrumentId, available, Quantity.ZERO, accountId, venueId);
   }
 
   /**
    * Возвращает outcome token
    *
-   * @returns OutcomeToken
+   * @returns InstrumentId
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
-   * const token = balance.token();
-   * console.log(token.outcomeKey()); // 'UP'
+   * const balance = TokenBalance.of(instrumentId, available, reserved, accountId, venueId);
+   * const token = balance.instrumentId();
+   * console.log(balance.instrumentId()); // '100…001'
    * ```
    */
-  public token(): OutcomeToken {
-    return this._token;
+  public instrumentId(): InstrumentId {
+    return this._instrumentId;
   }
 
   /**
@@ -277,7 +286,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
+   * const balance = TokenBalance.of(instrumentId, available, reserved, accountId, venueId);
    * const avail = balance.available();
    * console.log(avail.toNumber()); // 100
    * ```
@@ -293,7 +302,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
+   * const balance = TokenBalance.of(instrumentId, available, reserved, accountId, venueId);
    * const res = balance.reserved();
    * console.log(res.toNumber()); // 20
    * ```
@@ -317,7 +326,7 @@ export class TokenBalance {
    * @example
    * ```typescript
    * const balance = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(20)),
    *   accountId,
@@ -342,7 +351,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
+   * const balance = TokenBalance.of(instrumentId, available, reserved, accountId, venueId);
    * const accId = balance.accountId();
    * console.log(accId.kind); // 'WALLET' | 'VENUE' | 'SUBACCOUNT'
    * ```
@@ -358,70 +367,13 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
+   * const balance = TokenBalance.of(instrumentId, available, reserved, accountId, venueId);
    * const venue = balance.venueId();
    * console.log(venue); // 'POLYMARKET'
    * ```
    */
   public venueId(): VenueId {
     return this._venueId;
-  }
-
-  /**
-   * Helper: возвращает AssetId токена
-   *
-   * @remarks
-   * Делегирует к token().assetId() для удобства.
-   *
-   * @returns AssetId
-   *
-   * @example
-   * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
-   * const assetId = balance.assetId();
-   * // Эквивалентно: balance.token().assetId()
-   * ```
-   */
-  public assetId(): AssetId {
-    return this._token.assetId();
-  }
-
-  /**
-   * Helper: возвращает ConditionRef токена
-   *
-   * @remarks
-   * Делегирует к token().conditionRef() для удобства.
-   *
-   * @returns OnChainConditionRef
-   *
-   * @example
-   * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
-   * const ref = balance.conditionRef();
-   * console.log(ref.protocolId); // 'POLYMARKET_CTF'
-   * ```
-   */
-  public conditionRef(): OnChainConditionRef {
-    return this._token.conditionRef();
-  }
-
-  /**
-   * Helper: возвращает OutcomeKey токена
-   *
-   * @remarks
-   * Делегирует к token().outcomeKey() для удобства.
-   *
-   * @returns OutcomeKey
-   *
-   * @example
-   * ```typescript
-   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
-   * const key = balance.outcomeKey();
-   * console.log(key); // 'UP'
-   * ```
-   */
-  public outcomeKey(): OutcomeKey {
-    return this._token.outcomeKey();
   }
 
   /**
@@ -432,7 +384,7 @@ export class TokenBalance {
    * @example
    * ```typescript
    * const balance = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(20)),
    *   accountId,
@@ -457,7 +409,7 @@ export class TokenBalance {
    * @example
    * ```typescript
    * const balance = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(80)),
    *   Quantity.of(new Decimal(20)),
    *   accountId,
@@ -465,7 +417,7 @@ export class TokenBalance {
    * );
    * console.log(balance.reservedPercentage().toFixed(2)); // "20.00"
    *
-   * const empty = TokenBalance.withZeroReserved(token, Quantity.ZERO, accountId, venueId);
+   * const empty = TokenBalance.withZeroReserved(instrumentId, Quantity.ZERO, accountId, venueId);
    * console.log(empty.reservedPercentage().toFixed(2)); // "0.00"
    * ```
    */
@@ -489,14 +441,14 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance1 = TokenBalance.of(token, Quantity.of(new Decimal(100)), Quantity.ZERO, accountId, venueId);
-   * const balance2 = TokenBalance.of(token, Quantity.of(new Decimal(200)), Quantity.ZERO, accountId, venueId);
+   * const balance1 = TokenBalance.of(instrumentId, Quantity.of(new Decimal(100)), Quantity.ZERO, accountId, venueId);
+   * const balance2 = TokenBalance.of(instrumentId, Quantity.of(new Decimal(200)), Quantity.ZERO, accountId, venueId);
    * console.log(balance1.hasSameToken(balance2)); // true
    * ```
    */
-  public hasSameToken(other: TokenBalance): boolean {
+  public hasSameInstrument(other: TokenBalance): boolean {
     if (!other) return false;
-    return this._token.equals(other._token);
+    return this._instrumentId === other._instrumentId;
   }
 
   /**
@@ -516,21 +468,21 @@ export class TokenBalance {
    * @example
    * ```typescript
    * const balance1 = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(20)),
    *   accountId,
    *   venueId
    * );
    * const balance2 = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(20)),
    *   accountId,
    *   venueId
    * );
    * const balance3 = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(200)),
    *   Quantity.ZERO,
    *   accountId,
@@ -544,7 +496,7 @@ export class TokenBalance {
   public equals(other: TokenBalance): boolean {
     if (!other || !(other instanceof TokenBalance)) return false;
     return (
-      this._token.equals(other._token) &&
+      this._instrumentId === other._instrumentId &&
       this._available.equals(other._available) &&
       this._reserved.equals(other._reserved) &&
       accountIdEquals(this._accountId, other._accountId) &&
@@ -563,16 +515,16 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const zeroBalance = TokenBalance.withZeroReserved(token, Quantity.ZERO, accountId, venueId);
+   * const zeroBalance = TokenBalance.withZeroReserved(instrumentId, Quantity.ZERO, accountId, venueId);
    * const nonZeroBalance = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(100)),
    *   Quantity.ZERO,
    *   accountId,
    *   venueId
    * );
    * const withReserved = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.ZERO,
    *   Quantity.of(new Decimal(20)),
    *   accountId,
@@ -599,16 +551,16 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const zeroBalance = TokenBalance.withZeroReserved(token, Quantity.ZERO, accountId, venueId);
+   * const zeroBalance = TokenBalance.withZeroReserved(instrumentId, Quantity.ZERO, accountId, venueId);
    * const positiveBalance = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.of(new Decimal(100)),
    *   Quantity.ZERO,
    *   accountId,
    *   venueId
    * );
    * const withReserved = TokenBalance.of(
-   *   token,
+   *   instrumentId,
    *   Quantity.ZERO,
    *   Quantity.of(new Decimal(20)),
    *   accountId,

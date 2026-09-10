@@ -22,7 +22,8 @@ import { VersionConflictError, ExchangeError, emptyReservation, ReservationTrans
 import type { IOrderRiskChecker, RiskViolationError } from '@polymarket/risk';
 import { OrderRiskChecker, RiskPolicy } from '@polymarket/risk';
 import type { IMarketCatalog, InstrumentInfo } from '@polymarket/ports';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
+import type { Portfolio, } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import type { AccountId, AssetId, InstrumentId, OrderId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
 import { accountIdToString } from '@polymarket/ids';
@@ -102,7 +103,7 @@ function makePortfolio(opts: { availableUsdc?: string } = {}): Portfolio {
       total: () => ({ value: () => available }),
     },
     getPosition: (_id: InstrumentId) => undefined,
-    getPositions: () => ([] as IPosition[]).values(),
+    getPositions: () => ([] as Position[]).values(),
     getPositionCount: () => 0,
     reserveForOrder: jest.fn<Portfolio['reserveForOrder']>(),
     releaseReservation: jest.fn<Portfolio['releaseReservation']>(),

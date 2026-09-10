@@ -372,6 +372,33 @@ canonical `Market` до последнего внешнего состояния
 рынок значило бы оставить накопленную историю относящейся к структуре,
 которой в состоянии больше нет.
 
+### Форма расхождения общая
+
+`findTradingMarketStructureDifference` возвращает `FieldDifference` из
+`@polymarket/errors` — ту же форму, что `findFillFactDifference` и
+`findOrderIdentityDifference`:
+
+```typescript
+interface FieldDifference<TField extends string> {
+  readonly field: TField;
+  readonly left: string;   // первый аргумент сравнения
+  readonly right: string;  // второй
+}
+```
+
+Пара значений называется нейтрально, хотя здесь роли как раз известны. Причина
+в том, что два других места сравнения живут в домене и НЕ знают, какой из
+экземпляров сохранённый, а какой пришедший. Общая форма возможна только
+нейтральная; роли называет тот, кто их знает:
+
+```typescript
+context: { field: d.field, admitted: d.left, incoming: d.right }
+```
+
+Для читателя лога ничего не изменилось — сообщение и ключи контекста
+по-прежнему говорят `admitted` и `incoming`. Изменилось то, что четвёртое место
+сравнения теперь не может завести пятую пару имён.
+
 ## Состояние стакана — только `BOOK_DEPTH`
 
 ```text
