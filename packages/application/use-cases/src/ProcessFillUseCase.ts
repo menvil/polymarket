@@ -742,17 +742,16 @@ export class ProcessFillUseCase {
       this._clearInFlightFlags(fill);
 
       // Диагностика fee для direct fill (BUY).
-      // PortfolioService.applyDirectFill тоже вычтет feeInTokens из позиции.
+      //
+      // ВНИМАНИЕ: `PortfolioService.applyDirectFill` вычитает `feeInTokens`
+      // из позиции — модель ошибочна, комиссия удерживается деньгами, а не
+      // шарами (измерение и цифры — в докблоке `polymarket-fee.ts`).
       if (fill.side === 'BUY' && !fill.fee.isZero()) {
-        const feeUSDC = fill.fee.quantity.amount().value();
-        const fillPrice = fill.price.value();
-        const feeInTokens = feeUSDC.div(fillPrice);
-        this._logger.info('BUY direct fill fee deduction applied', {
+        this._logger.info('BUY direct fill carries a taker fee', {
           fillId: String(fill.id),
-          grossTokens: fill.size.value().toNumber(),
-          feeUSDC: feeUSDC.toNumber(),
-          feeInTokens: feeInTokens.toNumber(),
-          netTokens: fill.size.value().minus(feeInTokens).toNumber(),
+          tokens: fill.size.value().toNumber(),
+          feeUSDC: fill.fee.quantity.amount().value().toNumber(),
+          price: fill.price.value().toNumber(),
         });
       }
 
@@ -1130,23 +1129,23 @@ export class ProcessFillUseCase {
     const events = updatedOrder.pullEvents(nextEventMetadata);
     await this._enqueueEvents(fill, events);
 
-    // Диагностика: при BUY fill с fee > 0 логируем fee deduction в токенах.
-    // Polymarket on-chain settlement списывает fee из получаемых токенов (BUY).
-    // feeInTokens = feeUSDC / price — конвертация из USDC в shares.
-    // PortfolioService уже вычел feeInTokens из позиции при BUY.
+    // Диагностика: комиссия по BUY-филу.
+    //
+    // Здесь стоял пересчёт `feeInTokens = feeUSDC / price` и лог «netTokens».
+    // Механизма, который он описывал, не существует: измерение публичной
+    // ленты на 2898 сделках показало, что комиссия удерживается ДЕНЬГАМИ (на
+    // покупке — сверх номинала), а количество полученных шар не уменьшается
+    // ни разу. Подробности и цифры — в докблоке `polymarket-fee.ts`.
+    //
+    // Лог оставлен, но сообщает измеренную величину, а не выведенную из
+    // несуществующего правила.
     if (fill.side === 'BUY' && !fill.fee.isZero()) {
-      const feeUSDC = fill.fee.quantity.amount().value();
-      const fillPrice = fill.price.value();
-      const feeInTokens = feeUSDC.div(fillPrice);
-      const grossTokens = fill.size.value();
-      this._logger.info('BUY fill fee deduction applied to portfolio', {
+      this._logger.info('BUY fill carries a taker fee', {
         fillId: String(fill.id),
         orderId: String(fill.orderId),
-        grossTokens: grossTokens.toNumber(),
-        feeUSDC: feeUSDC.toNumber(),
-        feeInTokens: feeInTokens.toNumber(),
-        netTokens: grossTokens.minus(feeInTokens).toNumber(),
-        price: fillPrice.toNumber(),
+        tokens: fill.size.value().toNumber(),
+        feeUSDC: fill.fee.quantity.amount().value().toNumber(),
+        price: fill.price.value().toNumber(),
       });
     }
 

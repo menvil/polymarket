@@ -160,7 +160,18 @@ describe('PortfolioService — lot-based Position (Этап 3)', () => {
       expect(position.averageEntryPrice.value().toNumber()).toBeCloseTo(0.65, 8);
     });
 
-    it('комиссия уменьшает netFillQty — quantity меньше fill.size, entryPrice не меняется', () => {
+    // ЗАКРЕПЛЯЕТ ДЕФЕКТ, А НЕ КОНТРАКТ.
+    //
+    // Тест фиксирует фактическое поведение `PortfolioService`, которое
+    // ОШИБОЧНО: комиссию покупки Polymarket не удерживает шарами. Измерение
+    // публичной ленты на 2898 сделках — ни одна из 1888 покупок не показала
+    // уменьшенного количества; платится комиссия деньгами, сверх номинала.
+    // Цифры — в докблоке `polymarket-fee.ts`, разбор — в шапке
+    // `PortfolioService`.
+    //
+    // Тест оставлен зелёным намеренно: пока код живёт, его поведение должно
+    // быть зафиксировано. Переносить эту арифметику в новый контур НЕЛЬЗЯ.
+    it('[дефект] комиссия уменьшает netFillQty — quantity меньше fill.size', () => {
       // fee = 1.0 USDC, price = 0.5 → feeInTokens = 1.0 / 0.5 = 2 → net = 100 - 2 = 98
       reserveUSDC(service, 0.5, 100);
       const result = service.applyFill(makeFill({ id: 'f1', price: 0.5, size: 100, side: 'BUY', timestampMs: 1000, feeUSDC: 1.0 }));
