@@ -119,6 +119,13 @@ VenueTradeId генерируется как:
 
 ### fromParsedTrade (Этап 2 плана миграции)
 
+> Названные ниже потребители — `MarketDataStore` и `TradeIndexCollector`
+> (`@polymarket/market-state`) — переехали в
+> `legacy-bot/trading-contour-reference/` вместе со старым контуром. Сам
+> `Trade` и его конструкторы остаются каноническими; описание сохранено ради
+> того, ЗАЧЕМ метод устроен так, а не как перечень действующих вызывающих.
+> Публичные сделки нового контура хранит `TradingHotState.publicTrades`.
+
 Строит `Trade` из уже распакованных VO — точка врезки для `MarketDataStore`'s
 обработчика `TRADE_RECEIVED` (`@polymarket/market-state`), который получает
 `TradeReceivedEvent` из `@polymarket/event-bus` с уже готовыми
