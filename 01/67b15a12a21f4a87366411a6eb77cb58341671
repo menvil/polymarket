@@ -1,0 +1,26 @@
+packages/domain/entities/portfolio/package.json
+  s_73852eac4506dc::t_9bdefde5f0b647 43
+packages/domain/entities/portfolio/src/Portfolio.ts
+  s_73852eac4506dc::t_ee8b70a747caa6 677-687,689-702
+  s_73852eac4506dc::t_9bdefde5f0b647 112-115,118,133,165,177-179,402,404-414,416,425,531,533-534,537-548,550-551,553-554,558,560-562,565-609,611-613,615,617-624,626-637,639-640,643-650,654,656-658,661-669,671-676,704-762,765-859,863-866,869-870,873,876-891,894,896-902,904-907,911,913-914,916,920,922
+packages/domain/entities/portfolio/tsconfig.build.json
+  s_73852eac4506dc::t_9bdefde5f0b647 27
+packages/domain/entities/portfolio/jest.config.js
+  s_73852eac4506dc::t_9bdefde5f0b647 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0167b15a12a21f4a87366411a6eb77cb58341671",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
