@@ -1,5 +1,4 @@
 import Decimal from 'decimal.js';
-import { OutcomeTokenFormatter } from '../../outcome-token/adapters/OutcomeTokenFormatter.js';
 import { TokenBalance } from '../core/TokenBalance.js';
 import { accountIdToString } from '@polymarket/ids';
 
@@ -80,7 +79,7 @@ export class TokenBalanceFormatter {
     const res = balance.reserved().value().toFixed(safeDecimals);
     const total = balance.total().value().toFixed(safeDecimals);
     const pct = balance.reservedPercentage().toFixed(2);
-    const token = balance.outcomeKey();
+    const token = balance.instrumentId();
 
     let result = `Available: ${avail}, Reserved: ${res}, Total: ${total} (${pct}% reserved) [${token}]`;
 
@@ -178,7 +177,7 @@ export class TokenBalanceFormatter {
     const available = balance.available().value().toString();
     const reserved = balance.reserved().value().toString();
     const total = balance.total().value().toString();
-    const token = balance.outcomeKey();
+    const token = balance.instrumentId();
     const account = accountIdToString(balance.accountId());
     const venue = balance.venueId();
 
@@ -329,7 +328,7 @@ export class TokenBalanceFormatter {
     const available = balance.available().value().toString();
     const reserved = balance.reserved().value().toString();
     const total = balance.total().value().toString();
-    const tokenStr = OutcomeTokenFormatter.toString(balance.token());
+    const tokenStr = String(balance.instrumentId());
 
     return `TokenBalance[available=${available}, reserved=${reserved}, total=${total}, token=${tokenStr}]`;
   }
@@ -360,7 +359,7 @@ export class TokenBalanceFormatter {
    */
   public static toDisplayString(balance: TokenBalance): string {
     const total = balance.total().value().toString();
-    const tokenDisplay = OutcomeTokenFormatter.toDisplayString(balance.token());
+    const tokenDisplay = String(balance.instrumentId());
 
     return `${total} ${tokenDisplay}`;
   }
@@ -391,7 +390,7 @@ export class TokenBalanceFormatter {
    */
   public static toShortString(balance: TokenBalance): string {
     const total = balance.total().value().toString();
-    const outcomeKey = balance.outcomeKey() as string;
+    const outcomeKey = balance.instrumentId() as string;
 
     return `${total} ${outcomeKey}`;
   }
@@ -424,7 +423,7 @@ export class TokenBalanceFormatter {
     const available = balance.available().value().toString();
     const reserved = balance.reserved().value().toString();
     const total = balance.total().value().toString();
-    const tokenVerbose = OutcomeTokenFormatter.toVerboseString(balance.token());
+    const tokenVerbose = String(balance.instrumentId());
 
     return `TokenBalance[available=${available}, reserved=${reserved}, total=${total}, token=${tokenVerbose}]`;
   }
@@ -460,7 +459,7 @@ export class TokenBalanceFormatter {
   public static toFixedString(balance: TokenBalance, decimalPlaces: number = 2): string {
     const safeDecimals = Decimal.max(0, Decimal.min(100, new Decimal(decimalPlaces).floor())).toNumber();
     const total = balance.total().value().toFixed(safeDecimals);
-    const outcomeKey = balance.outcomeKey() as string;
+    const outcomeKey = balance.instrumentId() as string;
 
     return `${total} ${outcomeKey}`;
   }

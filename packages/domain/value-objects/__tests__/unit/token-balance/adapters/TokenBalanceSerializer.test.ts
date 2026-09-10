@@ -1,29 +1,20 @@
 import { describe, it, expect } from '@jest/globals';
+import { unsafeInstrumentId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import {
   parseWalletAddress,
-  KnownOnChainProtocols,
-  KnownChainIds,
-  BinaryOutcome,
   KnownVenues,
   accountIdFromWallet,
 } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@polymarket/ids';
-import { OutcomeToken } from '../../../../src/outcome-token/core/OutcomeToken.js';
+import type { AccountId, VenueId } from '@polymarket/ids';
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import { TokenBalanceService } from '../../../../src/token-balance/facade/TokenBalanceService.js';
 import { TokenBalanceSerializer } from '../../../../src/token-balance/adapters/TokenBalanceSerializer.js';
 import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
 
 describe('TokenBalanceSerializer', () => {
-  const conditionRef: OnChainConditionRef = {
-    kind: 'ONCHAIN',
-    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: KnownChainIds.POLYGON,
-    conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
-  };
 
-  const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
+  const token = unsafeInstrumentId('instrument-up');
   const qty = Quantity.of(new Decimal('100.5'));
 
   // Test fixtures для accountId и venueId
@@ -40,15 +31,7 @@ describe('TokenBalanceSerializer', () => {
       const json = TokenBalanceSerializer.toJSON(balance.value);
 
       expect(json).toEqual({
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: BinaryOutcome.UP,
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -84,15 +67,7 @@ describe('TokenBalanceSerializer', () => {
   describe('fromJSON()', () => {
     it('десериализует валидный JSON', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -103,24 +78,16 @@ describe('TokenBalanceSerializer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.outcomeKey()).toBe(BinaryOutcome.UP);
+        expect(String(result.value.instrumentId())).toBe('instrument-up');
         expect(result.value.available().toNumber()).toBe(100.5);
         expect(result.value.reserved().toNumber()).toBe(0);
-        expect(result.value.conditionRef()).toEqual(conditionRef);
+        expect(String(result.value.instrumentId())).toBe('instrument-up');
       }
     });
 
     it('десериализует нулевой баланс', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '0',
         reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -169,7 +136,7 @@ describe('TokenBalanceSerializer', () => {
       }
     });
 
-    it('фэйлится если отсутствует token', () => {
+    it('фэйлится если отсутствует instrumentId', () => {
       const json = {
         available: '100.5',
         reserved: '0',
@@ -180,21 +147,13 @@ describe('TokenBalanceSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
-        expect(result.error.message).toContain("Missing required field 'token'");
+        expect(result.error.message).toContain("Missing required field 'instrumentId'");
       }
     });
 
     it('фэйлится если отсутствует amount', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -206,13 +165,16 @@ describe('TokenBalanceSerializer', () => {
       }
     });
 
-    it('фэйлится если token некорректен', () => {
+    it('фэйлится если instrumentId некорректен', () => {
+      // Пустая строка — единственная форма, которую `asInstrumentId` отвергает
+      // из коротких значений. Остальные поля валидны, иначе тест падал бы
+      // раньше, на проверке обязательных полей, и INVALID_TOKEN не проверялся.
       const json = {
-        token: {
-          invalid: 'data',
-        },
+        instrumentId: '',
         available: '100.5',
         reserved: '0',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -225,15 +187,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если amount не строка', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: 100.5, // number вместо string
         reserved: '0',
       };
@@ -249,15 +203,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если amount не парсится как Decimal', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: 'invalid',
         reserved: '0',
       };
@@ -273,15 +219,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если amount отрицательное', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '-100.5',
         reserved: '0',
       };
@@ -297,15 +235,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если отсутствует accountId', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         venueId: 'POLYMARKET',
@@ -322,15 +252,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если accountId не строка', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         accountId: 123, // number вместо string
@@ -348,15 +270,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если accountId невалидный', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         accountId: 'invalid-format', // невалидный формат
@@ -374,15 +288,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если отсутствует venueId', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -399,15 +305,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если venueId не строка', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -425,15 +323,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если venueId невалидный формат', () => {
       const json = {
-        token: {
-          conditionRef: {
-            kind: 'ONCHAIN',
-            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-            chainId: 137,
-            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-          },
-          outcomeKey: 'UP',
-        },
+        instrumentId: 'instrument-up',
         available: '100.5',
         reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -452,15 +342,7 @@ describe('TokenBalanceSerializer', () => {
     describe('валидация поля reserved', () => {
       it('фэйлится если отсутствует reserved', () => {
         const json = {
-          token: {
-            conditionRef: {
-              kind: 'ONCHAIN',
-              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-              chainId: 137,
-              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-            },
-            outcomeKey: 'UP',
-          },
+          instrumentId: 'instrument-up',
           available: '100.5',
           accountId: 'wallet:0x1234567890123456789012345678901234567890',
           venueId: 'POLYMARKET',
@@ -477,15 +359,7 @@ describe('TokenBalanceSerializer', () => {
 
       it('фэйлится если reserved не строка', () => {
         const json = {
-          token: {
-            conditionRef: {
-              kind: 'ONCHAIN',
-              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-              chainId: 137,
-              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-            },
-            outcomeKey: 'UP',
-          },
+          instrumentId: 'instrument-up',
           available: '100.5',
           reserved: 20.5, // number вместо string
           accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -503,15 +377,7 @@ describe('TokenBalanceSerializer', () => {
 
       it('фэйлится если reserved не парсится как Decimal', () => {
         const json = {
-          token: {
-            conditionRef: {
-              kind: 'ONCHAIN',
-              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-              chainId: 137,
-              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-            },
-            outcomeKey: 'UP',
-          },
+          instrumentId: 'instrument-up',
           available: '100.5',
           reserved: 'not-a-number',
           accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -529,15 +395,7 @@ describe('TokenBalanceSerializer', () => {
 
       it('фэйлится если reserved отрицательное', () => {
         const json = {
-          token: {
-            conditionRef: {
-              kind: 'ONCHAIN',
-              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-              chainId: 137,
-              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-            },
-            outcomeKey: 'UP',
-          },
+          instrumentId: 'instrument-up',
           available: '100.5',
           reserved: '-20.5',
           accountId: 'wallet:0x1234567890123456789012345678901234567890',
@@ -578,15 +436,7 @@ describe('TokenBalanceSerializer', () => {
 
       it('корректно сериализует баланс с reserved > available', () => {
         const json = {
-          token: {
-            conditionRef: {
-              kind: 'ONCHAIN',
-              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-              chainId: 137,
-              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-            },
-            outcomeKey: 'UP',
-          },
+          instrumentId: 'instrument-up',
           available: '50.25',
           reserved: '75.75', // reserved > available
           accountId: 'wallet:0x1234567890123456789012345678901234567890',

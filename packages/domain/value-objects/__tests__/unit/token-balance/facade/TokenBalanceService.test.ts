@@ -1,28 +1,19 @@
 import Decimal from 'decimal.js';
+import { unsafeInstrumentId } from '@polymarket/ids';
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import { TokenBalance } from '../../../../src/token-balance/core/TokenBalance.js';
 import { TokenBalanceService } from '../../../../src/token-balance/facade/TokenBalanceService.js';
-import { OutcomeTokenService } from '../../../../src/outcome-token/facade/OutcomeTokenService.js';
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
-import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
 
 describe('TokenBalanceService', () => {
   // Фикстуры
-  const testConditionRef: OnChainConditionRef = {
-    kind: 'ONCHAIN',
-    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
-    conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as any,
-  };
 
-  const createTestToken = () => {
-    const result = OutcomeTokenService.create(testConditionRef, BinaryOutcome.UP);
-    if (!result.ok) throw new Error('Failed to create test token');
-    return result.value;
-  };
+  // `TokenBalance` теперь ключуется `InstrumentId`, а не `OutcomeToken`:
+  // рантайм адресует исход именно им (см. докблок TokenBalance).
+  const createTestToken = () => unsafeInstrumentId('instrument-up');
+  const createOtherToken = () => unsafeInstrumentId('instrument-down');
 
   describe('create()', () => {
     describe('успешное создание', () => {
@@ -101,7 +92,7 @@ describe('TokenBalanceService', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_TOKEN);
-          expect(result.error.message).toContain('token is required');
+          expect(result.error.message).toContain('instrumentId is required');
         }
       });
 
@@ -209,7 +200,7 @@ describe('TokenBalanceService', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_TOKEN);
-          expect(result.error.message).toContain('token is required');
+          expect(result.error.message).toContain('instrumentId is required');
         }
       });
 
@@ -769,19 +760,18 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает false для разных токенов', () => {
-        const token1Result = OutcomeTokenService.create(testConditionRef, BinaryOutcome.UP);
-        const token2Result = OutcomeTokenService.create(testConditionRef, BinaryOutcome.DOWN);
-        if (!token1Result.ok || !token2Result.ok) throw new Error('Token creation failed');
-
+        const token1 = createTestToken();
+        const token2 = createOtherToken();
+        
         const balance1Result = TokenBalanceService.create(
-          token1Result.value,
+          token1,
           Quantity.of(new Decimal(10000)),
           Quantity.ZERO,
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
         const balance2Result = TokenBalanceService.create(
-          token2Result.value,
+          token2,
           Quantity.of(new Decimal(10000)),
           Quantity.ZERO,
           TEST_ACCOUNT_ID,

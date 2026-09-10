@@ -2,7 +2,7 @@ import { Result, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
 import { accountIdToString, parseAccountId, asVenueId, type VenueId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
-import { OutcomeTokenSerializer, type OutcomeTokenJSON } from '../../outcome-token/adapters/OutcomeTokenSerializer.js';
+import { asInstrumentId, type InstrumentId } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalance } from '../core/TokenBalance.js';
 import { TokenBalanceService } from '../facade/TokenBalanceService.js';
@@ -28,7 +28,7 @@ export interface TokenBalanceJSON {
   /**
    * Outcome token (serialized)
    */
-  token: OutcomeTokenJSON;
+  instrumentId: string;
 
   /**
    * Available amount as string (preserves precision)
@@ -179,10 +179,10 @@ export class TokenBalanceSerializer {
     const obj = json as Record<string, unknown>;
 
     // Проверка наличия token
-    if (!Object.hasOwn(obj, 'token')) {
+    if (!Object.hasOwn(obj, 'instrumentId')) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
-          "Missing required field 'token'",
+          "Missing required field 'instrumentId'",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
             details: { json: safeStringify(json) },
@@ -220,12 +220,14 @@ export class TokenBalanceSerializer {
       );
     }
 
-    // Парсим token через OutcomeTokenSerializer
-    const tokenResult = OutcomeTokenSerializer.fromJSON(obj.token, source);
+    // Инструмент — branded-строка, отдельного сериализатора не требует
+    const tokenResult = asInstrumentId(String(obj.instrumentId)) !== undefined
+      ? { ok: true as const, value: asInstrumentId(String(obj.instrumentId)) as InstrumentId }
+      : { ok: false as const, error: new Error(`Invalid instrumentId: ${String(obj.instrumentId)}`) };
     if (!tokenResult.ok) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
-          `Failed to parse token: ${tokenResult.error.message}`,
+          `Failed to parse instrumentId: ${tokenResult.error.message}`,
           {
             reason: TokenBalanceErrorReason.INVALID_TOKEN,
             details: { json: safeStringify(json), tokenError: tokenResult.error },
@@ -462,7 +464,7 @@ export class TokenBalanceSerializer {
    */
   public static toJSON(balance: TokenBalance): TokenBalanceJSON {
     return {
-      token: OutcomeTokenSerializer.toJSON(balance.token()),
+      instrumentId: String(balance.instrumentId()),
       available: balance.available().value().toString(),
       reserved: balance.reserved().value().toString(),
       accountId: accountIdToString(balance.accountId()),
