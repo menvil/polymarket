@@ -8,36 +8,27 @@
  * - Исполнении fill (дебет/кредит баланса + обновление позиции)
  *
  * ### Схема обновления баланса при Fill:
- * - BUY fill: `applyDebit(price × size)` — снимает из зарезервированных средств
- * - SELL fill: `applyCredit(price × size)` — зачисляет на доступный баланс
+ * - BUY fill: `applyDebit(price × size)` из reserved + комиссия из available
+ * - SELL fill: `applyCredit(price × size − комиссия)` — зачисляет на available
  *
- * ### ИЗВЕСТНЫЙ ДЕФЕКТ: модель комиссии здесь неверна
+ * ### Комиссия
  *
- * Этот сервис исходит из того, что Polymarket удерживает комиссию покупки из
- * получаемых ШАР (`feeInTokens = feeUSDC / price`, позиция растёт на
- * `size − feeInTokens`). Такого механизма не существует.
- *
- * Измерение публичной ленты на 2898 реальных сделках: комиссию платит только
- * тейкер, платит её ДЕНЬГАМИ, и количество шар не уменьшается ни разу.
+ * Платит только тейкер, платит ДЕНЬГАМИ и из того, что получает; количество
+ * шар не изменяется никогда. Измерено на 2898 реальных сделках —
+ * `docs/guides/polymarket-fee-settlement.md`.
  *
  * ```text
- *                    здесь                    на самом деле
- * BUY   деньги       −номинал                 −(номинал + fee)
- *       количество   +size − fee/price        +size
- * SELL  деньги       +номинал                 +(номинал − fee)
- *       количество   −size                    −size
+ * BUY   номинал из reserved + комиссия из available   позиция +ПОЛНЫЙ size
+ * SELL  зачисляем номинал − комиссию                  позиция −ПОЛНЫЙ size
  * ```
  *
- * Цифры и сверка с формулой — в докблоке `polymarket-fee.ts`.
+ * Комиссия на покупке снимается отдельным шагом из `available`, потому что её
+ * никто не резервировал: в момент размещения ордера ещё неизвестно, окажемся
+ * мы тейкером или мейкером.
  *
- * **Не исправлено намеренно.** Правка денежной стороны потянула бы за собой
- * протокол резервирования: `reserveForOrder(notional)` резервирует ровно
- * номинал, и дебет `номинал + fee` в него не уложится. Перестраивать это в
- * контуре, который архивируется, дороже и рискованнее, чем написать заново.
- *
- * Новый контур ошибку не наследует: `Fill` уже выражает экономику дельтами —
- * `getSignedQuantity()` (валовое количество) и `getNetCashFlow()` (деньги с
- * учётом комиссии), — и применять следует их, а не пересчитывать.
+ * Здесь стоял пересчёт `feeInTokens = feeUSDC / price` с ростом позиции на
+ * `size − feeInTokens` — механизм, которого не существует. Ни одна из 1888
+ * измеренных покупок не показала уменьшенного количества.
  *
  * ### Резервации токенов (SELL ордера):
  * - SELL order placed:    `reserveTokensForOrder(accountId, instrumentId, size)` → tokenReservations[id] += size
@@ -361,9 +352,8 @@ export class PortfolioService {
    * ### BUY fill:
    * 1. `applyDebit(orderPrice × size)` — дебетует зарезервированные средства
    *    (используем цену ордера, а не цену fill, чтобы точно совпасть с резервацией)
-   * 2. Позиция LONG: quantity += size - feeInTokens, пересчёт averageEntryPrice по VWAP
+   * 2. Позиция LONG: quantity += size (ВАЛОВОЕ), пересчёт averageEntryPrice по VWAP
    *    (averageEntryPrice считается по fill.price — реальная цена исполнения)
-   *    feeInTokens = feeUSDC / price (Polymarket списывает fee в shares при BUY)
    *
    * ### SELL fill:
    * 1. Снимаем токенную резервацию **строго** (НЕ best-effort): это local-order
@@ -437,10 +427,28 @@ export class PortfolioService {
       storeVersion: version,
     });
 
-    // Обновить баланс
+    // Обновить баланс.
+    //
+    // Комиссию платит только тейкер, платит ДЕНЬГАМИ и из того, что получает
+    // (`docs/guides/polymarket-fee-settlement.md`):
+    //
+    //   BUY   отдаём  номинал + fee
+    //   SELL  получаем номинал − fee
+    //
+    // На SELL это ровно `fill.getNetCashFlow()` — домен уже умеет складывать
+    // поток с комиссией, пересчитывать нечего.
+    //
+    // На BUY взять его нельзя: `notional` здесь считается по цене ОРДЕРА, а не
+    // фила, чтобы точно совпасть с зарезервированной суммой (биржа округляет
+    // цену в fill-событии). Поэтому номинал по-прежнему снимается из reserved,
+    // а комиссия — отдельно из available: её никто не резервировал, потому что
+    // в момент размещения ордера ещё неизвестно, окажемся мы тейкером или
+    // мейкером.
     const balanceResult = fill.side === 'BUY'
       ? portfolioAfterTokenRelease.applyDebit(money)
-      : portfolioAfterTokenRelease.applyCredit(money);
+      : portfolioAfterTokenRelease.applyCredit(
+          Money.of(fill.getNetCashFlow().amount.value(), 'USDC'),
+        );
 
     if (!balanceResult.ok) {
       this._logger.error('Balance change failed', {
@@ -455,8 +463,23 @@ export class PortfolioService {
       ));
     }
 
-    // Обновить позицию (с учётом fee deduction для BUY)
-    const positionResult = this._applyPositionUpdate(balanceResult.value, instrumentId, fill);
+    // BUY: комиссия сверх номинала, из available. Ноль у мейкера — тогда
+    // шаг вырождается и портфель не меняется.
+    let portfolioAfterFee = balanceResult.value;
+    if (fill.side === 'BUY' && !fill.fee.isZero()) {
+      const feeDebit = portfolioAfterFee.applyDirectDebit(
+        Money.of(fill.fee.quantity.amount().value(), 'USDC'),
+      );
+      if (!feeDebit.ok) {
+        return Err(new TradingError(
+          `Failed to debit taker fee: ${feeDebit.error.message}`,
+          { context: { fillId: String(fill.id), side: fill.side } },
+        ));
+      }
+      portfolioAfterFee = feeDebit.value;
+    }
+
+    const positionResult = this._applyPositionUpdate(portfolioAfterFee, instrumentId, fill);
     if (!positionResult.ok) {
       return Err(new TradingError(
         `Failed to update position: ${positionResult.error.message}`,
@@ -675,7 +698,7 @@ export class PortfolioService {
    * Вызывается FillOrchestrator при получении FILL_FAILED после MATCHED.
    *
    * ### BUY fill reversal:
-   * 1. Позиция LONG: quantity -= (fillQty - feeInTokens) — снимаем то что было добавлено
+   * 1. Позиция LONG: quantity -= fillQty — снимаем ровно то, что было добавлено
    * 2. `applyCredit(price × size)` — возвращаем USDC на available баланс
    *    (резервация уже была consumed при applyFill, кредитуем в available)
    *
@@ -770,13 +793,19 @@ export class PortfolioService {
     }
 
     const fillQty = fill.size.value();
-    const notional = fill.price.value().times(fillQty);
-    const money = Money.of(notional, 'USDC');
+    // Откат обязан зеркалить применение. Оно движет деньги на нетто-поток
+    // `Fill` (номинал с учётом комиссии) и количество на ВАЛОВОЙ размер —
+    // значит и возврат считается так же. Знак у `getNetCashFlow()` уже
+    // правильный по стороне, поэтому берётся модуль: здесь поток
+    // разворачивается.
+    const netCash = fill.getNetCashFlow().amount.value();
+    const money = Money.of(netCash.abs(), 'USDC');
 
     let portfolioAfterBalance: Portfolio;
 
     if (fill.side === 'BUY') {
-      // BUY reversal: кредитуем USDC обратно (резервация была consumed, возвращаем в available)
+      // BUY reversal: возвращаем в available то, что было списано, — номинал
+      // из reserved плюс комиссию из available.
       const creditResult = portfolio.applyCredit(money);
       if (!creditResult.ok) {
         return Err(new TradingError(
@@ -790,13 +819,9 @@ export class PortfolioService {
       const existing = portfolioAfterBalance.getPosition(instrumentId);
       const currentQty = existing?.quantity.value() ?? new Decimal(0);
 
-      let feeInTokens = new Decimal(0);
-      if (!fill.fee.isZero()) {
-        const feeUSDC = fill.fee.quantity.amount().value();
-        feeInTokens = feeUSDC.div(fill.price.value());
-      }
-      const netFillQty = fillQty.minus(feeInTokens);
-      const newQty = currentQty.minus(netFillQty);
+      // Снимаем ровно столько, сколько добавляли: комиссия количество не
+      // трогает (`docs/guides/polymarket-fee-settlement.md`).
+      const newQty = currentQty.minus(fillQty);
 
       if (newQty.lte(0)) {
         // Позиция полностью обнулилась — Position без лотов будет удалена upsertPosition
@@ -841,7 +866,8 @@ export class PortfolioService {
       fillId: String(fill.id),
       side: fill.side,
       size: fillQty.toString(),
-      notional: notional.toString(),
+      netCash: money.value().toString(),
+      feeUSDC: fill.fee.quantity.amount().value().toString(),
     });
     return Ok(undefined);
   }
@@ -859,8 +885,8 @@ export class PortfolioService {
    * @remarks
    * ### Алгоритм:
    * - BUY: добавляет новый лот (`PositionLot`) — `Position.create()` (первый лот) или
-   *   `existing.addLots()` (позиция уже открыта). Комиссия вычитается из quantity лота
-   *   (`feeInTokens = feeUSDC / price`) — та же логика, что была в SimplePosition-версии.
+   *   `existing.addLots()` (позиция уже открыта). Количество лота ВАЛОВОЕ:
+   *   комиссия удерживается деньгами, а не шарами.
    * - SELL: проверяет наличие позиции и достаточность количества, затем
    *   `existing.close(qty, price, 'FIFO', timestamp)` — закрывает старейшие лоты первыми,
    *   накопленный `realizedPnL` логируется (не возвращается наружу — публичная сигнатура
@@ -896,35 +922,21 @@ export class PortfolioService {
   ): Result<Portfolio, TradingError> {
     const existing = portfolio.getPosition(instrumentId);
     const fillQty = fill.size.value();
-    const fillPrice = fill.price.value();
 
     if (fill.side === 'BUY') {
-      // Polymarket on-chain settlement списывает fee из получаемых токенов при BUY.
-      // feeInTokens = feeUSDC / price — конвертация из USDC в shares.
-      // Если fee = 0 (MAKER или zero-fee рынок) → feeInTokens = 0, ничего не вычитается.
-      let feeInTokens = new Decimal(0);
-      if (!fill.fee.isZero()) {
-        const feeUSDC = fill.fee.quantity.amount().value();
-        feeInTokens = feeUSDC.div(fillPrice);
-      }
-      const netFillQty = fillQty.minus(feeInTokens);
-
-      if (netFillQty.lte(0)) {
-        return Err(new TradingError(
-          'BUY fill net quantity (after fee) is non-positive — fee exceeds fill size',
-          {
-            context: {
-              fillId: String(fill.id),
-              instrumentId: String(instrumentId),
-              fillQty: fillQty.toString(),
-              feeInTokens: feeInTokens.toString(),
-            },
-          },
-        ));
-      }
-
+      // Количество ВАЛОВОЕ: комиссия его не трогает.
+      //
+      // Здесь стоял пересчёт `feeInTokens = feeUSDC / price` и рост позиции на
+      // `size − feeInTokens`. Механизма, который он описывал, не существует:
+      // измерение публичной ленты на 2898 реальных сделках не нашло ни одной
+      // покупки с уменьшенным количеством шар. Комиссия удерживается деньгами
+      // и снята выше, из available.
+      //
+      // Вместе с пересчётом исчезла и проверка «fee превышает размер фила» —
+      // сравнивать было нечего: комиссия и количество живут в разных
+      // величинах. См. `docs/guides/polymarket-fee-settlement.md`.
       const newLot = PositionLot.create({
-        quantity: Quantity.of(netFillQty),
+        quantity: Quantity.of(fillQty),
         entryPrice: fill.price,
         timestamp: fill.timestamp,
       });

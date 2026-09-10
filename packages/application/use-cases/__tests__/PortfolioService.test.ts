@@ -29,7 +29,7 @@ import { Timestamp } from '@polymarket/timestamp';
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { asPortfolioId } from '@polymarket/portfolio';
-import type { Fill } from '@polymarket/fill';
+import { Fill } from '@polymarket/fill';
 import type { ILogger } from '@polymarket/logger';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -65,7 +65,15 @@ function makeFill(overrides: {
   const fee = overrides.feeUSDC
     ? Fee.of(new AssetQuantity(AssetIdHelpers.USDC, Quantity.of(new Decimal(overrides.feeUSDC))))
     : Fee.zero(AssetIdHelpers.USDC);
-  return {
+
+  // НАСТОЯЩИЙ `Fill`, а не структурная заглушка через `as unknown`.
+  //
+  // Заглушка выглядела достаточной, пока сервис только читал поля. Как только
+  // он стал применять экономику самого исполнения (`getNetCashFlow()`), она
+  // перестала работать: у объектного литерала методов нет. Это тот же случай,
+  // что и с удалённым `IPosition` — тест проверял сервис против объекта,
+  // которого в проде не существует.
+  const result = Fill.create({
     id: overrides.id as unknown as FillId,
     orderId: ORDER_ID,
     accountId: ACCOUNT_ID,
@@ -78,7 +86,9 @@ function makeFill(overrides: {
     side: overrides.side,
     timestamp: ts(overrides.timestampMs),
     fee,
-  } as unknown as Fill;
+  });
+  if (!result.ok) throw new Error(`fixture failed: ${result.error.message}`);
+  return result.value;
 }
 
 function makePortfolio(tokenReservations?: ReadonlyMap<InstrumentId, Quantity>): Portfolio {
@@ -160,26 +170,52 @@ describe('PortfolioService — lot-based Position (Этап 3)', () => {
       expect(position.averageEntryPrice.value().toNumber()).toBeCloseTo(0.65, 8);
     });
 
-    // ЗАКРЕПЛЯЕТ ДЕФЕКТ, А НЕ КОНТРАКТ.
-    //
-    // Тест фиксирует фактическое поведение `PortfolioService`, которое
-    // ОШИБОЧНО: комиссию покупки Polymarket не удерживает шарами. Измерение
-    // публичной ленты на 2898 сделках — ни одна из 1888 покупок не показала
-    // уменьшенного количества; платится комиссия деньгами, сверх номинала.
-    // Цифры — в докблоке `polymarket-fee.ts`, разбор — в шапке
-    // `PortfolioService`.
-    //
-    // Тест оставлен зелёным намеренно: пока код живёт, его поведение должно
-    // быть зафиксировано. Переносить эту арифметику в новый контур НЕЛЬЗЯ.
-    it('[дефект] комиссия уменьшает netFillQty — quantity меньше fill.size', () => {
-      // fee = 1.0 USDC, price = 0.5 → feeInTokens = 1.0 / 0.5 = 2 → net = 100 - 2 = 98
+    it('комиссия не трогает количество: позиция растёт на ПОЛНЫЙ размер фила', () => {
+      // Комиссию платит только тейкер, платит ДЕНЬГАМИ и из того, что
+      // получает; количество шар не изменяется никогда. Измерено на 2898
+      // реальных сделках — `docs/guides/polymarket-fee-settlement.md`.
+      //
+      // Здесь стояла обратная проверка: `feeInTokens = 1.0 / 0.5 = 2`,
+      // ожидалось `98`. Она закрепляла механизм, которого у площадки нет.
+      const before = store.get(ACCOUNT_ID)!.balance;
       reserveUSDC(service, 0.5, 100);
-      const result = service.applyFill(makeFill({ id: 'f1', price: 0.5, size: 100, side: 'BUY', timestampMs: 1000, feeUSDC: 1.0 }));
+
+      const result = service.applyFill(
+        makeFill({ id: 'f1', price: 0.5, size: 100, side: 'BUY', timestampMs: 1000, feeUSDC: 1.0 }),
+      );
       expect(result.ok).toBe(true);
 
       const position = store.get(ACCOUNT_ID)!.getPosition(INSTRUMENT_ID)!;
-      expect(position.quantity.value().toNumber()).toBeCloseTo(98, 8);
+      expect(position.quantity.value().toNumber()).toBeCloseTo(100, 8);
       expect(position.averageEntryPrice.value().toNumber()).toBeCloseTo(0.5, 8);
+
+      // Деньги: номинал 50 ушёл из reserved, комиссия 1.0 — из available.
+      // Резервация покрывает только номинал: в момент размещения ордера ещё
+      // неизвестно, окажемся мы тейкером или мейкером.
+      const after = store.get(ACCOUNT_ID)!.balance;
+      expect(after.reserved().value().toNumber()).toBeCloseTo(
+        before.reserved().value().toNumber(), 8,
+      );
+      expect(after.available().value().toNumber()).toBeCloseTo(
+        before.available().value().toNumber() - 50 - 1.0, 8,
+      );
+    });
+
+    it('мейкерский фил комиссии не несёт — деньги ровно на номинал', () => {
+      const before = store.get(ACCOUNT_ID)!.balance;
+      reserveUSDC(service, 0.5, 100);
+
+      const result = service.applyFill(
+        makeFill({ id: 'f1', price: 0.5, size: 100, side: 'BUY', timestampMs: 1000 }),
+      );
+      expect(result.ok).toBe(true);
+
+      const after = store.get(ACCOUNT_ID)!.balance;
+      expect(after.available().value().toNumber()).toBeCloseTo(
+        before.available().value().toNumber() - 50, 8,
+      );
+      expect(store.get(ACCOUNT_ID)!.getPosition(INSTRUMENT_ID)!.quantity.value().toNumber())
+        .toBeCloseTo(100, 8);
     });
   });
 

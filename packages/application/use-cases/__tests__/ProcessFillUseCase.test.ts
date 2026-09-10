@@ -58,8 +58,10 @@ function makeExistingLongPosition(): Position {
   return created.value;
 }
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
-import type { Fill, FillParams } from '@polymarket/fill';
-import { OutcomePrice, Quantity } from '@polymarket/value-objects';
+import { Fill, type FillParams } from '@polymarket/fill';
+import { Fee, OutcomePrice, Quantity } from '@polymarket/value-objects';
+import { AssetIdHelpers } from '@polymarket/ids';
+import { TimestampService, type Timestamp } from '@polymarket/timestamp';
 import { Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 import { Order } from '@polymarket/order';
@@ -126,29 +128,45 @@ const FILL_ID = 'fill-1' as unknown as FillId;
 const VENUE_ID = 'POLYMARKET' as unknown as VenueId;
 const MARKET_ID = 'market-1' as unknown as MarketId;
 
-/** Создаёт мок Fill для тестов */
+/**
+ * Настоящий `Fill` для тестов.
+ *
+ * @remarks
+ * Здесь стояла структурная заглушка, которая САМА подделывала экономику:
+ * `getNetCashFlow()` возвращала жёстко зашитые `-32.5` и голый `Decimal`
+ * вместо `SignedQuantity`. Пока сервис эти методы не звал, подделка держалась;
+ * как только он начал применять экономику `Fill`, она развалилась — и, что
+ * хуже, до этого молча утверждала неверные числа для любой стороны, кроме
+ * зашитой.
+ *
+ * Тот же случай, что и с удалённым `IPosition`: заглушка позволяла проверять
+ * код против объекта, которого в проде не существует.
+ */
 function makeFill(overrides: Partial<FillParams> = {}): Fill {
-  return {
+  const result = Fill.create({
     id: FILL_ID,
     orderId: ORDER_ID,
     accountId: ACCOUNT_ID,
     venueId: VENUE_ID,
     marketId: MARKET_ID,
     tokenId: ASSET_ID,
-    settlementAssetId: 'USDC' as unknown as AssetId,
+    settlementAssetId: AssetIdHelpers.USDC,
     price: makePrice('0.65'),
     size: makeQty('50'),
     side: 'BUY',
-    timestamp: { value: () => new Decimal(1000), toNumber: () => 1000 } as never,
-    fee: { amount: { value: () => new Decimal(0) }, asset: 'USDC' as unknown as AssetId, isZero: () => true } as never,
-    hasFee: () => false,
-    getSignedQuantity: () => ({ asset: ASSET_ID, amount: new Decimal('50') }),
-    getCashFlow: () => ({ asset: 'USDC' as unknown as AssetId, amount: new Decimal('-32.5') }),
-    getFeeFlow: () => ({ asset: 'USDC' as unknown as AssetId, amount: new Decimal(0) }),
-    getNetCashFlow: () => ({ asset: 'USDC' as unknown as AssetId, amount: new Decimal('-32.5') }),
-    getNotional: () => ({ asset: 'USDC' as unknown as AssetId, amount: new Decimal('32.5') }),
+    timestamp: unwrapTs(1000),
+    fee: Fee.zero(AssetIdHelpers.USDC),
     ...overrides,
-  } as unknown as Fill;
+  });
+  if (!result.ok) throw new Error(`fixture failed: ${result.error.message}`);
+  return result.value;
+}
+
+/** Момент времени для фикстур. */
+function unwrapTs(ms: number): Timestamp {
+  const r = TimestampService.create(ms);
+  if (!r.ok) throw new Error('fixture failed: invalid timestamp');
+  return r.value;
 }
 
 function makeOrderOpen(): Order {
