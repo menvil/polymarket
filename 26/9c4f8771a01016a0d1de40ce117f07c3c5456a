@@ -1,0 +1,62 @@
+packages/domain/value-objects/__tests__/unit/token-balance/adapters/TokenBalanceSerializer.test.ts
+  s_73852eac4506dc::t_4b8ef8cd231867 2,17,34,70,90,156,190,206,222,238,255,273,291,308,326,345,362,380,398,439
+  s_73852eac4506dc::t_ebea1a0cd662be 9
+  s_73852eac4506dc::t_8a3a5dffe9f71c 169-171,173,176-177
+  s_73852eac4506dc::t_26828d18e8f89a 81
+  s_73852eac4506dc::t_853c7e6b44f339 84
+  s_73852eac4506dc::t_19d00a1bc035c8 139,168
+  s_73852eac4506dc::t_042c9d97ec6a0f 150
+packages/domain/value-objects/__tests__/unit/token-balance/rules/ValidateTokenMatch.test.ts
+  s_73852eac4506dc::t_9a54e02f9ea107 1-13,15,19-20,22,24-25,28-31,33-34,39-40,48-49,53-54
+packages/domain/value-objects/src/token-balance/adapters/TokenBalanceFormatter.ts
+  s_73852eac4506dc::t_3a8770d9831696 82,180,393,462
+  s_73852eac4506dc::t_d84eb93bfac807 331,362,426
+packages/domain/value-objects/__tests__/unit/token-balance/facade/TokenBalanceService.test.ts
+  s_73852eac4506dc::t_faaa5ba52deed0 95,203
+  s_73852eac4506dc::t_3cd0a43b9556e9 2,12-16,763-765,767,774
+packages/domain/value-objects/__tests__/unit/token-balance/core/TokenBalance.test.ts
+  s_73852eac4506dc::t_991ccba4e4ae6c 7
+  s_73852eac4506dc::t_faaa5ba52deed0 108-110
+  s_73852eac4506dc::t_1b793ceab8ec2b 9
+  s_73852eac4506dc::t_f6397ea3a170d0 5,159,189-193
+  s_73852eac4506dc::t_aeef0e593fc15c 16,32,160,288-290,296,303,308-310
+packages/domain/value-objects/src/token-balance/rules/ValidateTokenMatch.ts
+  s_73852eac4506dc::t_3972a3d9abc10c 3,45-46,48-49,53,58-59
+  s_73852eac4506dc::t_0e395ed426aff3 60-61
+packages/domain/value-objects/src/token-balance/adapters/TokenBalanceSerializer.ts
+  s_73852eac4506dc::t_76801931d1deaf 5,223-226,230,467
+  s_73852eac4506dc::t_3a8770d9831696 31
+  s_73852eac4506dc::t_19d00a1bc035c8 182,185
+packages/domain/value-objects/src/token-balance/facade/TokenBalanceService.ts
+  s_73852eac4506dc::t_4606878b7302e5 29,132,185,251,277,342,368,441,462,517,526
+  s_73852eac4506dc::t_d84eb93bfac807 4,42,46,73,102,122,176
+packages/domain/value-objects/src/token-balance/core/TokenBalance.ts
+  s_73852eac4506dc::t_47512141140528 53,72,131,154,269,274-275,499
+  s_73852eac4506dc::t_3972a3d9abc10c 12-31
+  s_73852eac4506dc::t_11e1784e42dc6f 76,79,91,159,162,166,173,175,225,248,257,263,273,278-279,289,305,329,354,370,387,412,420,444-445,449,451,471,478,485,518,520,527,554,556,563
+  s_73852eac4506dc::t_76801931d1deaf 2
+packages/domain/value-objects/__tests__/unit/token-balance/adapters/TokenBalanceFormatter.test.ts
+  s_73852eac4506dc::t_faaa5ba52deed0 36,89
+  s_73852eac4506dc::t_94fd005cecc36d 51-54,56
+  s_73852eac4506dc::t_042c9d97ec6a0f 71,104,110,121,132
+  s_73852eac4506dc::t_8a3a5dffe9f71c 162
+  s_73852eac4506dc::t_4e059c383c693e 254
+  s_73852eac4506dc::t_ebea1a0cd662be 9
+  s_73852eac4506dc::t_4b8ef8cd231867 2,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "269c4f8771a01016a0d1de40ce117f07c3c5456a",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
