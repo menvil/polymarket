@@ -1,0 +1,82 @@
+packages/domain/entities/fill/src/factIdentity.ts
+  s_73852eac4506dc::t_b7baea22bd860b 35,58-60,62
+packages/foundation/ids/__tests__/core.test.ts
+  s_73852eac4506dc::t_55477227bedb1b 66,2754-2765,2768-2777,2779-2795,2797-2815
+  s_73852eac4506dc::t_580bc800708e03 2766-2767,2778,2796
+packages/domain/entities/order/src/identity.ts
+  s_73852eac4506dc::t_68092b6f6adfeb 56
+  s_73852eac4506dc::t_b7baea22bd860b 75-77,79
+packages/domain/entities/fill/src/index.ts
+  s_73852eac4506dc::t_3d6c00e9280fcb 25-30
+packages/foundation/ids/src/core/AccountId.ts
+  s_73852eac4506dc::t_5efc2e64d995c5 877-922
+packages/application/account-state/docs/account-state.md
+  s_73852eac4506dc::t_2e2b479ee5c2b4 279-301,676,681-693
+packages/domain/entities/order/src/OrderState.ts
+  s_73852eac4506dc::t_59511cd0504ab1 37-56
+packages/application/trading-state/src/marketStructure.ts
+  s_73852eac4506dc::t_f615a0ed83bec6 45,67-74,76,81-82
+  s_73852eac4506dc::t_2a7d8da2fb95d3 89-90,92,98-99,103-105,147-148,191-192,197-198,211-212
+packages/application/account-state/README.md
+  s_73852eac4506dc::t_9b4e496b0f30b9 144-151
+packages/domain/entities/fill/__tests__/unit/tradeStatus.test.ts
+  s_73852eac4506dc::t_846c9406dfa3d6 1-126
+packages/application/use-cases/src/services/PortfolioService.ts
+  s_73852eac4506dc::t_fc66198c9d25ad 842-862
+packages/foundation/ids/src/core/index.ts
+  s_73852eac4506dc::t_43825ab5b59e62 76
+packages/application/account-state/__tests__/identityHelpers.test.ts
+  s_73852eac4506dc::t_8b86fc37e1c8f3 14
+  s_73852eac4506dc::t_a5115da296edd8 15
+packages/foundation/errors/src/index.ts
+  s_73852eac4506dc::t_f9e649c0a9c2fc 72
+packages/domain/entities/order/src/index.ts
+  s_73852eac4506dc::t_59511cd0504ab1 66
+packages/application/account-state/src/records.ts
+  s_73852eac4506dc::t_f5f7c225a9e3ff 54-137
+packages/application/account-state/src/AccountHotState.ts
+  s_73852eac4506dc::t_980af551df8c03 99-103,628-652
+  s_73852eac4506dc::t_41890f18b2a109 130
+  s_73852eac4506dc::t_a5115da296edd8 91
+  s_73852eac4506dc::t_74801af0de82a4 131
+  s_73852eac4506dc::t_0f76f106823bca 107
+  s_73852eac4506dc::t_0769f531d868d2 553-567,701-715
+packages/foundation/errors/src/utils/fieldDifference.ts
+  s_73852eac4506dc::t_f9e649c0a9c2fc 1-60
+packages/application/trading-state/src/errors.ts
+  s_73852eac4506dc::t_1de005ca18ed75 448-451,453,459-460
+packages/application/trading-state/docs/trading-state.md
+  s_73852eac4506dc::t_37457874a92697 375-401
+packages/application/account-state/src/identity.ts
+  s_73852eac4506dc::t_6e470688fe8766 27
+packages/application/account-state/src/index.ts
+  s_73852eac4506dc::t_6e470688fe8766 115
+  s_73852eac4506dc::t_a6a4f725be0f4d 116-120,124
+packages/application/account-state/__tests__/fillLifecycle.test.ts
+  s_73852eac4506dc::t_f250d8cee3478e 12-15,647-706
+packages/application/trading-state/__tests__/marketLifecycle.test.ts
+  s_73852eac4506dc::t_578dddc46cc7fd 1087-1088,1449-1452
+packages/domain/entities/fill/docs/fill.md
+  s_73852eac4506dc::t_87e01ea27e3a31 117-178
+packages/domain/entities/fill/src/tradeStatus.ts
+  s_73852eac4506dc::t_3d6c00e9280fcb 1-73,75-81,84,86-87,94-107,111-118,120-125
+  s_73852eac4506dc::t_7c5e75feaebf5b 74,82-83,85,88-93,108-110,119
+packages/application/account-state/__tests__/navigation.test.ts
+  s_73852eac4506dc::t_1dff70e53adddc 15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e47476998b1c34541cc212fdeb87fb11c6f6a347",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
