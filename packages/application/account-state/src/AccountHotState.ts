@@ -115,7 +115,7 @@ import {
   AccountNotInitializedError,
   AccountOrderAccountMissingError,
   AccountOrderIdentityConflictError,
-  AccountFillVenueStatusRegressionError,
+  AccountFillTerminalVenueStatusConflictError,
   AccountPortfolioIdentityMismatchError,
   TERMINAL_VENUE_STATUSES,
   type AccountFillAction,
@@ -599,9 +599,25 @@ export class AccountHotState implements AccountHotStateView {
    * Именно поэтому событие отдельное: `MINED` и `RETRYING` не имеют
    * экономических двойников, и без него они бы просто терялись.
    *
-   * Порядок наблюдений НЕ проверяется — доставка может переставить их местами.
-   * Отвергается только уход С терминального статуса площадки
-   * (`CONFIRMED`/`FAILED`): по её контракту оттуда пути нет.
+   * ### Порядок доставки против порядка на площадке
+   *
+   * Площадка назад не ходит, но СООБЩЕНИЯ приходят не по порядку, и различать
+   * это обязательно:
+   *
+   * ```text
+   * current == incoming                      повтор            no-op
+   * терминальный → нетерминальный            запоздавшее старое no-op
+   * CONFIRMED ↔ FAILED                       два исхода         Err
+   * нетерминальный → любой                   принять
+   * ```
+   *
+   * `MINED` после `CONFIRMED` — это не «сделка перестала быть подтверждённой»,
+   * а наблюдение, сделанное РАНЬШЕ и доехавшее позже. Отвергать его нельзя:
+   * подписки проектора `critical`, и одно запоздавшее сообщение превращалось
+   * бы в аварийный отказ торгового контура.
+   *
+   * Единственное, что задержкой не объясняется, — два РАЗНЫХ терминальных
+   * исхода у одной сделки.
    *
    * @example
    * ```typescript
@@ -617,17 +633,28 @@ export class AccountHotState implements AccountHotStateView {
     if (!stored.ok) return stored;
 
     const { account, record } = stored.value;
-    if (record.venueStatus === venueStatus) return Ok(undefined);
-    if (record.venueStatus !== undefined && TERMINAL_VENUE_STATUSES.has(record.venueStatus)) {
-      return Err(
-        new AccountFillVenueStatusRegressionError(
-          account.venueId,
-          account.accountId,
-          fill.id,
-          record.venueStatus,
-          venueStatus,
-        ),
-      );
+    const current = record.venueStatus;
+
+    // Повтор того же наблюдения.
+    if (current === venueStatus) return Ok(undefined);
+
+    if (current !== undefined && TERMINAL_VENUE_STATUSES.has(current)) {
+      // Два разных терминальных исхода одной сделки задержкой не объясняются.
+      if (TERMINAL_VENUE_STATUSES.has(venueStatus)) {
+        return Err(
+          new AccountFillTerminalVenueStatusConflictError(
+            account.venueId,
+            account.accountId,
+            fill.id,
+            current,
+            venueStatus,
+          ),
+        );
+      }
+      // Нетерминальный статус ПОСЛЕ терминального — запоздавшее старое
+      // наблюдение, а не движение площадки назад. Тихо игнорируем: терминальный
+      // исход уже записан, и затирать его промежуточным нечем.
+      return Ok(undefined);
     }
 
     account.commit({ fill: { ...record, venueStatus, venueStatusAt: at } }, at);

@@ -20,7 +20,7 @@ import type { TradeStatus } from '@polymarket/fill';
 import {
   AccountFillIdentityConflictError,
   AccountFillNotFoundError,
-  AccountFillVenueStatusRegressionError,
+  AccountFillTerminalVenueStatusConflictError,
   AccountNotInitializedError,
   TERMINAL_VENUE_STATUSES,
 } from '../src/index.js';
@@ -189,10 +189,11 @@ describe('порядок наблюдений и терминальность', 
 
   it.each<[TradeStatus, TradeStatus]>([
     ['CONFIRMED', 'MINED'],
-    ['CONFIRMED', 'FAILED'],
+    ['CONFIRMED', 'MATCHED'],
+    ['CONFIRMED', 'RETRYING'],
     ['FAILED', 'MATCHED'],
-    ['FAILED', 'CONFIRMED'],
-  ])('уход с терминального %s → %s отвергается', async (terminal, incoming) => {
+    ['FAILED', 'MINED'],
+  ])('запоздавшее %s → %s игнорируется, а не роняет публикацию', async (terminal, late) => {
     const { bus, view, events, accountId, fillId } = await withAppliedFill();
     events.observeAt(3_000);
     await publishOk(
@@ -201,19 +202,61 @@ describe('порядок наблюдений и терминальность', 
     );
     const version = view.getAccount(VENUE, accountId)?.version;
 
+    // Площадка назад не ходит — но сообщение, сделанное РАНЬШЕ, доехало позже.
+    // Подписки critical: отвергнув его, мы уронили бы весь publish.
     events.observeAt(4_000);
-    const error = await publishErr(
+    await publishOk(
       bus,
-      events.fillVenueStatus({ fill: makeFill({ accountId }), venueStatus: incoming }),
+      events.fillVenueStatus({ fill: makeFill({ accountId }), venueStatus: late }),
     );
 
-    expect(error).toBeInstanceOf(AccountFillVenueStatusRegressionError);
-    expect((error as AccountFillVenueStatusRegressionError).current).toBe(terminal);
-    expect((error as AccountFillVenueStatusRegressionError).incoming).toBe(incoming);
     const record = view.getAccount(VENUE, accountId)?.getFill(fillId as never);
     expect(record?.venueStatus).toBe(terminal);
     expect(record?.venueStatusAt?.equals(ts(3_000))).toBe(true);
     expect(view.getAccount(VENUE, accountId)?.version).toBe(version);
+  });
+
+  it.each<[TradeStatus, TradeStatus]>([
+    ['CONFIRMED', 'FAILED'],
+    ['FAILED', 'CONFIRMED'],
+  ])('два разных терминальных исхода %s → %s — конфликт', async (terminal, other) => {
+    const { bus, view, events, accountId, fillId } = await withAppliedFill();
+    events.observeAt(3_000);
+    await publishOk(
+      bus,
+      events.fillVenueStatus({ fill: makeFill({ accountId }), venueStatus: terminal }),
+    );
+    const version = view.getAccount(VENUE, accountId)?.version;
+
+    // Задержкой это не объясняется: одна сделка не может быть и успешной,
+    // и окончательно провалившейся.
+    events.observeAt(4_000);
+    const error = await publishErr(
+      bus,
+      events.fillVenueStatus({ fill: makeFill({ accountId }), venueStatus: other }),
+    );
+
+    expect(error).toBeInstanceOf(AccountFillTerminalVenueStatusConflictError);
+    expect((error as AccountFillTerminalVenueStatusConflictError).current).toBe(terminal);
+    expect((error as AccountFillTerminalVenueStatusConflictError).incoming).toBe(other);
+    const record = view.getAccount(VENUE, accountId)?.getFill(fillId as never);
+    expect(record?.venueStatus).toBe(terminal);
+    expect(view.getAccount(VENUE, accountId)?.version).toBe(version);
+  });
+
+  it('реальная перестановка доставки MATCHED → CONFIRMED → MINED проходит целиком', async () => {
+    const { bus, view, events, accountId, fillId } = await withAppliedFill();
+    let at = 3_000;
+    for (const venueStatus of ['MATCHED', 'CONFIRMED', 'MINED'] as TradeStatus[]) {
+      events.observeAt(at);
+      at += 500;
+      await publishOk(bus, events.fillVenueStatus({ fill: makeFill({ accountId }), venueStatus }));
+    }
+
+    // Финальный исход сохранён, запоздавший MINED не затёр его и не уронил шину.
+    expect(view.getAccount(VENUE, accountId)?.getFill(fillId as never)?.venueStatus).toBe(
+      'CONFIRMED',
+    );
   });
 });
 

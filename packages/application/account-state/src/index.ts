@@ -99,7 +99,7 @@ export {
   AccountFillNotFoundError,
   AccountFillOrderLinkError,
   AccountFillTransitionError,
-  AccountFillVenueStatusRegressionError,
+  AccountFillTerminalVenueStatusConflictError,
   AccountIdentityMismatchError,
   AccountInstrumentResolutionError,
   AccountNotInitializedError,

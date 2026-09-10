@@ -591,36 +591,45 @@ export const TERMINAL_VENUE_STATUSES: ReadonlySet<TradeStatus> = new Set<TradeSt
 ]);
 
 /**
- * Площадка «откатилась» с терминального статуса на другой.
+ * У одного исполнения два РАЗНЫХ терминальных исхода на площадке.
  *
  * @remarks
- * Ось площадки монотонна только на концах: `MATCHED → MINED → CONFIRMED` и
- * ветки `RETRYING`/`FAILED` могут приходить в неожиданном порядке, и жёсткий
- * FSM по ним отвергал бы законные наблюдения, доставленные не по порядку.
- * Поэтому обычные переходы принимаются как есть — состояние хранит ПОСЛЕДНЕЕ
- * наблюдение.
+ * Это единственный настоящий конфликт venue-оси. Всё остальное объясняется
+ * порядком доставки:
  *
- * А вот уход С терминального статуса — другое дело: по контракту площадки из
- * `CONFIRMED` и `FAILED` она не выходит. Такое наблюдение означает либо
- * доставку не того исполнения, либо дефект producer'а, и принимать его значило
- * бы затереть финальный факт промежуточным.
+ * ```text
+ * CONFIRMED → MINED     запоздавшее старое наблюдение   no-op
+ * FAILED    → MATCHED   то же самое                     no-op
+ * CONFIRMED → FAILED    ДВА исхода одной сделки         Err  ← этот класс
+ * FAILED    → CONFIRMED то же самое                     Err
+ * ```
  *
- * Повтор ТОГО ЖЕ терминального статуса — не регрессия, а обычный дубликат.
+ * Разница принципиальна. Площадка не ходит назад — но сообщения приходят не
+ * по порядку, и `MINED` после `CONFIRMED` означает не «сделка расстала
+ * подтверждённой», а «до нас поздно дошло наблюдение, сделанное раньше».
+ * Отвергать его нельзя: подписки проектора `critical`, и одно запоздавшее
+ * сообщение превращалось бы в аварийный отказ торгового контура.
+ *
+ * А вот два разных ТЕРМИНАЛЬНЫХ исхода задержкой не объясняются: по контракту
+ * площадки `CONFIRMED` — «finality достигнута, транзакция успешна», `FAILED` —
+ * «окончательно упала, повторов не будет». Одна сделка не может быть и тем, и
+ * другим, поэтому здесь мы действительно ничего не понимаем и обязаны
+ * остановиться.
  *
  * @example
  * ```typescript
- * throw new AccountFillVenueStatusRegressionError(venueId, accountId, fillId, 'CONFIRMED', 'MINED');
+ * throw new AccountFillTerminalVenueStatusConflictError(venueId, accountId, fillId, 'CONFIRMED', 'FAILED');
  * ```
  */
-export class AccountFillVenueStatusRegressionError extends TradingError {
+export class AccountFillTerminalVenueStatusConflictError extends TradingError {
   public readonly severity = 'critical' as const;
 
   /**
    * @param venueId - Площадка владельца
    * @param accountId - Аккаунт владельца
    * @param fillId - Исполнение, по которому пришло наблюдение
-   * @param current - Терминальный статус, уже записанный в состоянии
-   * @param incoming - Статус из наблюдения
+   * @param current - Терминальный исход, уже записанный в состоянии
+   * @param incoming - Другой терминальный исход из наблюдения
    */
   constructor(
     public readonly venueId: VenueId,
@@ -630,8 +639,8 @@ export class AccountFillVenueStatusRegressionError extends TradingError {
     public readonly incoming: TradeStatus,
   ) {
     super(
-      `Fill ${fillId} venue status cannot move ${current} → ${incoming} for trading account ` +
-        `${describeAccount(venueId, accountId)}: ${current} is terminal on the venue`,
+      `Fill ${fillId} has two different terminal venue outcomes for trading account ` +
+        `${describeAccount(venueId, accountId)}: already ${current}, observed ${incoming}`,
       { context: { ...accountContext(venueId, accountId), fillId, current, incoming } },
     );
   }
@@ -650,4 +659,4 @@ export type AccountStateError =
   | AccountFillIdentityConflictError
   | AccountFillNotFoundError
   | AccountFillTransitionError
-  | AccountFillVenueStatusRegressionError;
+  | AccountFillTerminalVenueStatusConflictError;
