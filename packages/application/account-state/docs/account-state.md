@@ -122,7 +122,7 @@ AccountStateProjector                ← только материализаци
 
 ```text
 ✗ balance            ✗ positions: Map
-✗ availableBalance   ✗ tokenReservations: Map
+✗ availableBalance   ✗ tokenBalances: Map
 ✗ reservedBalance
 ```
 
@@ -135,7 +135,7 @@ interface AccountRuntimeStateView {
 }
 ```
 
-`Portfolio` уже содержит `balance`, `positions` и `tokenReservations`, и они
+`Portfolio` уже содержит `balance`, `positions` и `tokenBalances`, и они
 связаны его инвариантами. Скопировать их в состояние аккаунта значило бы взять
 на себя обязанность держать копию синхронной — обязанность, которую невозможно
 выполнить, если портфель приходит целиком в каждом событии.

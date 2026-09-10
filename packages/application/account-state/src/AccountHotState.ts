@@ -169,7 +169,7 @@ interface PendingMutation {
  * проектор» осталось бы комментарием.
  *
  * Позиции и деньги живут в `_portfolio` и только там. Параллельных
- * `positions`/`balance`/`tokenReservations` у аккаунта нет — см. `views.ts`.
+ * `positions`/`balance`/`tokenBalances` у аккаунта нет — см. `views.ts`.
  */
 class AccountRuntimeState implements AccountRuntimeStateView {
   private readonly _orders = new Map<OrderId, AccountOrderRecord>();

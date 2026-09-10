@@ -53,9 +53,23 @@
  * принцип «у сущности должен быть интерфейс» сам по себе такой границей не
  * является.
  *
- * **8. tokenReservations — резервации outcome-токенов для SELL ордеров:**
- * При размещении SELL ордера токены резервируются, чтобы предотвратить двойную продажу.
- * Симметрично USDC-резервациям для BUY ордеров.
+ * **8. tokenBalances — токены по инструментам, доступные и зарезервированные:**
+ * При размещении SELL ордера токены резервируются, чтобы предотвратить двойную
+ * продажу. Симметрично USDC-резервациям для BUY ордеров.
+ *
+ * Хранится обе части, а не одна: раньше «доступное» ВЫЧИСЛЯЛОСЬ как
+ * `position.quantity − reserved` и при отрицательном результате молча
+ * зажималось в ноль — то есть нарушенный инвариант не просто не ловился, а
+ * маскировался.
+ *
+ * ### Инвариант агрегата
+ * ```
+ * Position.quantity == TokenBalance.available + TokenBalance.reserved
+ * ```
+ *
+ * Проверяется в единственной точке сборки состояния — и в мутаторах, и в
+ * {@link Portfolio.create}. Второе существенно: иначе оставался бы публичный
+ * вход, через который агрегат собирается сразу несогласованным.
  *
  * ### Жизненный цикл баланса
  * ```
@@ -65,11 +79,14 @@
  * applyCredit(amount)        →  available += amount (зачисление)
  * ```
  *
- * ### Жизненный цикл токенных резерваций (SELL ордера)
+ * ### Жизненный цикл токенов (SELL ордера)
  * ```
- * reserveTokensForOrder(id, qty)  →  tokenReservations[id] += qty
- * releaseTokenReservation(id, qty) →  tokenReservations[id] -= qty
+ * reserveTokens(id, qty)  →  available -= qty, reserved += qty
+ * releaseTokens(id, qty)  →  reserved -= qty, available += qty
  * ```
+ *
+ * Резервация — перекладывание, а не расход: количество позиции при ней не
+ * меняется, и инвариант сохраняется.
  *
  * @example
  * ```typescript
@@ -224,6 +241,22 @@ export class Portfolio {
       return Err(
         new PortfolioValidationError('Balance is required', {
           context: { field: 'balance', portfolioId: params.id },
+        })
+      );
+    }
+
+    // Инвариант проверяется и ЗДЕСЬ, а не только в мутаторах. Иначе остаётся
+    // публичный вход, через который агрегат собирается сразу несогласованным:
+    // позиция на 100 при токенном балансе на 40 прошла бы, и первая же мутация
+    // отвергла бы состояние, которое сама не создавала.
+    const violation = Portfolio._findInvariantViolation(
+      params.positions ?? new Map(),
+      params.tokenBalances ?? new Map(),
+    );
+    if (violation !== undefined) {
+      return Err(
+        new PortfolioValidationError(violation.message, {
+          context: { ...violation.context, portfolioId: params.id },
         })
       );
     }
@@ -848,6 +881,40 @@ export class Portfolio {
     positions: ReadonlyMap<InstrumentId, Position>,
     tokenBalances: ReadonlyMap<InstrumentId, TokenBalance>,
   ): Result<Portfolio, PortfolioOperationError> {
+    const violation = Portfolio._findInvariantViolation(positions, tokenBalances);
+    if (violation !== undefined) {
+      return Err(new PortfolioOperationError(violation.message, { context: violation.context }));
+    }
+
+    return Ok(new Portfolio({ id: this.id, accountId: this.accountId, balance, positions, tokenBalances }));
+  }
+
+  /**
+   * Первое расхождение позиции с токенным балансом, если оно есть.
+   *
+   * @param positions - Позиции по инструментам
+   * @param tokenBalances - Токенные балансы по тем же инструментам
+   * @returns Описание нарушения либо `undefined`, если набор согласован
+   *
+   * @remarks
+   * Единственное определение инварианта агрегата:
+   *
+   * ```text
+   * Position.quantity == TokenBalance.available + TokenBalance.reserved
+   * ```
+   *
+   * Проверяется по ОБЪЕДИНЕНИЮ ключей, а не по одной из карт: инструмент,
+   * присутствующий только с одной стороны, — это тоже расхождение, и молча
+   * пропускать его нельзя.
+   *
+   * Возвращается описание, а не `Result`: два вызывающих оборачивают его в
+   * разные типы ошибок — {@link create} в валидационную, мутаторы в
+   * операционную, — и заводить общий супертип ради этого незачем.
+   */
+  private static _findInvariantViolation(
+    positions: ReadonlyMap<InstrumentId, Position>,
+    tokenBalances: ReadonlyMap<InstrumentId, TokenBalance>,
+  ): { message: string; context: Record<string, string> } | undefined {
     const instruments = new Set<InstrumentId>([...positions.keys(), ...tokenBalances.keys()]);
 
     for (const instrumentId of instruments) {
@@ -856,23 +923,22 @@ export class Portfolio {
       const tokenTotal = tokens?.total().value() ?? new Decimal(0);
 
       if (!positionQty.equals(tokenTotal)) {
-        return Err(new PortfolioOperationError(
-          `Aggregate invariant violated for ${String(instrumentId)}: position quantity ` +
+        return {
+          message:
+            `Aggregate invariant violated for ${String(instrumentId)}: position quantity ` +
             `${positionQty.toString()} != token available+reserved ${tokenTotal.toString()}`,
-          {
-            context: {
-              instrumentId: String(instrumentId),
-              positionQuantity: positionQty.toString(),
-              tokenTotal: tokenTotal.toString(),
-              available: tokens?.available().value().toString() ?? '0',
-              reserved: tokens?.reserved().value().toString() ?? '0',
-            },
+          context: {
+            instrumentId: String(instrumentId),
+            positionQuantity: positionQty.toString(),
+            tokenTotal: tokenTotal.toString(),
+            available: tokens?.available().value().toString() ?? '0',
+            reserved: tokens?.reserved().value().toString() ?? '0',
           },
-        ));
+        };
       }
     }
 
-    return Ok(new Portfolio({ id: this.id, accountId: this.accountId, balance, positions, tokenBalances }));
+    return undefined;
   }
 
   /**

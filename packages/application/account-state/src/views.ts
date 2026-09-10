@@ -54,7 +54,7 @@ export interface TradingAccountIdentity {
  *
  * @remarks
  * Отдельных `balance`, `availableBalance`, `reservedBalance`, `positions` и
- * `tokenReservations` здесь НЕТ и быть не должно: всё это уже живёт в
+ * `tokenBalances` здесь НЕТ и быть не должно: всё это уже живёт в
  * `portfolio` и связано его инвариантами. Второй набор полей неизбежно
  * разошёлся бы с первым, и вопрос «сколько у нас свободных денег» получил бы
  * два разных ответа.
@@ -62,7 +62,7 @@ export interface TradingAccountIdentity {
  * ```text
  * state.portfolio.balance             деньги: available + reserved
  * state.portfolio.positions           позиции по инструментам
- * state.portfolio.tokenReservations   зарезервированные токены
+ * state.portfolio.tokenBalances       токены: доступные + зарезервированные
  * ```
  *
  * ### Навигация — производные представления

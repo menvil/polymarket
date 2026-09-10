@@ -7,7 +7,7 @@
  * - reserveForOrder / releaseReservation / applyDebit / applyCredit
  * - reserveTokensForOrder / releaseTokenReservation / availableTokenQuantity
  * - upsertPosition (добавление, обновление, удаление закрытых позиций)
- * - Immutability: upsertPosition и withBalance сохраняют tokenReservations
+ * - Immutability: операции с деньгами сохраняют tokenBalances
  * - getPosition / hasPosition / getPositions / getPositionCount / isEmpty
  * - toString()
  */
@@ -16,12 +16,17 @@ import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import type { Position } from '@polymarket/position';
 import { Portfolio } from '../../src/Portfolio.js';
-import { closedPosition, position } from '../positionFixture.js';
+import { position } from '../positionFixture.js';
 import { asPortfolioId } from '../../src/value-objects/index.js';
 import { PortfolioValidationError } from '@polymarket/errors/portfolio';
 import { InvalidBalanceError } from '@polymarket/errors';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
+import { TokenBalance } from '@polymarket/value-objects/token-balance';
+import { Quantity, Fee, AssetQuantity, OutcomePrice } from '@polymarket/value-objects';
+import { AssetIdHelpers, asPositionId, type AssetId, type FillId, type OrderId, type MarketId, type PositionId } from '@polymarket/ids';
+import { TimestampService } from '@polymarket/timestamp';
+import { Fill } from '@polymarket/fill';
 import type { InstrumentId, AccountId, VenueId, WalletAddress } from '@polymarket/ids';
 
 // ==================== Хелперы ====================
@@ -67,8 +72,106 @@ function makeOpenPosition(instrumentId: InstrumentId): Position {
   return position(instrumentId, { quantity: 100, entryPrice: 0.65 });
 }
 
-function makeClosedPosition(instrumentId: InstrumentId): Position {
-  return closedPosition(instrumentId);
+function qty(n: number): Quantity {
+  return Quantity.of(new Decimal(n));
+}
+
+/**
+ * Токенный баланс, согласованный с позицией.
+ *
+ * @remarks
+ * `available + reserved` обязано равняться количеству позиции — иначе
+ * `Portfolio.create()` отвергнет набор. Раньше портфель с позицией и без
+ * токенного баланса собирался молча, а «доступное» ВЫЧИСЛЯЛОСЬ как
+ * `quantity − reserved`; теперь это две хранимые части одного инварианта.
+ */
+function makeTokenBalance(instrumentId: InstrumentId, available: number, reserved = 0): TokenBalance {
+  return TokenBalance.of(instrumentId, qty(available), qty(reserved), accountId, venueId);
+}
+
+/**
+ * Токенные балансы, согласованные с переданными позициями.
+ *
+ * @remarks
+ * Инвариант агрегата требует, чтобы у каждой позиции был токенный двойник на
+ * то же количество. Раньше портфель с позицией и без токенов собирался молча —
+ * теперь `create()` такой набор отвергает, и фикстуры обязаны быть честными.
+ */
+function tokensFor(positions: ReadonlyMap<InstrumentId, Position>): Map<InstrumentId, TokenBalance> {
+  const out = new Map<InstrumentId, TokenBalance>();
+  for (const [instrumentId, pos] of positions) {
+    out.set(instrumentId, TokenBalance.of(instrumentId, pos.quantity, qty(0), accountId, venueId));
+  }
+  return out;
+}
+
+/** Портфель с позицией на 100 и согласованным токенным балансом. */
+function makePortfolioWithTokens(instrumentId: InstrumentId, reserved = 0) {
+  return makePortfolio({
+    positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
+    tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 100 - reserved, reserved)]]),
+  });
+}
+
+/** Идентификатор позиции для фикстур: отказ здесь — дефект самого теста. */
+function positionId(raw: string): PositionId {
+  const id = asPositionId(raw);
+  if (id === undefined) throw new Error(`fixture failed: invalid positionId ${raw}`);
+  return id;
+}
+
+/** Момент времени для фикстур. */
+function ts(ms: number) {
+  const r = TimestampService.create(ms);
+  if (!r.ok) throw new Error('fixture timestamp');
+  return r.value;
+}
+
+// Настоящий outcome-токен, а не USDC: `assetIdToInstrumentId` от USDC даёт
+// `CURRENCY:USDC`, и получился бы портфель, покупающий доллары за доллары.
+const FILL_TOKEN = {
+  type: 'POLYMARKET_CTF_TOKEN',
+  tokenId: '55695501845784092214174724531633766378641431459789650894538985540007126410391',
+} as unknown as AssetId;
+
+/** Инструмент, в который резолвится `FILL_TOKEN`. */
+const FILL_INSTRUMENT =
+  '55695501845784092214174724531633766378641431459789650894538985540007126410391' as InstrumentId;
+
+/**
+ * Исполнение с явной комиссией.
+ *
+ * @remarks
+ * Комиссия задаётся в USDC — это её единственный законный актив
+ * (`Fill.create` требует совпадения с settlement-активом), и ровно так
+ * площадка её и удерживает: деньгами, а не шарами.
+ */
+function makeFill(params: {
+  side: 'BUY' | 'SELL';
+  size: number;
+  price: number;
+  feeUSDC?: number;
+  id?: string;
+}): Fill {
+  const fee = params.feeUSDC
+    ? Fee.of(new AssetQuantity(AssetIdHelpers.USDC, qty(params.feeUSDC)))
+    : Fee.zero(AssetIdHelpers.USDC);
+  const result = Fill.create({
+    id: (params.id ?? 'fill-1') as unknown as FillId,
+    orderId: 'order-1' as unknown as OrderId,
+    accountId,
+    venueId,
+    marketId: 'market-1' as unknown as MarketId,
+    tokenId: FILL_TOKEN,
+    settlementAssetId: AssetIdHelpers.USDC,
+    price: OutcomePrice.of(new Decimal(params.price)),
+    size: qty(params.size),
+    side: params.side,
+    timestamp: ts(1_700_000_000_000),
+    fee,
+  });
+  if (!result.ok) throw new Error(`fixture failed: ${result.error.message}`);
+  return result.value;
 }
 
 // ==================== Тесты ====================
@@ -87,7 +190,7 @@ describe('Portfolio.create()', () => {
   it('создаёт Portfolio с начальными позициями', () => {
     const instrumentId = makeInstrumentId('instrument-1');
     const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolio({ positions, tokenBalances: tokensFor(positions) });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.getPositionCount()).toBe(1);
@@ -255,43 +358,88 @@ describe('Portfolio.applyCredit()', () => {
   });
 });
 
-describe('Portfolio.upsertPosition()', () => {
-  it('добавляет открытую позицию', () => {
+describe('Portfolio.applyFill() — позиция и токены двигаются вместе', () => {
+  // `upsertPosition()` больше не публичен, и заменять хранимый `TokenBalance`
+  // отдельно тоже нельзя. Те же поведения — открытие, наращивание, закрытие,
+  // неизменяемость — проверяются через единственный оставшийся путь.
+
+  const POSITION_ID = positionId('position-1');
+
+  it('BUY открывает позицию и начисляет токены', () => {
     const result = makePortfolio();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const instrumentId = makeInstrumentId('instrument-1');
-    const updated = result.value.upsertPosition(makeOpenPosition(instrumentId));
-    expect(updated.hasPosition(instrumentId)).toBe(true);
-    expect(updated.getPositionCount()).toBe(1);
+    const applied = result.value.applyFill(makeFill({ side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    expect(applied.value.hasPosition(FILL_INSTRUMENT)).toBe(true);
+    expect(applied.value.getPosition(FILL_INSTRUMENT)?.quantity.value().toNumber()).toBe(100);
+    expect(applied.value.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(100);
+    expect(applied.value.reservedTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
   });
 
-  it('обновляет существующую позицию', () => {
-    const instrumentId = makeInstrumentId('instrument-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+  it('второй BUY наращивает ту же позицию, а не заводит вторую', () => {
+    const result = makePortfolio();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Другая позиция того же инструмента — upsert обязан заменить, а не добавить.
-    const newPosition = position(instrumentId, { quantity: 250, entryPrice: 0.7 });
-    const updated = result.value.upsertPosition(newPosition);
-    expect(updated.getPositionCount()).toBe(1);
-    expect(updated.getPosition(instrumentId)).toBe(newPosition);
-    expect(updated.getPosition(instrumentId)?.quantity.value().toNumber()).toBe(250);
+    const first = result.value.applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const second = first.value.applyFill(
+      makeFill({ id: 'f2', side: 'BUY', size: 50, price: 0.7 }), POSITION_ID);
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.value.getPositionCount()).toBe(1);
+    expect(second.value.getPosition(FILL_INSTRUMENT)?.quantity.value().toNumber()).toBe(150);
+    expect(second.value.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(150);
   });
 
-  it('удаляет закрытую позицию', () => {
-    const instrumentId = makeInstrumentId('instrument-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+  it('SELL на весь объём закрывает позицию и обнуляет токены', () => {
+    const result = makePortfolio();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const updated = result.value.upsertPosition(makeClosedPosition(instrumentId));
-    expect(updated.hasPosition(instrumentId)).toBe(false);
-    expect(updated.getPositionCount()).toBe(0);
+    const bought = result.value.applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    expect(bought.ok).toBe(true);
+    if (!bought.ok) return;
+
+    // Продавать можно только зарезервированное — сначала резервация под заявку.
+    const reserved = bought.value.reserveTokens(FILL_INSTRUMENT, qty(100));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+
+    const sold = reserved.value.applyFill(
+      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6 }), POSITION_ID);
+    expect(sold.ok).toBe(true);
+    if (!sold.ok) return;
+
+    expect(sold.value.hasPosition(FILL_INSTRUMENT)).toBe(false);
+    expect(sold.value.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
+    expect(sold.value.reservedTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
+  });
+
+  it('SELL без резервации отвергается', () => {
+    const result = makePortfolio();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const bought = result.value.applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    expect(bought.ok).toBe(true);
+    if (!bought.ok) return;
+
+    // Токены есть, но лежат в available — продать их, не зарезервировав под
+    // заявку, нельзя: иначе учёт разъехался бы с биржевым.
+    const sold = bought.value.applyFill(
+      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6 }), POSITION_ID);
+    expect(sold.ok).toBe(false);
   });
 
   it('не мутирует исходный Portfolio', () => {
@@ -300,9 +448,10 @@ describe('Portfolio.upsertPosition()', () => {
     if (!result.ok) return;
 
     const original = result.value;
-    const instrumentId = makeInstrumentId('instrument-1');
-    original.upsertPosition(makeOpenPosition(instrumentId));
-    expect(original.getPositionCount()).toBe(0); // оригинал не изменился
+    original.applyFill(makeFill({ side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+
+    expect(original.getPositionCount()).toBe(0);
+    expect(original.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
   });
 });
 
@@ -311,7 +460,7 @@ describe('Portfolio.getPosition() / hasPosition()', () => {
     const instrumentId = makeInstrumentId('instrument-1');
     const position = makeOpenPosition(instrumentId);
     const positions = new Map([[instrumentId, position]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolio({ positions, tokenBalances: tokensFor(positions) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -330,7 +479,7 @@ describe('Portfolio.getPosition() / hasPosition()', () => {
   it('hasPosition возвращает true для существующей позиции', () => {
     const instrumentId = makeInstrumentId('instrument-1');
     const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolio({ positions, tokenBalances: tokensFor(positions) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -356,7 +505,7 @@ describe('Portfolio.getPositions()', () => {
       [id1, pos1],
       [id2, pos2],
     ]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolio({ positions, tokenBalances: tokensFor(positions) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -378,7 +527,7 @@ describe('Portfolio.getPositions()', () => {
   it('изолирован от мутации исходного Map (immutability)', () => {
     const instrumentId = makeInstrumentId('instrument-1');
     const sourceMap = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions: sourceMap });
+    const result = makePortfolio({ positions: sourceMap, tokenBalances: tokensFor(sourceMap) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -417,7 +566,11 @@ describe('Portfolio.isEmpty()', () => {
   it('isEmpty = false при наличии позиций', () => {
     const instrumentId = makeInstrumentId('instrument-1');
     const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ balance: makeBalance(0, 0), positions });
+    const result = makePortfolio({
+      balance: makeBalance(0, 0),
+      positions,
+      tokenBalances: tokensFor(positions),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -442,7 +595,7 @@ describe('Portfolio.toString()', () => {
   it('отражает актуальное количество позиций', () => {
     const instrumentId = makeInstrumentId('instrument-1');
     const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolio({ positions, tokenBalances: tokensFor(positions) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -488,288 +641,294 @@ describe('Portfolio полный lifecycle операций с балансом'
 
 // ==================== Токенные резервации (SELL ордера) ====================
 
-describe('Portfolio.availableTokenQuantity()', () => {
-  it('возвращает 0 если позиции нет', () => {
+describe('Portfolio.availableTokens() / reservedTokens()', () => {
+  // Раньше «доступное» ВЫЧИСЛЯЛОСЬ как `position.quantity − reserved` и при
+  // отрицательном результате молча зажималось в ноль — то есть нарушенный
+  // инвариант не просто не ловился, а маскировался. Теперь обе части хранятся,
+  // а их согласие с позицией проверяет сам агрегат.
+
+  it('нули, если инструмент неизвестен', () => {
     const result = makePortfolio();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const available = result.value.availableTokenQuantity(makeInstrumentId('unknown'));
-    expect(available.toNumber()).toBe(0);
+    const unknown = makeInstrumentId('unknown');
+    expect(result.value.availableTokens(unknown).value().toNumber()).toBe(0);
+    expect(result.value.reservedTokens(unknown).value().toNumber()).toBe(0);
   });
 
-  it('возвращает полную позицию если резерваций нет', () => {
+  it('весь объём доступен, пока ничего не зарезервировано', () => {
     const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolioWithTokens(instrumentId);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // QTY = 100
-    const available = result.value.availableTokenQuantity(instrumentId);
-    expect(available.toNumber()).toBe(100);
+    expect(result.value.availableTokens(instrumentId).value().toNumber()).toBe(100);
+    expect(result.value.reservedTokens(instrumentId).value().toNumber()).toBe(0);
   });
 
-  it('возвращает позицию минус резервации', () => {
+  it('резервация перекладывает объём, а не уменьшает его', () => {
     const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolioWithTokens(instrumentId);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const reserveResult = result.value.reserveTokensForOrder(instrumentId, new Decimal(30));
-    expect(reserveResult.ok).toBe(true);
-    if (!reserveResult.ok) return;
+    const reserved = result.value.reserveTokens(instrumentId, qty(30));
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
 
-    const available = reserveResult.value.availableTokenQuantity(instrumentId);
-    expect(available.toNumber()).toBe(70); // 100 - 30
+    expect(reserved.value.availableTokens(instrumentId).value().toNumber()).toBe(70);
+    expect(reserved.value.reservedTokens(instrumentId).value().toNumber()).toBe(30);
+    // Позиция не изменилась: резервация — это не расход.
+    expect(reserved.value.getPosition(instrumentId)?.quantity.value().toNumber()).toBe(100);
   });
 });
 
-describe('Portfolio.reserveTokensForOrder()', () => {
-  it('резервирует токены: available уменьшается, tokenReservations обновляется', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+describe('Portfolio.reserveTokens()', () => {
+  const instrumentId = makeInstrumentId('token-1');
+
+  it('накапливает резервации при нескольких заявках', () => {
+    const result = makePortfolioWithTokens(instrumentId);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const reserveResult = result.value.reserveTokensForOrder(instrumentId, new Decimal(40));
-    expect(reserveResult.ok).toBe(true);
-    if (!reserveResult.ok) return;
-
-    const portfolio = reserveResult.value;
-    expect(portfolio.tokenReservations.get(instrumentId)?.toNumber()).toBe(40);
-    expect(portfolio.availableTokenQuantity(instrumentId).toNumber()).toBe(60); // 100 - 40
-  });
-
-  it('накапливает резервации при нескольких SELL ордерах', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const first = result.value.reserveTokensForOrder(instrumentId, new Decimal(30));
+    const first = result.value.reserveTokens(instrumentId, qty(30));
     expect(first.ok).toBe(true);
     if (!first.ok) return;
 
-    const second = first.value.reserveTokensForOrder(instrumentId, new Decimal(20));
+    const second = first.value.reserveTokens(instrumentId, qty(20));
     expect(second.ok).toBe(true);
     if (!second.ok) return;
 
-    expect(second.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(50); // 30 + 20
-    expect(second.value.availableTokenQuantity(instrumentId).toNumber()).toBe(50); // 100 - 50
+    expect(second.value.reservedTokens(instrumentId).value().toNumber()).toBe(50);
+    expect(second.value.availableTokens(instrumentId).value().toNumber()).toBe(50);
   });
 
-  it('возвращает Err если available < qty', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+  it('отвергает резервацию сверх доступного', () => {
+    const result = makePortfolioWithTokens(instrumentId);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // QTY = 100, пытаемся зарезервировать 150
-    const reserveResult = result.value.reserveTokensForOrder(instrumentId, new Decimal(150));
-    expect(reserveResult.ok).toBe(false);
-    if (!reserveResult.ok) {
-      expect(reserveResult.error).toBeInstanceOf(InvalidBalanceError);
-    }
+    expect(result.value.reserveTokens(instrumentId, qty(150)).ok).toBe(false);
   });
 
-  it('возвращает Err если позиции нет (нечего резервировать)', () => {
+  it('отвергает резервацию по неизвестному инструменту', () => {
     const result = makePortfolio();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const reserveResult = result.value.reserveTokensForOrder(
-      makeInstrumentId('nonexistent'),
-      new Decimal(10),
-    );
-    expect(reserveResult.ok).toBe(false);
-    if (!reserveResult.ok) {
-      expect(reserveResult.error).toBeInstanceOf(InvalidBalanceError);
-    }
+    expect(result.value.reserveTokens(makeInstrumentId('nonexistent'), qty(10)).ok).toBe(false);
   });
 
   it('не мутирует исходный Portfolio', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolioWithTokens(instrumentId);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     const original = result.value;
-    original.reserveTokensForOrder(instrumentId, new Decimal(50));
+    original.reserveTokens(instrumentId, qty(40));
 
-    // Оригинал не изменился
-    expect(original.tokenReservations.get(instrumentId)).toBeUndefined();
-    expect(original.availableTokenQuantity(instrumentId).toNumber()).toBe(100);
+    expect(original.reservedTokens(instrumentId).value().toNumber()).toBe(0);
+    expect(original.availableTokens(instrumentId).value().toNumber()).toBe(100);
   });
 });
 
-describe('Portfolio.releaseTokenReservation()', () => {
-  it('уменьшает резервацию после освобождения', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+describe('Portfolio.releaseTokens()', () => {
+  const instrumentId = makeInstrumentId('token-1');
+
+  it('возвращает объём в available', () => {
+    const result = makePortfolioWithTokens(instrumentId, 60);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(60));
-    expect(reserved.ok).toBe(true);
-    if (!reserved.ok) return;
-
-    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(25));
+    const released = result.value.releaseTokens(instrumentId, qty(25));
     expect(released.ok).toBe(true);
     if (!released.ok) return;
 
-    expect(released.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(35); // 60 - 25
-    expect(released.value.availableTokenQuantity(instrumentId).toNumber()).toBe(65); // 100 - 35
+    expect(released.value.reservedTokens(instrumentId).value().toNumber()).toBe(35);
+    expect(released.value.availableTokens(instrumentId).value().toNumber()).toBe(65);
   });
 
-  it('удаляет запись из Map если резервация стала 0', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+  it('полное освобождение обнуляет reserved, но не удаляет инструмент', () => {
+    const result = makePortfolioWithTokens(instrumentId, 50);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(50));
-    expect(reserved.ok).toBe(true);
-    if (!reserved.ok) return;
-
-    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(50));
+    const released = result.value.releaseTokens(instrumentId, qty(50));
     expect(released.ok).toBe(true);
     if (!released.ok) return;
 
-    // Запись должна быть удалена из Map
-    expect(released.value.tokenReservations.get(instrumentId)).toBeUndefined();
-    expect(released.value.tokenReservations.size).toBe(0);
+    // Запись остаётся: позиция никуда не делась, и её 100 обязаны иметь
+    // токенного двойника — иначе инвариант нарушен.
+    expect(released.value.reservedTokens(instrumentId).value().toNumber()).toBe(0);
+    expect(released.value.availableTokens(instrumentId).value().toNumber()).toBe(100);
   });
 
-  it('возвращает Err если резервация < qty', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+  it('отвергает освобождение сверх зарезервированного', () => {
+    const result = makePortfolioWithTokens(instrumentId, 30);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(30));
-    expect(reserved.ok).toBe(true);
-    if (!reserved.ok) return;
-
-    // Пытаемся освободить больше, чем зарезервировано
-    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(50));
-    expect(released.ok).toBe(false);
-    if (!released.ok) {
-      expect(released.error).toBeInstanceOf(InvalidBalanceError);
-    }
+    expect(result.value.releaseTokens(instrumentId, qty(50)).ok).toBe(false);
   });
 
-  it('возвращает Err если резерваций нет вовсе', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+  it('отвергает освобождение, когда резерваций нет вовсе', () => {
+    const result = makePortfolioWithTokens(instrumentId);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Нет резерваций — пытаемся освободить
-    const released = result.value.releaseTokenReservation(instrumentId, new Decimal(10));
-    expect(released.ok).toBe(false);
-    if (!released.ok) {
-      expect(released.error).toBeInstanceOf(InvalidBalanceError);
-    }
+    expect(result.value.releaseTokens(instrumentId, qty(10)).ok).toBe(false);
   });
 });
 
-describe('Portfolio immutability: tokenReservations сохраняются при других операциях', () => {
-  it('upsertPosition сохраняет tokenReservations', () => {
+describe('Portfolio: токенные балансы переживают операции с деньгами', () => {
+  it('резервация USDC не трогает токены', () => {
     const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+    const result = makePortfolioWithTokens(instrumentId, 50);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Резервируем токены
-    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(40));
-    expect(reserved.ok).toBe(true);
-    if (!reserved.ok) return;
-
-    // Обновляем позицию
-    const otherId = makeInstrumentId('token-2');
-    const updated = reserved.value.upsertPosition(makeOpenPosition(otherId));
-
-    // tokenReservations должны сохраниться
-    expect(updated.tokenReservations.get(instrumentId)?.toNumber()).toBe(40);
-    expect(updated.tokenReservations.size).toBe(1);
-  });
-
-  it('withBalance (через reserveForOrder) сохраняет tokenReservations', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    // Резервируем токены
-    const tokenReserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(50));
-    expect(tokenReserved.ok).toBe(true);
-    if (!tokenReserved.ok) return;
-
-    // Теперь резервируем USDC (вызывает withBalance внутри)
-    const usdcReserved = tokenReserved.value.reserveForOrder(mkMoney(1000));
+    const usdcReserved = result.value.reserveForOrder(mkMoney(1000));
     expect(usdcReserved.ok).toBe(true);
     if (!usdcReserved.ok) return;
 
-    // tokenReservations должны сохраниться после операции с балансом
-    expect(usdcReserved.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(50);
-    expect(usdcReserved.value.balance.available().value().toNumber()).toBe(9000); // 10000 - 1000
+    expect(usdcReserved.value.reservedTokens(instrumentId).value().toNumber()).toBe(50);
+    expect(usdcReserved.value.availableTokens(instrumentId).value().toNumber()).toBe(50);
+    expect(usdcReserved.value.balance.available().value().toNumber()).toBe(9000);
   });
 });
 
-describe('Portfolio полный lifecycle токенных резерваций', () => {
-  it('reserve → releaseTokenReservation (cancel) восстанавливает доступный объём', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+describe('Portfolio: инвариант агрегата', () => {
+  const instrumentId = makeInstrumentId('token-1');
 
-    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(80));
-    expect(reserved.ok).toBe(true);
-    if (!reserved.ok) return;
+  it('create отвергает позицию без токенного двойника', () => {
+    // Дыра, которую это закрывает: раньше такой набор собирался молча, и
+    // первая же мутация отвергала состояние, которое сама не создавала.
+    const result = makePortfolio({
+      positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
+    });
 
-    expect(reserved.value.availableTokenQuantity(instrumentId).toNumber()).toBe(20);
-
-    const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(80));
-    expect(released.ok).toBe(true);
-    if (!released.ok) return;
-
-    // Должно вернуться к полному объёму
-    expect(released.value.availableTokenQuantity(instrumentId).toNumber()).toBe(100);
-    expect(released.value.tokenReservations.size).toBe(0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(PortfolioValidationError);
+      expect(result.error.message).toContain('invariant violated');
+    }
   });
 
-  it('reserve → releaseTokenReservation (fill partial) снижает резервацию пропорционально', () => {
-    const instrumentId = makeInstrumentId('token-1');
-    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
-    const result = makePortfolio({ positions });
+  it('create отвергает расхождение количества', () => {
+    const result = makePortfolio({
+      positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
+      tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 40, 0)]]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('100 != token available+reserved 40');
+  });
+
+  it('create отвергает токены без позиции', () => {
+    const result = makePortfolio({
+      tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 10, 0)]]),
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('согласованный набор принимается', () => {
+    expect(makePortfolioWithTokens(instrumentId).ok).toBe(true);
+    expect(makePortfolioWithTokens(instrumentId, 40).ok).toBe(true);
+  });
+});
+
+describe('Portfolio.applyFill() — комиссия платится деньгами, не шарами', () => {
+  // Комиссию на Polymarket платит только тейкер, платит ДЕНЬГАМИ и из того,
+  // что получает; количество шар не изменяется никогда. Измерено на 2898
+  // реальных сделках — `docs/guides/polymarket-fee-settlement.md`.
+  //
+  // Портфель эту экономику НЕ пересчитывает: он применяет нетто-поток самого
+  // `Fill` (`getNetCashFlow()`), а количество берёт валовым.
+
+  const POSITION_ID = positionId('position-fee');
+  const instrumentId = FILL_INSTRUMENT;
+
+  it('BUY с комиссией: позиция на ПОЛНЫЙ размер, деньги на номинал + комиссию', () => {
+    const result = makePortfolio();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Разместили SELL на 60 токенов
-    const reserved = result.value.reserveTokensForOrder(instrumentId, new Decimal(60));
+    const before = result.value.balance.available().value().toNumber();
+
+    // 100 × 0.5 = 50 номинала, комиссия 1.0 USDC сверх.
+    const applied = result.value.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }), POSITION_ID);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    expect(applied.value.getPosition(instrumentId)?.quantity.value().toNumber()).toBe(100);
+    expect(applied.value.availableTokens(instrumentId).value().toNumber()).toBe(100);
+    expect(applied.value.balance.available().value().toNumber()).toBeCloseTo(before - 51, 8);
+  });
+
+  it('мейкерский BUY: комиссии нет, деньги ровно на номинал', () => {
+    const result = makePortfolio();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const before = result.value.balance.available().value().toNumber();
+    const applied = result.value.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    expect(applied.value.balance.available().value().toNumber()).toBeCloseTo(before - 50, 8);
+    expect(applied.value.getPosition(instrumentId)?.quantity.value().toNumber()).toBe(100);
+  });
+
+  it('SELL с комиссией: отдаём ПОЛНЫЙ размер, получаем номинал минус комиссию', () => {
+    const result = makePortfolio();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const bought = result.value.applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    expect(bought.ok).toBe(true);
+    if (!bought.ok) return;
+
+    const reserved = bought.value.reserveTokens(instrumentId, qty(100));
     expect(reserved.ok).toBe(true);
     if (!reserved.ok) return;
 
-    // Пришёл partial fill на 40
-    const afterFill = reserved.value.releaseTokenReservation(instrumentId, new Decimal(40));
-    expect(afterFill.ok).toBe(true);
-    if (!afterFill.ok) return;
+    const before = reserved.value.balance.available().value().toNumber();
 
-    // Осталась резервация на 20 (неисполненный остаток)
-    expect(afterFill.value.tokenReservations.get(instrumentId)?.toNumber()).toBe(20);
-    expect(afterFill.value.availableTokenQuantity(instrumentId).toNumber()).toBe(80); // 100 - 20
+    // 100 × 0.6 = 60 номинала, комиссия 1.2 USDC удерживается из выручки.
+    const sold = reserved.value.applyFill(
+      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6, feeUSDC: 1.2 }), POSITION_ID);
+    expect(sold.ok).toBe(true);
+    if (!sold.ok) return;
+
+    expect(sold.value.balance.available().value().toNumber()).toBeCloseTo(before + 58.8, 8);
+    // Отдали полные 100 шар — комиссия их не касается.
+    expect(sold.value.hasPosition(instrumentId)).toBe(false);
+    expect(sold.value.availableTokens(instrumentId).value().toNumber()).toBe(0);
+    expect(sold.value.reservedTokens(instrumentId).value().toNumber()).toBe(0);
+  });
+
+  it('комиссия не создаёт расхождения позиции с токенами', () => {
+    // Если бы комиссия вычиталась из шар, инвариант разошёлся бы ровно на
+    // fee/price — и агрегат отверг бы собственную мутацию.
+    const result = makePortfolio();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const applied = result.value.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }), POSITION_ID);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    const position = applied.value.getPosition(instrumentId)!;
+    const total =
+      applied.value.availableTokens(instrumentId).value().plus(
+        applied.value.reservedTokens(instrumentId).value());
+
+    expect(position.quantity.value().equals(total)).toBe(true);
   });
 });

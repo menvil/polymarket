@@ -38,6 +38,7 @@
       "@polymarket/value-objects/asset-quantity":  ["../../packages/domain/value-objects/src/asset-quantity/index.ts"],
       "@polymarket/value-objects/balance":         ["../../packages/domain/value-objects/src/balance/index.ts"],
       "@polymarket/value-objects/money":           ["../../packages/domain/value-objects/src/money/index.ts"],
+      "@polymarket/value-objects/token-balance":   ["../../packages/domain/value-objects/src/token-balance/index.ts"],
       "@polymarket/order":            ["../../packages/domain/entities/order/src/index.ts"],
       "@polymarket/portfolio":        ["../../packages/domain/entities/portfolio/src/index.ts"],
       "@polymarket/handlers":         ["../../packages/application/handlers/src/index.ts"],
