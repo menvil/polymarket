@@ -1,0 +1,49 @@
+packages/application/events/src/ApplicationEvent.ts
+  s_73852eac4506dc::t_ffb92bb0fbafda 62-64,67-71,117,154
+packages/application/account-state/src/AccountHotState.ts
+  s_73852eac4506dc::t_4c26028f31c000 21-33,97,118,120,585-637,814-816,820,827-833
+packages/application/events/src/trading-account/index.ts
+  s_73852eac4506dc::t_ffb92bb0fbafda 18-30,76
+packages/application/account-state/src/errors.ts
+  s_73852eac4506dc::t_7aae37848aed8d 27,427,579-639,652-653
+packages/application/account-state/docs/account-state.md
+  s_73852eac4506dc::t_56529b40b00bcb 161-162,166,195-267,605-610
+packages/application/account-state/src/index.ts
+  s_73852eac4506dc::t_ef4ea2daa60d1d 102,109
+packages/application/events/README.md
+  s_73852eac4506dc::t_6952c20cddaa8e 170,172,186-204
+packages/application/account-state/src/records.ts
+  s_73852eac4506dc::t_645ba450702a87 14,39-49,62,82-96,103-104
+packages/application/account-state/__tests__/eventIsolation.test.ts
+  s_73852eac4506dc::t_023d82a3dc1fe6 112
+packages/application/events/src/trading-account/TradingAccountFillVenueStatusObservedEvent.ts
+  s_73852eac4506dc::t_3a9958ea19e47b 1-79
+packages/application/account-state/README.md
+  s_73852eac4506dc::t_f9b75d8a745770 100,103-105,108-137
+packages/application/events/src/index.ts
+  s_73852eac4506dc::t_ffb92bb0fbafda 88
+packages/application/events/__tests__/ApplicationEvent.types.test.ts
+  s_73852eac4506dc::t_9c5b994c51d7ad 16,44,75,78,180-184
+packages/application/account-state/src/AccountStateProjector.ts
+  s_73852eac4506dc::t_ef4ea2daa60d1d 64,86,208-214,313-338
+packages/application/account-state/__tests__/venueStatus.test.ts
+  s_73852eac4506dc::t_289fd01a310035 1-295
+packages/application/account-state/__tests__/helpers/fixtures.ts
+  s_73852eac4506dc::t_9ca463cbd09712 55,60,492-504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "31887c7a1abda671a0caedbad21d8e70cb511764",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
