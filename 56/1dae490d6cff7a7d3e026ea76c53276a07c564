@@ -1,0 +1,25 @@
+packages/application/account-state/docs/account-state.md
+  s_73852eac4506dc::t_70f389edc11e94 183-199,567-575
+packages/domain/entities/order/__tests__/unit/orderIdentity.test.ts
+  s_73852eac4506dc::t_70d85c12f6b6b9 18,81-96
+packages/application/account-state/src/views.ts
+  s_73852eac4506dc::t_348dd55edbc93a 12-26
+packages/application/events/src/trading-account/TradingAccountOrderCommittedEvent.ts
+  s_73852eac4506dc::t_348dd55edbc93a 36-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "561dae490d6cff7a7d3e026ea76c53276a07c564",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
