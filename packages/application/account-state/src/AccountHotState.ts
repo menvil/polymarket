@@ -18,6 +18,19 @@
  * └── version        принятые мутации по ВСЕМ аккаунтам
  * ```
  *
+ * ### Две оси у исполнения
+ *
+ * ```text
+ * status       APPLIED → CONFIRMED | REVERTED   что сделали МЫ с деньгами
+ * venueStatus  MATCHED → MINED → CONFIRMED      что говорит ПЛОЩАДКА
+ *                     ↘ RETRYING ↘ FAILED       (canonical TradeStatus)
+ * ```
+ *
+ * Схлопнуть их в одну нельзя: `MATCHED` — матчер Polymarket, `MINED` — блок
+ * Polygon, это утверждения о разных системах. А `REVERTED` — наше действие,
+ * которое может не иметь венного двойника вовсе (сверка откатит исполнение,
+ * которого на площадке не было).
+ *
  * ### Навигация — производные представления, а не хранимое состояние
  *
  * ```text
@@ -81,7 +94,7 @@ import {
   type OrderId,
   type VenueId,
 } from '@polymarket/ids';
-import { findFillFactDifference, type Fill } from '@polymarket/fill';
+import { findFillFactDifference, type Fill, type TradeStatus } from '@polymarket/fill';
 import {
   findOrderIdentityDifference,
   sameOrderState,
@@ -102,7 +115,9 @@ import {
   AccountNotInitializedError,
   AccountOrderAccountMissingError,
   AccountOrderIdentityConflictError,
+  AccountFillVenueStatusRegressionError,
   AccountPortfolioIdentityMismatchError,
+  TERMINAL_VENUE_STATUSES,
   type AccountFillAction,
   type AccountStateError,
 } from './errors.js';
@@ -568,6 +583,59 @@ export class AccountHotState implements AccountHotStateView {
   }
 
   /**
+   * Записывает статус, о котором сообщила площадка.
+   *
+   * @param fill - Тот же canonical факт, что был применён
+   * @param venueStatus - Статус из наблюдения площадки
+   * @param at - `metadata.createdAt` события
+   * @returns `Ok(void)` при успехе или при дубликате, иначе непройденная проверка
+   *
+   * @remarks
+   * Ни портфель, ни заявка, ни runtime-статус НЕ меняются: это вторая,
+   * независимая ось. `MATCHED` говорит, что исполнение сматчил матчер
+   * Polymarket; `MINED` — что расчётная транзакция попала в блок Polygon. Оба
+   * наблюдения оставляют деньги ровно там, где они уже есть.
+   *
+   * Именно поэтому событие отдельное: `MINED` и `RETRYING` не имеют
+   * экономических двойников, и без него они бы просто терялись.
+   *
+   * Порядок наблюдений НЕ проверяется — доставка может переставить их местами.
+   * Отвергается только уход С терминального статуса площадки
+   * (`CONFIRMED`/`FAILED`): по её контракту оттуда пути нет.
+   *
+   * @example
+   * ```typescript
+   * state.observeFillVenueStatus(fill, 'MINED', createdAt);
+   * ```
+   */
+  public observeFillVenueStatus(
+    fill: Fill,
+    venueStatus: TradeStatus,
+    at: Timestamp,
+  ): Result<void, AccountStateError> {
+    const stored = this._resolveStoredFill(fill, 'OBSERVE_VENUE_STATUS');
+    if (!stored.ok) return stored;
+
+    const { account, record } = stored.value;
+    if (record.venueStatus === venueStatus) return Ok(undefined);
+    if (record.venueStatus !== undefined && TERMINAL_VENUE_STATUSES.has(record.venueStatus)) {
+      return Err(
+        new AccountFillVenueStatusRegressionError(
+          account.venueId,
+          account.accountId,
+          fill.id,
+          record.venueStatus,
+          venueStatus,
+        ),
+      );
+    }
+
+    account.commit({ fill: { ...record, venueStatus, venueStatusAt: at } }, at);
+    this._version += 1;
+    return Ok(undefined);
+  }
+
+  /**
    * Откатывает ранее применённое исполнение.
    *
    * @param fill - Тот же canonical факт, что был применён
@@ -743,19 +811,26 @@ export class AccountHotState implements AccountHotStateView {
    * @returns Аккаунт и запись либо первая непройденная проверка
    *
    * @remarks
-   * Используется подтверждением: оно не несёт ни портфеля, ни заявки, поэтому
-   * его валидация короче — аккаунт, наличие записи, совпадение факта.
+   * Используется подтверждением и наблюдением статуса площадки: ни то, ни
+   * другое не несёт портфеля или заявки, поэтому валидация короче — аккаунт,
+   * наличие записи, совпадение факта.
    */
   private _resolveStoredFill(
     fill: Fill,
-    action: Extract<AccountFillAction, 'CONFIRM'>,
+    action: Extract<AccountFillAction, 'CONFIRM' | 'OBSERVE_VENUE_STATUS'>,
   ): Result<{ account: AccountRuntimeState; record: AccountFillRecord }, AccountStateError> {
     const venueId = fill.venueId;
     const accountId = fill.accountId;
 
     const account = this._resolve(venueId, accountId);
     if (account === undefined) {
-      return Err(new AccountNotInitializedError(venueId, accountId, 'FILL_CONFIRMED'));
+      return Err(
+        new AccountNotInitializedError(
+          venueId,
+          accountId,
+          action === 'CONFIRM' ? 'FILL_CONFIRMED' : 'FILL_VENUE_STATUS_OBSERVED',
+        ),
+      );
     }
 
     const record = account.getFill(fill.id);

@@ -24,7 +24,7 @@
  */
 import { TradingError } from '@polymarket/errors';
 import { accountIdToString, type AccountId, type FillId, type OrderId, type VenueId } from '@polymarket/ids';
-import type { FillFactDifference } from '@polymarket/fill';
+import type { FillFactDifference, TradeStatus } from '@polymarket/fill';
 import type { OrderIdentityDifference } from '@polymarket/order';
 import type { AccountFillStatus } from './records.js';
 
@@ -424,7 +424,7 @@ export class AccountFillOrderLinkError extends TradingError {
 }
 
 /** Событие, при обработке которого обнаружен конфликт факта исполнения. */
-export type AccountFillAction = 'APPLY' | 'CONFIRM' | 'REVERT';
+export type AccountFillAction = 'APPLY' | 'CONFIRM' | 'REVERT' | 'OBSERVE_VENUE_STATUS';
 
 /**
  * Тот же `FillId` пришёл с другим фактом сделки.
@@ -576,6 +576,67 @@ export class AccountFillTransitionError extends TradingError {
   }
 }
 
+/**
+ * Статусы площадки, из которых она уже не выходит.
+ *
+ * @remarks
+ * По контракту `TradeStatus`: `CONFIRMED` — «finality достигнута, транзакция
+ * успешна», `FAILED` — «транзакция окончательно упала, повторов не будет».
+ * `MATCHED`, `MINED` и `RETRYING` терминальными не являются — из них площадка
+ * ходит дальше.
+ */
+export const TERMINAL_VENUE_STATUSES: ReadonlySet<TradeStatus> = new Set<TradeStatus>([
+  'CONFIRMED',
+  'FAILED',
+]);
+
+/**
+ * Площадка «откатилась» с терминального статуса на другой.
+ *
+ * @remarks
+ * Ось площадки монотонна только на концах: `MATCHED → MINED → CONFIRMED` и
+ * ветки `RETRYING`/`FAILED` могут приходить в неожиданном порядке, и жёсткий
+ * FSM по ним отвергал бы законные наблюдения, доставленные не по порядку.
+ * Поэтому обычные переходы принимаются как есть — состояние хранит ПОСЛЕДНЕЕ
+ * наблюдение.
+ *
+ * А вот уход С терминального статуса — другое дело: по контракту площадки из
+ * `CONFIRMED` и `FAILED` она не выходит. Такое наблюдение означает либо
+ * доставку не того исполнения, либо дефект producer'а, и принимать его значило
+ * бы затереть финальный факт промежуточным.
+ *
+ * Повтор ТОГО ЖЕ терминального статуса — не регрессия, а обычный дубликат.
+ *
+ * @example
+ * ```typescript
+ * throw new AccountFillVenueStatusRegressionError(venueId, accountId, fillId, 'CONFIRMED', 'MINED');
+ * ```
+ */
+export class AccountFillVenueStatusRegressionError extends TradingError {
+  public readonly severity = 'critical' as const;
+
+  /**
+   * @param venueId - Площадка владельца
+   * @param accountId - Аккаунт владельца
+   * @param fillId - Исполнение, по которому пришло наблюдение
+   * @param current - Терминальный статус, уже записанный в состоянии
+   * @param incoming - Статус из наблюдения
+   */
+  constructor(
+    public readonly venueId: VenueId,
+    public readonly accountId: AccountId,
+    public readonly fillId: FillId,
+    public readonly current: TradeStatus,
+    public readonly incoming: TradeStatus,
+  ) {
+    super(
+      `Fill ${fillId} venue status cannot move ${current} → ${incoming} for trading account ` +
+        `${describeAccount(venueId, accountId)}: ${current} is terminal on the venue`,
+      { context: { ...accountContext(venueId, accountId), fillId, current, incoming } },
+    );
+  }
+}
+
 /** Любой отказ приватного состояния аккаунта. */
 export type AccountStateError =
   | AccountAlreadyInitializedError
@@ -588,4 +649,5 @@ export type AccountStateError =
   | AccountFillOrderLinkError
   | AccountFillIdentityConflictError
   | AccountFillNotFoundError
-  | AccountFillTransitionError;
+  | AccountFillTransitionError
+  | AccountFillVenueStatusRegressionError;

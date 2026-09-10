@@ -15,6 +15,19 @@
  * аккаунта. Согласованный снимок из обоих позже соберёт
  * `TradingContextBuilder`.
  *
+ * ### Две оси у исполнения
+ *
+ * ```text
+ * что сделали МЫ        APPLIED → CONFIRMED | REVERTED    экономика
+ * что говорит ПЛОЩАДКА  MATCHED → MINED → CONFIRMED       TradeStatus
+ *                              ↘ RETRYING ↘ FAILED
+ * ```
+ *
+ * Первые четыре события контура — про первую ось.
+ * `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED` — про вторую, и оно
+ * единственное, чем могут приехать `MINED` и `RETRYING`: экономических
+ * двойников у них нет.
+ *
  * ### Все события — POST-COMMIT
  *
  * ```text
@@ -60,3 +73,4 @@ export type { TradingAccountOrderCommittedEvent } from './TradingAccountOrderCom
 export type { TradingAccountFillAppliedEvent } from './TradingAccountFillAppliedEvent.js';
 export type { TradingAccountFillConfirmedEvent } from './TradingAccountFillConfirmedEvent.js';
 export type { TradingAccountFillRevertedEvent } from './TradingAccountFillRevertedEvent.js';
+export type { TradingAccountFillVenueStatusObservedEvent } from './TradingAccountFillVenueStatusObservedEvent.js';

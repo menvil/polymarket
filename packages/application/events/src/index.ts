@@ -85,6 +85,7 @@ export type {
   TradingAccountFillAppliedEvent,
   TradingAccountFillConfirmedEvent,
   TradingAccountFillRevertedEvent,
+  TradingAccountFillVenueStatusObservedEvent,
 } from './trading-account/index.js';
 /** Venue-обновления ордеров (см. venue-order/). */
 export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './venue-order/index.js';

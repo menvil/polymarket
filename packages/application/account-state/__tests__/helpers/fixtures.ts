@@ -52,10 +52,12 @@ import {
 import { Fill } from '@polymarket/fill';
 import { Order } from '@polymarket/order';
 import { Portfolio, SimplePosition, asPortfolioId } from '@polymarket/portfolio';
+import type { TradeStatus } from '@polymarket/fill';
 import type {
   TradingAccountFillAppliedEvent,
   TradingAccountFillConfirmedEvent,
   TradingAccountFillRevertedEvent,
+  TradingAccountFillVenueStatusObservedEvent,
   TradingAccountInitializedEvent,
   TradingAccountOrderCommittedEvent,
 } from '@polymarket/application-events';
@@ -483,6 +485,23 @@ export class EventFactory {
     return {
       type: 'TRADING_ACCOUNT_FILL_CONFIRMED',
       payload: { fill: params.fill },
+      metadata: this._envelope(),
+    };
+  }
+
+  /**
+   * `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED`.
+   *
+   * @param params - Исполнение и статус, о котором сообщила площадка
+   * @returns Canonical событие наблюдения venue-статуса
+   */
+  public fillVenueStatus(params: {
+    fill: Fill;
+    venueStatus: TradeStatus;
+  }): TradingAccountFillVenueStatusObservedEvent {
+    return {
+      type: 'TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED',
+      payload: { fill: params.fill, venueStatus: params.venueStatus },
       metadata: this._envelope(),
     };
   }

@@ -158,10 +158,12 @@ interface AccountOrderRecord {
 
 interface AccountFillRecord {
   readonly fill: Fill;             // canonical факт, immutable
-  readonly status: 'APPLIED' | 'CONFIRMED' | 'REVERTED';
+  readonly status: 'APPLIED' | 'CONFIRMED' | 'REVERTED';   // ось: что сделали МЫ
+  readonly venueStatus?: TradeStatus;                      // ось: что говорит ПЛОЩАДКА
   readonly appliedAt: Timestamp;
   readonly confirmedAt?: Timestamp;
   readonly revertedAt?: Timestamp;
+  readonly venueStatusAt?: Timestamp;
   readonly revertReason?: string;
 }
 ```
@@ -189,6 +191,79 @@ venueId + assetIdToInstrumentId(order.asset) + владение инструме
 ```
 
 У `Fill` `marketId` есть — он приходит из canonical факта исполнения.
+
+## Две оси у исполнения
+
+### Проблема
+
+Соблазн — один статус на исполнение. Он не работает, потому что площадка и наш
+рантайм утверждают РАЗНОЕ, и одно не выводится из другого.
+
+```text
+status       APPLIED → CONFIRMED | REVERTED   что сделали МЫ с деньгами
+venueStatus  MATCHED → MINED → CONFIRMED      что говорит ПЛОЩАДКА
+                    ↘ RETRYING ↘ FAILED       canonical TradeStatus
+```
+
+`MATCHED` — исполнение сматчил матчер Polymarket, off-chain. `MINED` —
+расчётная транзакция включена в блок Polygon. **Это утверждения о разных
+системах**, и разница между ними — реальная разница в риске отката, а не
+оформление. Схлопнув их в «применено», мы теряем ровно тот сигнал, ради
+которого площадка их и различает.
+
+В обратную сторону симметрии тоже нет: `REVERTED` — наше действие, и венного
+двойника у него может не быть вовсе. Сверка (#98) откатит исполнение, которого
+на площадке не оказалось, и никакого `FAILED` за таким откатом не стоит.
+
+### Отображение
+
+```text
+venue        →  наша ось          событие
+MATCHED         APPLIED           FILL_APPLIED + VENUE_STATUS_OBSERVED
+MINED           (не меняется)     VENUE_STATUS_OBSERVED
+CONFIRMED       CONFIRMED         FILL_CONFIRMED + VENUE_STATUS_OBSERVED
+RETRYING        (не меняется)     VENUE_STATUS_OBSERVED
+FAILED          REVERTED          FILL_REVERTED + VENUE_STATUS_OBSERVED
+—               REVERTED          FILL_REVERTED   (откат от сверки)
+```
+
+`MINED` и `RETRYING` не меняют ни портфель, ни заявку — экономических
+двойников у них нет. Без отдельного события они бы просто терялись; это и есть
+причина, по которой `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED` существует.
+
+Экономические события venue-ось **не трогают**: смешав их, мы получили бы то
+самое схлопывание, ради предотвращения которого оси разделены. Producer,
+наблюдающий `MATCHED`, публикует два события — это два разных факта.
+
+### Почему `TradeStatus`, а не свой enum
+
+`TradeStatus` уже существует в `@polymarket/fill` как канонический контракт
+on-chain статуса Polymarket, а `ExecutionMetadata.tradeStatus` — его штатный
+носитель. Поверх него уже построена политика
+`venueTradeStatusPolicy` (`@polymarket/use-cases`) с профилями
+`recovery` (`CONFIRMED`, `MATCHED`) и `settlement` (только `CONFIRMED`).
+
+Завести рядом третий набор тех же пяти строк было бы прямым дублированием:
+второй уже есть — `VenueTradeStatus` в `@polymarket/ports`. Это расхождение
+существует до нас и здесь только фиксируется.
+
+### Порядок и терминальность
+
+Порядок наблюдений **не** проверяется: доставка может переставить их местами, и
+жёсткий FSM отвергал бы законные наблюдения. Состояние хранит ПОСЛЕДНЕЕ.
+
+Отвергается только уход С терминального статуса площадки:
+
+```text
+CONFIRMED  «finality достигнута, транзакция успешна»
+FAILED     «транзакция окончательно упала, повторов не будет»
+```
+
+Из них площадка не выходит, поэтому такое наблюдение означает дефект
+producer'а. Повтор ТОГО ЖЕ терминального статуса — обычный дубликат, no-op.
+
+Тот же контракт подтверждает и запрет `CONFIRMED → REVERTED` на нашей оси: он
+вводился из общего принципа, а оказался подкреплён документацией площадки.
 
 ## Идентичность аккаунта
 
@@ -527,4 +602,9 @@ objects, и структурная заглушка проверяла бы не
 | `atomicity.test.ts` | полный отпечаток состояния до и после 13 невалидных событий, `Err` из `publish()`, `stop()`/повторный `start()` |
 | `replayDeterminism.test.ts` | одна лента на двух свежих рантаймах даёт эквивалентное состояние |
 | `eventIsolation.test.ts` | старые application-события и Domain `OrderEvent` не проецируются |
-| `identityHelpers.test.ts` | `accountKey`, `embeddedVenueId`, `sameOrderIdentity`/`sameOrderState`, `sameFillFact` — по каждому полю |
+| `venueStatus.test.ts` | вторая ось: доставка `MINED`/`RETRYING`, независимость осей, порядок наблюдений, терминальность, валидация |
+| `identityHelpers.test.ts` | `accountKey`, `embeddedVenueId` — идентичность аккаунта |
+
+Сравнение заявок и исполнений живёт в своих доменных пакетах и там же
+тестируется: `@polymarket/order` → `orderIdentity.test.ts`,
+`@polymarket/fill` → `fillFactIdentity.test.ts`.

@@ -11,7 +11,7 @@
  * Запись добавляет к сущности только то, чего у неё быть не может:
  * ВРЕМЯ РАНТАЙМА и, для исполнения, его runtime-статус.
  */
-import type { Fill } from '@polymarket/fill';
+import type { Fill, TradeStatus } from '@polymarket/fill';
 import type { Order } from '@polymarket/order';
 import type { Timestamp } from '@polymarket/timestamp';
 
@@ -36,8 +36,17 @@ import type { Timestamp } from '@polymarket/timestamp';
  * ```
  *
  * `CONFIRMED → REVERTED` запрещён: финальность на то и финальность.
- * Коррекция после финальности, если она понадобится, будет отдельным явным
- * recovery-контрактом, а не тихим переходом.
+ * Подтверждено контрактом площадки — `TradeStatus.CONFIRMED` документирован
+ * как «finality достигнута, транзакция успешна», то есть обратно площадка не
+ * ходит. Коррекция после финальности, если она понадобится, будет отдельным
+ * явным recovery-контрактом, а не тихим переходом.
+ *
+ * ### Это НЕ статус площадки
+ *
+ * Вторая ось — {@link AccountFillRecord.venueStatus} — живёт отдельно и
+ * типизирована canonical `TradeStatus`. Совпадают оси не всегда: сверка (#98)
+ * откатит исполнение, которого на площадке не оказалось вовсе, и никакого
+ * `FAILED` за таким `REVERTED` не стоит.
  */
 export type AccountFillStatus = 'APPLIED' | 'CONFIRMED' | 'REVERTED';
 
@@ -50,6 +59,7 @@ export type AccountFillStatus = 'APPLIED' | 'CONFIRMED' | 'REVERTED';
  * ```text
  * fill.timestamp                   КОГДА исполнение произошло на площадке
  * appliedAt/confirmedAt/revertedAt КОГДА рантайм принял соответствующее событие
+ * venueStatusAt                    КОГДА рантайм принял наблюдение площадки
  * ```
  *
  * Времена перехода берутся из `event.metadata.createdAt`, а не из часов: иначе
@@ -69,12 +79,29 @@ export interface AccountFillRecord {
   readonly fill: Fill;
   /** Что с этим фактом сделал наш рантайм */
   readonly status: AccountFillStatus;
+  /**
+   * Последний статус, о котором сообщила ПЛОЩАДКА.
+   *
+   * @remarks
+   * Вторая, независимая ось (`MATCHED → MINED → CONFIRMED`, плюс `RETRYING` и
+   * `FAILED`). `MATCHED` — матчер Polymarket, `MINED` — блок Polygon: разные
+   * системы, разный риск отката.
+   *
+   * `undefined` означает «площадка ничего не сообщала» — норма для площадки
+   * без on-chain расчётов, а не пропуск.
+   *
+   * Меняется ТОЛЬКО событием `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED`:
+   * экономические события эту ось не трогают.
+   */
+  readonly venueStatus?: TradeStatus;
   /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_APPLIED` */
   readonly appliedAt: Timestamp;
   /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_CONFIRMED` */
   readonly confirmedAt?: Timestamp;
   /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_REVERTED` */
   readonly revertedAt?: Timestamp;
+  /** `metadata.createdAt` наблюдения, установившего {@link venueStatus} */
+  readonly venueStatusAt?: Timestamp;
   /**
    * Причина отката, как её передал producer.
    *
