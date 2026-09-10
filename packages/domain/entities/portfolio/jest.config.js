@@ -3,6 +3,7 @@ export default {
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
+    '^@polymarket/fill$': '<rootDir>/../fill/src/index.ts',
     '^@polymarket/position$': '<rootDir>/../position/src/index.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@polymarket/errors$': '<rootDir>/../../../foundation/errors/src/index.ts',
