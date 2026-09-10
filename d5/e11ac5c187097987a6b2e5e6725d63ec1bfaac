@@ -1,0 +1,32 @@
+packages/application/use-cases/src/services/PortfolioService.ts
+  s_73852eac4506dc::t_4a8b639b9f26c9 14-41
+packages/application/use-cases/src/ProcessFillUseCase.ts
+  s_73852eac4506dc::t_239cb86862c124 1132-1141,1143,1146-1148
+  s_73852eac4506dc::t_4626c1626a3531 745-748,750,752-754
+packages/domain/entities/fill/src/polymarket-fee.ts
+  s_73852eac4506dc::t_32109837196f94 17-45
+apps/pnl/src/core/PnlCalculator.ts
+  s_73852eac4506dc::t_23ada4805e7c57 27-40
+packages/application/use-cases/__tests__/PortfolioService.test.ts
+  s_73852eac4506dc::t_ea8ebaf8f9b8a7 163-174
+docs/guides/polymarket-fee-settlement.md
+  s_73852eac4506dc::t_43265bb89bb049 1-96
+apps/pnl/src/core/ActivityFetcher.ts
+  s_73852eac4506dc::t_f85c0a7e8b69ec 18-24,118-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d5e11ac5c187097987a6b2e5e6725d63ec1bfaac",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
