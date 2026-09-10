@@ -1,0 +1,27 @@
+packages/domain/entities/portfolio/tsconfig.build.json
+  s_73852eac4506dc::t_9bdefde5f0b647 27
+package-lock.json
+  ai_agent 9002
+packages/domain/entities/portfolio/package.json
+  s_73852eac4506dc::t_9bdefde5f0b647 43
+packages/domain/entities/portfolio/src/Portfolio.ts
+  s_73852eac4506dc::t_9bdefde5f0b647 112-115,118,133,165,177-179,402,404-414,416,425,531,533-534,537-548,550-551,553-554,558,560-562,565-609,611-613,615,617-624,626-637,639-640,643-650,654,656-658,661-668,670-676,678-736,739-833,837-840,843-844,847,850-865,868,870-876,878-881,885,887-888,890,894,896
+packages/domain/entities/portfolio/jest.config.js
+  s_73852eac4506dc::t_9bdefde5f0b647 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b972c9bac13acb559f3f20fbeb17795ebd6a636a",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
