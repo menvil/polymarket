@@ -79,16 +79,29 @@ reservedTokens(id)   // токены под открытые SELL ордера
 результате молча зажимал в ноль — то есть нарушенный инвариант не просто не
 ловился, а маскировался.
 
-### Инвариант агрегата
+### Инварианты агрегата
+
+Проверяются в единственной точке — и в мутаторах, и в `Portfolio.create()`.
+Второе существенно: иначе оставался бы публичный вход, через который агрегат
+собирается сразу несогласованным, а первая же мутация отвергала бы состояние,
+которое сама не создавала.
+
+**Количество:**
 
 ```text
 Position.quantity == TokenBalance.available + TokenBalance.reserved
 ```
 
-Проверяется в единственной точке сборки состояния — и в мутаторах, и в
-`Portfolio.create()`. Второе существенно: иначе оставался бы публичный вход,
-через который агрегат собирается сразу несогласованным, а первая же мутация
-отвергала бы состояние, которое сама не создавала.
+**Структура:** ключ карты обязан совпадать с идентичностью самой записи.
+Разойдись он с ней, поиск по инструменту вернул бы чужой объект.
+
+**Владение:** позиция, токенный баланс и денежный баланс принадлежат тому же
+аккаунту, что и портфель; токенный баланс — той же площадке, что и денежный.
+
+**Присутствие:** инструмент существует ⟺ существуют ОБЕ половины, обе
+ненулевые. Односторонняя запись — расхождение даже при нулевом количестве:
+мутаторы нормализуют ноль в отсутствие, и принимать состояние, которого они не
+производят, значит впустить набор, из которого сами не выйдем.
 
 Резервация — перекладывание, а не расход: количество позиции при ней не
 меняется.
@@ -195,9 +208,13 @@ BUY order placed:    reserveForOrder(USDC)             → balance.reserved += n
 BUY fill received:   applyDebit(USDC)                  → balance.reserved -= notional
 BUY order cancelled: releaseReservation(USDC)          → balance.reserved -= notional
 
-SELL order placed:    reserveTokens(id, qty)  → available -= qty, reserved += qty
-SELL fill received:   applyFill(fill, ...)    → reserved -= size, позиция -= size
-SELL order cancelled: releaseTokens(id, qty)  → reserved -= qty, available += qty
+BUY  order placed:    reserveForOrder(notional)  → деньги available → reserved
+BUY  fill received:   applyFill(fill, { positionId, reservedNotional })
+                                                 → reserved −номинал, available −комиссия
+SELL order placed:    reserveTokens(id, qty)     → токены available → reserved
+SELL fill received:   applyFill(fill, { positionId })
+                                                 → reserved −size, available +(номинал−комиссия)
+SELL order cancelled: releaseTokens(id, qty)     → reserved → available
 ```
 
 ---

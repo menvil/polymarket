@@ -128,7 +128,13 @@ import { InvalidBalanceError } from '@polymarket/errors';
 import { Balance, BalanceService } from '@polymarket/value-objects/balance';
 import type { Fill } from '@polymarket/fill';
 import { Position, PositionLot } from '@polymarket/position';
-import { assetIdToInstrumentId, assetIdToString, type PositionId } from '@polymarket/ids';
+import {
+  accountIdEquals,
+  accountIdToString,
+  assetIdToInstrumentId,
+  assetIdToString,
+  type PositionId,
+} from '@polymarket/ids';
 import { TokenBalance } from '@polymarket/value-objects/token-balance';
 import { Money } from '@polymarket/value-objects/money';
 import type { PortfolioId } from './value-objects/index.js';
@@ -156,6 +162,34 @@ export interface PortfolioParams {
  * @remarks
  * Все поля readonly. Мутирующие операции возвращают НОВЫЙ Portfolio.
  */
+/**
+ * Параметры применения исполнения к портфелю.
+ *
+ * @remarks
+ * `reservedNotional` обязателен для BUY и не используется для SELL. Так
+ * получается потому, что резервируются РАЗНЫЕ вещи: под покупку — деньги
+ * (`reserveForOrder`), под продажу — токены (`reserveTokens`). Компилятор
+ * различить эти случаи не может: сторона исполнения — значение времени
+ * выполнения, а не параметр типа, поэтому отсутствие суммы на BUY даёт `Err`.
+ */
+export interface ApplyFillParams {
+  /** Идентификатор позиции — используется, если позиция открывается впервые */
+  readonly positionId: PositionId;
+  /**
+   * BUY: сколько денежной резервации потребляет ЭТО исполнение.
+   *
+   * @remarks
+   * Передаётся вызывающим, а не выводится из `fill.price × fill.size`:
+   * площадка округляет цену в fill-событии, и резервация создавалась по цене
+   * ЗАЯВКИ. Вычислять сумму по округлённой цене значило бы оставлять на
+   * резервации копеечные хвосты, которые никто потом не снимет.
+   *
+   * Частичное исполнение потребляет часть резервации; остаток остаётся под
+   * неисполненным объёмом заявки.
+   */
+  readonly reservedNotional?: Money;
+}
+
 export class Portfolio {
   /** Уникальный идентификатор портфеля */
   public readonly id: PortfolioId;
@@ -250,6 +284,8 @@ export class Portfolio {
     // позиция на 100 при токенном балансе на 40 прошла бы, и первая же мутация
     // отвергла бы состояние, которое сама не создавала.
     const violation = Portfolio._findInvariantViolation(
+      params.accountId,
+      params.balance,
       params.positions ?? new Map(),
       params.tokenBalances ?? new Map(),
     );
@@ -439,7 +475,7 @@ export class Portfolio {
    * ПРИВАТНЫЙ. Раньше метод был публичным, и вызывающий строил позицию
    * снаружи, а потом отдельно двигал деньги — согласованность агрегата
    * держалась на том, что он не забудет второй шаг. Теперь единственные
-   * публичные мутаторы — {@link applyFill}, {@link revertFill},
+   * публичные мутаторы — {@link applyFill},
    * {@link reserveTokens} и {@link releaseTokens}, и каждый собирает ПОЛНЫЙ
    * новый набор через {@link _rebalanced}.
    *
@@ -696,14 +732,32 @@ export class Portfolio {
    * на том, что он не забудет второй. Забыть теперь нечего: либо меняется всё,
    * либо ничего.
    *
+   * ### Это normal/local-order path
+   *
+   * Метод описывает исполнение заявки, ресурс под которую УЖЕ зарезервирован.
+   * Обе стороны потребляют свою резервацию, и в этом они симметричны:
+   *
    * ```text
-   * BUY   деньги −notional   позиция +лот      токены available +size
-   * SELL  деньги +notional   позиция −FIFO     токены reserved  −size
+   * BUY   деньги  reserved −номинал, available −комиссия   позиция +лот   токены available +size
+   * SELL  деньги  available +(номинал − комиссия)          позиция −FIFO  токены reserved  −size
    * ```
    *
-   * SELL списывает из `reserved`: продавать можно только то, что заранее
-   * зарезервировано под заявку ({@link reserveTokens}). Лоты закрывает сам
-   * `Position` по FIFO — экономика позиции принадлежит ей, а не портфелю.
+   * Резервируются РАЗНЫЕ вещи: под покупку — деньги ({@link reserveForOrder}),
+   * под продажу — токены ({@link reserveTokens}). Отсюда и разные источники
+   * списания, но принцип один: исполнение потребляет заранее отложенное, а не
+   * лезет в свободный остаток.
+   *
+   * Комиссия — единственное исключение: её никто не резервировал, потому что
+   * при размещении заявки ещё неизвестно, окажемся мы тейкером или мейкером.
+   * Поэтому она снимается из `available`, и тоже fail-closed.
+   *
+   * Восстановление после сбоя (исполнение без заявки, резервация уже снята)
+   * этим методом НЕ обслуживается: у него другая семантика — best-effort по
+   * факту площадки, — и смешивать её с нормальным путём значит потерять
+   * fail-closed там, где он нужен.
+   *
+   * Лоты закрывает сам `Position` по FIFO — экономика позиции принадлежит ей,
+   * а не портфелю.
    *
    * Инвариант проверяется на ПОЛНОМ новом наборе (см. {@link _rebalanced}),
    * поэтому промежуточное несогласованное состояние наружу не выходит.
@@ -725,7 +779,37 @@ export class Portfolio {
    * `PortfolioService`, описывает механизм, которого не существует, и сюда
    * переноситься не должен.
    */
-  public applyFill(fill: Fill, positionId: PositionId): Result<Portfolio, PortfolioOperationError> {
+  public applyFill(
+    fill: Fill,
+    params: ApplyFillParams,
+  ): Result<Portfolio, PortfolioOperationError> {
+    // Владелец проверяется ДО любых вычислений: чужое исполнение не должно
+    // дойти до арифметики вовсе.
+    if (!accountIdEquals(fill.accountId, this.accountId)) {
+      return Err(new PortfolioOperationError(
+        'applyFill: fill belongs to a different account',
+        {
+          context: {
+            fillId: String(fill.id),
+            portfolioAccountId: accountIdToString(this.accountId),
+            fillAccountId: accountIdToString(fill.accountId),
+          },
+        },
+      ));
+    }
+    if (fill.venueId !== this.balance.venueId()) {
+      return Err(new PortfolioOperationError(
+        `applyFill: fill is from venue ${fill.venueId}, portfolio is on ${this.balance.venueId()}`,
+        {
+          context: {
+            fillId: String(fill.id),
+            portfolioVenueId: this.balance.venueId(),
+            fillVenueId: fill.venueId,
+          },
+        },
+      ));
+    }
+
     const instrumentId = assetIdToInstrumentId(fill.tokenId);
     if (instrumentId === undefined) {
       return Err(new PortfolioOperationError(
@@ -734,24 +818,42 @@ export class Portfolio {
       ));
     }
 
-    // Экономику несёт сам `Fill`, портфель её НЕ пересчитывает:
-    //
-    //   getNetCashFlow()   BUY  −(номинал + fee)   SELL  +(номинал − fee)
-    //   getSignedQuantity() ±size — ВАЛОВОЕ количество, комиссия его не трогает
-    //
-    // Комиссию на Polymarket платит только тейкер, платит деньгами и из того,
-    // что получает (см. `docs/guides/polymarket-fee-settlement.md`). Здесь
-    // стоял `price × size`, то есть номинал без комиссии: на покупке он
-    // недоплачивал, на продаже переплачивал.
-    const netCash = fill.getNetCashFlow().amount.value();
     const existing = this.positions.get(instrumentId);
 
     if (fill.side === 'BUY') {
-      const outflow = Money.of(netCash.negated(), this.balance.currency());
-      const money = this._debited(outflow);
+      // Номинал ПОТРЕБЛЯЕТСЯ из reserved — той самой резервации, что создал
+      // `reserveForOrder()` при размещении заявки. Сколько именно потребить,
+      // говорит вызывающий: `fill.price` округлена площадкой, и восстановить
+      // по ней исходную сумму нельзя. Частичное исполнение потребляет часть.
+      if (params.reservedNotional === undefined) {
+        return Err(new PortfolioOperationError(
+          'applyFill: reservedNotional is required for BUY — notional is consumed from reserved, ' +
+            'and the reserved amount cannot be recovered from the venue-rounded fill price',
+          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
+        ));
+      }
+
+      const consumed = BalanceService.consumeReserved(this.balance, params.reservedNotional);
+      if (!consumed.ok) {
+        return Err(new PortfolioOperationError(
+          `applyFill: cannot consume reserved ${params.reservedNotional.value().toString()} ` +
+            `for BUY: ${consumed.error.message}`,
+          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
+        ));
+      }
+
+      // Комиссию никто не резервировал: при размещении заявки ещё неизвестно,
+      // окажемся мы тейкером или мейкером. Поэтому она снимается отдельно и
+      // из available — fail-closed, без зажима в ноль.
+      const money = fill.fee.isZero()
+        ? consumed
+        : Portfolio._debitAvailable(
+            consumed.value,
+            Money.of(fill.fee.quantity.amount().value(), this.balance.currency()),
+          );
       if (!money.ok) {
         return Err(new PortfolioOperationError(
-          `applyFill: cannot debit ${outflow.value().toString()} for BUY: ${money.error.message}`,
+          `applyFill: cannot debit taker fee for BUY: ${money.error.message}`,
           { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
         ));
       }
@@ -765,7 +867,7 @@ export class Portfolio {
 
       const grown = existing === undefined
         ? Position.create({
-            id: positionId,
+            id: params.positionId,
             accountId: this.accountId,
             instrumentId,
             asset: fill.tokenId,
@@ -823,7 +925,9 @@ export class Portfolio {
       ));
     }
 
-    const inflow = Money.of(netCash, this.balance.currency());
+    // Деньги SELL — нетто-поток самого `Fill`: номинал за вычетом комиссии.
+    // Пересчитывать нечего, домен уже умеет складывать поток с комиссией.
+    const inflow = Money.of(fill.getNetCashFlow().amount.value(), this.balance.currency());
     const money = BalanceService.credit(this.balance, inflow);
     if (!money.ok) {
       return Err(new PortfolioOperationError(
@@ -881,7 +985,8 @@ export class Portfolio {
     positions: ReadonlyMap<InstrumentId, Position>,
     tokenBalances: ReadonlyMap<InstrumentId, TokenBalance>,
   ): Result<Portfolio, PortfolioOperationError> {
-    const violation = Portfolio._findInvariantViolation(positions, tokenBalances);
+    const violation = Portfolio._findInvariantViolation(
+      this.accountId, balance, positions, tokenBalances);
     if (violation !== undefined) {
       return Err(new PortfolioOperationError(violation.message, { context: violation.context }));
     }
@@ -912,15 +1017,97 @@ export class Portfolio {
    * операционную, — и заводить общий супертип ради этого незачем.
    */
   private static _findInvariantViolation(
+    accountId: AccountId,
+    balance: Balance,
     positions: ReadonlyMap<InstrumentId, Position>,
     tokenBalances: ReadonlyMap<InstrumentId, TokenBalance>,
   ): { message: string; context: Record<string, string> } | undefined {
+    // Владелец денег — тот же, что владелец агрегата.
+    if (!accountIdEquals(balance.accountId(), accountId)) {
+      return {
+        message: 'Balance belongs to a different account than the portfolio',
+        context: {
+          portfolioAccountId: accountIdToString(accountId),
+          balanceAccountId: accountIdToString(balance.accountId()),
+        },
+      };
+    }
+
+    const venueId = balance.venueId();
     const instruments = new Set<InstrumentId>([...positions.keys(), ...tokenBalances.keys()]);
 
     for (const instrumentId of instruments) {
-      const positionQty = positions.get(instrumentId)?.quantity.value() ?? new Decimal(0);
+      const position = positions.get(instrumentId);
       const tokens = tokenBalances.get(instrumentId);
-      const tokenTotal = tokens?.total().value() ?? new Decimal(0);
+
+      // Инструмент существует ⟺ существуют ОБЕ половины. Односторонняя запись —
+      // расхождение даже при нулевом количестве: мутаторы нормализуют ноль в
+      // отсутствие ({@link _upsertPosition}, {@link _withTokenBalance}), и
+      // допускать состояние, которого они не производят, значит принимать
+      // набор, из которого сами же не смогли бы выйти.
+      if (position === undefined || tokens === undefined) {
+        return {
+          message:
+            `Instrument ${String(instrumentId)} is present only in ` +
+            `${position === undefined ? 'tokenBalances' : 'positions'}`,
+          context: {
+            instrumentId: String(instrumentId),
+            hasPosition: String(position !== undefined),
+            hasTokenBalance: String(tokens !== undefined),
+          },
+        };
+      }
+
+      // Ключ карты — не метка, а утверждение об идентичности. Разойдись он с
+      // самой записью, поиск по инструменту вернул бы чужой объект.
+      if (position.instrumentId !== instrumentId) {
+        return {
+          message: `Position stored under key ${String(instrumentId)} declares ${String(position.instrumentId)}`,
+          context: { key: String(instrumentId), declared: String(position.instrumentId) },
+        };
+      }
+      if (tokens.instrumentId() !== instrumentId) {
+        return {
+          message: `TokenBalance stored under key ${String(instrumentId)} declares ${String(tokens.instrumentId())}`,
+          context: { key: String(instrumentId), declared: String(tokens.instrumentId()) },
+        };
+      }
+
+      // Владение: чужая позиция или чужой токенный баланс в нашем агрегате —
+      // это перепутанный аккаунт или площадка, а не допустимое состояние.
+      if (!accountIdEquals(position.accountId, accountId)) {
+        return {
+          message: `Position ${String(instrumentId)} belongs to a different account`,
+          context: {
+            instrumentId: String(instrumentId),
+            portfolioAccountId: accountIdToString(accountId),
+            positionAccountId: accountIdToString(position.accountId),
+          },
+        };
+      }
+      if (!accountIdEquals(tokens.accountId(), accountId)) {
+        return {
+          message: `TokenBalance ${String(instrumentId)} belongs to a different account`,
+          context: {
+            instrumentId: String(instrumentId),
+            portfolioAccountId: accountIdToString(accountId),
+            tokenAccountId: accountIdToString(tokens.accountId()),
+          },
+        };
+      }
+      if (tokens.venueId() !== venueId) {
+        return {
+          message: `TokenBalance ${String(instrumentId)} belongs to venue ${tokens.venueId()}, portfolio is on ${venueId}`,
+          context: {
+            instrumentId: String(instrumentId),
+            portfolioVenueId: venueId,
+            tokenVenueId: tokens.venueId(),
+          },
+        };
+      }
+
+      const positionQty = position.quantity.value();
+      const tokenTotal = tokens.total().value();
 
       if (!positionQty.equals(tokenTotal)) {
         return {
@@ -931,9 +1118,19 @@ export class Portfolio {
             instrumentId: String(instrumentId),
             positionQuantity: positionQty.toString(),
             tokenTotal: tokenTotal.toString(),
-            available: tokens?.available().value().toString() ?? '0',
-            reserved: tokens?.reserved().value().toString() ?? '0',
+            available: tokens.available().value().toString(),
+            reserved: tokens.reserved().value().toString(),
           },
+        };
+      }
+
+      // Нулевая пара — это отсутствие инструмента, а не его присутствие с
+      // нулём. Иначе «инструмент известен портфелю» перестаёт быть
+      // однозначным вопросом.
+      if (positionQty.isZero()) {
+        return {
+          message: `Instrument ${String(instrumentId)} is stored with zero quantity; zero must be absence`,
+          context: { instrumentId: String(instrumentId) },
         };
       }
     }
@@ -969,10 +1166,29 @@ export class Portfolio {
    * ниже нуля. Вынесено, чтобы {@link applyFill} не собирал баланс сам —
    * агрегат меняет деньги ровно одним способом.
    */
-  private _debited(amount: Money): Result<Balance, InvalidBalanceError> {
-    const currentAvailable = this.balance.available().value();
-    const newAvailableValue = Decimal.max(new Decimal(0), currentAvailable.minus(amount.value()));
-    return BalanceService.updateAvailable(this.balance, Money.of(newAvailableValue, this.balance.currency()));
+  private static _debitAvailable(
+    balance: Balance,
+    amount: Money,
+  ): Result<Balance, InvalidBalanceError> {
+    const next = balance.available().value().minus(amount.value());
+
+    // Fail-closed. Здесь стоял `Decimal.max(0, …)`, то есть нехватка средств
+    // молча превращалась в списание «до нуля» — и портфель расходился с
+    // площадкой на разницу, не сообщив об этом никому.
+    if (next.isNegative()) {
+      return Err(new InvalidBalanceError(
+        `Insufficient available funds: need ${amount.value().toString()}, ` +
+          `have ${balance.available().value().toString()}`,
+        {
+          context: {
+            required: amount.value().toString(),
+            available: balance.available().value().toString(),
+          },
+        },
+      ));
+    }
+
+    return BalanceService.updateAvailable(balance, Money.of(next, balance.currency()));
   }
 
   /**

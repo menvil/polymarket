@@ -38,6 +38,14 @@ const accountId: AccountId = {
 
 const venueId = 'POLYMARKET' as VenueId;
 
+// Чужие идентичности — для проверок владения. Портфель обязан отвергать
+// позицию, токенный баланс или исполнение, принадлежащие не ему.
+const otherAccountId: AccountId = {
+  ...accountId,
+  address: '0x9999999999999999999999999999999999999999' as WalletAddress,
+};
+const OTHER_VENUE = 'KALSHI' as VenueId;
+
 /** Создаёт Money(amount, 'USDC') */
 function mkMoney(amount: number): Money {
   return Money.of(new Decimal(amount), 'USDC');
@@ -69,7 +77,9 @@ function makeInstrumentId(raw: string): InstrumentId {
 // вместе с `IPosition` исчезла и возможность подставить объект, которого в
 // проде не существует.
 function makeOpenPosition(instrumentId: InstrumentId): Position {
-  return position(instrumentId, { quantity: 100, entryPrice: 0.65 });
+  // accountId ЯВНО: агрегат отвергает чужую позицию, а фикстура позиции имеет
+  // собственный дефолтный аккаунт — совпадать они не обязаны.
+  return position(instrumentId, { quantity: 100, entryPrice: 0.65, accountId });
 }
 
 function qty(n: number): Quantity {
@@ -152,6 +162,8 @@ function makeFill(params: {
   price: number;
   feeUSDC?: number;
   id?: string;
+  accountId?: AccountId;
+  venueId?: VenueId;
 }): Fill {
   const fee = params.feeUSDC
     ? Fee.of(new AssetQuantity(AssetIdHelpers.USDC, qty(params.feeUSDC)))
@@ -159,8 +171,8 @@ function makeFill(params: {
   const result = Fill.create({
     id: (params.id ?? 'fill-1') as unknown as FillId,
     orderId: 'order-1' as unknown as OrderId,
-    accountId,
-    venueId,
+    accountId: params.accountId ?? accountId,
+    venueId: params.venueId ?? venueId,
     marketId: 'market-1' as unknown as MarketId,
     tokenId: FILL_TOKEN,
     settlementAssetId: AssetIdHelpers.USDC,
@@ -358,40 +370,152 @@ describe('Portfolio.applyCredit()', () => {
   });
 });
 
-describe('Portfolio.applyFill() — позиция и токены двигаются вместе', () => {
-  // `upsertPosition()` больше не публичен, и заменять хранимый `TokenBalance`
-  // отдельно тоже нельзя. Те же поведения — открытие, наращивание, закрытие,
-  // неизменяемость — проверяются через единственный оставшийся путь.
+describe('Portfolio.applyFill() — normal path: исполнение потребляет резервацию', () => {
+  // `upsertPosition()` не публичен, отдельной замены `TokenBalance` нет — те же
+  // поведения проверяются через единственный оставшийся путь.
+  //
+  // Обе стороны СИММЕТРИЧНЫ: каждая потребляет свою резервацию. Резервируются
+  // разные вещи (деньги под BUY, токены под SELL), но ни одна сторона не лезет
+  // в свободный остаток.
 
   const POSITION_ID = positionId('position-1');
+  const NOTIONAL_50 = mkMoney(50);
 
-  it('BUY открывает позицию и начисляет токены', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+  /** Портфель, где под покупку на 50 USDC уже создана резервация. */
+  function reservedForBuy(notional = 50) {
+    const created = makePortfolio();
+    if (!created.ok) throw new Error('fixture failed');
+    const reserved = created.value.reserveForOrder(mkMoney(notional));
+    if (!reserved.ok) throw new Error('fixture failed: reserveForOrder');
+    return reserved.value;
+  }
 
-    const applied = result.value.applyFill(makeFill({ side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+  it('BUY уменьшает reserved, а НЕ available', () => {
+    const portfolio = reservedForBuy();
+    const availableBefore = portfolio.balance.available().value().toNumber();
+    const reservedBefore = portfolio.balance.reserved().value().toNumber();
+
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
 
-    expect(applied.value.hasPosition(FILL_INSTRUMENT)).toBe(true);
-    expect(applied.value.getPosition(FILL_INSTRUMENT)?.quantity.value().toNumber()).toBe(100);
-    expect(applied.value.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(100);
-    expect(applied.value.reservedTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
+    // Номинал ушёл из reserved; available не тронут — комиссии не было.
+    expect(applied.value.balance.reserved().value().toNumber()).toBe(reservedBefore - 50);
+    expect(applied.value.balance.available().value().toNumber()).toBe(availableBefore);
+  });
+
+  it('полное исполнение не оставляет резервацию зависшей', () => {
+    const portfolio = reservedForBuy();
+
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    expect(applied.value.balance.reserved().value().toNumber()).toBe(0);
+  });
+
+  it('частичное исполнение потребляет часть резервации', () => {
+    const portfolio = reservedForBuy();
+
+    // Половина заявки: 50 шар из 100, потребляем 25 из 50 зарезервированных.
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 50, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(25) },
+    );
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    // Остаток резервации ждёт неисполненный объём заявки.
+    expect(applied.value.balance.reserved().value().toNumber()).toBe(25);
+    expect(applied.value.getPosition(FILL_INSTRUMENT)?.quantity.value().toNumber()).toBe(50);
+  });
+
+  it('комиссия тейкера снимается ОТДЕЛЬНО, из available', () => {
+    const portfolio = reservedForBuy();
+    const availableBefore = portfolio.balance.available().value().toNumber();
+
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    // Резервацию никто не создавал под комиссию: при размещении заявки ещё
+    // неизвестно, окажемся мы тейкером или мейкером.
+    expect(applied.value.balance.reserved().value().toNumber()).toBe(0);
+    expect(applied.value.balance.available().value().toNumber()).toBeCloseTo(availableBefore - 1.0, 8);
+  });
+
+  it('BUY без reservedNotional отвергается', () => {
+    const portfolio = reservedForBuy();
+
+    // Восстанавливать сумму по округлённой `fill.price` нельзя — резервация
+    // создавалась по цене ЗАЯВКИ.
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID },
+    );
+
+    expect(applied.ok).toBe(false);
+    if (!applied.ok) expect(applied.error.message).toContain('reservedNotional is required');
+  });
+
+  it('нехватка reserved → Err, портфель не изменён', () => {
+    const portfolio = reservedForBuy(30);
+    const snapshot = portfolio.toString();
+
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
+
+    expect(applied.ok).toBe(false);
+    expect(portfolio.balance.reserved().value().toNumber()).toBe(30);
+    expect(portfolio.getPositionCount()).toBe(0);
+    expect(portfolio.toString()).toBe(snapshot);
+  });
+
+  it('нехватка available под комиссию → Err без частичной мутации', () => {
+    // Весь баланс в резервации: номинал спишется, а комиссию платить нечем.
+    const created = makePortfolio({ balance: makeBalance(0, 50) });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const portfolio = created.value;
+
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
+
+    expect(applied.ok).toBe(false);
+    // Резервация НЕ потреблена: потребление номинала и комиссии — одна
+    // транзакция, а не два шага, из которых первый уже случился.
+    expect(portfolio.balance.reserved().value().toNumber()).toBe(50);
+    expect(portfolio.balance.available().value().toNumber()).toBe(0);
+    expect(portfolio.getPositionCount()).toBe(0);
   });
 
   it('второй BUY наращивает ту же позицию, а не заводит вторую', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    const portfolio = reservedForBuy(85);
 
-    const first = result.value.applyFill(
-      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    const first = portfolio.applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
     expect(first.ok).toBe(true);
     if (!first.ok) return;
 
     const second = first.value.applyFill(
-      makeFill({ id: 'f2', side: 'BUY', size: 50, price: 0.7 }), POSITION_ID);
+      makeFill({ id: 'f2', side: 'BUY', size: 50, price: 0.7 }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(35) },
+    );
     expect(second.ok).toBe(true);
     if (!second.ok) return;
 
@@ -400,58 +524,101 @@ describe('Portfolio.applyFill() — позиция и токены двигаю�
     expect(second.value.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(150);
   });
 
-  it('SELL на весь объём закрывает позицию и обнуляет токены', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const bought = result.value.applyFill(
-      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+  it('SELL потребляет ТОКЕННУЮ резервацию и зачисляет деньги', () => {
+    const bought = reservedForBuy().applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
     expect(bought.ok).toBe(true);
     if (!bought.ok) return;
 
-    // Продавать можно только зарезервированное — сначала резервация под заявку.
     const reserved = bought.value.reserveTokens(FILL_INSTRUMENT, qty(100));
     expect(reserved.ok).toBe(true);
     if (!reserved.ok) return;
 
+    const availableBefore = reserved.value.balance.available().value().toNumber();
+
     const sold = reserved.value.applyFill(
-      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6 }), POSITION_ID);
+      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6 }),
+      { positionId: POSITION_ID },
+    );
     expect(sold.ok).toBe(true);
     if (!sold.ok) return;
 
     expect(sold.value.hasPosition(FILL_INSTRUMENT)).toBe(false);
     expect(sold.value.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
     expect(sold.value.reservedTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
+    expect(sold.value.balance.available().value().toNumber()).toBeCloseTo(availableBefore + 60, 8);
   });
 
-  it('SELL без резервации отвергается', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const bought = result.value.applyFill(
-      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+  it('SELL без токенной резервации отвергается', () => {
+    const bought = reservedForBuy().applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
     expect(bought.ok).toBe(true);
     if (!bought.ok) return;
 
-    // Токены есть, но лежат в available — продать их, не зарезервировав под
-    // заявку, нельзя: иначе учёт разъехался бы с биржевым.
+    // Токены есть, но лежат в available: продать незарезервированное нельзя.
     const sold = bought.value.applyFill(
-      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6 }), POSITION_ID);
+      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6 }),
+      { positionId: POSITION_ID },
+    );
+
     expect(sold.ok).toBe(false);
+    expect(bought.value.getPosition(FILL_INSTRUMENT)?.quantity.value().toNumber()).toBe(100);
   });
 
   it('не мутирует исходный Portfolio', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    const portfolio = reservedForBuy();
+    const reservedBefore = portfolio.balance.reserved().value().toNumber();
 
-    const original = result.value;
-    original.applyFill(makeFill({ side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: NOTIONAL_50 },
+    );
 
-    expect(original.getPositionCount()).toBe(0);
-    expect(original.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
+    expect(portfolio.getPositionCount()).toBe(0);
+    expect(portfolio.balance.reserved().value().toNumber()).toBe(reservedBefore);
+    expect(portfolio.availableTokens(FILL_INSTRUMENT).value().toNumber()).toBe(0);
+  });
+});
+
+describe('Portfolio.applyFill() — владелец проверяется до вычислений', () => {
+  const POSITION_ID = positionId('position-owner');
+
+  function reserved() {
+    const created = makePortfolio();
+    if (!created.ok) throw new Error('fixture failed');
+    const r = created.value.reserveForOrder(mkMoney(50));
+    if (!r.ok) throw new Error('fixture failed');
+    return r.value;
+  }
+
+  it('чужой accountId у Fill → Err без мутации', () => {
+    const portfolio = reserved();
+
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, accountId: otherAccountId }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(50) },
+    );
+
+    expect(applied.ok).toBe(false);
+    if (!applied.ok) expect(applied.error.message).toContain('different account');
+    expect(portfolio.balance.reserved().value().toNumber()).toBe(50);
+  });
+
+  it('чужая площадка у Fill → Err без мутации', () => {
+    const portfolio = reserved();
+
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, venueId: OTHER_VENUE }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(50) },
+    );
+
+    expect(applied.ok).toBe(false);
+    if (!applied.ok) expect(applied.error.message).toContain('venue');
+    expect(portfolio.balance.reserved().value().toNumber()).toBe(50);
   });
 });
 
@@ -798,44 +965,31 @@ describe('Portfolio: токенные балансы переживают опе
   });
 });
 
-describe('Portfolio: инвариант агрегата', () => {
+describe('Portfolio: инвариант количества', () => {
   const instrumentId = makeInstrumentId('token-1');
 
-  it('create отвергает позицию без токенного двойника', () => {
-    // Дыра, которую это закрывает: раньше такой набор собирался молча, и
-    // первая же мутация отвергала состояние, которое сама не создавала.
-    const result = makePortfolio({
-      positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(PortfolioValidationError);
-      expect(result.error.message).toContain('invariant violated');
-    }
-  });
-
-  it('create отвергает расхождение количества', () => {
+  it('расхождение позиции с токенным балансом отвергается', () => {
     const result = makePortfolio({
       positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
       tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 40, 0)]]),
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toContain('100 != token available+reserved 40');
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(PortfolioValidationError);
+      expect(result.error.message).toContain('100 != token available+reserved 40');
+    }
   });
 
-  it('create отвергает токены без позиции', () => {
-    const result = makePortfolio({
-      tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 10, 0)]]),
-    });
+  it('резервация расхождения не создаёт: available + reserved = quantity', () => {
+    const result = makePortfolioWithTokens(instrumentId, 40);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
 
-    expect(result.ok).toBe(false);
-  });
+    const total = result.value.availableTokens(instrumentId).value()
+      .plus(result.value.reservedTokens(instrumentId).value());
 
-  it('согласованный набор принимается', () => {
-    expect(makePortfolioWithTokens(instrumentId).ok).toBe(true);
-    expect(makePortfolioWithTokens(instrumentId, 40).ok).toBe(true);
+    expect(result.value.getPosition(instrumentId)?.quantity.value().equals(total)).toBe(true);
   });
 });
 
@@ -843,53 +997,52 @@ describe('Portfolio.applyFill() — комиссия платится деньг
   // Комиссию на Polymarket платит только тейкер, платит ДЕНЬГАМИ и из того,
   // что получает; количество шар не изменяется никогда. Измерено на 2898
   // реальных сделках — `docs/guides/polymarket-fee-settlement.md`.
-  //
-  // Портфель эту экономику НЕ пересчитывает: он применяет нетто-поток самого
-  // `Fill` (`getNetCashFlow()`), а количество берёт валовым.
 
   const POSITION_ID = positionId('position-fee');
   const instrumentId = FILL_INSTRUMENT;
 
-  it('BUY с комиссией: позиция на ПОЛНЫЙ размер, деньги на номинал + комиссию', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+  function reservedForBuy(notional = 50) {
+    const created = makePortfolio();
+    if (!created.ok) throw new Error('fixture failed');
+    const r = created.value.reserveForOrder(mkMoney(notional));
+    if (!r.ok) throw new Error('fixture failed');
+    return r.value;
+  }
 
-    const before = result.value.balance.available().value().toNumber();
+  it('BUY с комиссией: позиция на ПОЛНЫЙ размер', () => {
+    const portfolio = reservedForBuy();
 
-    // 100 × 0.5 = 50 номинала, комиссия 1.0 USDC сверх.
-    const applied = result.value.applyFill(
-      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }), POSITION_ID);
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(50) },
+    );
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
 
     expect(applied.value.getPosition(instrumentId)?.quantity.value().toNumber()).toBe(100);
     expect(applied.value.availableTokens(instrumentId).value().toNumber()).toBe(100);
-    expect(applied.value.balance.available().value().toNumber()).toBeCloseTo(before - 51, 8);
   });
 
-  it('мейкерский BUY: комиссии нет, деньги ровно на номинал', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+  it('мейкерский BUY: комиссии нет, available не тронут', () => {
+    const portfolio = reservedForBuy();
+    const before = portfolio.balance.available().value().toNumber();
 
-    const before = result.value.balance.available().value().toNumber();
-    const applied = result.value.applyFill(
-      makeFill({ side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    const applied = portfolio.applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(50) },
+    );
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
 
-    expect(applied.value.balance.available().value().toNumber()).toBeCloseTo(before - 50, 8);
+    expect(applied.value.balance.available().value().toNumber()).toBe(before);
     expect(applied.value.getPosition(instrumentId)?.quantity.value().toNumber()).toBe(100);
   });
 
   it('SELL с комиссией: отдаём ПОЛНЫЙ размер, получаем номинал минус комиссию', () => {
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const bought = result.value.applyFill(
-      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }), POSITION_ID);
+    const bought = reservedForBuy().applyFill(
+      makeFill({ id: 'f1', side: 'BUY', size: 100, price: 0.5 }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(50) },
+    );
     expect(bought.ok).toBe(true);
     if (!bought.ok) return;
 
@@ -899,36 +1052,126 @@ describe('Portfolio.applyFill() — комиссия платится деньг
 
     const before = reserved.value.balance.available().value().toNumber();
 
-    // 100 × 0.6 = 60 номинала, комиссия 1.2 USDC удерживается из выручки.
+    // 100 × 0.6 = 60 номинала, комиссия 1.2 удерживается из выручки.
     const sold = reserved.value.applyFill(
-      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6, feeUSDC: 1.2 }), POSITION_ID);
+      makeFill({ id: 'f2', side: 'SELL', size: 100, price: 0.6, feeUSDC: 1.2 }),
+      { positionId: POSITION_ID },
+    );
     expect(sold.ok).toBe(true);
     if (!sold.ok) return;
 
     expect(sold.value.balance.available().value().toNumber()).toBeCloseTo(before + 58.8, 8);
-    // Отдали полные 100 шар — комиссия их не касается.
     expect(sold.value.hasPosition(instrumentId)).toBe(false);
-    expect(sold.value.availableTokens(instrumentId).value().toNumber()).toBe(0);
-    expect(sold.value.reservedTokens(instrumentId).value().toNumber()).toBe(0);
   });
 
   it('комиссия не создаёт расхождения позиции с токенами', () => {
-    // Если бы комиссия вычиталась из шар, инвариант разошёлся бы ровно на
-    // fee/price — и агрегат отверг бы собственную мутацию.
-    const result = makePortfolio();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const applied = result.value.applyFill(
-      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }), POSITION_ID);
+    // Вычитайся она из шар, инвариант разошёлся бы ровно на `fee/price`, и
+    // агрегат отверг бы собственную мутацию.
+    const applied = reservedForBuy().applyFill(
+      makeFill({ side: 'BUY', size: 100, price: 0.5, feeUSDC: 1.0 }),
+      { positionId: POSITION_ID, reservedNotional: mkMoney(50) },
+    );
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
 
     const position = applied.value.getPosition(instrumentId)!;
-    const total =
-      applied.value.availableTokens(instrumentId).value().plus(
-        applied.value.reservedTokens(instrumentId).value());
+    const total = applied.value.availableTokens(instrumentId).value()
+      .plus(applied.value.reservedTokens(instrumentId).value());
 
     expect(position.quantity.value().equals(total)).toBe(true);
+  });
+});
+
+describe('Portfolio.create() — структура и владение', () => {
+  const instrumentId = makeInstrumentId('token-1');
+  const otherId = makeInstrumentId('token-2');
+
+  it('ключ карты позиций обязан совпадать с самой позицией', () => {
+    // Ключ — не метка, а утверждение об идентичности: разойдись он с записью,
+    // поиск по инструменту вернул бы чужой объект.
+    const result = makePortfolio({
+      positions: new Map([[otherId, makeOpenPosition(instrumentId)]]),
+      tokenBalances: new Map([[otherId, makeTokenBalance(otherId, 100)]]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('declares');
+  });
+
+  it('ключ карты токенов обязан совпадать с самим балансом', () => {
+    const result = makePortfolio({
+      positions: new Map([[otherId, makeOpenPosition(otherId)]]),
+      tokenBalances: new Map([[otherId, makeTokenBalance(instrumentId, 100)]]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('declares');
+  });
+
+  it('чужая позиция отвергается', () => {
+    const foreign = position(instrumentId, { quantity: 100, accountId: otherAccountId });
+    const result = makePortfolio({
+      positions: new Map([[instrumentId, foreign]]),
+      tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 100)]]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('different account');
+  });
+
+  it('чужой токенный баланс отвергается', () => {
+    const foreign = TokenBalance.of(instrumentId, qty(100), qty(0), otherAccountId, venueId);
+    const result = makePortfolio({
+      positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
+      tokenBalances: new Map([[instrumentId, foreign]]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('different account');
+  });
+
+  it('токенный баланс с чужой площадки отвергается', () => {
+    const foreign = TokenBalance.of(instrumentId, qty(100), qty(0), accountId, OTHER_VENUE);
+    const result = makePortfolio({
+      positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
+      tokenBalances: new Map([[instrumentId, foreign]]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('venue');
+  });
+
+  it('баланс чужого аккаунта отвергается', () => {
+    const foreignBalance = Balance.of(mkMoney(10_000), mkMoney(0), otherAccountId, venueId);
+    const result = makePortfolio({ balance: foreignBalance });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('different account');
+  });
+
+  it('инструмент только в одной карте отвергается', () => {
+    expect(makePortfolio({
+      positions: new Map([[instrumentId, makeOpenPosition(instrumentId)]]),
+    }).ok).toBe(false);
+
+    expect(makePortfolio({
+      tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 100)]]),
+    }).ok).toBe(false);
+  });
+
+  it('нулевой токенный баланс без позиции отвергается — ноль это отсутствие', () => {
+    // Мутаторы нормализуют ноль в отсутствие; принимать состояние, которого
+    // они не производят, значит впустить набор, из которого сами не выйдем.
+    const result = makePortfolio({
+      tokenBalances: new Map([[instrumentId, makeTokenBalance(instrumentId, 0, 0)]]),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('present only in');
+  });
+
+  it('согласованный набор принимается', () => {
+    expect(makePortfolioWithTokens(instrumentId).ok).toBe(true);
+    expect(makePortfolioWithTokens(instrumentId, 40).ok).toBe(true);
   });
 });
