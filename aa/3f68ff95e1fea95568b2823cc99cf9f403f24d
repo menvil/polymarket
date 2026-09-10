@@ -1,0 +1,81 @@
+packages/application/account-state/tsconfig.build.json
+  s_73852eac4506dc::t_2d63e36db73de4 30
+packages/domain/entities/portfolio/tsconfig.build.json
+  s_73852eac4506dc::t_7133a995bd6e81 26
+packages/domain/entities/portfolio/package.json
+  s_73852eac4506dc::t_7133a995bd6e81 44
+packages/application/account-state/src/AccountHotState.ts
+  s_73852eac4506dc::t_2d63e36db73de4 104-105,277
+packages/domain/entities/portfolio/src/services/PortfolioValuationService.ts
+  s_73852eac4506dc::t_0362339899f2ea 17,37,68,105
+packages/application/use-cases/src/services/PortfolioService.ts
+  s_73852eac4506dc::t_d2b50c1b716b96 906,937
+  s_73852eac4506dc::t_0ccc35d5dcc246 24-33
+  s_73852eac4506dc::t_48691f5a9ebb1f 55,663-725,774-779,782-784,803-805
+package-lock.json
+  ai_agent 8523,9003
+packages/domain/entities/portfolio/__tests__/positionFixture.ts
+  s_73852eac4506dc::t_599d732d822aa2 1-121
+packages/application/use-cases/__tests__/PortfolioService.test.ts
+  s_73852eac4506dc::t_f78604f1e40e1a 13,24,255,299-304
+packages/domain/entities/portfolio/__tests__/unit/Portfolio.test.ts
+  s_73852eac4506dc::t_f139a746016ee8 17,19
+  s_73852eac4506dc::t_69e5a21bd9e533 63-67,70-71,277-278,282
+packages/application/account-state/jest.config.js
+  s_73852eac4506dc::t_2d63e36db73de4 22
+packages/application/account-state/__tests__/helpers/fixtures.ts
+  s_73852eac4506dc::t_46cf48d2eed200 39,55-56,335,339,342-346,351-369
+packages/application/use-cases/__tests__/PlaceOrderUseCase.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 25-26,106
+packages/application/account-state/src/views.ts
+  s_73852eac4506dc::t_2d63e36db73de4 29-30,184
+packages/application/use-cases/__tests__/UpdateOrderStatusUseCase.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 20-21,143
+packages/application/use-cases/__tests__/integration/ManualReconciliationBlock.integration.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 36-37,103
+packages/domain/entities/portfolio/jest.config.js
+  s_73852eac4506dc::t_fba14b417f98b8 6
+packages/application/risk/__tests__/OrderRiskChecker.test.ts
+  s_73852eac4506dc::t_c0efdf12212f79 294-299
+  s_73852eac4506dc::t_ec315d953e0779 9-28,77-97
+  s_73852eac4506dc::t_0ccc35d5dcc246 8,70,76,104,109
+packages/domain/entities/portfolio/src/Portfolio.ts
+  s_73852eac4506dc::t_5c7c137cd6b3f0 7,17,113,128,149-150,173,404-405,426,436,460,473
+  s_73852eac4506dc::t_0362339899f2ea 38-54
+packages/application/use-cases/__tests__/CancelOrderUseCase.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 21-22,108
+packages/application/use-cases/__tests__/integration/SettleTerminalOrders.integration.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 27-28,94
+packages/domain/entities/portfolio/__tests__/unit/services/PortfolioValuationService.test.ts
+  s_73852eac4506dc::t_39a6eff25f6b84 16,31-47,52,54,146-147,156,158,163,166,174-175,181
+  s_73852eac4506dc::t_f139a746016ee8 15,53
+packages/domain/entities/portfolio/src/index.ts
+  s_73852eac4506dc::t_0362339899f2ea 39
+packages/application/account-state/package.json
+  s_73852eac4506dc::t_2d63e36db73de4 37
+packages/application/use-cases/__tests__/integration/ReconcileUnknownSubmissions.integration.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 32-33,103
+packages/application/use-cases/__tests__/ProcessFillUseCase.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 26,180
+  s_73852eac4506dc::t_75ff8d27be3872 27-59,606,697,987
+packages/application/risk/jest.config.js
+  s_73852eac4506dc::t_60fb011a2edd12 6
+packages/application/risk/__tests__/unit/OrderRiskChecker.timeToExpiry.test.ts
+  s_73852eac4506dc::t_0ccc35d5dcc246 21-22,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "aa3f68ff95e1fea95568b2823cc99cf9f403f24d",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
