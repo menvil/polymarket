@@ -675,31 +675,22 @@ export class Portfolio {
    * Инвариант проверяется на ПОЛНОМ новом наборе (см. {@link _rebalanced}),
    * поэтому промежуточное несогласованное состояние наружу не выходит.
    *
-   * НЕ ГОТОВО: комиссия BUY не удержана из токенов.
+   * ### Комиссия
    *
-   * Polymarket при BUY списывает комиссию ИЗ ПОЛУЧАЕМЫХ shares, а не из USDC.
-   * Боевой `PortfolioService` это учитывает, здесь — нет:
+   * Портфель её не считает и не конвертирует. Всё, что нужно, уже выражено
+   * дельтами `Fill`: деньги берутся из {@link Fill.getNetCashFlow}, количество
+   * — валовое, потому что комиссия его не трогает.
    *
    * ```text
-   * PortfolioService              здесь
-   * feeInTokens = feeUSDC / price   —
-   * позиция += size − feeInTokens   позиция += size
-   *                                 available += size
+   * BUY  тейкер   отдаём  номинал + fee    получаем ПОЛНЫЕ size шар
+   * SELL тейкер   получаем номинал − fee   отдаём  ПОЛНЫЕ size шар
+   * мейкер        ровно номинал            комиссии нет
    * ```
    *
-   * На fee-bearing TAKER-исполнении позиция и токенный баланс завышаются на
-   * `fee / price`: счёт получает токены, которых не получал.
-   *
-   * Инвариант {@link _rebalanced} этого НЕ ловит — он сверяет `quantity` с
-   * `available + reserved`, а обе величины выведены из одного и того же
-   * `fill.size`. Он проверяет согласие двух наших чисел между собой, а не
-   * согласие с площадкой, и данный класс ошибок ему недоступен по построению.
-   *
-   * Цена ошибки максимальна: `ProcessFillUseCase` применяет исполнение под
-   * lease `processedFillRepo`, помечает применённым и повторно не проигрывает.
-   *
-   * Перед применением ветки перенести расчёт `feeInTokens` сюда и покрыть
-   * тестом с ненулевой комиссией.
+   * Измерено на 2898 реальных сделках — `docs/guides/polymarket-fee-settlement.md`.
+   * Расчёт вида `feeInTokens = feeUSDC / price`, живущий в старом
+   * `PortfolioService`, описывает механизм, которого не существует, и сюда
+   * переноситься не должен.
    */
   public applyFill(fill: Fill, positionId: PositionId): Result<Portfolio, PortfolioOperationError> {
     const instrumentId = assetIdToInstrumentId(fill.tokenId);
@@ -710,14 +701,24 @@ export class Portfolio {
       ));
     }
 
-    const notional = Money.of(fill.price.value().times(fill.size.value()), this.balance.currency());
+    // Экономику несёт сам `Fill`, портфель её НЕ пересчитывает:
+    //
+    //   getNetCashFlow()   BUY  −(номинал + fee)   SELL  +(номинал − fee)
+    //   getSignedQuantity() ±size — ВАЛОВОЕ количество, комиссия его не трогает
+    //
+    // Комиссию на Polymarket платит только тейкер, платит деньгами и из того,
+    // что получает (см. `docs/guides/polymarket-fee-settlement.md`). Здесь
+    // стоял `price × size`, то есть номинал без комиссии: на покупке он
+    // недоплачивал, на продаже переплачивал.
+    const netCash = fill.getNetCashFlow().amount.value();
     const existing = this.positions.get(instrumentId);
 
     if (fill.side === 'BUY') {
-      const money = this._debited(notional);
+      const outflow = Money.of(netCash.negated(), this.balance.currency());
+      const money = this._debited(outflow);
       if (!money.ok) {
         return Err(new PortfolioOperationError(
-          `applyFill: cannot debit ${notional.value().toString()} for BUY: ${money.error.message}`,
+          `applyFill: cannot debit ${outflow.value().toString()} for BUY: ${money.error.message}`,
           { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
         ));
       }
@@ -789,10 +790,11 @@ export class Portfolio {
       ));
     }
 
-    const money = BalanceService.credit(this.balance, notional);
+    const inflow = Money.of(netCash, this.balance.currency());
+    const money = BalanceService.credit(this.balance, inflow);
     if (!money.ok) {
       return Err(new PortfolioOperationError(
-        `applyFill: cannot credit ${notional.value().toString()} for SELL: ${money.error.message}`,
+        `applyFill: cannot credit ${inflow.value().toString()} for SELL: ${money.error.message}`,
         { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
       ));
     }
