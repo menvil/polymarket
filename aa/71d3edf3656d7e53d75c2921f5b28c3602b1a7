@@ -1,0 +1,66 @@
+packages/domain/entities/portfolio/__tests__/unit/Portfolio.test.ts
+  s_73852eac4506dc::t_ec9d569986085a 27,116-122,366,850
+  s_73852eac4506dc::t_eee104177d0de4 569-573
+  s_73852eac4506dc::t_bd22ad70b4af4e 361-365,367-368,373-380,383-404,408-425,428-429,433-442,451-454
+  s_73852eac4506dc::t_8c7960e4a45358 25-26,28-29,75-91,108-115,123-129,136,141-164,166-174
+  s_73852eac4506dc::t_9e352467d7cacd 130-135,137-140,165
+  s_73852eac4506dc::t_e0766b9eae8e1e 644-650,655-657,660,662,666-667,670,672,676-678,680-683,687-688,690-691,695,699,703-704,707-708,712,715,720,724,729,731-732,736-740,744,748-749,752-753,757,761-764,767-768,772-773,775-780,782,784-785,787,791-814,817-839,842-849,851-854,858,860-864,866-868,871-872,876-880,882-883,886-887,891-896,900,902-906,908-912,915-918,922-925,927-930,932
+  s_73852eac4506dc::t_72eede1eec35da 10
+  s_73852eac4506dc::t_42762fe94db9d0 19
+  s_73852eac4506dc::t_1aff38cb9d1bf9 92-107,193,463,482,508,530,598
+packages/domain/entities/portfolio/jest.config.js
+  s_73852eac4506dc::t_890c0f6a4a4fe9 18
+  s_73852eac4506dc::t_9c56af870cdda5 17
+packages/domain/entities/portfolio/docs/portfolio-entity.md
+  s_73852eac4506dc::t_40cb1fe30b058c 101,103-107,186-189,280-281,284,287-290,294,296-297
+  s_73852eac4506dc::t_bd86b7293f007d 27
+  s_73852eac4506dc::t_1dbfe3508974d7 56,64-65,73-74,77-95,178-181,198-200
+  s_73852eac4506dc::t_2ddfbd86d197e5 109,111-120,123,126-131
+  s_73852eac4506dc::t_78dedbbf1272a9 320-323,325-328,331,334-336
+  s_73852eac4506dc::t_039c111fbcaa48 338,340-343,345-346,348-354,356-358
+packages/application/events/__tests__/ApplicationEvent.types.test.ts
+  s_73852eac4506dc::t_95cd35489d730a 157
+packages/application/account-state/README.md
+  s_73852eac4506dc::t_0c74a7516c1907 59,66
+apps/pnl/tsconfig.json
+  s_73852eac4506dc::t_bf0f4d832232ab 11-12
+packages/application/account-state/__tests__/navigation.test.ts
+  s_73852eac4506dc::t_4f37770df47b49 182-184,211
+packages/application/account-state/src/AccountHotState.ts
+  s_73852eac4506dc::t_72eede1eec35da 172
+packages/application/account-state/src/views.ts
+  s_73852eac4506dc::t_72eede1eec35da 57,65
+packages/application/account-state/docs/account-state.md
+  s_73852eac4506dc::t_0c74a7516c1907 125,138
+packages/application/account-state/__tests__/helpers/fixtures.ts
+  s_73852eac4506dc::t_8dcea7c9cad276 242-252,254-256,262-263
+  s_73852eac4506dc::t_a6846b557b63bb 16,217-218
+  s_73852eac4506dc::t_bbc7d80291b06c 253
+packages/infrastructure/persistence/data-collection/tsconfig.json
+  s_73852eac4506dc::t_4173ff1c6efc44 9
+packages/application/account-state/src/index.ts
+  s_73852eac4506dc::t_72eede1eec35da 53
+apps/collect-data/tsconfig.json
+  s_73852eac4506dc::t_57e1d4320be55f 41
+packages/application/events/src/trading-account/TradingAccountInitializedEvent.ts
+  s_73852eac4506dc::t_95cd35489d730a 13
+packages/domain/entities/portfolio/src/Portfolio.ts
+  s_73852eac4506dc::t_6ef3401d3ac834 248-263,884-917,926-928,930-935,937,941
+  s_73852eac4506dc::t_72eede1eec35da 56-72,82,84-85,88-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "aa71d3edf3656d7e53d75c2921f5b28c3602b1a7",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
