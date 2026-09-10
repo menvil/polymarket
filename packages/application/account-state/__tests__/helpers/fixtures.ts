@@ -38,6 +38,7 @@ import {
   asPolymarketCtfToken,
   asStrategyId,
   asVenueId,
+  parseAssetId,
   parseWalletAddress,
   type AccountId,
   type AssetId,
@@ -153,10 +154,38 @@ export function money(value: number): Money {
   return must(MoneyService.create(value, 'USDC'));
 }
 
-/** Комиссия в USDC. */
-export function fee(value: number): Fee {
-  return must(FeeService.create(AssetIdHelpers.USDC, value));
+/**
+ * Комиссия в заданном активе; по умолчанию — USDC.
+ *
+ * @param value - Величина комиссии
+ * @param asset - Актив комиссии
+ * @returns Валидная `Fee`
+ *
+ * @remarks
+ * Актив вынесен параметром, потому что `Fee.equals` сравнивает ЕГО ТОЖЕ:
+ * «0.07 чего-то» — не факт исполнения. Проверить это можно только парой с
+ * равными величинами и разными активами.
+ *
+ * `Fee` принимает лишь `CURRENCY` и `OUTCOME_TOKEN`, а поддерживаемая валюта
+ * в системе одна (USDC) — поэтому вторым активом может быть только
+ * {@link OUTCOME_TOKEN_ASSET}, но не CTF-токен исхода.
+ */
+export function fee(value: number, asset: AssetId = AssetIdHelpers.USDC): Fee {
+  return must(FeeService.create(asset, value));
 }
+
+/**
+ * Актив вида `OUTCOME_TOKEN` — второй допустимый актив комиссии.
+ *
+ * @remarks
+ * Отличается от `UP_TOKEN`/`DOWN_TOKEN`: те имеют тип
+ * `POLYMARKET_CTF_TOKEN`, который `FeeService` отвергает.
+ */
+export const OUTCOME_TOKEN_ASSET: AssetId = (() => {
+  const asset = parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x${'a'.repeat(64)}:UP`);
+  if (asset === undefined) throw new Error('fixture failed: invalid outcome token asset');
+  return asset;
+})();
 
 /** Цена исхода. */
 export function price(value: number): OutcomePrice {
@@ -269,6 +298,8 @@ export interface FillOverrides {
   readonly side?: Side;
   readonly timestampMs?: number;
   readonly fee?: number;
+  /** Актив комиссии — отдельно от величины, см. {@link fee} */
+  readonly feeAsset?: AssetId;
 }
 
 /**
@@ -291,7 +322,7 @@ export function fill(overrides: FillOverrides = {}): Fill {
       size: qty(overrides.size ?? 40),
       side: overrides.side ?? 'BUY',
       timestamp: ts(overrides.timestampMs ?? 1_700_000_100_000),
-      fee: fee(overrides.fee ?? 0),
+      fee: fee(overrides.fee ?? 0, overrides.feeAsset ?? AssetIdHelpers.USDC),
     }),
   );
 }

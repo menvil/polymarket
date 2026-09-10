@@ -28,6 +28,7 @@ import {
 import {
   DOWN_TOKEN,
   OTHER_VENUE,
+  OUTCOME_TOKEN_ASSET,
   VENUE,
   fill as makeFill,
   must,
@@ -207,9 +208,25 @@ describe('§46. неизменяемый факт исполнения', () => {
   });
 
   it('одинаковая величина комиссии в разных активах фактом не совпадает', () => {
-    // Fee.equals сравнивает и актив, и величину — «0.07 чего-то» недостаточно.
-    const usdcFee = makeFill({ accountId: walletAccount(), fee: 0.07 });
-    const zeroFee = makeFill({ accountId: walletAccount(), fee: 0 });
-    expect(findFillFactDifference(usdcFee, zeroFee)?.field).toBe('fee');
+    // Актив комиссии — часть факта, а не оформление: `Fee.equals` делегирует в
+    // `AssetQuantity.equals`, который сравнивает И актив, И величину.
+    //
+    // Величины здесь равны и равны НУЛЮ — и это единственная форма, которую
+    // домен допускает: `Fill.create` требует `fee.asset === settlementAssetId`
+    // для НЕнулевой комиссии (инвариант корректности `getNetCashFlow`).
+    // Поэтому «0.07 USDC против 0.07 в другом активе» не построить вовсе, а
+    // ненулевое расхождение активов приходит в состояние уже как расхождение
+    // `settlementAssetId` — оно проверено выше.
+    const usdcFee = makeFill({ accountId: walletAccount(), fee: 0 });
+    const outcomeTokenFee = makeFill({
+      accountId: walletAccount(),
+      fee: 0,
+      feeAsset: OUTCOME_TOKEN_ASSET,
+    });
+
+    expect(usdcFee.fee.quantity.amount().equals(outcomeTokenFee.fee.quantity.amount())).toBe(true);
+    expect(usdcFee.fee.asset).not.toEqual(outcomeTokenFee.fee.asset);
+    expect(findFillFactDifference(usdcFee, outcomeTokenFee)?.field).toBe('fee');
+    expect(sameFillFact(usdcFee, outcomeTokenFee)).toBe(false);
   });
 });

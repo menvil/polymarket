@@ -32,16 +32,39 @@ const UP_INSTRUMENT = '100000000000000000000000000000000000000000000001' as neve
 /** Инструмент исхода DOWN. */
 const DOWN_INSTRUMENT = '200000000000000000000000000000000000000000000002' as never;
 
-/** Все статусы заявки текущего доменного контракта. */
-const ALL_ORDER_STATUSES: readonly OrderStatus[] = [
-  'PENDING',
-  'OPEN',
-  'PARTIALLY_FILLED',
-  'FILLED',
-  'CANCELED',
-  'REJECTED',
-  'EXPIRED',
-];
+/**
+ * Классификация КАЖДОГО статуса доменного контракта.
+ *
+ * @remarks
+ * `Record<OrderStatus, …>`, а не массив, — и это принципиально. Массив,
+ * типизированный `readonly OrderStatus[]`, остаётся валидным, если в
+ * `@polymarket/order` добавят восьмой статус: он просто устареет молча, и
+ * тест полноты ниже продолжит проходить, не заметив новичка. `Record` в той
+ * же ситуации перестаёт компилироваться — ровно то, что обещает докблок
+ * `OPEN_ORDER_STATUSES`.
+ */
+const ORDER_STATUS_KIND: Record<OrderStatus, 'open' | 'terminal'> = {
+  PENDING: 'open',
+  OPEN: 'open',
+  PARTIALLY_FILLED: 'open',
+  FILLED: 'terminal',
+  CANCELED: 'terminal',
+  REJECTED: 'terminal',
+  EXPIRED: 'terminal',
+};
+
+/** Все статусы доменного контракта — выводятся из классификации. */
+const ALL_ORDER_STATUSES = Object.keys(ORDER_STATUS_KIND) as readonly OrderStatus[];
+
+/** Статусы, которые тест ожидает увидеть живыми. */
+const EXPECTED_OPEN_STATUSES: readonly OrderStatus[] = ALL_ORDER_STATUSES.filter(
+  (status) => ORDER_STATUS_KIND[status] === 'open',
+);
+
+/** Статусы, которые тест ожидает увидеть терминальными. */
+const EXPECTED_TERMINAL_STATUSES: readonly OrderStatus[] = ALL_ORDER_STATUSES.filter(
+  (status) => ORDER_STATUS_KIND[status] === 'terminal',
+);
 
 /**
  * Строит аккаунт с двумя инструментами, тремя заявками и тремя исполнениями.
@@ -191,19 +214,21 @@ describe('AI. позиции читаются из портфеля', () => {
 
 describe('AJ. семантика openOrders', () => {
   it('живые статусы — PENDING, OPEN, PARTIALLY_FILLED', () => {
-    expect([...OPEN_ORDER_STATUSES].sort()).toEqual(['OPEN', 'PARTIALLY_FILLED', 'PENDING']);
+    expect([...OPEN_ORDER_STATUSES].sort()).toEqual([...EXPECTED_OPEN_STATUSES].sort());
   });
 
   it('терминальные статусы в живые не входят', () => {
+    expect([...TERMINAL_STATUSES].sort()).toEqual([...EXPECTED_TERMINAL_STATUSES].sort());
     for (const status of TERMINAL_STATUSES) {
       expect(OPEN_ORDER_STATUSES.has(status)).toBe(false);
     }
   });
 
   it('живые и терминальные вместе покрывают весь контракт OrderStatus', () => {
-    // Тест полноты: новый статус в `@polymarket/order` сломает его, и решение
-    // «живой он или нет» придётся принять осознанно, а не получить молча из
-    // отрицания терминальности.
+    // Тест полноты. Новый статус в `@polymarket/order` ломает его ДВАЖДЫ:
+    // сначала на компиляции `ORDER_STATUS_KIND` (Record обязан быть полным),
+    // затем на этих проверках. Решение «живой он или нет» придётся принять
+    // осознанно, а не получить молча из отрицания терминальности.
     for (const status of ALL_ORDER_STATUSES) {
       expect(OPEN_ORDER_STATUSES.has(status) || TERMINAL_STATUSES.has(status)).toBe(true);
     }
