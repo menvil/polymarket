@@ -63,7 +63,7 @@ export type {
   CreateOrderParams,
   OrderSnapshot,
 } from './OrderState.js';
-export { TERMINAL_STATUSES, FILLABLE_STATUSES } from './OrderState.js';
+export { TERMINAL_STATUSES, FILLABLE_STATUSES, OPEN_ORDER_STATUSES } from './OrderState.js';
 
 // ─── Identity ─────────────────────────────────────────────────────────────
 /**

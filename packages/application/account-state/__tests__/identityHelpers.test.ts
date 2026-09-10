@@ -11,13 +11,8 @@
  * какая площадка в него встроена.
  */
 import { describe, expect, it } from '@jest/globals';
-import {
-  KnownVenues,
-  accountIdForSubaccount,
-  accountIdFromVenue,
-  asVenueId,
-} from '@polymarket/ids';
-import { accountKey, embeddedVenueId } from '../src/index.js';
+import { accountIdFromVenue } from '@polymarket/ids';
+import { accountKey } from '../src/index.js';
 import {
   OTHER_VENUE,
   VENUE,
@@ -49,35 +44,5 @@ describe('§44. ключ аккаунта — canonical строка', () => {
     // `user:1` и `user` + subaccount `1` склеились бы при наивной конкатенации.
     const tricky = must(accountIdFromVenue(VENUE, 'user:1'));
     expect(accountKey(tricky)).not.toBe(accountKey(venueSubaccount(VENUE, '1')));
-  });
-});
-
-describe('§10. встроенная площадка AccountId', () => {
-  it('WALLET встроенной площадки не имеет', () => {
-    expect(embeddedVenueId(walletAccount())).toBeUndefined();
-  });
-
-  it('VENUE отдаёт свою площадку', () => {
-    expect(embeddedVenueId(venueAccount(VENUE, 'user-1'))).toBe(VENUE);
-    expect(embeddedVenueId(venueAccount(OTHER_VENUE, 'user-1'))).toBe(OTHER_VENUE);
-  });
-
-  it('SUBACCOUNT наследует площадку venue-корня через всю цепочку', () => {
-    const level1 = venueSubaccount(OTHER_VENUE, 'a');
-    const level2 = must(accountIdForSubaccount(level1, 'b'));
-    const level3 = must(accountIdForSubaccount(level2, 'c'));
-    expect(embeddedVenueId(level3)).toBe(OTHER_VENUE);
-  });
-
-  it('SUBACCOUNT над кошельком встроенной площадки не имеет', () => {
-    const overWallet = must(accountIdForSubaccount(walletAccount(), 'trading'));
-    expect(embeddedVenueId(overWallet)).toBeUndefined();
-  });
-
-  it('custom venue тоже распознаётся', () => {
-    const custom = asVenueId('MY_VENUE');
-    if (custom === undefined) throw new Error('test setup failed: invalid custom venue');
-    expect(embeddedVenueId(venueAccount(custom, 'user-1'))).toBe(custom);
-    expect(KnownVenues.POLYMARKET).toBe(VENUE);
   });
 });

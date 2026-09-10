@@ -22,7 +22,6 @@ import {
   AccountFillNotFoundError,
   AccountFillTerminalVenueStatusConflictError,
   AccountNotInitializedError,
-  TERMINAL_VENUE_STATUSES,
 } from '../src/index.js';
 import {
   VENUE,
@@ -181,10 +180,6 @@ describe('порядок наблюдений и терминальность', 
     );
 
     expect(view.getAccount(VENUE, accountId)?.getFill(fillId as never)?.venueStatus).toBe('MATCHED');
-  });
-
-  it('терминальными считаются ровно CONFIRMED и FAILED', () => {
-    expect([...TERMINAL_VENUE_STATUSES].sort()).toEqual(['CONFIRMED', 'FAILED']);
   });
 
   it.each<[TradeStatus, TradeStatus]>([

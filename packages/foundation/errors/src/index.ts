@@ -69,3 +69,4 @@ export * from './ids/index.js';
 // Error handling utilities
 export { ErrorSource } from './ErrorSource.js';
 export * from './utils/errorUtils.js';
+export type { FieldDifference } from './utils/fieldDifference.js';

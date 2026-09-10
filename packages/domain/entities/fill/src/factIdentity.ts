@@ -32,6 +32,7 @@
  * есть даёт и ложные расхождения, и ложные совпадения.
  */
 import { AssetIdHelpers, accountIdEquals, accountIdToString, assetIdToString } from '@polymarket/ids';
+import type { FieldDifference } from '@polymarket/errors';
 import type { Fill } from './Fill.js';
 import { SideService } from '@polymarket/value-objects';
 
@@ -54,21 +55,11 @@ export type FillFactField =
  * Первое найденное расхождение факта исполнения.
  *
  * @remarks
- * Значения приводятся к строкам ДЛЯ ЛОГА. Сравнение выполняется по value
- * objects и canonical-равенствам, а не по этим строкам.
- *
- * Имена `left`/`right` нейтральны намеренно: домен не знает, какое из двух
- * исполнений «сохранённое», а какое «пришедшее». Эту роль называет
- * потребитель, когда строит сообщение об ошибке.
+ * Общая форма `FieldDifference` — та же, что у идентичности заявки и у
+ * структуры рынка. Почему пара значений называется нейтрально и кто называет
+ * роли, объяснено там же.
  */
-export interface FillFactDifference {
-  /** Поле, по которому исполнения разошлись */
-  readonly field: FillFactField;
-  /** Значение в первом аргументе */
-  readonly left: string;
-  /** Значение во втором аргументе */
-  readonly right: string;
-}
+export type FillFactDifference = FieldDifference<FillFactField>;
 
 /**
  * Ищет расхождение неизменяемого факта двух исполнений.

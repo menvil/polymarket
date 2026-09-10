@@ -577,20 +577,6 @@ export class AccountFillTransitionError extends TradingError {
 }
 
 /**
- * Статусы площадки, из которых она уже не выходит.
- *
- * @remarks
- * По контракту `TradeStatus`: `CONFIRMED` — «finality достигнута, транзакция
- * успешна», `FAILED` — «транзакция окончательно упала, повторов не будет».
- * `MATCHED`, `MINED` и `RETRYING` терминальными не являются — из них площадка
- * ходит дальше.
- */
-export const TERMINAL_VENUE_STATUSES: ReadonlySet<TradeStatus> = new Set<TradeStatus>([
-  'CONFIRMED',
-  'FAILED',
-]);
-
-/**
  * У одного исполнения два РАЗНЫХ терминальных исхода на площадке.
  *
  * @remarks

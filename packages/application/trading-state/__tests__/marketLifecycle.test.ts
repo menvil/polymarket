@@ -1084,8 +1084,8 @@ describe('U. Конфликт структуры при резолюции', () 
   it('ошибка называет разошедшееся поле и обе стороны', () => {
     const error = new TradingMarketStructureConflictError(POLYMARKET, MARKET_X, {
       field: 'startsAt',
-      admitted: '1970-01-01T00:00:10.000Z',
-      incoming: '1970-01-01T00:00:11.000Z',
+      left: '1970-01-01T00:00:10.000Z',
+      right: '1970-01-01T00:00:11.000Z',
     });
     expect(error.difference.field).toBe('startsAt');
     expect(error.severity).toBe('critical');
@@ -1446,8 +1446,10 @@ describe('AB. Идентичность рынка = площадка + рыно�
       market({ venueId: KALSHI }),
     );
     expect(difference?.field).toBe('venueId');
-    expect(difference?.admitted).toBe(POLYMARKET);
-    expect(difference?.incoming).toBe(KALSHI);
+    // Форма нейтральна: `left` — первый аргумент сравнения, `right` — второй.
+    // Ролями их называет ошибка, и в её тексте они остаются admitted/incoming.
+    expect(difference?.left).toBe(POLYMARKET);
+    expect(difference?.right).toBe(KALSHI);
     // А состояние ищет рынок по паре, поэтому отвечает NOT_ADMITTED (см. тест T).
     expect(sameTradingMarketStructure(market(), market({ venueId: KALSHI }))).toBe(false);
   });

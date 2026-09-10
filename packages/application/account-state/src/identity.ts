@@ -24,24 +24,7 @@
  * разделитель делает совпадение идентификаторов неотличимым от опечатки. То
  * же решение принято в `TradingHotState` для пары `venueId + marketId`.
  */
-import {
-  accountIdToString,
-  isSubaccount,
-  isVenueAccount,
-  type AccountId,
-  type VenueId,
-} from '@polymarket/ids';
-
-/**
- * Предел раскрутки цепочки SUBACCOUNT при поиске venue-корня.
- *
- * @remarks
- * Совпадает с ограничением глубины в `@polymarket/ids`
- * (`MAX_SUBACCOUNT_DEPTH = 5`) плюс запас: фабрика `accountIdForSubaccount`
- * держит инвариант, и цикл нужен только как защита от испорченной структуры,
- * собранной в обход фабрики.
- */
-const MAX_ACCOUNT_ROOT_DEPTH = 16;
+import { accountIdToString, type AccountId } from '@polymarket/ids';
 
 /**
  * Canonical ключ аккаунта внутри пространства имён площадки.
@@ -63,47 +46,4 @@ const MAX_ACCOUNT_ROOT_DEPTH = 16;
  */
 export function accountKey(accountId: AccountId): string {
   return accountIdToString(accountId);
-}
-
-/**
- * Площадка, «встроенная» в сам `AccountId`, если она там есть.
- *
- * @param accountId - Идентификатор аккаунта
- * @returns `VenueId` для VENUE-аккаунта и SUBACCOUNT с VENUE-корнем;
- *   `undefined` для WALLET-аккаунта и SUBACCOUNT с WALLET-корнем
- *
- * @remarks
- * `AccountId` бывает трёх видов, и площадку содержит только один из них:
- *
- * ```text
- * WALLET       0x1234…                       venue НЕ задан
- * VENUE        POLYMARKET:user_1              venue задан явно
- * SUBACCOUNT   base + name                    venue = venue корня
- * ```
- *
- * У WALLET-аккаунта отсутствие площадки — это норма, а не дефект: один и тот
- * же кошелёк торгует на нескольких площадках, и venue namespace ему задаёт
- * payload события. Поэтому `undefined` здесь означает «проверять нечего», а
- * не «проверка не прошла».
- *
- * Цикл раскрутки ограничен {@link MAX_ACCOUNT_ROOT_DEPTH}: при испорченной
- * структуре функция возвращает `undefined` вместо бесконечной рекурсии, и
- * вызывающий просто не выполняет venue-проверку — отказ в этом случае дадут
- * проверки портфеля, а не переполнение стека.
- *
- * @example
- * ```typescript
- * embeddedVenueId(accountIdFromWallet(address));            // → undefined
- * embeddedVenueId(venueAccount);                            // → 'POLYMARKET'
- * embeddedVenueId(accountIdForSubaccount(venueAccount, 'a')); // → 'POLYMARKET'
- * ```
- */
-export function embeddedVenueId(accountId: AccountId): VenueId | undefined {
-  let current: AccountId = accountId;
-  for (let depth = 0; depth < MAX_ACCOUNT_ROOT_DEPTH; depth += 1) {
-    if (isVenueAccount(current)) return current.venueId;
-    if (!isSubaccount(current)) return undefined;
-    current = current.base;
-  }
-  return undefined;
 }

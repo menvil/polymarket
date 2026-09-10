@@ -63,6 +63,7 @@ import {
   isVenueAccount,
   isSubaccount,
   getSubaccountDepth,
+  embeddedVenueId,
   AccountIdDepthError,
 } from '../src/index.js';
 
@@ -2748,5 +2749,69 @@ describe('validateBrandedId', () => {
     it('should return undefined for negative maxLength', () => {
       expect(validateBrandedId('valid', -1)).toBeUndefined();
     });
+  });
+});
+
+/**
+ * Площадка, встроенная в сам `AccountId`.
+ *
+ * @remarks
+ * Функция переехала сюда из `@polymarket/account-state`: вопрос «какая
+ * площадка записана в этом идентификаторе» отвечается целиком структурой
+ * `AccountId` и не зависит от того, кто спрашивает. Там же она заводила
+ * собственный предел раскрутки цепочки, дублируя `MAX_SUBACCOUNT_DEPTH`.
+ */
+describe('embeddedVenueId', () => {
+  const OTHER_VENUE = KnownVenues.KALSHI;
+  const wallet = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed');
+  if (wallet === undefined) throw new Error('test setup failed: invalid wallet address');
+
+  function unwrapSub(base: AccountId, name: string): AccountId {
+    const result = accountIdForSubaccount(base, name);
+    if (!result.ok) throw new Error(`Failed to create subaccount: ${result.error.message}`);
+    return result.value;
+  }
+
+  it('WALLET встроенной площадки не имеет', () => {
+    // Не дефект: один кошелёк торгует на нескольких площадках, и venue
+    // namespace ему задаёт не идентификатор, а контекст.
+    expect(embeddedVenueId(accountIdFromWallet(wallet))).toBeUndefined();
+  });
+
+  it('VENUE отдаёт свою площадку', () => {
+    expect(embeddedVenueId(unwrapVenue(KnownVenues.POLYMARKET, 'user_1'))).toBe(
+      KnownVenues.POLYMARKET,
+    );
+    expect(embeddedVenueId(unwrapVenue(OTHER_VENUE, 'user_1'))).toBe(OTHER_VENUE);
+  });
+
+  it('SUBACCOUNT наследует площадку venue-корня через всю цепочку', () => {
+    const level1 = unwrapSub(unwrapVenue(OTHER_VENUE, 'user_1'), 'a');
+    const level3 = unwrapSub(unwrapSub(level1, 'b'), 'c');
+
+    expect(embeddedVenueId(level3)).toBe(OTHER_VENUE);
+  });
+
+  it('SUBACCOUNT над кошельком встроенной площадки не имеет', () => {
+    const overWallet = unwrapSub(accountIdFromWallet(wallet), 'trading');
+
+    expect(embeddedVenueId(overWallet)).toBeUndefined();
+  });
+
+  it('custom venue распознаётся наравне с известными', () => {
+    const custom = asVenueId('MY_VENUE');
+    if (custom === undefined) throw new Error('test setup failed: invalid custom venue');
+
+    expect(embeddedVenueId(unwrapVenue(custom, 'user_1'))).toBe(custom);
+  });
+
+  it('испорченная цепочка не вешает раскрутку', () => {
+    // Собрано в обход фабрики: она такого построить не даёт. Предел итераций
+    // существует ровно для этого случая — результат `undefined`, а не
+    // бесконечный цикл.
+    const cyclic = { kind: 'SUBACCOUNT' as const, base: undefined as never, name: 'x' };
+    (cyclic as { base: unknown }).base = cyclic;
+
+    expect(embeddedVenueId(cyclic as AccountId)).toBeUndefined();
   });
 });

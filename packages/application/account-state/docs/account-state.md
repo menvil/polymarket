@@ -276,6 +276,29 @@ CONFIRMED ↔ FAILED               два исхода одной сделки  
 нетерминальный → любой           принять
 ```
 
+Само правило живёт **не здесь**, а в `@polymarket/fill`:
+
+```typescript
+classifyTradeStatusObservation(current, incoming);
+// → 'ACCEPT' | 'DUPLICATE' | 'STALE' | 'CONFLICT'
+```
+
+Оно выводится целиком из контракта `TradeStatus` — какие статусы финальны и
+куда площадка из них ходит — и не зависит ни от наблюдателя, ни от того, где
+хранится результат. Держать его рядом с состоянием аккаунта значило бы
+повторить в каждом следующем потребителе.
+
+Здесь остаётся ровно то, чего домен знать не может: **чем обернуть** каждый
+исход в этом состоянии — `Ok(undefined)`, `Err` или запись. Функция ничего не
+решает за вызывающего: не бросает, не логирует и не знает, что `CONFLICT`
+станет `AccountFillTerminalVenueStatusConflictError`.
+
+Аргумент `current` НЕ принимает `undefined` намеренно. Отсутствие наблюдений —
+не вопрос политики: первое наблюдение принимается всегда. Будь аргумент
+необязательным, вызывающему пришлось бы приводить тип в ветке `CONFLICT` —
+компилятор не проносит сужение через вызов, — а приведение типа в денежном
+пути проверить нечем.
+
 Реальный случай:
 
 ```text
@@ -650,8 +673,21 @@ objects, и структурная заглушка проверяла бы не
 | `replayDeterminism.test.ts` | одна лента на двух свежих рантаймах даёт эквивалентное состояние |
 | `eventIsolation.test.ts` | старые application-события и Domain `OrderEvent` не проецируются |
 | `venueStatus.test.ts` | вторая ось: доставка `MINED`/`RETRYING`, независимость осей, порядок наблюдений, терминальность, валидация |
-| `identityHelpers.test.ts` | `accountKey`, `embeddedVenueId` — идентичность аккаунта |
+| `identityHelpers.test.ts` | `accountKey` — идентичность аккаунта |
 
 Сравнение заявок и исполнений живёт в своих доменных пакетах и там же
 тестируется: `@polymarket/order` → `orderIdentity.test.ts`,
 `@polymarket/fill` → `fillFactIdentity.test.ts`.
+
+Туда же уехали три правила, которые какое-то время жили здесь:
+
+| правило | теперь в | тест |
+| --- | --- | --- |
+| `classifyTradeStatusObservation`, `isTerminalTradeStatus` | `@polymarket/fill` | `tradeStatus.test.ts` |
+| `OPEN_ORDER_STATUSES` | `@polymarket/order` | `navigation.test.ts` (потребитель) |
+| `embeddedVenueId` | `@polymarket/ids` | `core.test.ts` |
+
+Критерий переезда один: правило выводится из контракта самой сущности и не
+зависит от того, кто спрашивает. Политика переходов по НАШЕЙ оси
+(`classifyFillTransition`) этому критерию не отвечает и осталась здесь —
+`AccountFillStatus` придуман этим пакетом, а не площадкой.

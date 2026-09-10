@@ -53,6 +53,7 @@ import {
   accountIdToString,
   assetIdToString,
 } from '@polymarket/ids';
+import type { FieldDifference } from '@polymarket/errors';
 import type { Order } from './Order.js';
 import { SideService } from '@polymarket/value-objects';
 
@@ -71,20 +72,11 @@ export type OrderIdentityField =
  * Первое найденное расхождение неизменяемой идентичности заявки.
  *
  * @remarks
- * Значения приводятся к строкам ДЛЯ ЛОГА — сравнение выполняется по value
- * objects, а не по этим строкам.
- *
- * Имена `left`/`right` нейтральны намеренно: домен не знает, какая из двух
- * заявок «сохранённая», а какая «пришедшая». Эту роль называет потребитель.
+ * Общая форма `FieldDifference` — та же, что у факта исполнения и у структуры
+ * рынка. Почему пара значений называется нейтрально и кто называет роли,
+ * объяснено там же.
  */
-export interface OrderIdentityDifference {
-  /** Поле, по которому заявки разошлись */
-  readonly field: OrderIdentityField;
-  /** Значение в первом аргументе */
-  readonly left: string;
-  /** Значение во втором аргументе */
-  readonly right: string;
-}
+export type OrderIdentityDifference = FieldDifference<OrderIdentityField>;
 
 /**
  * Читаемое представление возможно отсутствующего значения.

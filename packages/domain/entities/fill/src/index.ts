@@ -22,6 +22,12 @@ export type { FillData } from './FillData.js';
 export type { FillSnapshot } from './FillSnapshot.js';
 export type { AssetDelta } from './AssetDelta.js';
 export type { ExecutionMetadata, TradeStatus } from './ExecutionMetadata.js';
+export {
+  TERMINAL_TRADE_STATUSES,
+  isTerminalTradeStatus,
+  classifyTradeStatusObservation,
+} from './tradeStatus.js';
+export type { TradeStatusObservation } from './tradeStatus.js';
 /**
  * Сравнение неизменяемых фактов исполнения (см. factIdentity.ts).
  *

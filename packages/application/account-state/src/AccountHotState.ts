@@ -88,18 +88,24 @@ import {
   assetIdToInstrumentId,
   assetIdToString,
   AssetIdHelpers,
+  embeddedVenueId,
   type AccountId,
   type FillId,
   type InstrumentId,
   type OrderId,
   type VenueId,
 } from '@polymarket/ids';
-import { findFillFactDifference, type Fill, type TradeStatus } from '@polymarket/fill';
+import {
+  classifyTradeStatusObservation,
+  findFillFactDifference,
+  type Fill,
+  type TradeStatus,
+} from '@polymarket/fill';
 import {
   findOrderIdentityDifference,
   sameOrderState,
+  OPEN_ORDER_STATUSES,
   type Order,
-  type OrderStatus,
 } from '@polymarket/order';
 import type { Portfolio } from '@polymarket/portfolio';
 import type { Position } from '@polymarket/position';
@@ -118,38 +124,17 @@ import {
   AccountOrderIdentityConflictError,
   AccountFillTerminalVenueStatusConflictError,
   AccountPortfolioIdentityMismatchError,
-  TERMINAL_VENUE_STATUSES,
   type AccountFillAction,
   type AccountStateError,
 } from './errors.js';
-import { accountKey, embeddedVenueId } from './identity.js';
+import { accountKey } from './identity.js';
+import { classifyFillTransition } from './records.js';
 import type { AccountFillRecord, AccountOrderRecord } from './records.js';
 import type {
   AccountHotStateView,
   AccountRuntimeStateView,
   TradingAccountIdentity,
 } from './views.js';
-
-/**
- * Статусы заявки, которые считаются живой экспозицией.
- *
- * @remarks
- * Перечислены ЯВНО, а не выведены как дополнение `TERMINAL_STATUSES`. Дело не
- * в текущем составе — сегодня это в точности дополнение, и тест полноты по
- * `TERMINAL_STATUSES` за этим следит. Дело в том, что новый нетерминальный
- * статус, добавленный в `@polymarket/order` завтра, при выводе через
- * отрицание молча стал бы «открытым». Здесь он сломает тест полноты и
- * потребует осознанного решения.
- *
- * `PENDING` входит СОЗНАТЕЛЬНО: заявка отправлена, деньги или токены под неё
- * зарезервированы, и для риска это уже принятое обязательство — независимо от
- * того, ответила площадка или нет.
- */
-export const OPEN_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus>([
-  'PENDING',
-  'OPEN',
-  'PARTIALLY_FILLED',
-]);
 
 /**
  * Изменения одной принятой мутации, вычисленные ДО записи.
@@ -565,17 +550,21 @@ export class AccountHotState implements AccountHotStateView {
     if (!stored.ok) return stored;
 
     const { account, record } = stored.value;
-    if (record.status === 'CONFIRMED') return Ok(undefined);
-    if (record.status === 'REVERTED') {
-      return Err(
-        new AccountFillTransitionError(
-          account.venueId,
-          account.accountId,
-          fill.id,
-          record.status,
-          'CONFIRMED',
-        ),
-      );
+    switch (classifyFillTransition(record.status, 'CONFIRMED')) {
+      case 'DUPLICATE':
+        return Ok(undefined);
+      case 'CONFLICT':
+        return Err(
+          new AccountFillTransitionError(
+            account.venueId,
+            account.accountId,
+            fill.id,
+            record.status,
+            'CONFIRMED',
+          ),
+        );
+      case 'ACCEPT':
+        break;
     }
 
     account.commit({ fill: { ...record, status: 'CONFIRMED', confirmedAt: at } }, at);
@@ -636,26 +625,32 @@ export class AccountHotState implements AccountHotStateView {
     const { account, record } = stored.value;
     const current = record.venueStatus;
 
-    // Повтор того же наблюдения.
-    if (current === venueStatus) return Ok(undefined);
+    // Само правило живёт в домене: оно выводится из контракта `TradeStatus` и
+    // одинаково для любого наблюдателя. Здесь остаётся только то, что домену
+    // знать неоткуда, — чем обернуть каждый исход в ЭТОМ состоянии.
+    if (current !== undefined) {
+      switch (classifyTradeStatusObservation(current, venueStatus)) {
+        case 'DUPLICATE':
+        case 'STALE':
+          // Состояние не меняется: либо повтор доставки, либо наблюдение,
+          // сделанное раньше и доехавшее позже. Записанный терминальный исход
+          // затирать промежуточным нечем.
+          return Ok(undefined);
 
-    if (current !== undefined && TERMINAL_VENUE_STATUSES.has(current)) {
-      // Два разных терминальных исхода одной сделки задержкой не объясняются.
-      if (TERMINAL_VENUE_STATUSES.has(venueStatus)) {
-        return Err(
-          new AccountFillTerminalVenueStatusConflictError(
-            account.venueId,
-            account.accountId,
-            fill.id,
-            current,
-            venueStatus,
-          ),
-        );
+        case 'CONFLICT':
+          return Err(
+            new AccountFillTerminalVenueStatusConflictError(
+              account.venueId,
+              account.accountId,
+              fill.id,
+              current,
+              venueStatus,
+            ),
+          );
+
+        case 'ACCEPT':
+          break;
       }
-      // Нетерминальный статус ПОСЛЕ терминального — запоздавшее старое
-      // наблюдение, а не движение площадки назад. Тихо игнорируем: терминальный
-      // исход уже записан, и затирать его промежуточным нечем.
-      return Ok(undefined);
     }
 
     account.commit({ fill: { ...record, venueStatus, venueStatusAt: at } }, at);
@@ -703,17 +698,21 @@ export class AccountHotState implements AccountHotStateView {
         new AccountFillNotFoundError(account.venueId, account.accountId, fill.id, 'REVERT'),
       );
     }
-    if (record.status === 'REVERTED') return Ok(undefined);
-    if (record.status === 'CONFIRMED') {
-      return Err(
-        new AccountFillTransitionError(
-          account.venueId,
-          account.accountId,
-          fill.id,
-          record.status,
-          'REVERTED',
-        ),
-      );
+    switch (classifyFillTransition(record.status, 'REVERTED')) {
+      case 'DUPLICATE':
+        return Ok(undefined);
+      case 'CONFLICT':
+        return Err(
+          new AccountFillTransitionError(
+            account.venueId,
+            account.accountId,
+            fill.id,
+            record.status,
+            'REVERTED',
+          ),
+        );
+      case 'ACCEPT':
+        break;
     }
 
     account.commit(

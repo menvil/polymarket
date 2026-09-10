@@ -51,6 +51,91 @@ import type { Timestamp } from '@polymarket/timestamp';
 export type AccountFillStatus = 'APPLIED' | 'CONFIRMED' | 'REVERTED';
 
 /**
+ * Статусы нашей оси, из которых исполнение уже не выходит.
+ *
+ * @remarks
+ * `APPLIED` — единственный незавершённый статус: исполнение учтено в деньгах,
+ * но чем оно кончится, ещё не решено. Оба остальных финальны, и переход между
+ * ними запрещён в обе стороны.
+ */
+export const TERMINAL_FILL_STATUSES: ReadonlySet<AccountFillStatus> =
+  new Set<AccountFillStatus>(['CONFIRMED', 'REVERTED']);
+
+/**
+ * Достигло ли исполнение статуса, из которого уже не выйдет.
+ *
+ * @param status - Статус исполнения на НАШЕЙ оси
+ * @returns `true`, если статус финальный
+ *
+ * @example
+ * ```typescript
+ * isTerminalFillStatus('APPLIED');   // false
+ * isTerminalFillStatus('REVERTED');  // true
+ * ```
+ */
+export function isTerminalFillStatus(status: AccountFillStatus): boolean {
+  return TERMINAL_FILL_STATUSES.has(status);
+}
+
+/**
+ * Как поступить с требуемым переходом.
+ *
+ * @remarks
+ * Форма намеренно совпадает с `classifyTradeStatusObservation` из
+ * `@polymarket/fill`: обе оси отвечают на один вопрос — «применить, промолчать
+ * или отказать». Совпадает не всё: у venue-оси есть `STALE`, потому что там
+ * наблюдения приходят по сети и переупорядочиваются. Здесь `STALE` не бывает —
+ * переход инициируем МЫ, и «запоздавшего» перехода не существует.
+ */
+export type AccountFillTransition =
+  /** Переход допустим — применить */
+  | 'ACCEPT'
+  /** Целевой статус уже стоит — ничего не делать */
+  | 'DUPLICATE'
+  /** Исполнение уже финализировано ИНАЧЕ — отказать */
+  | 'CONFLICT';
+
+/**
+ * Классифицирует требуемый переход по нашей оси исполнения.
+ *
+ * @param current - Текущий статус записи
+ * @param target - Куда переходим: `CONFIRMED` или `REVERTED`
+ * @returns Что обязан сделать вызывающий
+ *
+ * @remarks
+ * Правило целиком:
+ *
+ * ```text
+ * current == target              DUPLICATE
+ * current == APPLIED             ACCEPT
+ * иначе (оба финальны, разные)   CONFLICT
+ * ```
+ *
+ * Дубликат — нормальная доставка, а не ошибка: одно и то же событие
+ * приходит повторно, и повторное подтверждение уже подтверждённого ничего не
+ * меняет. А вот `CONFIRMED → REVERTED` и обратный ему — настоящий конфликт:
+ * финальность на то и финальность.
+ *
+ * Функция ничего не решает за вызывающего — не бросает и не логирует.
+ *
+ * @example
+ * ```typescript
+ * switch (classifyFillTransition(record.status, 'CONFIRMED')) {
+ *   case 'ACCEPT':    return commit();
+ *   case 'DUPLICATE': return Ok(undefined);
+ *   case 'CONFLICT':  return Err(new AccountFillTransitionError(...));
+ * }
+ * ```
+ */
+export function classifyFillTransition(
+  current: AccountFillStatus,
+  target: Extract<AccountFillStatus, 'CONFIRMED' | 'REVERTED'>,
+): AccountFillTransition {
+  if (current === target) return 'DUPLICATE';
+  return current === 'APPLIED' ? 'ACCEPT' : 'CONFLICT';
+}
+
+/**
  * Исполнение в приватном состоянии: canonical факт + runtime-жизненный цикл.
  *
  * @remarks
