@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./top-of-book-math": {
+      "types": "./dist/pricing/topOfBookMath.d.ts",
+      "import": "./dist/pricing/topOfBookMath.js"
     }
   },
   "files": [

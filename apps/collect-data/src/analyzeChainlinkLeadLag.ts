@@ -29,6 +29,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
+// Формулы верхушки — из домена. Точка входа `top-of-book-math` не имеет
+// собственных импортов, поэтому самодостаточность скрипта не теряется.
+import { microprice, midpoint, spreadBps } from '@polymarket/orderbook/top-of-book-math';
 
 /** Список поддерживаемых CEX-бирж. */
 export const ALL_VENUES = ['binance', 'coinbase', 'cryptocom', 'kraken', 'okx'] as const;
@@ -776,13 +779,14 @@ export function buildVenuePredictors(
     return { values: {} };
   }
 
-  const mid = (state.bid + state.ask) / 2;
+  const mid = midpoint(state.bid, state.ask);
   const spread = state.ask - state.bid;
-  const spreadBps = mid === 0 ? 0 : spread / mid * 10_000;
-  const sizeSum = Math.max(0, state.bidSize) + Math.max(0, state.askSize);
-  const micro = sizeSum > 0
-    ? (state.ask * Math.max(0, state.bidSize) + state.bid * Math.max(0, state.askSize)) / sizeSum
-    : mid;
+  const spreadInBps = spreadBps(state.bid, state.ask) ?? 0;
+  // Отрицательные объёмы отсекаем здесь: доменная функция их не проверяет,
+  // потому что стоит на горячем пути.
+  const bidQty = Math.max(0, state.bidSize);
+  const askQty = Math.max(0, state.askSize);
+  const micro = microprice(state.bid, state.ask, bidQty, askQty) ?? mid;
   const tradePressure = state.notionalSum > 0 ? state.signedNotionalSum / state.notionalSum : 0;
   const microTrade = clamp(micro + tradePressure * (spread / 2), state.bid, state.ask);
 
@@ -794,7 +798,7 @@ export function buildVenuePredictors(
     },
     snapshot: {
       micro,
-      spreadBps,
+      spreadBps: spreadInBps,
       ageMs,
     },
   };
