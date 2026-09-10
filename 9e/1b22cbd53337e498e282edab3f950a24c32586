@@ -1,0 +1,341 @@
+legacy-bot/trading-contour-reference/packages/application/strategy/__tests__/unit/SchedulerPorts.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/tsconfig.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-18
+packages/infrastructure/collector/__tests__/contour-boundary.test.ts
+  s_73852eac4506dc::t_c83345cd1a30ca 167-171,174
+legacy-bot/trading-contour-reference/packages/application/strategy/src/StrategyScheduler.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/__tests__/unit/CryptoResolutionStore.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/InMemoryProcessedFillRepository.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/BaseStrategy.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/services/ExecutionLinker.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/__tests__/unit/TradeTape.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/tsconfig.build.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-58
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/src/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/package.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-39
+legacy-bot/trading-contour-reference/packages/application/strategy/package.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-38
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/src/TapeRecord.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/BacktestEngine.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/InMemoryKeyedMutex.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/tsconfig.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-22
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/CancelOrderUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/services/venueTradeToFill.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/PortfolioService.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/InitializePortfolioUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/package.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-33
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/src/TradeTape.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/unit/InMemoryOrderRepository.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/InitializePortfolioUseCase.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/tsconfig.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-11
+legacy-bot/trading-contour-reference/packages/application/risk/__tests__/OrderRiskChecker.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/src/CryptoSignalRegistry.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/__tests__/unit/TradeFlowCalculator.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/jest.config.js
+  s_73852eac4506dc::t_3a3cfb489f9885 1-55
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/InMemoryKeyedMutex.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/InMemoryProcessedFillRepository.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/ports/OrderIdGenerator.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/services/PortfolioService.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/InMemoryOrderRepository.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/src/CryptoMarketDataStore.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/__tests__/unit/MarketDataStore.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/docs/guides/use-cases.md
+  s_73852eac4506dc::t_3a3cfb489f9885 1-594
+legacy-bot/trading-contour-reference/packages/application/market-state/tsconfig.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-15
+legacy-bot/trading-contour-reference/packages/application/strategy/src/types/StrategySnapshot.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/BacktestEngine.deps.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/types/InstrumentConstraints.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/PlaceOrderUseCase.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/CrossMarketBacktestEngine.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+packages/application/account-state/docs/account-state.md
+  s_73852eac4506dc::t_f394183e6bc72b 259-260,262-269
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/UpdateOrderStatusUseCase.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/__tests__/integration/FillOrchestrator.integration.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/docs/risk.md
+  s_73852eac4506dc::t_3a3cfb489f9885 1-110
+legacy-bot/trading-contour-reference/packages/application/orchestrators/tsconfig.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-17
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/tsconfig.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-17
+legacy-bot/trading-contour-reference/packages/application/market-state/__tests__/TradeTapeCollector.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/InMemoryReconciliationIssueRepository.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/docs/market-state.md
+  s_73852eac4506dc::t_3a3cfb489f9885 1-149
+legacy-bot/trading-contour-reference/packages/application/strategy/src/ports/SchedulerTimer.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/ReconcileUnknownSubmissionsUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/src/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/SubmissionJournalStrategyCommitmentReader.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/MockExchangeClient.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/types/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/__tests__/unit/ExecutionEngine.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/integration/ReconcileUnknownSubmissions.integration.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/src/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/src/TradeFlowCalculator.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/integration/ManualReconciliationBlock.integration.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/types/StopStrategyError.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/jest.config.js
+  s_73852eac4506dc::t_3a3cfb489f9885 1-42
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/MockExchangeClient.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/__tests__/unit/CryptoSignalRegistry.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/PlaceOrderFailure.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/src/FillOrchestrator.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+docs/architecture/pre-trade-risk.md
+  s_73852eac4506dc::t_d0af5394fff08a 3-13
+legacy-bot/trading-contour-reference/packages/application/strategy/src/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/lockKeys.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/types/TriggerReason.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/src/RiskPolicy.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/src/RiskParams.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/PlaceOrderUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/src/TradeTapeCollector.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/UpdateOrderStatusUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/src/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/InMemoryReconciliationIssueRepository.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/jest.config.js
+  s_73852eac4506dc::t_3a3cfb489f9885 1-48
+legacy-bot/trading-contour-reference/packages/application/market-state/.eslintrc.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-8
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/services/enqueueCommittedEvents.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/services/venueTradeStatusPolicy.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/src/CryptoResolutionStore.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/__tests__/FillOrchestrator.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/__tests__/unit/OrderEventBridge.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/OrderEventBridge.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/src/RiskViolation.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/ExecutionLinker.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/CancelBoundVenueOrderUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/__tests__/unit/TriggerReason.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/docs/strategy.md
+  s_73852eac4506dc::t_3a3cfb489f9885 1-186
+legacy-bot/trading-contour-reference/packages/application/strategy/__tests__/unit/StrategyScheduler.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/docs/guides/orchestrators.md
+  s_73852eac4506dc::t_3a3cfb489f9885 1-56
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/jest.config.js
+  s_73852eac4506dc::t_3a3cfb489f9885 1-37
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/docs/trade-tape.md
+  s_73852eac4506dc::t_3a3cfb489f9885 1-153
+legacy-bot/trading-contour-reference/packages/application/market-state/src/MarketDataStore.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/.eslintrc.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-8
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/tsconfig.build.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-46
+packages/domain/entities/trade/docs/trade.md
+  s_73852eac4506dc::t_adc727c04102bc 122-128
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/ResolveUnknownSubmissionUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/src/IOrderRiskChecker.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/.eslintrc.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-6
+legacy-bot/trading-contour-reference/packages/application/risk/__tests__/unit/RiskPolicy.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/README.md
+  s_73852eac4506dc::t_1dfe2c94fba62c 1-71
+legacy-bot/trading-contour-reference/packages/application/orchestrators/package.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-31
+legacy-bot/trading-contour-reference/packages/application/market-state/__tests__/unit/CryptoMarketDataStore.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/tsconfig.build.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-73
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/tsconfig.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-28
+legacy-bot/trading-contour-reference/packages/application/strategy/src/IStrategy.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/__tests__/TradeIndexCollector.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/.eslintrc.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-8
+package-lock.json
+  ai_agent 55
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/services/LedgerService.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/src/OrderUpdateOrchestrator.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/InMemoryPortfolioStore.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/tsconfig.build.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-58
+legacy-bot/trading-contour-reference/packages/application/risk/src/OrderRiskChecker.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/types/StrategyIntent.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/SettleTerminalOrdersUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/tsconfig.build.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-61
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/ReconcileTradesUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/.eslintrc.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-8
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/src/TradeFlowMetrics.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/__tests__/BookDepthCollector.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/.eslintrc.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-8
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/index.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/src/ProcessFillUseCase.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/__tests__/InMemoryOrderRepository.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/src/BacktestEngine.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/package.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-61
+legacy-bot/trading-contour-reference/packages/application/strategy/__tests__/unit/BaseStrategy.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+packages/foundation/rolling-window/docs/rolling-window.md
+  s_73852eac4506dc::t_f394183e6bc72b 8-10
+legacy-bot/trading-contour-reference/packages/application/orchestrators/jest.config.js
+  s_73852eac4506dc::t_3a3cfb489f9885 1-51
+legacy-bot/trading-contour-reference/packages/application/strategy/__tests__/integration/lifecycle.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/ProcessFillUseCase.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/domain/market-data/trade-tape/package.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-67
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/ReconcileTradesUseCase.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/types/ScheduleConfig.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/package.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-40
+legacy-bot/trading-contour-reference/packages/application/risk/src/PreOrderCheckInput.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/strategy/src/ExecutionEngine.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/__tests__/unit/OrderRiskChecker.timeToExpiry.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/integration/SettleTerminalOrders.integration.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/.eslintrc.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-8
+legacy-bot/trading-contour-reference/packages/application/strategy/jest.config.js
+  s_73852eac4506dc::t_3a3cfb489f9885 1-55
+legacy-bot/trading-contour-reference/packages/infrastructure/backtesting/docs/backtesting.md
+  s_73852eac4506dc::t_3a3cfb489f9885 1-88
+legacy-bot/trading-contour-reference/packages/application/orchestrators/tsconfig.build.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-48
+legacy-bot/trading-contour-reference/packages/application/risk/jest.config.js
+  s_73852eac4506dc::t_3a3cfb489f9885 1-45
+legacy-bot/trading-contour-reference/packages/application/market-state/src/BookDepthCollector.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/orchestrators/__tests__/OrderUpdateOrchestrator.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/integration/ProcessFillUseCase.integration.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/market-state/src/TradeIndexCollector.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/integration/PlaceOrderConcurrency.integration.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/risk/tsconfig.build.json
+  s_73852eac4506dc::t_3a3cfb489f9885 1-45
+docs/guides/fill-processing-transaction.md
+  s_73852eac4506dc::t_7cf34e7c3aa584 1-110
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/integration/TradingFlow.integration.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/SubmissionJournalStrategyCommitmentReader.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+legacy-bot/trading-contour-reference/packages/application/use-cases/__tests__/CancelOrderUseCase.test.ts
+  s_73852eac4506dc::t_ab7b489aaa1b95 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9e1b22cbd53337e498e282edab3f950a24c32586",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
