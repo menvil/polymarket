@@ -38,6 +38,12 @@
     },
     {
       "path": "../../domain/entities/market/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/entities/order/tsconfig.build.json"
+    },
+    {
+      "path": "../../domain/entities/portfolio/tsconfig.build.json"
     }
   ]
 }

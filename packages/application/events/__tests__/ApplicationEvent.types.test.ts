@@ -13,6 +13,9 @@ import type { TypedMessage } from '@polymarket/messages';
 import type { DecimalPrice } from '@polymarket/value-objects';
 import type { MarketId } from '@polymarket/ids';
 import type { Market, MarketOutcome } from '@polymarket/market';
+import type { Fill } from '@polymarket/fill';
+import type { Order } from '@polymarket/order';
+import type { Portfolio } from '@polymarket/portfolio';
 import type {
   ApplicationEvent,
   FillReceivedEvent,
@@ -33,6 +36,11 @@ import type {
   TradingMarketClosedEvent,
   TradingMarketResolvedEvent,
   TradingMarketFinalizedEvent,
+  TradingAccountInitializedEvent,
+  TradingAccountOrderCommittedEvent,
+  TradingAccountFillAppliedEvent,
+  TradingAccountFillConfirmedEvent,
+  TradingAccountFillRevertedEvent,
   VenueOrderUpdate,
   OrderUpdateReceivedEvent,
 } from '../src/index.js';
@@ -58,9 +66,14 @@ describe('ApplicationEvent union contract', () => {
       (e: TradingMarketClosedEvent): ApplicationEvent => e,
       (e: TradingMarketResolvedEvent): ApplicationEvent => e,
       (e: TradingMarketFinalizedEvent): ApplicationEvent => e,
+      (e: TradingAccountInitializedEvent): ApplicationEvent => e,
+      (e: TradingAccountOrderCommittedEvent): ApplicationEvent => e,
+      (e: TradingAccountFillAppliedEvent): ApplicationEvent => e,
+      (e: TradingAccountFillConfirmedEvent): ApplicationEvent => e,
+      (e: TradingAccountFillRevertedEvent): ApplicationEvent => e,
       (e: OrderUpdateReceivedEvent): ApplicationEvent => e,
     ];
-    expect(checks.length).toBe(16);
+    expect(checks.length).toBe(21);
   });
 
   it('каждый member — canonical MessageEnvelope (compile-time)', () => {
@@ -131,6 +144,41 @@ describe('ApplicationEvent union contract', () => {
           // Только идентичность: структура пришла с admission и не пересылается.
           const marketId: MarketId = event.payload.marketId;
           void marketId;
+          return event.type;
+        }
+        case 'TRADING_ACCOUNT_INITIALIZED': {
+          // Деньги, позиции и резервации приходят ОДНИМ Portfolio —
+          // параллельных balance/positions полей в payload нет.
+          const portfolio: Portfolio = event.payload.portfolio;
+          void portfolio.balance;
+          void portfolio.positions;
+          void portfolio.tokenReservations;
+          return event.type;
+        }
+        case 'TRADING_ACCOUNT_ORDER_COMMITTED': {
+          // Order и Portfolio идут вместе: заявка и её резервации
+          // согласованы в одном событии.
+          const order: Order = event.payload.order;
+          const portfolio: Portfolio = event.payload.portfolio;
+          void order.status;
+          void portfolio.balance;
+          return event.type;
+        }
+        case 'TRADING_ACCOUNT_FILL_APPLIED':
+        case 'TRADING_ACCOUNT_FILL_REVERTED': {
+          // venueId/accountId берутся из самого Fill — в payload их нет.
+          const fill: Fill = event.payload.fill;
+          const order: Order | undefined = event.payload.order;
+          void fill.venueId;
+          void fill.accountId;
+          void order?.id;
+          void event.payload.portfolio;
+          return event.type;
+        }
+        case 'TRADING_ACCOUNT_FILL_CONFIRMED': {
+          // Подтверждение НЕ несёт портфель: экономика уже применена.
+          const fill: Fill = event.payload.fill;
+          void fill.id;
           return event.type;
         }
         case 'ORDER_UPDATE_RECEIVED': {
