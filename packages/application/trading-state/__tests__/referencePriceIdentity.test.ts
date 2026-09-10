@@ -19,7 +19,7 @@ import { EventFactory, asset, retention, silentLogger } from './helpers/fixtures
 const SOURCE_A = 'source-a' as MarketDataSourceId;
 const SOURCE_B = 'source-b' as MarketDataSourceId;
 
-describe('J. Идентичность фидов референсных цен', () => {
+describe('MD-J. Идентичность фидов референсных цен', () => {
   it('пять различающихся фидов дают пять отдельных рядов', async () => {
     const bus = new EventBus(silentLogger);
     const created = TradingStateProjector.create(bus, retention(), new PaperClock(new Date(0)));

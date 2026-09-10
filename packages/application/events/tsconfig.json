@@ -5,6 +5,9 @@
     "paths": {
       "@polymarket/fill": [
         "../../domain/entities/fill/dist/index.d.ts"
+      ],
+      "@polymarket/market": [
+        "../../domain/entities/market/dist/index.d.ts"
       ]
     }
   },

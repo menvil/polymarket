@@ -11,6 +11,8 @@
 import { describe, it, expect } from '@jest/globals';
 import type { TypedMessage } from '@polymarket/messages';
 import type { DecimalPrice } from '@polymarket/value-objects';
+import type { MarketId } from '@polymarket/ids';
+import type { Market, MarketOutcome } from '@polymarket/market';
 import type {
   ApplicationEvent,
   FillReceivedEvent,
@@ -26,6 +28,11 @@ import type {
   MarketCloseReason,
   MarketOpenedEvent,
   MarketClosedEvent,
+  TradingMarketAdmittedEvent,
+  TradingMarketActivatedEvent,
+  TradingMarketClosedEvent,
+  TradingMarketResolvedEvent,
+  TradingMarketFinalizedEvent,
   VenueOrderUpdate,
   OrderUpdateReceivedEvent,
 } from '../src/index.js';
@@ -46,9 +53,14 @@ describe('ApplicationEvent union contract', () => {
       (e: StrategySignalEvent): ApplicationEvent => e,
       (e: MarketOpenedEvent): ApplicationEvent => e,
       (e: MarketClosedEvent): ApplicationEvent => e,
+      (e: TradingMarketAdmittedEvent): ApplicationEvent => e,
+      (e: TradingMarketActivatedEvent): ApplicationEvent => e,
+      (e: TradingMarketClosedEvent): ApplicationEvent => e,
+      (e: TradingMarketResolvedEvent): ApplicationEvent => e,
+      (e: TradingMarketFinalizedEvent): ApplicationEvent => e,
       (e: OrderUpdateReceivedEvent): ApplicationEvent => e,
     ];
-    expect(checks.length).toBe(11);
+    expect(checks.length).toBe(16);
   });
 
   it('каждый member — canonical MessageEnvelope (compile-time)', () => {
@@ -97,6 +109,28 @@ describe('ApplicationEvent union contract', () => {
         case 'MARKET_CLOSED': {
           const reason: MarketCloseReason = event.payload.reason;
           void reason;
+          return event.type;
+        }
+        case 'TRADING_MARKET_ADMITTED': {
+          // Canonical Market целиком, а не DTO: структура рынка уже
+          // провалидирована на границе Infrastructure → Domain.
+          const market: Market = event.payload.market;
+          void market.startsAt;
+          void market.outcomes[0].instrumentId;
+          return event.type;
+        }
+        case 'TRADING_MARKET_RESOLVED': {
+          // Победитель берётся из canonical Market, а не из отдельного поля.
+          const winner: MarketOutcome | undefined = event.payload.market.resolvedOutcome;
+          void winner;
+          return event.type;
+        }
+        case 'TRADING_MARKET_ACTIVATED':
+        case 'TRADING_MARKET_CLOSED':
+        case 'TRADING_MARKET_FINALIZED': {
+          // Только идентичность: структура пришла с admission и не пересылается.
+          const marketId: MarketId = event.payload.marketId;
+          void marketId;
           return event.type;
         }
         case 'ORDER_UPDATE_RECEIVED': {

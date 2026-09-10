@@ -8,6 +8,23 @@
  * был бы не определён. Отсюда правило: подписан один проектор, а всё
  * остальное строится НАД готовым состоянием, а не рядом с ним.
  *
+ * ### Два вида событий и разное отношение к незнакомому рынку
+ *
+ * ```text
+ * lifecycle  TRADING_MARKET_*      producer — сам торговый рантайм
+ *                                  рынок обязан быть принят → иначе Err
+ *
+ * market-data BOOK_DEPTH, …        producer — семантические адаптеры
+ *                                  рынок не принят → ИГНОР без ошибки
+ * ```
+ *
+ * `IEventBus` общий: на нём живут данные рынков, нужных коллектору, другому
+ * владельцу или будущей стратегии. Canonical-событие не означает
+ * автоматически событие торгового состояния, поэтому market-data по
+ * непринятому рынку не создаёт ничего и не увеличивает версию. Lifecycle же
+ * публикует сам рантайм — переход по рынку, которого он не принимал, означает
+ * нарушение инварианта.
+ *
  * ### Что на самом деле означает `critical: true`
  *
  * Ровно одно: отказ обработчика возвращается публикующей стороне как
@@ -36,7 +53,8 @@
  * старого рантайма (аллокация баланса, strategyId, освобождение и
  * реализованный PnL), а не жизненного цикла рынка, который мы проектируем.
  * Переиспользовать их «пока что» значило бы построить новый lifecycle на
- * чужих гарантиях.
+ * чужих гарантиях — поэтому у нового контура свои имена
+ * (`TRADING_MARKET_*`).
  */
 import type { IEventBus } from '@polymarket/event-bus';
 import type { IClock } from '@polymarket/time';
@@ -47,6 +65,11 @@ import type {
   ReferencePriceUpdatedEvent,
   TickSizeChangedEvent,
   TradeReceivedEvent,
+  TradingMarketActivatedEvent,
+  TradingMarketAdmittedEvent,
+  TradingMarketClosedEvent,
+  TradingMarketFinalizedEvent,
+  TradingMarketResolvedEvent,
 } from '@polymarket/application-events';
 import type { DecimalPrice } from '@polymarket/value-objects';
 import { TradingHotState, type ObservationTarget } from './TradingHotState.js';
@@ -59,8 +82,9 @@ import type { ReferencePriceSeriesKey } from './observations.js';
  * Типы событий, которые проектор принимает в состояние.
  *
  * @remarks
- * Только canonical market data. Strategy/Features/Risk/Execution и
- * `MARKET_OPENED`/`MARKET_CLOSED` сюда не входят намеренно.
+ * Только lifecycle нового торгового рантайма и canonical market data.
+ * Strategy/Features/Risk/Execution и legacy `MARKET_OPENED`/`MARKET_CLOSED`
+ * сюда не входят намеренно.
  *
  * `BOOK_UPDATED` тоже не входит: оба семантических адаптера выводят его из
  * ТОГО ЖЕ снимка, что публикуют как `BOOK_DEPTH`, и только при изменении
@@ -70,6 +94,11 @@ import type { ReferencePriceSeriesKey } from './observations.js';
  * потребителю, которому нужно дешёвое уведомление без хранения стакана.
  */
 const PROJECTED_EVENT_TYPES = [
+  'TRADING_MARKET_ADMITTED',
+  'TRADING_MARKET_ACTIVATED',
+  'TRADING_MARKET_CLOSED',
+  'TRADING_MARKET_RESOLVED',
+  'TRADING_MARKET_FINALIZED',
   'BOOK_DEPTH',
   'TRADE_RECEIVED',
   'REFERENCE_PRICE_UPDATED',
@@ -77,12 +106,13 @@ const PROJECTED_EVENT_TYPES = [
 ] as const;
 
 /**
- * Проецирует canonical market-data события в {@link TradingHotState}.
+ * Проецирует canonical lifecycle- и market-data события в {@link TradingHotState}.
  *
  * @example
  * ```typescript
  * const projector = new TradingStateProjector(eventBus, state);
  * projector.start();
+ * await eventBus.publish(admittedEvent);
  * await eventBus.publish(bookDepthEvent);
  * const view = projector.state();
  * projector.stop();
@@ -108,8 +138,8 @@ export class TradingStateProjector {
    * Состояние создаётся ВНУТРИ и наружу отдаётся только как
    * {@link TradingHotStateView}. Конкретный mutable-класс из пакета не
    * экспортируется вовсе — иначе правило «единственный писатель» осталось бы
-   * комментарием: любой потребитель мог бы вызвать `applyBook()` без единого
-   * приведения типов.
+   * комментарием: любой потребитель мог бы вызвать `applyBook()` или
+   * `admitMarket()` без единого приведения типов.
    *
    * @example
    * ```typescript
@@ -131,7 +161,7 @@ export class TradingStateProjector {
   /**
    * Состояние только для чтения.
    *
-   * @returns Проекция без возможности мутировать ряды
+   * @returns Проекция без возможности мутировать рынки и ряды
    */
   public state(): TradingHotStateView {
     return this._state;
@@ -143,11 +173,16 @@ export class TradingStateProjector {
   }
 
   /**
-   * Подписывает проектор на canonical market-data события.
+   * Подписывает проектор на lifecycle- и market-data события.
    *
    * @remarks
    * Повторный вызов ничего не делает: вторая подписка на те же типы
-   * означала бы двойную запись каждого наблюдения.
+   * означала бы двойную запись каждого наблюдения — и, что хуже, второй
+   * lifecycle-переход по каждому событию.
+   *
+   * Все подписки critical, включая lifecycle: отвергнутый переход обязан быть
+   * виден публикующей стороне, иначе рантайм считал бы рынок активным, а
+   * состояние — принятым и не более.
    *
    * @example
    * ```typescript
@@ -159,6 +194,41 @@ export class TradingStateProjector {
     if (this.isRunning()) return;
 
     this._unsubscribes = [
+      this._eventBus.subscribe(
+        'TRADING_MARKET_ADMITTED',
+        (event) => {
+          this._onMarketAdmitted(event as TradingMarketAdmittedEvent);
+        },
+        { critical: true },
+      ),
+      this._eventBus.subscribe(
+        'TRADING_MARKET_ACTIVATED',
+        (event) => {
+          this._onMarketActivated(event as TradingMarketActivatedEvent);
+        },
+        { critical: true },
+      ),
+      this._eventBus.subscribe(
+        'TRADING_MARKET_CLOSED',
+        (event) => {
+          this._onMarketTradingClosed(event as TradingMarketClosedEvent);
+        },
+        { critical: true },
+      ),
+      this._eventBus.subscribe(
+        'TRADING_MARKET_RESOLVED',
+        (event) => {
+          this._onMarketResolved(event as TradingMarketResolvedEvent);
+        },
+        { critical: true },
+      ),
+      this._eventBus.subscribe(
+        'TRADING_MARKET_FINALIZED',
+        (event) => {
+          this._onMarketFinalized(event as TradingMarketFinalizedEvent);
+        },
+        { critical: true },
+      ),
       this._eventBus.subscribe(
         'BOOK_DEPTH',
         (event) => {
@@ -208,15 +278,97 @@ export class TradingStateProjector {
   }
 
   /**
+   * Принимает рынок к торговле.
+   *
+   * @param event - Canonical `TRADING_MARKET_ADMITTED`
+   * @throws {Error} При повторном admission, терминальном внешнем состоянии,
+   *   опоздании относительно `startsAt` или конфликте инструментов
+   *
+   * @remarks
+   * Время перехода — `metadata.createdAt`, а не показания часов: иначе replay
+   * той же последовательности событий давал бы другие времена жизненного
+   * цикла.
+   */
+  private _onMarketAdmitted(event: TradingMarketAdmittedEvent): void {
+    const applied = this._state.admitMarket(event.payload.market, event.metadata.createdAt);
+    if (isErr(applied)) throw applied.error;
+  }
+
+  /**
+   * Переводит рынок в торговлю.
+   *
+   * @param event - Canonical `TRADING_MARKET_ACTIVATED`
+   * @throws {Error} При активации не из `ADMITTED` либо вне окна расписания
+   */
+  private _onMarketActivated(event: TradingMarketActivatedEvent): void {
+    const applied = this._state.activateMarket(
+      event.payload.venueId,
+      event.payload.marketId,
+      event.metadata.createdAt,
+    );
+    if (isErr(applied)) throw applied.error;
+  }
+
+  /**
+   * Останавливает торговлю по рынку.
+   *
+   * @param event - Canonical `TRADING_MARKET_CLOSED`
+   * @throws {Error} При закрытии не из `ACTIVE` либо раньше активации
+   */
+  private _onMarketTradingClosed(event: TradingMarketClosedEvent): void {
+    const applied = this._state.closeMarketTrading(
+      event.payload.venueId,
+      event.payload.marketId,
+      event.metadata.createdAt,
+    );
+    if (isErr(applied)) throw applied.error;
+  }
+
+  /**
+   * Фиксирует резолюцию рынка.
+   *
+   * @param event - Canonical `TRADING_MARKET_RESOLVED`
+   * @throws {Error} При неразрешённом рынке в payload, недопустимой фазе или
+   *   расхождении trading-critical структуры
+   */
+  private _onMarketResolved(event: TradingMarketResolvedEvent): void {
+    const applied = this._state.resolveMarket(event.payload.market, event.metadata.createdAt);
+    if (isErr(applied)) throw applied.error;
+  }
+
+  /**
+   * Завершает работу по рынку.
+   *
+   * @param event - Canonical `TRADING_MARKET_FINALIZED`
+   * @throws {Error} При финализации не из `RESOLVED`
+   */
+  private _onMarketFinalized(event: TradingMarketFinalizedEvent): void {
+    const applied = this._state.finalizeMarket(
+      event.payload.venueId,
+      event.payload.marketId,
+      event.metadata.createdAt,
+    );
+    if (isErr(applied)) throw applied.error;
+  }
+
+  /**
    * Куда направить наблюдение стакана или сделки.
    *
    * @param payload - Полезная нагрузка canonical-события
-   * @returns Рынок, если `marketId` есть; иначе площадка
+   * @returns Рынок площадки, если `marketId` есть; иначе инструмент площадки
    *
    * @remarks
    * Правило source-agnostic: решает НАЛИЧИЕ `marketId`, а не то, какая это
    * площадка. Проверок вида `if (venue === BINANCE)` здесь нет и быть не
    * должно — application state не знает вендорских правил.
+   *
+   * **`venueId` сохраняется в ОБОИХ маршрутах.** Раньше market-scoped ветка его
+   * выбрасывала, и это была дыра в идентичности: `MarketId` уникален только
+   * внутри пространства имён своей площадки, поэтому наблюдение `OTHER:X`
+   * находило бы принятый `POLYMARKET:X` и тихо ложилось в его ряды — а при
+   * несовпавшем инструменте давало бы ложный аварийный отказ вместо
+   * игнорирования чужих данных. Canonical-контракт всех market-data событий
+   * несёт `venueId` именно для этого.
    */
   private _target(payload: {
     readonly marketId?: unknown;
@@ -226,6 +378,7 @@ export class TradingStateProjector {
     return payload.marketId !== undefined
       ? {
           kind: 'MARKET',
+          venueId: payload.venueId as never,
           marketId: payload.marketId as never,
           instrumentId: payload.instrumentId as never,
         }
@@ -240,7 +393,12 @@ export class TradingStateProjector {
    * Принимает снимок стакана.
    *
    * @param event - Canonical `BOOK_DEPTH`
-   * @throws {Error} При нарушении инварианта владения инструментом
+   * @throws {Error} При расхождении идентичности снимка или неизвестном
+   *   инструменте принятого рынка
+   *
+   * @remarks
+   * Наблюдение по непринятому рынку и наблюдение после остановки торгов
+   * проходят без ошибки и без изменения состояния.
    */
   private _onBookDepth(event: BookDepthEvent<DecimalPrice>): void {
     this._assertBookIdentity(event);
@@ -264,6 +422,10 @@ export class TradingStateProjector {
    * состояние кладётся snapshot: при расхождении книга одного инструмента
    * тихо легла бы под ключом другого, и обнаружилось бы это только по
    * необъяснимым ценам у стратегии. Три сравнения дешевле такой отладки.
+   *
+   * Проверка идёт ДО маршрутизации, то есть и для непринятых рынков:
+   * несогласованный снимок остаётся дефектом адаптера независимо от того,
+   * интересует нас этот рынок или нет.
    */
   private _assertBookIdentity(event: BookDepthEvent<DecimalPrice>): void {
     const { payload } = event;
@@ -287,7 +449,8 @@ export class TradingStateProjector {
    * Принимает публичную сделку.
    *
    * @param event - Canonical `TRADE_RECEIVED`
-   * @throws {Error} При нарушении инварианта владения инструментом
+   * @throws {Error} При несовпадении ценового домена или неизвестном
+   *   инструменте принятого рынка
    */
   private _onTradeReceived(event: TradeReceivedEvent<DecimalPrice>): void {
     const applied = this._state.applyPublicTrade(this._target(event.payload), {
@@ -309,8 +472,8 @@ export class TradingStateProjector {
    *
    * @remarks
    * Референсные цены ВСЕГДА идут в shared-состояние: они описывают актив, а
-   * не рынок. Идентичность ряда собирается из всех различающих полей —
-   * `nativeSymbol` в неё не входит, это происхождение.
+   * не рынок, и от admission не зависят. Идентичность ряда собирается из всех
+   * различающих полей — `nativeSymbol` в неё не входит, это происхождение.
    */
   private _onReferencePrice(event: ReferencePriceUpdatedEvent): void {
     const { sourceId, baseAsset, quoteAsset, feed, value, venueTimestamp, receivedAt } =
@@ -333,14 +496,16 @@ export class TradingStateProjector {
    * Обновляет действующий шаг цены.
    *
    * @param event - Canonical `TICK_SIZE_CHANGED`
-   * @throws {Error} При нарушении инварианта владения инструментом
+   * @throws {Error} При неизвестном инструменте принятого рынка
    *
    * @remarks
-   * Событие market-scoped по контракту, поэтому рынок и инструмент
-   * создаются лениво, если наблюдений по ним ещё не было.
+   * Событие market-scoped по контракту, поэтому подчиняется тем же правилам,
+   * что стакан и сделки: непринятый рынок — игнор, чужой инструмент — отказ.
+   * Рынок оно НЕ создаёт.
    */
   private _onTickSizeChanged(event: TickSizeChangedEvent): void {
     const applied = this._state.applyTickSize(
+      event.payload.venueId,
       event.payload.marketId,
       event.payload.instrumentId,
       {

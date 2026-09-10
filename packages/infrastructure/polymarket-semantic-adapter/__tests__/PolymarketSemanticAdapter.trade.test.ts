@@ -7,7 +7,7 @@
  * изменение книги со сделкой.
  */
 import { describe, expect, it, beforeEach, afterEach } from '@jest/globals';
-import { asInstrumentId, asMarketId, asVenueTradeId } from '@polymarket/ids';
+import { KnownVenues, asInstrumentId, asMarketId, asVenueTradeId } from '@polymarket/ids';
 import {
   MARKET_ID,
   TOKEN_A,
@@ -199,7 +199,7 @@ describe('price_change никогда не трейд', () => {
 });
 
 describe('tick_size_change → TICK_SIZE_CHANGED', () => {
-  it('публикует canonical-событие с рынком, инструментом и обоими значениями', async () => {
+  it('публикует canonical-событие с площадкой, рынком, инструментом и обоими значениями', async () => {
     await publishTickSizeChange(h, {
       tokenId: TOKEN_A,
       oldTickSize: '0.01',
@@ -211,6 +211,10 @@ describe('tick_size_change → TICK_SIZE_CHANGED', () => {
     expect(events).toHaveLength(1);
 
     const payload = events[0]!.payload;
+    // Площадка — часть идентичности: `MarketId`/`InstrumentId` уникальны только
+    // внутри её пространства имён. Раньше это было единственное market-data
+    // событие без `venueId`.
+    expect(payload.venueId).toBe(KnownVenues.POLYMARKET);
     expect(payload.marketId).toBe(asMarketId(MARKET_ID));
     expect(payload.instrumentId).toBe(asInstrumentId(TOKEN_A));
     expect(payload.oldTickSize?.value().toString()).toBe('0.01');
