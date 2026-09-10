@@ -1,0 +1,24 @@
+packages/domain/value-objects/src/token-balance/adapters/TokenBalanceSerializer.ts
+  s_73852eac4506dc::t_a02aa8841ee153 223-232,235,238-252
+  s_73852eac4506dc::t_c8757d449fd19c 446
+  s_73852eac4506dc::t_eb01d8e29999a6 5
+packages/domain/value-objects/__tests__/unit/token-balance/adapters/TokenBalanceSerializer.test.ts
+  s_73852eac4506dc::t_6e67eef4ae4a40 154-178,186-191
+  s_73852eac4506dc::t_9f0d5668618cee 179-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6330826db0775eb89e9a12801157a09309285da1",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
