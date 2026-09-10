@@ -1,0 +1,162 @@
+packages/application/account-state/tsconfig.json
+  s_73852eac4506dc::t_163a14906d5b18 1-16
+packages/application/account-state/src/identity.ts
+  s_73852eac4506dc::t_92b858b97495a5 1-109
+packages/application/events/src/trading-account/TradingAccountInitializedEvent.ts
+  s_73852eac4506dc::t_536da4a4926841 1-73
+packages/application/account-state/jest.config.js
+  s_73852eac4506dc::t_163a14906d5b18 1-36
+packages/application/account-state/__tests__/helpers/fixtures.ts
+  s_73852eac4506dc::t_0402633b37721b 1-19,28-44,46-52,54-126,138-143,152,154-157,159-162,164-167,169-296,321-323,352-482
+  s_73852eac4506dc::t_5f1e6fdb8c170b 324-351
+  s_73852eac4506dc::t_88b5fe6e0eab88 483-504
+  s_73852eac4506dc::t_a3ba057361f120 127-137
+  s_73852eac4506dc::t_e5f26613ca4462 20-27,144-151,153,158,163,168,317-318
+  s_73852eac4506dc::t_fce88c1622e180 45,53,297-316,319-320
+packages/application/account-state/src/views.ts
+  s_73852eac4506dc::t_9aea2c73ad5f7e 1-188
+packages/application/events/src/trading-account/TradingAccountFillAppliedEvent.ts
+  s_73852eac4506dc::t_2a4feb935b1cb0 1-40,42-73
+  s_73852eac4506dc::t_df0528457f30e2 41
+packages/application/account-state/__tests__/helpers/runtime.ts
+  s_73852eac4506dc::t_cdfe580221871d 64,68-70,75-76
+  s_73852eac4506dc::t_43880f08817524 1-63,65-67,71-74,77
+packages/application/account-state/__tests__/eventIsolation.test.ts
+  s_73852eac4506dc::t_fd0b861156d7c6 1-65,72-76,78-143,145-148,150-180
+  s_73852eac4506dc::t_9a5990445e4021 144,149
+  s_73852eac4506dc::t_2b142845e57c73 66-71
+  s_73852eac4506dc::t_b90ad0a6efbe03 77
+packages/application/account-state/src/index.ts
+  s_73852eac4506dc::t_cd41009cf7b5f8 1-138
+packages/application/account-state/__tests__/identityHelpers.test.ts
+  s_73852eac4506dc::t_87f7e8c12b46f1 1-13,20-61,63-215
+  s_73852eac4506dc::t_7fc360e32c3a10 14-19,62
+packages/application/account-state/__tests__/navigation.test.ts
+  s_73852eac4506dc::t_db2d2fdd3acfb4 1-22,24-155,158-165,167-177,179-183,185-187,189-228,232-322
+  s_73852eac4506dc::t_227827bf5d733d 229-231
+  s_73852eac4506dc::t_fce88c1622e180 23,156-157,166,178,184,188
+packages/application/account-state/__tests__/atomicity.test.ts
+  s_73852eac4506dc::t_92a5dcfa84889b 1-309
+packages/application/events/docs/application-events.md
+  s_73852eac4506dc::t_43de7f03bdd83f 25-34,40-43
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/adapters/UserEventFeedAdapter.ts
+  s_73852eac4506dc::t_231aba2e7a96a8 17-410
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+packages/application/account-state/__tests__/replayDeterminism.test.ts
+  s_73852eac4506dc::t_e2c12205f49a54 1-227
+packages/application/account-state/src/AccountStateProjector.ts
+  s_73852eac4506dc::t_9073740e0cf0ad 1-323
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/clients/PolymarketBalanceRestClient.ts
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+  s_73852eac4506dc::t_231aba2e7a96a8 17-266
+legacy-bot/README.md
+  s_73852eac4506dc::t_c45a3708fc1261 19
+packages/application/account-state/README.md
+  s_73852eac4506dc::t_f0e540fa3f7a1a 1-156
+packages/application/events/tsconfig.build.json
+  s_73852eac4506dc::t_1c2743ba81a8bc 41-46
+packages/application/account-state/.eslintrc.json
+  s_73852eac4506dc::t_163a14906d5b18 1-8
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/adapters/PolymarketExchangeClientAdapter.ts
+  s_73852eac4506dc::t_231aba2e7a96a8 17-838
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/clients/PolymarketUserTradesRestClient.ts
+  s_73852eac4506dc::t_231aba2e7a96a8 17-463
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+packages/application/events/src/ApplicationEvent.ts
+  s_73852eac4506dc::t_444067abe959fa 54-72,103-109,139-144
+packages/application/account-state/src/fillIdentity.ts
+  s_73852eac4506dc::t_d8a5b1b352f7b1 1-182
+packages/application/account-state/package.json
+  s_73852eac4506dc::t_163a14906d5b18 1-60
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/mappers/PolymarketOrderMapper.ts
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+  s_73852eac4506dc::t_231aba2e7a96a8 17-202
+packages/application/events/src/trading-account/index.ts
+  s_73852eac4506dc::t_d0cd4ac094ca9b 1-62
+legacy-bot/live-account-reference/README.md
+  s_73852eac4506dc::t_a55f0743641c84 1-150
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/adapters/PolymarketExecutionAdapter.ts
+  s_73852eac4506dc::t_231aba2e7a96a8 17-591
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/clients/PolymarketOrderRestClient.ts
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+  s_73852eac4506dc::t_231aba2e7a96a8 17-754
+packages/application/account-state/src/errors.ts
+  s_73852eac4506dc::t_a65a793ad8b457 1-591
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/mappers/PolymarketBalanceMapper.ts
+  s_73852eac4506dc::t_231aba2e7a96a8 17-219
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+packages/application/events/src/trading-account/TradingAccountFillConfirmedEvent.ts
+  s_73852eac4506dc::t_3b738c14d0d908 1-50
+packages/application/events/src/trading-account/TradingAccountFillRevertedEvent.ts
+  s_73852eac4506dc::t_3b738c14d0d908 1-64
+packages/application/account-state/src/orderIdentity.ts
+  s_73852eac4506dc::t_2a1814caaec0d0 43-48,79-86,130-131
+  s_73852eac4506dc::t_f0d98612de66a9 1-42,49-78,87-129,132-240
+packages/application/events/src/index.ts
+  s_73852eac4506dc::t_599ea40b719777 24,74-88
+packages/application/account-state/src/AccountHotState.ts
+  s_73852eac4506dc::t_6d8898b41ed797 70,103-108
+  s_73852eac4506dc::t_e7117f3a869dec 130-138,288-290,295,526,562,571,663,686-687,689-690,737,755-756,771,774,796
+  s_73852eac4506dc::t_5edc367e576cf4 139-162,294,296-299,572-576,623,688
+  s_73852eac4506dc::t_77588676b0b521 1-69,71-102,109-129,163-287,291-293,300-525,527-561,567-570,577-622,624-662,664-685,691-719,721-736,738-754,757-770,775-795,797-985
+  s_73852eac4506dc::t_699a2986ff42e9 563-566
+  s_73852eac4506dc::t_a823818ee37ed7 720,772-773
+packages/application/events/__tests__/ApplicationEvent.types.test.ts
+  s_73852eac4506dc::t_f233cb83633bd1 16-18,39-43,69-73,76,149-181
+packages/application/account-state/__tests__/orderCommit.test.ts
+  s_73852eac4506dc::t_a3ba057361f120 21,149-151,156
+  s_73852eac4506dc::t_1f4186137a0be7 1-20,22-29,31-148,152-155,157-297,299-373
+  s_73852eac4506dc::t_5f1e6fdb8c170b 30,298
+packages/application/account-state/__tests__/fillLifecycle.test.ts
+  s_73852eac4506dc::t_80d7486662304a 19-20,177-223,428-438
+  s_73852eac4506dc::t_a823804b1a1d98 1-18,21-176,224-427,439-588,607-642
+  s_73852eac4506dc::t_f2b6fbb7eab2b7 589-606
+packages/application/account-state/src/records.ts
+  s_73852eac4506dc::t_da5433df744332 1-120
+legacy-bot/live-account-reference/apps/bot/src/bot/buildLiveInfra.ts
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+  s_73852eac4506dc::t_231aba2e7a96a8 17-479
+packages/application/account-state/docs/account-state.md
+  s_73852eac4506dc::t_d87cd76eebe84a 1-505
+packages/application/events/package.json
+  s_73852eac4506dc::t_599ea40b719777 22,24
+packages/application/events/jest.config.js
+  s_73852eac4506dc::t_1c2743ba81a8bc 20-21
+packages/application/account-state/__tests__/versionsAndTime.test.ts
+  s_73852eac4506dc::t_043f7c1f25df46 1-148
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/adapters/mapUserFillsToVenueTrades.ts
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+  s_73852eac4506dc::t_231aba2e7a96a8 17-146
+packages/application/account-state/__tests__/initialization.test.ts
+  s_73852eac4506dc::t_7878ccad128338 1-294
+legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/providers/PolymarketBalanceProvider.ts
+  s_73852eac4506dc::t_231aba2e7a96a8 17-229
+  s_73852eac4506dc::t_553f8c91b1f64f 1-16
+packages/application/account-state/tsconfig.build.json
+  s_73852eac4506dc::t_163a14906d5b18 1-33
+packages/application/events/tsconfig.json
+  s_73852eac4506dc::t_1c2743ba81a8bc 11-16
+packages/application/events/README.md
+  s_73852eac4506dc::t_b953eed322b2d6 13-14,30-38,65-69,157-217
+packages/application/events/src/trading-account/TradingAccountOrderCommittedEvent.ts
+  s_73852eac4506dc::t_2a4feb935b1cb0 1-45,47-82
+  s_73852eac4506dc::t_df0528457f30e2 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "238fd7c849c3261b9686dfbbbf9bbdcbaadc5dfa",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
