@@ -1,0 +1,1057 @@
+/*
+ * LEGACY REFERENCE ONLY.
+ *
+ * Historical implementation of the trading contour, preserved for the
+ * new trading runtime.
+ *
+ * Not built.
+ * Not linted.
+ * Not runnable against the current repository.
+ * Do not import from production code.
+ *
+ * Source: packages/application/use-cases/src/services/PortfolioService.ts
+ * Commit: abe9354e07501e87bf8a90fa53cccf6fa1b206a4
+ *
+ * See README.md for what was preserved and what was extracted to docs/.
+ */
+/**
+ * PortfolioService — операции над Portfolio aggregate.
+ *
+ * @remarks
+ * Отвечает за обновление баланса и позиций Portfolio при:
+ * - Размещении ордера (резервирование средств или токенов)
+ * - Отмене ордера (`releaseOrderReservation` — снятие резервации по стороне ордера)
+ * - Исполнении fill (дебет/кредит баланса + обновление позиции)
+ *
+ * ### Схема обновления баланса при Fill:
+ * - BUY fill: `applyDebit(price × size)` из reserved + комиссия из available
+ * - SELL fill: `applyCredit(price × size − комиссия)` — зачисляет на available
+ *
+ * ### Комиссия
+ *
+ * Платит только тейкер, платит ДЕНЬГАМИ и из того, что получает; количество
+ * шар не изменяется никогда. Измерено на 2898 реальных сделках —
+ * `docs/guides/polymarket-fee-settlement.md`.
+ *
+ * ```text
+ * BUY   номинал из reserved + комиссия из available   позиция +ПОЛНЫЙ size
+ * SELL  зачисляем номинал − комиссию                  позиция −ПОЛНЫЙ size
+ * ```
+ *
+ * Комиссия на покупке снимается отдельным шагом из `available`, потому что её
+ * никто не резервировал: в момент размещения ордера ещё неизвестно, окажемся
+ * мы тейкером или мейкером.
+ *
+ * Здесь стоял пересчёт `feeInTokens = feeUSDC / price` с ростом позиции на
+ * `size − feeInTokens` — механизм, которого не существует. Ни одна из 1888
+ * измеренных покупок не показала уменьшенного количества.
+ *
+ * ### Резервации токенов (SELL ордера):
+ * - SELL order placed:    `reserveTokensForOrder(accountId, instrumentId, size)` → tokenReservations[id] += size
+ * - SELL fill received:   `releaseTokenReservation(accountId, instrumentId, size)` → tokenReservations[id] -= size
+ * - SELL order cancelled: `releaseTokenReservation(accountId, instrumentId, size)` → tokenReservations[id] -= size
+ *
+ * ### Позиции (Этап 3 плана миграции — lot-based `Position`):
+ * `_applyPositionUpdate` строит/обновляет lot-based `Position` (`@polymarket/position`) —
+ * BUY добавляет лот (`addLots`), SELL закрывает по FIFO (`position.close(..., 'FIFO', ...)`),
+ * накапливая `realizedPnL` (логируется). LONG-only: quantity увеличивается при BUY,
+ * уменьшается при SELL — SHORT не поддерживается (см. `docs/portfolio-entity.md`).
+ * `Portfolio` хранит канонический `Position` напрямую: интерфейс `IPosition` и
+ * `SimplePosition` удалены — подставлять оказалось нечего. Вместе с ними исчезли
+ * `instanceof Position` в `_applyPositionUpdate` и метод `_toLotBasedPosition`,
+ * который реконструировал лоты из плоской позиции: реконструировать больше не из
+ * чего, тип в портфеле теперь ровно один.
+ *
+ * `reverseFill()` по-прежнему НЕ ведёт lot-историю — редкий path (on-chain FAILED)
+ * собирает позицию ОДНИМ лотом из известных `quantity`/`averageEntryPrice`. Это та же
+ * задокументированная неточность, что была раньше: у источника истории лотов и не
+ * было. Изменился только тип результата — теперь это канонический `Position`.
+ *
+ * @example
+ * ```typescript
+ * const service = new PortfolioService(portfolioStore, logger);
+ * const result = await service.applyFill(fill, accountId);
+ * if (!result.ok) {
+ *   // VersionConflictError — повторить после re-read
+ * }
+ * ```
+ */
+
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
+import Decimal from 'decimal.js';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import { TradingError, ValidationError } from '@polymarket/errors';
+import type { ILogger } from '@polymarket/logger';
+import type { AccountId, InstrumentId } from '@polymarket/ids';
+import { assetIdToInstrumentId, accountIdToString, AssetIdHelpers, asPositionId } from '@polymarket/ids';
+import { Money, Quantity, OutcomePrice } from '@polymarket/value-objects';
+import { type Timestamp } from '@polymarket/timestamp';
+import type { Portfolio } from '@polymarket/portfolio';
+import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
+import type { Fill } from '@polymarket/fill';
+import type { Order } from '@polymarket/order';
+import { Position, PositionLot } from '@polymarket/position';
+
+/** Объединённый тип ошибок сохранения Portfolio */
+export type PortfolioSaveError = VersionConflictError | TradingError;
+
+/** Сервис операций над Portfolio */
+export class PortfolioService {
+  private readonly _logger: ILogger;
+
+  /**
+   * @param portfolioStore - Хранилище Portfolio с CAS-защитой
+   * @param logger - Logger (дочерний контекст 'PortfolioService' добавляется автоматически)
+   */
+  constructor(
+    private readonly _store: IPortfolioStore,
+    logger: ILogger,
+  ) {
+    this._logger = logger.child({ component: 'PortfolioService' });
+  }
+
+  /**
+   * Возвращает актуальный снапшот Portfolio из хранилища.
+   *
+   * @param accountId - ID аккаунта
+   * @returns Portfolio или undefined, если не инициализирован
+   *
+   * @remarks
+   * Используется для authoritative risk-check внутри keyed mutex в
+   * `PlaceOrderUseCase`: snapshot из `PlaceOrderInput` мог устареть, пока
+   * ждали lock (конкурентный fill/place изменил баланс/экспозицию).
+   */
+  public getPortfolio(accountId: AccountId): Portfolio | undefined {
+    return this._store.get(accountId);
+  }
+
+  /**
+   * Резервирует средства для нового ордера.
+   *
+   * @param accountId - ID аккаунта
+   * @param notional - Номинальная стоимость ордера (price × size) в USDC
+   * @returns Ok(void) или Err при ошибке резервирования / конфликте версий
+   *
+   * @remarks
+   * Вызывается в PlaceOrderUseCase перед отправкой на биржу.
+   * При ошибке биржи необходимо вызвать releaseReservation для отката.
+   */
+  public reserveForOrder(
+    accountId: AccountId,
+    notional: Money,
+  ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion(accountId);
+    const portfolio = this._store.get(accountId);
+    if (!portfolio) {
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
+    }
+
+    const reserveResult = portfolio.reserveForOrder(notional);
+    if (!reserveResult.ok) {
+      return Err(new TradingError(
+        `Failed to reserve balance: ${reserveResult.error.message}`,
+        { context: { accountId: accountIdToString(accountId), notional: notional.value().toString() } },
+      ));
+    }
+
+    const saveResult = this._store.save(reserveResult.value, version);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.debug('Balance reserved for order', {
+      accountId: accountIdToString(accountId),
+      notional: notional.value().toString(),
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Снимает резервацию средств (при отмене или ошибке размещения ордера).
+   *
+   * @param accountId - ID аккаунта
+   * @param notional - Ранее зарезервированная сумма в USDC
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Вызывается в CancelOrderUseCase или при откате PlaceOrderUseCase.
+   */
+  public releaseReservation(
+    accountId: AccountId,
+    notional: Money,
+  ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion(accountId);
+    const portfolio = this._store.get(accountId);
+    if (!portfolio) {
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
+    }
+
+    const releaseResult = portfolio.releaseReservation(notional);
+    if (!releaseResult.ok) {
+      return Err(new TradingError(
+        `Failed to release reservation: ${releaseResult.error.message}`,
+        { context: { accountId: accountIdToString(accountId), notional: notional.value().toString() } },
+      ));
+    }
+
+    const saveResult = this._store.save(releaseResult.value, version);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.debug('Reservation released', {
+      accountId: accountIdToString(accountId),
+      notional: notional.value().toString(),
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Резервирует outcome-токены для нового SELL ордера.
+   *
+   * @param accountId - ID аккаунта
+   * @param instrumentId - ID инструмента (outcome-токена)
+   * @param qty - Количество токенов для резервирования
+   * @returns Ok(void) или Err при ошибке резервирования / конфликте версий
+   *
+   * @remarks
+   * Симметричен `reserveForOrder` (USDC-резервация для BUY).
+   * Вызывается в PlaceOrderUseCase перед отправкой SELL ордера на биржу.
+   * При ошибке биржи необходимо вызвать `releaseTokenReservation` для отката.
+   */
+  public reserveTokensForOrder(
+    accountId: AccountId,
+    instrumentId: InstrumentId,
+    qty: Quantity,
+  ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion(accountId);
+    const portfolio = this._store.get(accountId);
+    if (!portfolio) {
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
+    }
+
+    const reserveResult = portfolio.reserveTokensForOrder(instrumentId, qty.value());
+    if (!reserveResult.ok) {
+      return Err(new TradingError(
+        `Failed to reserve tokens: ${reserveResult.error.message}`,
+        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.value().toString() } },
+      ));
+    }
+
+    const saveResult = this._store.save(reserveResult.value, version);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.debug('Tokens reserved for SELL order', {
+      accountId: accountIdToString(accountId),
+      instrumentId: String(instrumentId),
+      qty: qty.value().toString(),
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Снимает токенную резервацию (при исполнении или отмене SELL ордера).
+   *
+   * @param accountId - ID аккаунта
+   * @param instrumentId - ID инструмента
+   * @param qty - Ранее зарезервированное количество токенов
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Симметричен `releaseReservation` (USDC-резервация для BUY).
+   * Вызывается в CancelOrderUseCase или при откате PlaceOrderUseCase для SELL ордеров.
+   * При fill SELL-ордера вызывается из `applyFill` (best-effort).
+   */
+  public releaseTokenReservation(
+    accountId: AccountId,
+    instrumentId: InstrumentId,
+    qty: Quantity,
+  ): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion(accountId);
+    const portfolio = this._store.get(accountId);
+    if (!portfolio) {
+      return Err(new TradingError('Portfolio not found', { context: { accountId: accountIdToString(accountId) } }));
+    }
+
+    const releaseResult = portfolio.releaseTokenReservation(instrumentId, qty.value());
+    if (!releaseResult.ok) {
+      return Err(new TradingError(
+        `Failed to release token reservation: ${releaseResult.error.message}`,
+        { context: { accountId: accountIdToString(accountId), instrumentId: String(instrumentId), qty: qty.value().toString() } },
+      ));
+    }
+
+    const saveResult = this._store.save(releaseResult.value, version);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.debug('Token reservation released', {
+      accountId: accountIdToString(accountId),
+      instrumentId: String(instrumentId),
+      qty: qty.value().toString(),
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Снимает резервацию Portfolio для отменённого/истёкшего/отклонённого ордера.
+   *
+   * @param accountId - ID аккаунта
+   * @param order - Ордер после отмены (содержит side, price, remainingSize, asset)
+   * @returns Ok(void) или Err при ошибке release/save
+   *
+   * @remarks
+   * BUY: освобождает USDC-резервацию (price × remainingSize).
+   * SELL: освобождает токенную резервацию (remainingSize по instrumentId);
+   * нерезолвящийся instrumentId — тоже Err (резервацию невозможно снять).
+   *
+   * Ошибки логируются И возвращаются через Result — caller решает, что делать:
+   * ордер к этому моменту обычно уже terminal (committed CAS save), поэтому
+   * сбой release — это Order↔Portfolio desync (замороженная резервация),
+   * а не warning; use case должен создать reconciliation issue, а не глотать.
+   *
+   * @example
+   * ```typescript
+   * // В CancelOrderUseCase после успешного CAS save:
+   * const releaseResult = portfolioService.releaseOrderReservation(accountId, cancelledOrder);
+   * if (!releaseResult.ok) {
+   *   // committed cancel + frozen reservation → reconciliation issue
+   * }
+   * ```
+   */
+  public releaseOrderReservation(
+    accountId: AccountId,
+    order: Order,
+  ): Result<void, PortfolioSaveError> {
+    if (order.side === 'BUY') {
+      const remainingNotional = Money.of(order.price.value().times(order.remainingSize.value()), 'USDC');
+      const result = this.releaseReservation(accountId, remainingNotional);
+      if (!result.ok) {
+        this._logger.error('Failed to release USDC reservation for cancelled order', {
+          accountId: accountIdToString(accountId),
+          error: result.error.message,
+        });
+      }
+      return result;
+    }
+
+    const instrumentId = assetIdToInstrumentId(order.asset);
+    if (!instrumentId) {
+      this._logger.warn('Could not resolve instrumentId for SELL order reservation release', {
+        accountId: accountIdToString(accountId),
+        asset: String(order.asset),
+      });
+      return Err(new TradingError(
+        `Could not resolve instrumentId for SELL order reservation release: ${String(order.asset)}`,
+        { context: { accountId: accountIdToString(accountId), orderId: String(order.id) } },
+      ));
+    }
+    const result = this.releaseTokenReservation(accountId, instrumentId, order.remainingSize);
+    if (!result.ok) {
+      this._logger.error('Failed to release token reservation for cancelled order', {
+        accountId: accountIdToString(accountId),
+        instrumentId: String(instrumentId),
+        error: result.error.message,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Применяет Fill к Portfolio: обновляет баланс и позицию.
+   *
+   * @param fill - Исполнение ордера
+   * @param orderPrice - Цена ордера. Если передана для BUY fill,
+   *   используется вместо `fill.price` для расчёта дебета.
+   *   Это устраняет ошибку «Cannot unfreeze/consume X: only Y reserved»,
+   *   возникающую когда биржа округляет цену в fill-событии (0.829 → 0.83),
+   *   а зарезервировано было по точной цене ордера.
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * ### BUY fill:
+   * 1. `applyDebit(orderPrice × size)` — дебетует зарезервированные средства
+   *    (используем цену ордера, а не цену fill, чтобы точно совпасть с резервацией)
+   * 2. Позиция LONG: quantity += size (ВАЛОВОЕ), пересчёт averageEntryPrice по VWAP
+   *    (averageEntryPrice считается по fill.price — реальная цена исполнения)
+   *
+   * ### SELL fill:
+   * 1. Снимаем токенную резервацию **строго** (НЕ best-effort): это local-order
+   *    path — резервация была создана при размещении SELL-ордера
+   *    (`reserveTokensForOrder`), и её отсутствие означает Order↔Portfolio
+   *    desync, а не нормальный recovery-сценарий. При провере release → `Err`,
+   *    caller (`ProcessFillUseCase`) переводит fill в RECONCILIATION_REQUIRED.
+   *    Для external/recovery fills (ордер неизвестен) используется
+   *    `applyDirectFill`, где release токенов остаётся best-effort.
+   * 2. `applyCredit(price × size)` — зачисляет выручку на доступный баланс
+   * 3. Позиция LONG: quantity -= size, isClosed() = true при quantity = 0
+   *
+   * tokenId используется как instrumentId для поиска/обновления позиции.
+   */
+  public applyFill(fill: Fill, orderPrice?: OutcomePrice): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion(fill.accountId);
+    const portfolio = this._store.get(fill.accountId);
+    if (!portfolio) {
+      return Err(new TradingError(
+        'Portfolio not found',
+        { context: { accountId: accountIdToString(fill.accountId), fillId: String(fill.id) } },
+      ));
+    }
+
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
+    if (!instrumentId) {
+      return Err(new TradingError(
+        `Invalid tokenId: ${String(fill.tokenId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const fillQty = fill.size.value();
+    // Для BUY: используем цену ордера (если передана), чтобы точно совпасть с зарезервированной суммой.
+    // Биржа может округлить цену в fill-событии (0.829 → 0.83), а резервация была по точной цене ордера.
+    const priceForDebit = (fill.side === 'BUY' && orderPrice !== undefined) ? orderPrice.value() : fill.price.value();
+    const notional = priceForDebit.times(fillQty);
+    const money = Money.of(notional, 'USDC');
+
+    // Для SELL: снять токенную резервацию СТРОГО (local-order path).
+    // Резервация создавалась при размещении SELL-ордера — её отсутствие/недостаток
+    // здесь это Order↔Portfolio desync, а не нормальный recovery-случай.
+    // Возвращаем Err, чтобы ProcessFillUseCase пометил fill RECONCILIATION_REQUIRED.
+    // (external/recovery fills без ордера идут через applyDirectFill с best-effort.)
+    let portfolioAfterTokenRelease = portfolio;
+    if (fill.side === 'SELL') {
+      const releaseResult = portfolio.releaseTokenReservation(instrumentId, fillQty);
+      if (!releaseResult.ok) {
+        this._logger.error('SELL_TOKEN_RESERVATION_RELEASE_FAILED: token reservation missing/insufficient for local SELL fill — Order↔Portfolio desync', {
+          accountId: accountIdToString(fill.accountId),
+          fillId: String(fill.id),
+          instrumentId: String(instrumentId),
+          fillQty: fillQty.toString(),
+          error: releaseResult.error.message,
+        });
+        return Err(new TradingError(
+          `Failed to release token reservation for SELL fill: ${releaseResult.error.message}`,
+          { context: { fillId: String(fill.id), instrumentId: String(instrumentId), fillQty: fillQty.toString() } },
+        ));
+      }
+      portfolioAfterTokenRelease = releaseResult.value;
+    }
+
+    // Диагностика: состояние портфеля до дебита
+    this._logger.info('Portfolio before fill debit', {
+      fillId: String(fill.id),
+      side: fill.side,
+      debitAmount: notional.toString(),
+      available: portfolioAfterTokenRelease.balance.available().value().toString(),
+      reserved: portfolioAfterTokenRelease.balance.reserved().value().toString(),
+      storeVersion: version,
+    });
+
+    // Обновить баланс.
+    //
+    // Комиссию платит только тейкер, платит ДЕНЬГАМИ и из того, что получает
+    // (`docs/guides/polymarket-fee-settlement.md`):
+    //
+    //   BUY   отдаём  номинал + fee
+    //   SELL  получаем номинал − fee
+    //
+    // На SELL это ровно `fill.getNetCashFlow()` — домен уже умеет складывать
+    // поток с комиссией, пересчитывать нечего.
+    //
+    // На BUY взять его нельзя: `notional` здесь считается по цене ОРДЕРА, а не
+    // фила, чтобы точно совпасть с зарезервированной суммой (биржа округляет
+    // цену в fill-событии). Поэтому номинал по-прежнему снимается из reserved,
+    // а комиссия — отдельно из available: её никто не резервировал, потому что
+    // в момент размещения ордера ещё неизвестно, окажемся мы тейкером или
+    // мейкером.
+    const balanceResult = fill.side === 'BUY'
+      ? portfolioAfterTokenRelease.applyDebit(money)
+      : portfolioAfterTokenRelease.applyCredit(
+          Money.of(fill.getNetCashFlow().amount.value(), 'USDC'),
+        );
+
+    if (!balanceResult.ok) {
+      this._logger.error('Balance change failed', {
+        fillId: String(fill.id),
+        side: fill.side,
+        debitAmount: notional.toString(),
+        error: balanceResult.error.message,
+      });
+      return Err(new TradingError(
+        `Failed to apply balance change: ${balanceResult.error.message}`,
+        { context: { fillId: String(fill.id), side: fill.side } },
+      ));
+    }
+
+    // BUY: комиссия сверх номинала, из available. Ноль у мейкера — тогда
+    // шаг вырождается и портфель не меняется.
+    let portfolioAfterFee = balanceResult.value;
+    if (fill.side === 'BUY' && !fill.fee.isZero()) {
+      const feeDebit = portfolioAfterFee.applyDirectDebit(
+        Money.of(fill.fee.quantity.amount().value(), 'USDC'),
+      );
+      if (!feeDebit.ok) {
+        return Err(new TradingError(
+          `Failed to debit taker fee: ${feeDebit.error.message}`,
+          { context: { fillId: String(fill.id), side: fill.side } },
+        ));
+      }
+      portfolioAfterFee = feeDebit.value;
+    }
+
+    const positionResult = this._applyPositionUpdate(portfolioAfterFee, instrumentId, fill);
+    if (!positionResult.ok) {
+      return Err(new TradingError(
+        `Failed to update position: ${positionResult.error.message}`,
+        { context: { fillId: String(fill.id), side: fill.side } },
+      ));
+    }
+
+    const saveResult = this._store.save(positionResult.value, version);
+    if (!saveResult.ok) {
+      this._logger.error('Portfolio save after fill failed (version conflict)', {
+        fillId: String(fill.id),
+        expectedVersion: version,
+        currentVersion: this._store.getVersion(fill.accountId),
+      });
+      return saveResult;
+    }
+
+    const updatedPosition = positionResult.value.getPosition(instrumentId);
+    this._logger.info('Fill applied to portfolio', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      side: fill.side,
+      notional: notional.toString(),
+      newAvailable: positionResult.value.balance.available().value().toString(),
+      newReserved: positionResult.value.balance.reserved().value().toString(),
+    });
+    // Лог позиции после обновления — для диагностики live reconciliation
+    this._logger.info('Position after fill', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      instrumentId: String(instrumentId),
+      side: fill.side,
+      positionQty: updatedPosition?.quantity.value().toString() ?? '0',
+      positionClosed: updatedPosition?.isClosed() ?? true,
+      avgEntryPrice: updatedPosition?.averageEntryPrice.value().toString() ?? 'none',
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Применяет Fill против УДЕРЖАННОЙ резервации (recovery-путь без локального Order).
+   *
+   * @param params - `fill`, `orderPrice` (из execution journal, НЕ округлённая
+   *   venue fill price), `reservationKind` (USDC для BUY, TOKENS для SELL)
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Явный recovery-путь для fill, пришедшего на ambiguous submit БЕЗ локального
+   * Order (`ProcessFillUseCase` нашёл held-резервацию по venueOrderId в execution
+   * journal). Экономически идентичен `applyFill(fill, orderPrice)`:
+   * - **BUY**: `applyDebit(orderPrice × size)` — потребляет ЗАРЕЗЕРВИРОВАННЫЕ USDC
+   *   (НЕ `applyDirectDebit` из available — иначе двойной учёт: available списан,
+   *   а reservation осталась замороженной). Позиция считается по реальной
+   *   `fill.price`, BUY fee учитывается.
+   * - **SELL**: строго снимает token-резервацию на `fill.size` + зачисляет выручку.
+   *
+   * Отдельный API (а не прямой вызов `applyFill`) — чтобы recovery-путь был явно
+   * виден в коде вызывающего и в логах.
+   *
+   * ### Defensive-проверка reservationKind:
+   * BUY обязан потреблять `USDC`-резервацию, SELL — `TOKENS`. Несоответствие
+   * (повреждённый journal / баг caller) → `Err` БЕЗ мутации Portfolio, даже
+   * если caller уже выполнил собственную валидацию.
+   */
+  public applyFillAgainstHeldReservation(params: {
+    readonly fill: Fill;
+    readonly orderPrice: OutcomePrice;
+    readonly reservationKind: 'USDC' | 'TOKENS';
+  }): Result<void, PortfolioSaveError> {
+    // Defensive: kind резервации обязан соответствовать стороне fill.
+    const expectedKind = params.fill.side === 'BUY' ? 'USDC' : 'TOKENS';
+    if (params.reservationKind !== expectedKind) {
+      this._logger.error('RESERVATION_KIND_MISMATCH: held-reservation fill kind does not match fill side — Portfolio not mutated', {
+        accountId: accountIdToString(params.fill.accountId),
+        fillId: String(params.fill.id),
+        side: params.fill.side,
+        reservationKind: params.reservationKind,
+        expectedKind,
+      });
+      return Err(new TradingError(
+        `Reservation kind mismatch for held-reservation fill: got ${params.reservationKind}, expected ${expectedKind} for ${params.fill.side}`,
+        { context: { fillId: String(params.fill.id), side: params.fill.side, reservationKind: params.reservationKind } },
+      ));
+    }
+    this._logger.info('Applying fill against HELD reservation (recovery path — no live local Order)', {
+      accountId: accountIdToString(params.fill.accountId),
+      fillId: String(params.fill.id),
+      side: params.fill.side,
+      orderPrice: params.orderPrice.value().toString(),
+      reservationKind: params.reservationKind,
+    });
+    // Экономика идентична local-order fill: BUY дебетует reserved по orderPrice,
+    // SELL строго снимает token-резервацию. Переиспользуем applyFill.
+    return this.applyFill(params.fill, params.orderPrice);
+  }
+
+  /**
+   * Применяет Fill напрямую к Portfolio без задействования резерваций.
+   *
+   * @param fill - Исполнение ордера
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * External/recovery path: fill приходит на terminal или не найденный ордер.
+   * Биржевое событие — источник истины: токены получены/переданы независимо
+   * от локального состояния ордера. В отличие от `applyFill` (local-order path),
+   * здесь release токенной резервации остаётся **best-effort**: ордер мог быть
+   * внешним/восстановленным, резервации могло не быть вовсе — это НЕ desync.
+   *
+   * ### BUY fill:
+   * - `applyDirectDebit(fill.price × size)` — прямой дебит из available
+   *   (резервация уже снята CancelOrderUseCase или ордер был внешним)
+   * - Позиция LONG: quantity += size
+   *
+   * ### SELL fill:
+   * - Снимаем токенную резервацию (best effort — ордер мог быть внешним)
+   * - `applyCredit(fill.price × size)` — зачисление выручки
+   * - Позиция LONG: quantity -= size (best effort — позиции может не быть)
+   */
+  public applyDirectFill(fill: Fill): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion(fill.accountId);
+    const portfolio = this._store.get(fill.accountId);
+    if (!portfolio) {
+      return Err(new TradingError(
+        'Portfolio not found',
+        { context: { accountId: accountIdToString(fill.accountId), fillId: String(fill.id) } },
+      ));
+    }
+
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
+    if (!instrumentId) {
+      return Err(new TradingError(
+        `Invalid tokenId: ${String(fill.tokenId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const fillQty = fill.size.value();
+    const notional = fill.price.value().times(fillQty);
+    const money = Money.of(notional, 'USDC');
+
+    let portfolioAfterBalance: Portfolio;
+
+    if (fill.side === 'BUY') {
+      // Прямой дебит из available (резервация уже снята или ордер внешний)
+      const debitResult = portfolio.applyDirectDebit(money);
+      if (!debitResult.ok) {
+        return Err(new TradingError(
+          `Failed direct debit for fill: ${debitResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = debitResult.value;
+    } else {
+      // SELL: снимаем токенную резервацию best-effort + кредитуем USDC
+      const releaseResult = portfolio.releaseTokenReservation(instrumentId, fillQty);
+      const afterRelease = releaseResult.ok ? releaseResult.value : portfolio;
+      const creditResult = afterRelease.applyCredit(money);
+      if (!creditResult.ok) {
+        return Err(new TradingError(
+          `Failed credit for fill: ${creditResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = creditResult.value;
+    }
+
+    // Обновляем позицию (для SELL — best effort: позиции может не быть)
+    const positionResult = this._applyPositionUpdate(portfolioAfterBalance, instrumentId, fill);
+    const finalPortfolio = positionResult.ok
+      ? positionResult.value
+      : portfolioAfterBalance; // SELL без позиции — только баланс
+
+    if (!positionResult.ok) {
+      this._logger.warn('Direct fill: position update skipped (best effort)', {
+        fillId: String(fill.id),
+        side: fill.side,
+        instrumentId: String(instrumentId),
+        reason: positionResult.error.message,
+      });
+    }
+
+    const saveResult = this._store.save(finalPortfolio, version);
+    if (!saveResult.ok) return saveResult;
+
+    const directUpdatedPosition = finalPortfolio.getPosition(instrumentId);
+    this._logger.info('Direct fill applied to portfolio', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      side: fill.side,
+      size: fillQty.toString(),
+      price: fill.price.toNumber(),
+      notional: notional.toString(),
+    });
+    // Лог позиции после direct fill — для диагностики live reconciliation
+    this._logger.info('Position after direct fill', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      instrumentId: String(instrumentId),
+      side: fill.side,
+      positionQty: directUpdatedPosition?.quantity.value().toString() ?? '0',
+      positionClosed: directUpdatedPosition?.isClosed() ?? true,
+      avgEntryPrice: directUpdatedPosition?.averageEntryPrice.value().toString() ?? 'none',
+    });
+    return Ok(undefined);
+  }
+
+  /**
+   * Откатывает ранее применённый Fill (при on-chain FAILED).
+   *
+   * @param fill - Fill, который был ранее применён через applyFill/applyDirectFill
+   * @returns Ok(void) или Err при ошибке
+   *
+   * @remarks
+   * Обратная операция к applyFill/applyDirectFill.
+   * Вызывается FillOrchestrator при получении FILL_FAILED после MATCHED.
+   *
+   * ### BUY fill reversal:
+   * 1. Позиция LONG: quantity -= fillQty — снимаем ровно то, что было добавлено
+   * 2. `applyCredit(price × size)` — возвращаем USDC на available баланс
+   *    (резервация уже была consumed при applyFill, кредитуем в available)
+   *
+   * ### SELL fill reversal:
+   * 1. `applyDirectDebit(price × size)` — снимаем USDC, которые были зачислены
+   * 2. Позиция LONG: quantity += fillQty — восстанавливаем позицию
+   *
+   * ### Ограничения:
+   * - averageEntryPrice не восстанавливается точно (VWAP пересчёт необратим)
+   * - Если позиция была закрыта (SELL) и удалена из Portfolio — создаётся заново
+   * - FAILED — крайне редкое событие, точность reversal достаточна
+   */
+  /**
+   * Строит однолотовую позицию для пути отката.
+   *
+   * @param fill - Исполнение, которое откатывается (даёт владельца, актив, время)
+   * @param instrumentId - Инструмент позиции
+   * @param quantity - Итоговое количество; `0` даёт позицию без лотов
+   * @param averageEntryPrice - Средняя цена входа, которую нужно сохранить
+   * @returns Канонический `Position`
+   *
+   * @remarks
+   * `SimplePosition` удалён вместе с `IPosition`: в портфеле теперь живёт один
+   * тип позиции. Здесь он собирается ОДНИМ лотом — количество и средняя цена у
+   * `Position` выводятся из лотов, и лот `(quantity, averageEntryPrice)` даёт
+   * ровно те же значения, что давал прежний плоский объект.
+   *
+   * Историю лотов это, разумеется, не восстанавливает — но и не ухудшает:
+   * путь отката её и раньше терял, что задокументировано в шапке сервиса.
+   *
+   * Нулевое количество выражается ПУСТЫМ списком лотов: `Position` с нулевым
+   * количеством считается закрытым, и `upsertPosition` его удаляет.
+   */
+  private _reversalPosition(
+    fill: Fill,
+    instrumentId: InstrumentId,
+    quantity: Decimal,
+    averageEntryPrice: Decimal,
+  ): Result<Position, PortfolioSaveError> {
+    const positionId = asPositionId(`reversal:${String(instrumentId)}`);
+    if (positionId === undefined) {
+      return Err(new TradingError(
+        `Cannot build reversal position id for instrument ${String(instrumentId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const lots = quantity.lte(0)
+      ? []
+      : [
+          PositionLot.create({
+            quantity: Quantity.of(quantity),
+            entryPrice: OutcomePrice.of(averageEntryPrice),
+            timestamp: fill.timestamp,
+          }),
+        ];
+
+    const created = Position.create({
+      id: positionId,
+      accountId: fill.accountId,
+      instrumentId,
+      asset: fill.tokenId,
+      side: 'LONG',
+      openedAt: fill.timestamp,
+      lots,
+    });
+    if (!created.ok) {
+      return Err(new TradingError(
+        `Failed to build reversal position: ${created.error.message}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+    return Ok(created.value);
+  }
+
+  public reverseFill(fill: Fill): Result<void, PortfolioSaveError> {
+    const version = this._store.getVersion(fill.accountId);
+    const portfolio = this._store.get(fill.accountId);
+    if (!portfolio) {
+      return Err(new TradingError(
+        'Portfolio not found for fill reversal',
+        { context: { accountId: accountIdToString(fill.accountId), fillId: String(fill.id) } },
+      ));
+    }
+
+    const instrumentId = assetIdToInstrumentId(fill.tokenId);
+    if (!instrumentId) {
+      return Err(new TradingError(
+        `Invalid tokenId for fill reversal: ${String(fill.tokenId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const fillQty = fill.size.value();
+    // Откат обязан зеркалить применение. Оно движет деньги на нетто-поток
+    // `Fill` (номинал с учётом комиссии) и количество на ВАЛОВОЙ размер —
+    // значит и возврат считается так же. Знак у `getNetCashFlow()` уже
+    // правильный по стороне, поэтому берётся модуль: здесь поток
+    // разворачивается.
+    const netCash = fill.getNetCashFlow().amount.value();
+    const money = Money.of(netCash.abs(), 'USDC');
+
+    let portfolioAfterBalance: Portfolio;
+
+    if (fill.side === 'BUY') {
+      // BUY reversal: возвращаем в available то, что было списано, — номинал
+      // из reserved плюс комиссию из available.
+      const creditResult = portfolio.applyCredit(money);
+      if (!creditResult.ok) {
+        return Err(new TradingError(
+          `Failed to credit USDC for BUY fill reversal: ${creditResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = creditResult.value;
+
+      // Уменьшаем позицию (обратно BUY: снимаем добавленные токены)
+      const existing = portfolioAfterBalance.getPosition(instrumentId);
+      const currentQty = existing?.quantity.value() ?? new Decimal(0);
+
+      // Снимаем ровно столько, сколько добавляли: комиссия количество не
+      // трогает (`docs/guides/polymarket-fee-settlement.md`).
+      const newQty = currentQty.minus(fillQty);
+
+      if (newQty.lte(0)) {
+        // Позиция полностью обнулилась — Position без лотов будет удалена upsertPosition
+        const zeroPosition = this._reversalPosition(
+          fill, instrumentId, new Decimal(0), new Decimal(0),
+        );
+        if (!zeroPosition.ok) return zeroPosition;
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(zeroPosition.value);
+      } else {
+        const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
+        const reversePosition = this._reversalPosition(fill, instrumentId, newQty, avgPrice);
+        if (!reversePosition.ok) return reversePosition;
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(reversePosition.value);
+      }
+    } else {
+      // SELL reversal: дебетуем USDC (снимаем зачисленную выручку)
+      const debitResult = portfolio.applyDirectDebit(money);
+      if (!debitResult.ok) {
+        return Err(new TradingError(
+          `Failed to debit USDC for SELL fill reversal: ${debitResult.error.message}`,
+          { context: { fillId: String(fill.id) } },
+        ));
+      }
+      portfolioAfterBalance = debitResult.value;
+
+      // Восстанавливаем позицию (обратно SELL: добавляем проданные токены)
+      const existing = portfolioAfterBalance.getPosition(instrumentId);
+      const currentQty = existing?.quantity.value() ?? new Decimal(0);
+      const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
+      const newQty = currentQty.plus(fillQty);
+
+      const restorePosition = this._reversalPosition(fill, instrumentId, newQty, avgPrice);
+      if (!restorePosition.ok) return restorePosition;
+      portfolioAfterBalance = portfolioAfterBalance.upsertPosition(restorePosition.value);
+    }
+
+    const saveResult = this._store.save(portfolioAfterBalance, version);
+    if (!saveResult.ok) return saveResult;
+
+    this._logger.warn('Fill reversed in portfolio (on-chain FAILED)', {
+      accountId: accountIdToString(fill.accountId),
+      fillId: String(fill.id),
+      side: fill.side,
+      size: fillQty.toString(),
+      netCash: money.value().toString(),
+      feeUSDC: fill.fee.quantity.amount().value().toString(),
+    });
+    return Ok(undefined);
+  }
+
+  // ── Приватные методы ───────────────────────────────────────────────────────
+
+  /**
+   * Обновляет позицию в Portfolio на основе Fill — lot-based Position (Этап 3 плана миграции).
+   *
+   * @param portfolio - Portfolio с уже обновлённым балансом
+   * @param instrumentId - ID инструмента
+   * @param fill - Исполнение ордера
+   * @returns Ok(Portfolio с обновлённой позицией) или Err при недопустимом состоянии
+   *
+   * @remarks
+   * ### Алгоритм:
+   * - BUY: добавляет новый лот (`PositionLot`) — `Position.create()` (первый лот) или
+   *   `existing.addLots()` (позиция уже открыта). Количество лота ВАЛОВОЕ:
+   *   комиссия удерживается деньгами, а не шарами.
+   * - SELL: проверяет наличие позиции и достаточность количества, затем
+   *   `existing.close(qty, price, 'FIFO', timestamp)` — закрывает старейшие лоты первыми,
+   *   накопленный `realizedPnL` логируется (не возвращается наружу — публичная сигнатура
+   *   `applyFill`/`applyDirectFill` остаётся `Result<void, ...>`, не меняется этим этапом;
+   *   `realizedPnL` виден через логи, как и остальное состояние позиции в этом файле).
+   *
+   * ### Откуда берётся существующая позиция
+   *
+   * Только из `Portfolio`, и только каноническим `Position` — с полной
+   * lot-историей. Разбирать случаи больше не нужно: интерфейс `IPosition` и
+   * его единственная реализация `SimplePosition` удалены, структурная
+   * типизация вместе с ними, и подставить сюда позицию без лотов нечем.
+   *
+   * Вместе с ними исчез `_toLotBasedPosition()`: он существовал ровно затем,
+   * чтобы приводить не-`Position` к lot-based, и после удаления интерфейса
+   * выродился в тождество.
+   *
+   * ### Известное ограничение — восстановление позиции в `reverseFill()`
+   *
+   * Ограничение осталось, но причина у него другая. `reverseFill()` (rollback
+   * при on-chain FAILED, редкий путь) пересобирает позицию из известных
+   * `quantity` и `averageEntryPrice` — см. `_reversalPosition()`, — то есть
+   * складывает ОДИН лот вместо восстановления исходной их последовательности.
+   *
+   * Дело не в типе позиции, а в том, что источник отката историей лотов не
+   * располагает: он знает итоговое количество и среднюю цену. Детализация
+   * теряется только для откатываемой части (см. TSDoc `reverseFill`).
+   */
+  private _applyPositionUpdate(
+    portfolio: Portfolio,
+    instrumentId: InstrumentId,
+    fill: Fill,
+  ): Result<Portfolio, TradingError> {
+    const existing = portfolio.getPosition(instrumentId);
+    const fillQty = fill.size.value();
+
+    if (fill.side === 'BUY') {
+      // Количество ВАЛОВОЕ: комиссия его не трогает.
+      //
+      // Здесь стоял пересчёт `feeInTokens = feeUSDC / price` и рост позиции на
+      // `size − feeInTokens`. Механизма, который он описывал, не существует:
+      // измерение публичной ленты на 2898 реальных сделках не нашло ни одной
+      // покупки с уменьшенным количеством шар. Комиссия удерживается деньгами
+      // и снята выше, из available.
+      //
+      // Вместе с пересчётом исчезла и проверка «fee превышает размер фила» —
+      // сравнивать было нечего: комиссия и количество живут в разных
+      // величинах. См. `docs/guides/polymarket-fee-settlement.md`.
+      const newLot = PositionLot.create({
+        quantity: Quantity.of(fillQty),
+        entryPrice: fill.price,
+        timestamp: fill.timestamp,
+      });
+
+      if (existing === undefined) {
+        const positionResult = this._openPosition(portfolio, instrumentId, fill.timestamp, newLot);
+        if (!positionResult.ok) {
+          return Err(new TradingError(
+            `Failed to open position: ${positionResult.error.message}`,
+            { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
+          ));
+        }
+        return Ok(portfolio.upsertPosition(positionResult.value));
+      }
+
+      const addResult = existing.addLots([newLot], fill.timestamp);
+      if (!addResult.ok) {
+        return Err(new TradingError(
+          `Failed to add lot to position: ${addResult.error.message}`,
+          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
+        ));
+      }
+      return Ok(portfolio.upsertPosition(addResult.value));
+    } else {
+      // SELL: закрываем существующую LONG позицию по FIFO
+      if (!existing) {
+        return Err(new TradingError(
+          'No position found for SELL fill',
+          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
+        ));
+      }
+      const currentQty = existing.quantity.value();
+      if (currentQty.lt(fillQty)) {
+        return Err(new TradingError(
+          'Sell size exceeds position quantity',
+          {
+            context: {
+              fillId: String(fill.id),
+              instrumentId: String(instrumentId),
+              currentQty: currentQty.toString(),
+              fillQty: fillQty.toString(),
+            },
+          },
+        ));
+      }
+
+      const closeResult = existing.close(
+        Quantity.of(fillQty), fill.price, 'FIFO', fill.timestamp,
+      );
+      if (!closeResult.ok) {
+        return Err(new TradingError(
+          `Failed to close position lots: ${closeResult.error.message}`,
+          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
+        ));
+      }
+
+      this._logger.info('Position lots closed (FIFO) — realized PnL', {
+        fillId: String(fill.id),
+        instrumentId: String(instrumentId),
+        realizedPnL: closeResult.value.realizedPnL.value().toString(),
+        closedLotsCount: closeResult.value.closedLots.length,
+      });
+
+      return Ok(portfolio.upsertPosition(closeResult.value.position));
+    }
+  }
+
+  /**
+   * Строит новую lot-based Position с единственным начальным лотом.
+   *
+   * @param portfolio - Portfolio (источник accountId)
+   * @param instrumentId - ID инструмента
+   * @param openedAt - Timestamp открытия (timestamp первого fill)
+   * @param firstLot - Первый лот позиции
+   * @returns Result<Position, ValidationError>
+   */
+  private _openPosition(
+    portfolio: Portfolio,
+    instrumentId: InstrumentId,
+    openedAt: Timestamp,
+    firstLot: PositionLot,
+  ): Result<Position, ValidationError> {
+    const positionId = asPositionId(
+      `pos_${accountIdToString(portfolio.accountId)}_${String(instrumentId)}`,
+    );
+    if (!positionId) {
+      return Err(new ValidationError('Cannot generate PositionId', {
+        context: { instrumentId: String(instrumentId) },
+      }));
+    }
+    return Position.create({
+      id: positionId,
+      accountId: portfolio.accountId,
+      instrumentId,
+      asset: AssetIdHelpers.USDC,
+      side: 'LONG',
+      openedAt,
+      lots: [firstLot],
+    });
+  }
+
+}

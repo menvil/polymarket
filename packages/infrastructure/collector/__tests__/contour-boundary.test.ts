@@ -164,11 +164,14 @@ describe('I. Replay-контур не зависит от Collector', () => {
     }
   });
 
-  it('backtesting и storage не импортируют коллектор', () => {
-    const backtestingRoot = join(INFRA_ROOT, 'backtesting');
+  // `backtesting` из списка убран вместе с самим пакетом: он переехал в
+  // `legacy-bot/trading-contour-reference/` как нечитаемый рантаймом текст.
+  // Граница, которую он сторожил, стала беспредметной, а проверка —
+  // падающей на отсутствующем `package.json`.
+  it('storage не импортирует коллектор', () => {
     const dataCollectionRoot = join(PERSISTENCE_ROOT, 'data-collection');
     const snapshotReadersRoot = join(PERSISTENCE_ROOT, 'snapshot-readers');
-    for (const root of [backtestingRoot, dataCollectionRoot, snapshotReadersRoot]) {
+    for (const root of [dataCollectionRoot, snapshotReadersRoot]) {
       expect(declaredDependencies(root)).not.toContain('@polymarket/collector');
       for (const filePath of listSourceFiles(join(root, 'src'))) {
         expect(collectImports(filePath)).not.toContain('@polymarket/collector');

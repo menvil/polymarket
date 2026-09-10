@@ -256,13 +256,17 @@ FAILED          REVERTED          FILL_REVERTED + VENUE_STATUS_OBSERVED
 
 `TradeStatus` уже существует в `@polymarket/fill` как канонический контракт
 on-chain статуса Polymarket, а `ExecutionMetadata.tradeStatus` — его штатный
-носитель. Поверх него уже построена политика
-`venueTradeStatusPolicy` (`@polymarket/use-cases`) с профилями
-`recovery` (`CONFIRMED`, `MATCHED`) и `settlement` (только `CONFIRMED`).
+носитель. Там же, в домене, живёт и политика наблюдений
+(`classifyTradeStatusObservation`).
 
-Завести рядом третий набор тех же пяти строк было бы прямым дублированием:
-второй уже есть — `VenueTradeStatus` в `@polymarket/ports`. Это расхождение
-существует до нас и здесь только фиксируется.
+Завести рядом свой набор тех же пяти строк было бы дублированием: второй набор
+уже есть — `VenueTradeStatus` в `@polymarket/ports`, и это расхождение
+существует до нас.
+
+Был и третий — `venueTradeStatusPolicy` с профилями `recovery`/`settlement` в
+старом `@polymarket/use-cases`; он уехал вместе с контуром в
+`legacy-bot/trading-contour-reference/`. Профили как идея могут вернуться, но
+поверх доменной политики, а не рядом с ней.
 
 ### Порядок доставки ≠ порядок на площадке
 
