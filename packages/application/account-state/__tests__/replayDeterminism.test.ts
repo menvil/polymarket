@@ -12,6 +12,8 @@
  * Проверяется полный машинно-сравнимый отпечаток обоих рантаймов, а не пара
  * выборочных полей: расхождение из-за скрытой зависимости от времени запуска
  * проявилось бы именно в тех местах, которые выборочная проверка пропускает.
+ * В отпечаток входят и ответы навигационных представлений — они производные,
+ * но именно их читает потребитель.
  */
 import { describe, expect, it } from '@jest/globals';
 import type { AccountHotStateView } from '../src/index.js';
@@ -184,15 +186,15 @@ function fingerprint(view: AccountHotStateView): unknown {
               size: r.fill.size.value().toString(),
             }))
             .sort((a, b) => a.id.localeCompare(b.id)),
-          ordersByInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT].map((instrumentId) => [
+          ordersForInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT].map((instrumentId) => [
             instrumentId,
             account.ordersForInstrument(instrumentId).map((r) => r.order.id).sort(),
           ]),
-          fillsByInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT].map((instrumentId) => [
+          fillsForInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT].map((instrumentId) => [
             instrumentId,
             account.fillsForInstrument(instrumentId).map((r) => r.fill.id).sort(),
           ]),
-          fillsByOrder: account
+          fillsForOrder: account
             .orders()
             .map((o) => [o.order.id, account.fillsForOrder(o.order.id).map((r) => r.fill.id).sort()])
             .sort(),

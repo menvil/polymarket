@@ -10,7 +10,8 @@
  *
  * Глубоких копий при чтении НЕ делается: это горячий путь. Возвращаемые
  * массивы объявлены `readonly`, а `Order`, `Fill` и `Portfolio` immutable по
- * построению.
+ * построению. Порядок во всех перечисляющих методах — порядок принятия
+ * записей состоянием; отдельной сортировки не вводится.
  */
 import type { AccountId, FillId, InstrumentId, OrderId, VenueId } from '@polymarket/ids';
 import type { IPosition, Portfolio } from '@polymarket/portfolio';
@@ -50,6 +51,19 @@ export interface TradingAccountIdentity {
  * state.portfolio.positions           позиции по инструментам
  * state.portfolio.tokenReservations   зарезервированные токены
  * ```
+ *
+ * ### Навигация — производные представления
+ *
+ * ```text
+ * orders / fills                  хранимое состояние
+ *      ↓ scan + filter
+ * ordersForInstrument / fillsForInstrument / fillsForOrder
+ * ```
+ *
+ * Этот интерфейс описывает РЕЗУЛЬТАТ навигации, а не способ его получить.
+ * Сейчас способ — линейный проход по каноническим коллекциям; хранимых
+ * индексов нет. Завести внутренний индекс позже можно, не меняя ни одной
+ * сигнатуры здесь.
  *
  * @example
  * ```typescript
@@ -109,11 +123,12 @@ export interface AccountRuntimeStateView {
   /**
    * Заявки по инструменту.
    *
-   * @param instrumentId - Инструмент, полученный из `order.asset`
+   * @param instrumentId - Инструмент исхода
    *
    * @remarks
-   * Инструмент вычисляется из `assetIdToInstrumentId(order.asset)` при
-   * commit'е — второго поля `instrumentId` внутри записи нет.
+   * Производное представление: инструмент каждой заявки вычисляется из
+   * `assetIdToInstrumentId(order.asset)` НА ЧТЕНИИ. Второго поля внутри записи
+   * нет и хранимого индекса тоже — см. {@link AccountRuntimeStateView}.
    */
   ordersForInstrument(instrumentId: InstrumentId): readonly AccountOrderRecord[];
 
@@ -121,9 +136,25 @@ export interface AccountRuntimeStateView {
   getFill(fillId: FillId): AccountFillRecord | undefined;
   /** Все известные исполнения аккаунта */
   fills(): readonly AccountFillRecord[];
-  /** Исполнения одной заявки */
+  /**
+   * Исполнения одной заявки.
+   *
+   * @param orderId - Заявка, исполнения которой нужны
+   *
+   * @remarks
+   * Производное представление поверх {@link fills}; порядок — тот же, в
+   * котором исполнения были приняты.
+   */
   fillsForOrder(orderId: OrderId): readonly AccountFillRecord[];
-  /** Исполнения по инструменту */
+  /**
+   * Исполнения по инструменту.
+   *
+   * @param instrumentId - Инструмент исхода
+   *
+   * @remarks
+   * Производное представление: инструмент вычисляется из
+   * `assetIdToInstrumentId(fill.tokenId)` на чтении.
+   */
   fillsForInstrument(instrumentId: InstrumentId): readonly AccountFillRecord[];
 
   /**
@@ -160,8 +191,7 @@ export interface AccountHotStateView {
    * @remarks
    * Глобальный счётчик, а не сумма чего-либо: одно принятое событие
    * увеличивает и его, и версию затронутого аккаунта — ровно на единицу
-   * каждую, даже если атомарно изменились исполнение, заявка, портфель и три
-   * индекса.
+   * каждую, сколько бы частей состояния одна canonical-мутация ни затронула.
    */
   getVersion(): number;
   /**

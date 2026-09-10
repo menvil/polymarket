@@ -1,13 +1,15 @@
 /**
- * Навигация по приватному состоянию и инварианты вторичных индексов.
+ * Навигация по приватному состоянию.
  *
  * @remarks
- * Метки `AH`…`AJ` соответствуют плану MR, плюс инвариант-проверки индексов:
- * ни одного висячего идентификатора, ни одного дубля.
+ * Метки `AH`…`AJ` соответствуют плану MR, плюс проверка идемпотентности
+ * канонических коллекций.
  *
- * Индексы — навигационные. Источник истины остаётся за `orders`, `fills` и
- * `portfolio`, поэтому каждый тест сверяет ответ индекса с владеющей
- * коллекцией, а не только с ожидаемой длиной.
+ * Навигационные методы — производные представления: они сканируют `orders` и
+ * `fills` и фильтруют их на чтении, поэтому проверять здесь нечего, кроме
+ * ВИДИМОГО результата. Хранимых структур навигации в состоянии нет, и тесты
+ * на их внутренние инварианты (висячие идентификаторы, уникальность внутри
+ * `Set`) исчезли вместе с ними.
  */
 import { describe, expect, it } from '@jest/globals';
 import { TERMINAL_STATUSES, type OrderStatus } from '@polymarket/order';
@@ -278,45 +280,8 @@ describe('AJ. семантика openOrders', () => {
   });
 });
 
-describe('инварианты вторичных индексов', () => {
-  it('ни один индекс не содержит висячих идентификаторов', async () => {
-    const account = await populated();
-    const orderIds = new Set(account.orders().map((r) => r.order.id));
-    const fillIds = new Set(account.fills().map((r) => r.fill.id));
-
-    for (const instrumentId of [UP_INSTRUMENT, DOWN_INSTRUMENT]) {
-      for (const record of account.ordersForInstrument(instrumentId)) {
-        expect(orderIds.has(record.order.id)).toBe(true);
-      }
-      for (const record of account.fillsForInstrument(instrumentId)) {
-        expect(fillIds.has(record.fill.id)).toBe(true);
-      }
-    }
-    for (const orderId of orderIds) {
-      for (const record of account.fillsForOrder(orderId)) {
-        expect(fillIds.has(record.fill.id)).toBe(true);
-      }
-    }
-  });
-
-  it('каждая запись встречается в своём индексе ровно один раз', async () => {
-    const account = await populated();
-    const indexedOrders = [
-      ...account.ordersForInstrument(UP_INSTRUMENT),
-      ...account.ordersForInstrument(DOWN_INSTRUMENT),
-    ].map((r) => r.order.id);
-    const indexedFills = [
-      ...account.fillsForInstrument(UP_INSTRUMENT),
-      ...account.fillsForInstrument(DOWN_INSTRUMENT),
-    ].map((r) => r.fill.id);
-
-    expect(new Set(indexedOrders).size).toBe(indexedOrders.length);
-    expect(new Set(indexedFills).size).toBe(indexedFills.length);
-    expect(indexedOrders.length).toBe(account.orders().length);
-    expect(indexedFills.length).toBe(account.fills().length);
-  });
-
-  it('повторные события не удваивают записи индексов', async () => {
+describe('идемпотентность канонических коллекций', () => {
+  it('повторные события не создают вторых записей', async () => {
     const { bus, view, events } = buildRuntime();
     const accountId = walletAccount();
     events.observeAt(1_000);
@@ -338,10 +303,33 @@ describe('инварианты вторичных индексов', () => {
     }
 
     const account = view.getAccount(VENUE, accountId);
+    // Канонические коллекции ключуются идентификатором, поэтому повтор
+    // перезаписал бы запись, а не добавил вторую. Навигация читает их же —
+    // и обязана показать ровно то же самое.
+    expect(account?.orders()).toHaveLength(1);
+    expect(account?.fills()).toHaveLength(1);
     expect(account?.ordersForInstrument(UP_INSTRUMENT)).toHaveLength(1);
     expect(account?.fillsForInstrument(UP_INSTRUMENT)).toHaveLength(1);
     expect(account?.fillsForOrder(open.id)).toHaveLength(1);
     // Первый commit и первый apply — две мутации, остальное дубликаты.
     expect(account?.version).toBe(3);
+  });
+
+  it('навигация не возвращает записей, которых нет в канонических коллекциях', async () => {
+    const account = await populated();
+    const orderIds = new Set(account.orders().map((r) => r.order.id));
+    const fillIds = new Set(account.fills().map((r) => r.fill.id));
+
+    const navigatedOrders = [UP_INSTRUMENT, DOWN_INSTRUMENT].flatMap((instrumentId) =>
+      account.ordersForInstrument(instrumentId).map((r) => r.order.id),
+    );
+    const navigatedFills = [UP_INSTRUMENT, DOWN_INSTRUMENT].flatMap((instrumentId) =>
+      account.fillsForInstrument(instrumentId).map((r) => r.fill.id),
+    );
+
+    // Каждый инструмент разбирает записи без пересечений и без потерь:
+    // фильтр — тотальная функция от канонической коллекции.
+    expect([...navigatedOrders].sort()).toEqual([...orderIds].sort());
+    expect([...navigatedFills].sort()).toEqual([...fillIds].sort());
   });
 });

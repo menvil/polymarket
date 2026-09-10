@@ -14,10 +14,25 @@
  * │           └── AccountRuntimeState
  * │                 ├── portfolio   деньги + позиции + резервации
  * │                 ├── orders      OrderId → AccountOrderRecord
- * │                 ├── fills       FillId  → AccountFillRecord
- * │                 └── indexes     навигация по инструменту и заявке
+ * │                 └── fills       FillId  → AccountFillRecord
  * └── version        принятые мутации по ВСЕМ аккаунтам
  * ```
+ *
+ * ### Навигация — производные представления, а не хранимое состояние
+ *
+ * ```text
+ * orders / fills          единственный источник истины
+ *      ↓ scan + filter
+ * ordersForInstrument / fillsForInstrument / fillsForOrder
+ * ```
+ *
+ * Вторичные индексы намеренно НЕ хранятся. Хранимый индекс — это mutable
+ * derived state, который обязан обновляться синхронно с каноническими
+ * коллекциями в каждой мутации; на ожидаемом сейчас масштабе заявок и
+ * исполнений линейный проход по `Map` дешевле этой обязанности. Публичный
+ * контракт навигации от решения не зависит: {@link AccountRuntimeStateView}
+ * описывает результат, а не способ его получить, поэтому внутренний индекс
+ * можно завести позже, когда профилирование покажет необходимость.
  *
  * ### Экономика считается ВЫШЕ, а не здесь
  *
@@ -31,7 +46,7 @@
  *
  * Каждый метод сначала полностью валидирует событие и только потом мутирует.
  * Отвергнутое событие не оставляет за собой НИЧЕГО: ни портфеля, ни записи,
- * ни строки индекса, ни изменения версий. Частичная мутация — уже пойманный
+ * ни изменения версий, ни `lastMutationAt`. Частичная мутация — уже пойманный
  * в этом проекте класс дефекта, и повторять его нельзя.
  *
  * ### Три исхода вместо двух
@@ -127,39 +142,18 @@ export const OPEN_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus
 interface PendingMutation {
   /** Post-commit портфель; `undefined` — портфель не меняется (подтверждение) */
   readonly portfolio?: Portfolio;
+  /** Post-commit заявка; `undefined` — заявка этим событием не менялась */
+  readonly order?: Order;
   /**
-   * Post-commit заявка вместе со своим инструментом.
+   * Запись исполнения целиком; `undefined` — исполнения событие не касается.
    *
    * @remarks
-   * Одним полем, а не двумя: заявка и её ключ индекса не бывают порознь.
-   * Двумя необязательными полями «заявка есть, инструмента нет» стало бы
-   * выразимо — и превратилось бы в заявку, невидимую для навигации.
+   * Новое исполнение и смена его runtime-статуса записываются одинаково:
+   * навигация — производное представление поверх `_fills`, поэтому «вставка»
+   * и «переход» отличаются только содержимым записи, а не работой с
+   * состоянием.
    */
-  readonly order?: { readonly order: Order; readonly instrumentId: InstrumentId };
-  /**
-   * Что происходит с записью исполнения.
-   *
-   * @remarks
-   * Различаются намеренно:
-   *
-   * ```text
-   * INSERT      новое исполнение — нужно проиндексировать
-   * TRANSITION  смена runtime-статуса — индексы уже верны
-   * ```
-   *
-   * `Fill` неизменяем, поэтому его инструмент и заявка не меняются никогда, а
-   * значит при переходе статуса индексировать нечего. Требовать `instrumentId`
-   * и там означало бы либо тащить его через подтверждение, которому он не
-   * нужен, либо разрешать `undefined` — то есть снова допускать состояние
-   * «запись есть, ключа индекса нет».
-   */
-  readonly fill?:
-    | {
-        readonly kind: 'INSERT';
-        readonly record: AccountFillRecord;
-        readonly instrumentId: InstrumentId;
-      }
-    | { readonly kind: 'TRANSITION'; readonly record: AccountFillRecord };
+  readonly fill?: AccountFillRecord;
 }
 
 /**
@@ -176,9 +170,6 @@ interface PendingMutation {
 class AccountRuntimeState implements AccountRuntimeStateView {
   private readonly _orders = new Map<OrderId, AccountOrderRecord>();
   private readonly _fills = new Map<FillId, AccountFillRecord>();
-  private readonly _orderIdsByInstrument = new Map<InstrumentId, Set<OrderId>>();
-  private readonly _fillIdsByInstrument = new Map<InstrumentId, Set<FillId>>();
-  private readonly _fillIdsByOrder = new Map<OrderId, Set<FillId>>();
   private _portfolio: Portfolio;
   private _version: number;
   private _lastMutationAt: Timestamp;
@@ -236,7 +227,9 @@ class AccountRuntimeState implements AccountRuntimeStateView {
 
   /** {@inheritDoc AccountRuntimeStateView.ordersForInstrument} */
   public ordersForInstrument(instrumentId: InstrumentId): readonly AccountOrderRecord[] {
-    return collect(this._orderIdsByInstrument.get(instrumentId), this._orders);
+    return this.orders().filter(
+      (record) => assetIdToInstrumentId(record.order.asset) === instrumentId,
+    );
   }
 
   /** {@inheritDoc AccountRuntimeStateView.getFill} */
@@ -251,12 +244,14 @@ class AccountRuntimeState implements AccountRuntimeStateView {
 
   /** {@inheritDoc AccountRuntimeStateView.fillsForOrder} */
   public fillsForOrder(orderId: OrderId): readonly AccountFillRecord[] {
-    return collect(this._fillIdsByOrder.get(orderId), this._fills);
+    return this.fills().filter((record) => record.fill.orderId === orderId);
   }
 
   /** {@inheritDoc AccountRuntimeStateView.fillsForInstrument} */
   public fillsForInstrument(instrumentId: InstrumentId): readonly AccountFillRecord[] {
-    return collect(this._fillIdsByInstrument.get(instrumentId), this._fills);
+    return this.fills().filter(
+      (record) => assetIdToInstrumentId(record.fill.tokenId) === instrumentId,
+    );
   }
 
   /** {@inheritDoc AccountRuntimeStateView.getPosition} */
@@ -275,9 +270,9 @@ class AccountRuntimeState implements AccountRuntimeStateView {
    * внутри не может отказать — всё проверено вызывающим, — поэтому
    * «наполовину применённого» события не бывает.
    *
-   * Версия растёт РОВНО на единицу, даже если событие атомарно изменило
-   * исполнение, заявку, портфель и три индекса: считается принятое событие, а
-   * не число затронутых структур.
+   * Версия растёт РОВНО на единицу за ОДНУ принятую canonical-мутацию,
+   * сколько бы её частей — портфель, заявка, исполнение — она ни затронула:
+   * считается принятое событие, а не число изменённых структур.
    */
   public commit(mutation: PendingMutation, at: Timestamp): void {
     if (mutation.portfolio !== undefined) {
@@ -285,69 +280,16 @@ class AccountRuntimeState implements AccountRuntimeStateView {
     }
 
     if (mutation.order !== undefined) {
-      const { order, instrumentId } = mutation.order;
-      this._orders.set(order.id, { order, updatedAt: at });
-      addToIndex(this._orderIdsByInstrument, instrumentId, order.id);
+      this._orders.set(mutation.order.id, { order: mutation.order, updatedAt: at });
     }
 
     if (mutation.fill !== undefined) {
-      const { record } = mutation.fill;
-      this._fills.set(record.fill.id, record);
-      if (mutation.fill.kind === 'INSERT') {
-        addToIndex(this._fillIdsByInstrument, mutation.fill.instrumentId, record.fill.id);
-        addToIndex(this._fillIdsByOrder, record.fill.orderId, record.fill.id);
-      }
+      this._fills.set(mutation.fill.fill.id, mutation.fill);
     }
 
     this._version += 1;
     this._lastMutationAt = at;
   }
-}
-
-/**
- * Добавляет идентификатор во вторичный индекс.
- *
- * @param index - Индекс «ключ → множество идентификаторов»
- * @param key - Ключ навигации
- * @param id - Идентификатор записи
- *
- * @remarks
- * Значение индекса — `Set`, а не массив: повторное обновление заявки не
- * должно класть её идентификатор второй раз, и полагаться на то, что
- * вызывающий этого не сделает, незачем.
- *
- * В индексе лежат ТОЛЬКО идентификаторы. Копии `Order`/`Fill` там завели бы
- * второй источник истины, который пришлось бы обновлять синхронно с первым.
- */
-function addToIndex<K, V>(index: Map<K, Set<V>>, key: K, id: V): void {
-  const existing = index.get(key);
-  if (existing === undefined) {
-    index.set(key, new Set([id]));
-    return;
-  }
-  existing.add(id);
-}
-
-/**
- * Собирает записи по идентификаторам из индекса.
- *
- * @param ids - Идентификаторы из вторичного индекса
- * @param records - Владеющая коллекция записей
- * @returns Записи в порядке индекса; пустой массив, если индекса нет
- *
- * @remarks
- * Индекс навигационный, владение остаётся за `records`. Отсутствующие записи
- * молча пропускаются — dangling-идентификаторов быть не должно, и тест это
- * проверяет, но чтение состояния не место для аварийного отказа.
- */
-function collect<K, V>(ids: ReadonlySet<K> | undefined, records: ReadonlyMap<K, V>): readonly V[] {
-  if (ids === undefined) return [];
-  const result: V[] = [];
-  for (const id of ids) {
-    const record = records.get(id);
-    if (record !== undefined) result.push(record);
-  }
-  return result;
 }
 
 /**
@@ -499,8 +441,10 @@ export class AccountHotState implements AccountHotStateView {
     const owner = validateOrderOwner(venueId, accountId, order);
     if (owner !== undefined) return Err(owner);
 
-    const instrument = assetIdToInstrumentId(order.asset);
-    if (instrument === undefined) {
+    // Значение не используется дальше: инструмент вычисляется на чтении.
+    // Проверка остаётся — заявка, которую нельзя связать с рынком, не должна
+    // попадать в состояние.
+    if (assetIdToInstrumentId(order.asset) === undefined) {
       return Err(
         new AccountInstrumentResolutionError(
           'ORDER_ASSET',
@@ -523,7 +467,7 @@ export class AccountHotState implements AccountHotStateView {
       if (sameOrderState(stored.order, order)) return Ok(undefined);
     }
 
-    account.commit({ portfolio, order: { order, instrumentId: instrument } }, at);
+    account.commit({ portfolio, order }, at);
     this._version += 1;
     return Ok(undefined);
   }
@@ -541,8 +485,8 @@ export class AccountHotState implements AccountHotStateView {
    * Экономика исполнения здесь НЕ считается: комиссия, движение денег и
    * изменение позиции уже учтены в `portfolio`.
    *
-   * Исполнение, заявка, портфель и все индексы обновляются ОДНОЙ мутацией:
-   * иначе состояние на мгновение показало бы исполнение без соответствующего
+   * Исполнение, заявка и портфель обновляются ОДНОЙ принятой мутацией: иначе
+   * состояние на мгновение показало бы исполнение без соответствующего
    * `filledSize` — ровно в тот момент, когда по нему принимается решение.
    *
    * @example
@@ -559,7 +503,7 @@ export class AccountHotState implements AccountHotStateView {
     const prepared = this._prepareFillEconomicEvent(fill, portfolio, order, 'APPLY');
     if (!prepared.ok) return prepared;
 
-    const { account, instrumentId } = prepared.value;
+    const account = prepared.value;
     // Тот же FillId с тем же фактом (расхождение уже отвергнуто выше) — это
     // дубликат доставки: портфель и заявка в нём УСТАРЕВШИЕ, применять их
     // нельзя, иначе повторный старый event откатил бы состояние назад.
@@ -568,12 +512,8 @@ export class AccountHotState implements AccountHotStateView {
     account.commit(
       {
         portfolio,
-        ...(order === undefined ? {} : { order: { order, instrumentId } }),
-        fill: {
-          kind: 'INSERT',
-          record: { fill, status: 'APPLIED', appliedAt: at },
-          instrumentId,
-        },
+        ...(order === undefined ? {} : { order }),
+        fill: { fill, status: 'APPLIED', appliedAt: at },
       },
       at,
     );
@@ -619,10 +559,7 @@ export class AccountHotState implements AccountHotStateView {
       );
     }
 
-    account.commit(
-      { fill: { kind: 'TRANSITION', record: { ...record, status: 'CONFIRMED', confirmedAt: at } } },
-      at,
-    );
+    account.commit({ fill: { ...record, status: 'CONFIRMED', confirmedAt: at } }, at);
     this._version += 1;
     return Ok(undefined);
   }
@@ -660,7 +597,7 @@ export class AccountHotState implements AccountHotStateView {
     const prepared = this._prepareFillEconomicEvent(fill, portfolio, order, 'REVERT');
     if (!prepared.ok) return prepared;
 
-    const { account, instrumentId } = prepared.value;
+    const account = prepared.value;
     const record = account.getFill(fill.id);
     if (record === undefined) {
       return Err(
@@ -683,11 +620,8 @@ export class AccountHotState implements AccountHotStateView {
     account.commit(
       {
         portfolio,
-        ...(order === undefined ? {} : { order: { order, instrumentId } }),
-        fill: {
-          kind: 'TRANSITION',
-          record: { ...record, status: 'REVERTED', revertedAt: at, revertReason: reason },
-        },
+        ...(order === undefined ? {} : { order }),
+        fill: { ...record, status: 'REVERTED', revertedAt: at, revertReason: reason },
       },
       at,
     );
@@ -717,7 +651,7 @@ export class AccountHotState implements AccountHotStateView {
    * @param portfolio - Post-commit портфель
    * @param order - Post-commit заявка, если она есть
    * @param action - Какое событие обрабатывается (для текста ошибки)
-   * @returns Аккаунт и инструмент исполнения либо первая непройденная проверка
+   * @returns Разрешённый аккаунт либо первая непройденная проверка
    *
    * @remarks
    * `TRADING_ACCOUNT_FILL_APPLIED` и `TRADING_ACCOUNT_FILL_REVERTED`
@@ -734,7 +668,7 @@ export class AccountHotState implements AccountHotStateView {
     portfolio: Portfolio,
     order: Order | undefined,
     action: Extract<AccountFillAction, 'APPLY' | 'REVERT'>,
-  ): Result<{ account: AccountRuntimeState; instrumentId: InstrumentId }, AccountStateError> {
+  ): Result<AccountRuntimeState, AccountStateError> {
     const venueId = fill.venueId;
     const accountId = fill.accountId;
 
@@ -752,8 +686,10 @@ export class AccountHotState implements AccountHotStateView {
     const portfolioIdentity = validatePortfolioIdentity(venueId, accountId, portfolio);
     if (portfolioIdentity !== undefined) return Err(portfolioIdentity);
 
-    const instrumentId = assetIdToInstrumentId(fill.tokenId);
-    if (instrumentId === undefined) {
+    // Значение не используется дальше: инструмент вычисляется на чтении.
+    // Проверка остаётся — исполнение, которое нельзя связать с рынком, не
+    // должно попадать в состояние.
+    if (assetIdToInstrumentId(fill.tokenId) === undefined) {
       return Err(
         new AccountInstrumentResolutionError(
           'FILL_TOKEN',
@@ -768,9 +704,9 @@ export class AccountHotState implements AccountHotStateView {
       const link = validateFillOrderLink(venueId, accountId, fill, order);
       if (link !== undefined) return Err(link);
 
-      // Отдельно инструмент заявки НЕ разрешается: `validateFillOrderLink`
-      // уже доказал `order.asset === fill.tokenId`, поэтому он совпадает с
-      // `instrumentId` выше. Второй вызов `assetIdToInstrumentId` дал бы
+      // Отдельно инструмент заявки НЕ проверяется: `validateFillOrderLink`
+      // уже доказал `order.asset === fill.tokenId`, а его разрешимость
+      // проверена выше. Второй вызов `assetIdToInstrumentId` дал бы
       // недостижимую ветку отказа и второе место, где живёт одно решение.
       const storedOrder = account.getOrder(order.id);
       if (storedOrder !== undefined) {
@@ -793,7 +729,7 @@ export class AccountHotState implements AccountHotStateView {
       }
     }
 
-    return Ok({ account, instrumentId });
+    return Ok(account);
   }
 
   /**

@@ -82,7 +82,7 @@ describe('R. применение исполнения без заявки в pa
 });
 
 describe('S. применение исполнения вместе с заявкой', () => {
-  it('исполнение, заявка, портфель и все индексы обновляются одной мутацией', async () => {
+  it('исполнение, заявка и портфель обновляются одной мутацией', async () => {
     const { bus, view, events, accountId } = await withAccount();
     const open = must(order({ accountId }).accept());
     events.observeAt(2_000);
@@ -110,7 +110,8 @@ describe('S. применение исполнения вместе с заяв�
     expect(account?.fillsForOrder(open.id).map((r) => r.fill.id)).toEqual([fill.id]);
     expect(account?.fillsForInstrument(UP_INSTRUMENT)).toHaveLength(1);
     expect(account?.ordersForInstrument(UP_INSTRUMENT)).toHaveLength(1);
-    // Одна мутация, а не четыре: считается принятое событие.
+    // Одна мутация, а не три: считается принятое событие, а не число
+    // затронутых частей состояния.
     expect(account?.version).toBe(3);
     expect(view.getVersion()).toBe(3);
   });
@@ -317,7 +318,7 @@ describe('X. повторный APPLY со старым снимком не от
     expect(account?.version).toBe(3);
     expect(view.getVersion()).toBe(3);
     expect(account?.lastMutationAt.equals(ts(3_000))).toBe(true);
-    // Индексы не удваиваются.
+    // Дубликат не создал второй записи — навигация читает ту же коллекцию.
     expect(account?.fillsForOrder(open.id)).toHaveLength(1);
     expect(account?.fillsForInstrument(UP_INSTRUMENT)).toHaveLength(1);
   });

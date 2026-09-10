@@ -6,9 +6,9 @@
  *
  * Тест снимает ПОЛНЫЙ отпечаток состояния до серии невалидных событий и
  * сверяет его после каждого — не отдельные поля, а всё сразу: портфель,
- * заявки, исполнения, содержимое индексов, обе версии и `lastMutationAt`.
- * Частичная мутация — уже пойманный в этом проекте класс дефекта, и ловить её
- * выборочной проверкой одного-двух полей ненадёжно.
+ * заявки, исполнения, ответы навигационных представлений, обе версии и
+ * `lastMutationAt`. Частичная мутация — уже пойманный в этом проекте класс
+ * дефекта, и ловить её выборочной проверкой одного-двух полей ненадёжно.
  */
 import { describe, expect, it } from '@jest/globals';
 import type { AccountHotStateView, AccountRuntimeStateView } from '../src/index.js';
@@ -41,9 +41,10 @@ interface StateSnapshot {
   readonly balance: readonly [string, string];
   readonly orders: readonly string[];
   readonly fills: readonly string[];
-  readonly ordersByInstrument: readonly string[];
-  readonly fillsByInstrument: readonly string[];
-  readonly fillsByOrder: readonly string[];
+  /** Ответы навигационных представлений — производных, а не хранимых */
+  readonly ordersForInstrument: readonly string[];
+  readonly fillsForInstrument: readonly string[];
+  readonly fillsForOrder: readonly string[];
 }
 
 /**
@@ -77,17 +78,17 @@ function snapshot(view: AccountHotStateView, account: AccountRuntimeStateView): 
     ],
     orders: account.orders().map((r) => describeOrder(r.order.id)).sort(),
     fills: account.fills().map((r) => describeFill(r.fill.id)).sort(),
-    ordersByInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT]
+    ordersForInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT]
       .flatMap((instrumentId) =>
         account.ordersForInstrument(instrumentId).map((r) => `${instrumentId}:${r.order.id}`),
       )
       .sort(),
-    fillsByInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT]
+    fillsForInstrument: [UP_INSTRUMENT, DOWN_INSTRUMENT]
       .flatMap((instrumentId) =>
         account.fillsForInstrument(instrumentId).map((r) => `${instrumentId}:${r.fill.id}`),
       )
       .sort(),
-    fillsByOrder: account
+    fillsForOrder: account
       .orders()
       .flatMap((o) => account.fillsForOrder(o.order.id).map((r) => `${o.order.id}:${r.fill.id}`))
       .sort(),

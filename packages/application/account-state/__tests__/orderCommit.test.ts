@@ -92,6 +92,8 @@ describe('J. первый валидный commit', () => {
     expect(account?.getOrder(committed.id)?.updatedAt.equals(ts(2_500))).toBe(true);
     expect(account?.portfolio).toBe(after);
     expect(account?.portfolio.balance.reserved().value().toNumber()).toBe(650);
+    // Навигация — производное представление: заявка видна по инструменту
+    // своего актива без какой-либо хранимой записи о ней.
     expect(account?.ordersForInstrument(UP_INSTRUMENT)).toHaveLength(1);
     expect(account?.version).toBe(2);
     expect(view.getVersion()).toBe(2);
@@ -310,7 +312,8 @@ describe('P. законная эволюция заявки', () => {
     expect(account?.portfolio).toBe(afterFill);
     expect(account?.version).toBe(3);
     expect(view.getVersion()).toBe(3);
-    // Индекс не удваивается: `Set` держит уникальность.
+    // Заявка одна, сколько бы commit'ов её ни обновляло: коллекция ключуется
+    // OrderId, а навигация читает её же.
     expect(account?.ordersForInstrument(UP_INSTRUMENT)).toHaveLength(1);
   });
 
@@ -347,7 +350,7 @@ describe('P. законная эволюция заявки', () => {
   });
 });
 
-describe('Q. индекс заявок по инструменту', () => {
+describe('Q. навигация по заявкам инструмента', () => {
   it('возвращает заявки своего инструмента и не возвращает чужие', async () => {
     const { bus, view, events, accountId } = await withAccount();
     const up = order({ id: 'order-up', accountId, asset: UP_TOKEN });

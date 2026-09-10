@@ -12,8 +12,7 @@ IEventBus → AccountStateProjector → AccountHotState
                                       └── AccountRuntimeState
                                             ├── portfolio  деньги + позиции + резервации
                                             ├── orders     наши заявки
-                                            ├── fills      наши исполнения
-                                            └── indexes    навигация
+                                            └── fills      наши исполнения
 ```
 
 ## Почему приватное состояние отдельно от рыночного
@@ -237,10 +236,9 @@ payload.
 Отвергнутое событие не оставляет за собой ничего:
 
 ```text
-portfolio unchanged     indexes unchanged
-orders unchanged        account version unchanged
-fills unchanged         global version unchanged
-                        lastMutationAt unchanged
+portfolio unchanged     account version unchanged
+orders unchanged        global version unchanged
+fills unchanged         lastMutationAt unchanged
 ```
 
 Реализовано через `PendingMutation`: между «проверить» и «записать» не остаётся
@@ -249,8 +247,9 @@ fills unchanged         global version unchanged
 
 Этот класс дефекта уже ловился в проекте (отвергнутая сделка мутировала
 рыночное состояние), поэтому тест атомарности снимает **полный** отпечаток
-состояния — портфель, заявки, исполнения, содержимое всех трёх индексов, обе
-версии и `lastMutationAt` — и сверяет его после каждого невалидного события.
+состояния — портфель, заявки, исполнения, ответы всех навигационных
+представлений, обе версии и `lastMutationAt` — и сверяет его после каждого
+невалидного события.
 
 ## Идемпотентность: три случая, а не два
 
@@ -275,7 +274,7 @@ t3  ORDER_COMMITTED   order OPEN,  portfolio available=9350 reserved=650  ← Д
 откатить состояние на шаг назад по деньгам, которые уже частично исполнены.
 
 Поэтому дубликат распознаётся **до** мутации и не трогает ни портфель, ни
-заявку, ни индексы, ни версии, ни `lastMutationAt`.
+заявку, ни версии, ни `lastMutationAt`.
 
 ### Как распознаётся дубликат
 
@@ -334,7 +333,6 @@ REST-сверки, из архива), поэтому по ссылке равн
 
 ```text
 orders[order.id] = { order, updatedAt }
-orderIdsByInstrument += order.id
 portfolio = post-commit portfolio
 version += 1   (аккаунт и глобально)
 ```
@@ -343,16 +341,14 @@ version += 1   (аккаунт и глобально)
 
 ```text
 fills[fill.id] = { fill, status: APPLIED, appliedAt }
-fillIdsByInstrument += fill.id
-fillIdsByOrder += fill.id
 portfolio = post-commit portfolio
-если есть order:  orders[order.id] = …, orderIdsByInstrument += …
+если есть order:  orders[order.id] = { order, updatedAt }
 version += 1   (аккаунт и глобально)
 ```
 
-Версия растёт **ровно на единицу**, даже когда событие изменило исполнение,
-заявку, портфель и три индекса: считается принятое событие, а не число
-затронутых структур.
+Версия растёт **ровно на единицу** за одну принятую canonical-мутацию, сколько
+бы её частей — портфель, заявку, исполнение — она ни затронула: считается
+принятое событие, а не число изменённых структур.
 
 Атомарность здесь не абстракция. Разнести заявку и портфель на два события
 значило бы допустить окно, в котором состояние видит новую заявку со старым
@@ -376,25 +372,54 @@ account A fill    → global 4, A 3
 Инициализация — уже первая мутация, поэтому у только что созданного аккаунта
 версия равна 1, а не 0. Отвергнутое событие и дубликат версий не меняют.
 
-## Вторичные индексы
+## Навигация — производные представления
 
 ```text
-orderIdsByInstrument  InstrumentId → Set<OrderId>
-fillIdsByInstrument   InstrumentId → Set<FillId>
-fillIdsByOrder        OrderId      → Set<FillId>
+orders / fills          единственный источник истины
+     ↓ scan + filter
+ordersForInstrument / fillsForInstrument / fillsForOrder
 ```
 
-Индексы **только навигационные**. Источник истины — `orders`, `fills` и
-`portfolio`; копий `Order`/`Fill` в индексе нет, иначе их пришлось бы держать
-согласованными с оригиналом.
+```typescript
+ordersForInstrument(id)  orders().filter(r => assetIdToInstrumentId(r.order.asset) === id)
+fillsForInstrument(id)   fills().filter(r => assetIdToInstrumentId(r.fill.tokenId) === id)
+fillsForOrder(orderId)   fills().filter(r => r.fill.orderId === orderId)
+```
 
-Значение — `Set`, а не массив: повторное обновление заявки не должно класть её
-идентификатор второй раз. Инструмент входит в неизменяемую идентичность
-заявки, поэтому обновление заявки индекс не меняет; исполнение неизменяемо
-целиком, поэтому попадает в индекс один раз при `APPLIED`.
+Порядок — порядок принятия записей состоянием (`Map` сохраняет порядок
+вставки). Отдельной сортировки не вводится.
 
-Инварианты проверяются тестами: ни одного висячего идентификатора, ни одного
-дубля, дубликаты событий индексы не расширяют.
+### Почему хранимых индексов нет
+
+Хранимый индекс — это **mutable derived state**: вторая структура, обязанная
+обновляться синхронно с канонической в каждой мутации, переживать откаты и
+совпадать после replay. На ожидаемом сейчас масштабе заявок и исполнений — на
+порядки меньшем, чем поток публичных обновлений стакана, — линейный проход по
+`Map` этой обязанности не стоит.
+
+Что даёт отказ от них:
+
+- источник истины остаётся один — `orders`, `fills`, `portfolio`;
+- `commit()` записывает ровно то, что пришло, и ничего не выводит;
+- откат и replay не требуют отдельной сверки производных структур;
+- исчезает целый класс дефектов «индекс разошёлся с коллекцией».
+
+Конкретного порога производительности мы **не измеряли** и здесь не обещаем.
+Решение принято по форме нагрузки, а не по замеру.
+
+### Почему это обратимо
+
+`AccountRuntimeStateView` описывает **результат** навигации, а не способ его
+получить:
+
+```typescript
+ordersForInstrument(instrumentId: InstrumentId): readonly AccountOrderRecord[];
+fillsForInstrument(instrumentId: InstrumentId): readonly AccountFillRecord[];
+fillsForOrder(orderId: OrderId): readonly AccountFillRecord[];
+```
+
+Если профилирование позже покажет узкое место, внутренний индекс можно завести,
+не изменив ни одной сигнатуры и ни одного потребителя.
 
 ## `openOrders()`
 
@@ -495,9 +520,9 @@ objects, и структурная заглушка проверяла бы не
 | файл | что покрывает |
 | --- | --- |
 | `initialization.test.ts` | создание аккаунта, запрет повтора, ключевание по canonical-строке, изоляция площадок, три места идентичности портфеля, venue-bound `AccountId` |
-| `orderCommit.test.ts` | атомарный commit, владелец заявки, разрешение инструмента, конфликты идентичности (table-driven), дубликат со stale-портфелем, законная эволюция, индекс по инструменту |
+| `orderCommit.test.ts` | атомарный commit, владелец заявки, разрешение инструмента, конфликты идентичности (table-driven), дубликат со stale-портфелем, законная эволюция, навигация по инструменту |
 | `fillLifecycle.test.ts` | apply с заявкой и без, связь заявки и исполнения, дубликаты, конфликты факта (table-driven), `CONFIRMED`, `REVERTED`, запрещённые переходы |
-| `navigation.test.ts` | навигационные API, `getPosition` из портфеля, семантика и полнота `openOrders`, инварианты индексов |
+| `navigation.test.ts` | навигационные API, `getPosition` из портфеля, семантика и полнота `openOrders`, идемпотентность канонических коллекций |
 | `versionsAndTime.test.ts` | глобальная и локальная версии, `metadata.createdAt` как единственный источник времени |
 | `atomicity.test.ts` | полный отпечаток состояния до и после 13 невалидных событий, `Err` из `publish()`, `stop()`/повторный `start()` |
 | `replayDeterminism.test.ts` | одна лента на двух свежих рантаймах даёт эквивалентное состояние |
