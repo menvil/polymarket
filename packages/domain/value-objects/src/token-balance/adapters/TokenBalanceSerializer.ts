@@ -2,7 +2,7 @@ import { Result, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
 import { accountIdToString, parseAccountId, asVenueId, type VenueId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
-import { asInstrumentId, type InstrumentId } from '@polymarket/ids';
+import { asInstrumentId } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalance } from '../core/TokenBalance.js';
 import { TokenBalanceService } from '../facade/TokenBalanceService.js';
@@ -220,17 +220,36 @@ export class TokenBalanceSerializer {
       );
     }
 
-    // Инструмент — branded-строка, отдельного сериализатора не требует
-    const tokenResult = asInstrumentId(String(obj.instrumentId)) !== undefined
-      ? { ok: true as const, value: asInstrumentId(String(obj.instrumentId)) as InstrumentId }
-      : { ok: false as const, error: new Error(`Invalid instrumentId: ${String(obj.instrumentId)}`) };
-    if (!tokenResult.ok) {
+    // Инструмент — branded-строка, отдельного сериализатора не требует.
+    //
+    // Тип проверяется ДО разбора, а не приведением. `String(obj.instrumentId)`
+    // принимал бы что угодно: `123` → `"123"`, `null` → `"null"`, `{}` →
+    // `"[object Object]"`, `true` → `"true"` — и все они прошли бы как валидный
+    // `InstrumentId`. Десериализация — граница доверия, за ней лежит чужой
+    // JSON; приведение типа на границе означает, что структурная ошибка
+    // источника молча становится валидным доменным значением.
+    const rawInstrumentId: unknown = obj.instrumentId;
+    if (typeof rawInstrumentId !== 'string') {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
-          `Failed to parse instrumentId: ${tokenResult.error.message}`,
+          `Field 'instrumentId' must be a string, got ${typeof rawInstrumentId}`,
           {
             reason: TokenBalanceErrorReason.INVALID_TOKEN,
-            details: { json: safeStringify(json), tokenError: tokenResult.error },
+            details: { json: safeStringify(json), actualType: typeof rawInstrumentId },
+          },
+          source
+        )
+      );
+    }
+
+    const instrumentId = asInstrumentId(rawInstrumentId);
+    if (instrumentId === undefined) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          `Failed to parse instrumentId: ${rawInstrumentId}`,
+          {
+            reason: TokenBalanceErrorReason.INVALID_TOKEN,
+            details: { json: safeStringify(json), instrumentId: rawInstrumentId },
           },
           source
         )
@@ -424,7 +443,7 @@ export class TokenBalanceSerializer {
     }
 
     // Создаём TokenBalance через сервис
-    return TokenBalanceService.create(tokenResult.value, availableQty, reservedQty, accountIdParsed, venueId);
+    return TokenBalanceService.create(instrumentId, availableQty, reservedQty, accountIdParsed, venueId);
   }
 
   /**

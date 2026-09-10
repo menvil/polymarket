@@ -151,6 +151,44 @@ describe('TokenBalanceSerializer', () => {
       }
     });
 
+    // Десериализация — граница доверия: за ней чужой JSON. Раньше поле
+    // приводилось через `String(obj.instrumentId)`, и любой тип проходил:
+    // `123` → `"123"`, `null` → `"null"`, `{}` → `"[object Object]"`,
+    // `true` → `"true"`. Структурная ошибка источника молча становилась
+    // валидным доменным значением.
+    it.each([
+      ['число', 123],
+      ['null', null],
+      ['объект', { id: 'instrument-up' }],
+      ['булево', true],
+      ['массив', ['instrument-up']],
+      ['undefined', undefined],
+    ])('фэйлится если instrumentId — %s, а не строка', (_label, value) => {
+      const json = { instrumentId: value, available: '100.5', reserved: '0' };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_TOKEN);
+        expect(result.error.message).toContain("must be a string");
+      }
+    });
+
+    it('строку принимает — приведения типа тут нет, но и лишней строгости тоже', () => {
+      const json = {
+        instrumentId: 'instrument-up',
+        available: '100.5',
+        reserved: '0',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
+      };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(true);
+    });
+
     it('фэйлится если отсутствует amount', () => {
       const json = {
         instrumentId: 'instrument-up',
