@@ -1,0 +1,47 @@
+packages/domain/entities/order/src/identity.ts
+  s_73852eac4506dc::t_f350399a72dbfc 5-7,10-12,15-17,19-24,76-78,83,85,93-95,104-105,115,117,131-133,135-137,141-142,221-223,232
+  s_73852eac4506dc::t_a08b978c03242a 18,56,60,80,82,84,86,122-126,130,146,149-150,154-155,158,161-162,166,169-170,174,177-178,182,185-186
+packages/application/account-state/__tests__/identityHelpers.test.ts
+  s_73852eac4506dc::t_7e5fb782c024ac 20
+  s_73852eac4506dc::t_67489cde28aba7 2,5,7-11
+packages/domain/entities/order/src/index.ts
+  s_73852eac4506dc::t_eb88cc7527313a 68-78
+packages/domain/entities/fill/src/index.ts
+  s_73852eac4506dc::t_eb88cc7527313a 25-34
+packages/application/account-state/__tests__/fillLifecycle.test.ts
+  s_73852eac4506dc::t_7e5fb782c024ac 10,329
+packages/domain/entities/order/__tests__/identityFixtures.ts
+  s_73852eac4506dc::t_9ab09035ea2c7a 1-129
+packages/application/account-state/__tests__/orderCommit.test.ts
+  s_73852eac4506dc::t_7e5fb782c024ac 10,174
+packages/domain/entities/order/__tests__/unit/orderIdentity.test.ts
+  s_73852eac4506dc::t_170542053349e3 1-40,54-110
+  s_73852eac4506dc::t_64802ba66958f2 41-53
+packages/domain/entities/fill/__tests__/identityFixtures.ts
+  s_73852eac4506dc::t_ff1eb911b5b179 1-148
+packages/domain/entities/fill/__tests__/unit/fillFactIdentity.test.ts
+  s_73852eac4506dc::t_170542053349e3 1-78
+packages/domain/entities/fill/src/factIdentity.ts
+  s_73852eac4506dc::t_a08b978c03242a 18,35,39,64,66,68,70,94-98,101-102,106,109-110,114-115,118-119,122,125-126,130,133-134,138-139,142,145-146,150,153-154,158,161-162,168-169
+  s_73852eac4506dc::t_e1ac8f3b487619 10-11,15-17,19-24,59-62,67,69,76-77,87,89,183-185,189
+packages/application/account-state/src/AccountHotState.ts
+  s_73852eac4506dc::t_10165cb59dbacf 84-90
+packages/application/account-state/src/errors.ts
+  s_73852eac4506dc::t_10165cb59dbacf 27-28,307,311-312,318-319,463,467-468,475-476
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5fcafd73f7f015a932401d3053c9e5aa7d780d32",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
