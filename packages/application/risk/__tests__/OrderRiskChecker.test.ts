@@ -5,7 +5,27 @@ import { RiskPolicy } from '../src/RiskPolicy.js';
 import type { RiskParams } from '../src/RiskParams.js';
 import type { PreOrderCheckInput } from '../src/PreOrderCheckInput.js';
 import type { ILogger } from '@polymarket/logger';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
+import type { Portfolio, } from '@polymarket/portfolio';
+import { Position, PositionLot } from '@polymarket/position';
+import { TimestampService } from '@polymarket/timestamp';
+import {
+  AssetIdHelpers,
+  accountIdFromWallet,
+  asPositionId,
+  parseWalletAddress,
+} from '@polymarket/ids';
+import { OutcomePriceService, QuantityService } from '@polymarket/value-objects';
+
+/** Разворачивает `Result` фикстуры: отказ здесь — дефект самого теста. */
+function must<T>(result: { ok: boolean; value?: T; error?: unknown }): T {
+  if (!result.ok) throw new Error(`fixture failed: ${String(result.error)}`);
+  return result.value as T;
+}
+
+/** Аккаунт-владелец тестовых позиций. */
+const RISK_ACCOUNT_ID = accountIdFromWallet(
+  parseWalletAddress('0x1234567890abcdef1234567890abcdef12345678')!,
+);
 import type { InstrumentId } from '@polymarket/ids';
 import type { OutcomePrice, Side } from '@polymarket/value-objects';
 import { Money, Quantity } from '@polymarket/value-objects';
@@ -47,33 +67,46 @@ function makeQty(val: string): Quantity {
   return { value: () => new Decimal(val) } as unknown as Quantity;
 }
 
-/** Создаёт mock IPosition */
+/** Создаёт mock Position */
 function makePosition(
   instrumentId: InstrumentId,
   quantity: string,
   entryPrice: string,
   side: 'LONG' | 'SHORT' = 'LONG',
-): IPosition {
-  return {
-    instrumentId,
-    quantity: { value: () => new Decimal(quantity) },
-    averageEntryPrice: { value: () => new Decimal(entryPrice) },
-    side,
-    isClosed: () => false,
-    getUnrealizedPnL: () => ({ value: () => new Decimal(0) }),
-  };
+): Position {
+  // Настоящий `Position`: `IPosition` удалён, структурную заглушку в портфель
+  // больше не положить. Один лот даёт ровно те `quantity`/`averageEntryPrice`,
+  // которые здесь и проверяются.
+  const openedAt = must(TimestampService.create(1_700_000_000_000));
+  return must(
+    Position.create({
+      id: asPositionId(`risk-${String(instrumentId)}`) as never,
+      accountId: RISK_ACCOUNT_ID,
+      instrumentId,
+      asset: AssetIdHelpers.USDC,
+      side,
+      openedAt,
+      lots: [
+        PositionLot.create({
+          quantity: must(QuantityService.create(quantity)),
+          entryPrice: must(OutcomePriceService.create(entryPrice)),
+          timestamp: openedAt,
+        }),
+      ],
+    }),
+  );
 }
 
 /** Создаёт mock Portfolio */
 function makePortfolio(opts: {
   availableUsdc?: string;
   reservedUsdc?: string;
-  positions?: IPosition[];
+  positions?: Position[];
 }): Portfolio {
   const available = new Decimal(opts.availableUsdc ?? '10000');
   const reserved = new Decimal(opts.reservedUsdc ?? '0');
   const positions = opts.positions ?? [];
-  const posMap = new Map<InstrumentId, IPosition>(
+  const posMap = new Map<InstrumentId, Position>(
     positions.map((p) => [p.instrumentId, p]),
   );
 
@@ -258,7 +291,12 @@ describe('OrderRiskChecker', () => {
 
   it('SELL не проверяет maxTotalExposure (ликвидация)', () => {
     // Экспозиция 150 при лимите 100 — SELL должен проходить.
-    const position = makePosition(INSTRUMENT_ID, '150', '1.00');
+    //
+    // Цена входа была `1.00` — вне диапазона `OutcomePrice` (максимум 0.9999).
+    // Прежняя структурная заглушка пропускала невалидное значение; настоящий
+    // `Position` его отвергает. Берём предельно допустимую цену: смысл теста
+    // (экспозиция выше лимита, SELL всё равно проходит) сохраняется.
+    const position = makePosition(INSTRUMENT_ID, '150', '0.9999');
     const portfolio = makePortfolio({ positions: [position] });
     const checker = makeChecker({ maxTotalExposure: Money.of(new Decimal('100'), 'USDC') }, logger);
     expect(checker.checkBeforeOrder(makeInput({ portfolio, side: SELL })).ok).toBe(true);

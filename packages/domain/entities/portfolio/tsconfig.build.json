@@ -23,6 +23,7 @@
     "src/**/__tests__/**"
   ],
   "references": [
+    { "path": "../position/tsconfig.build.json" },
     {
       "path": "../../../foundation/errors/tsconfig.build.json"
     },

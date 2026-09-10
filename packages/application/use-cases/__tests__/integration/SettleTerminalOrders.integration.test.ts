@@ -24,7 +24,8 @@ import type {
 } from '@polymarket/ports';
 import { ExchangeError } from '@polymarket/ports';
 import type { AccountId, AssetId, FillId, InstrumentId, MarketId, OrderId } from '@polymarket/ids';
-import type { IPosition } from '@polymarket/portfolio';
+
+import type { Position } from '@polymarket/position';
 import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
 import type { Fill } from '@polymarket/fill';
 import { Order } from '@polymarket/order';
@@ -90,7 +91,7 @@ function makePortfolioMock(): Portfolio {
       total: () => ({ value: () => new Decimal('10065') }),
     },
     getPosition: (_id: InstrumentId) => undefined,
-    getPositions: () => ([] as IPosition[]).values(),
+    getPositions: () => ([] as Position[]).values(),
     getPositionCount: () => 0,
     reserveForOrder: jest.fn<Portfolio['reserveForOrder']>(),
     releaseReservation: jest.fn<Portfolio['releaseReservation']>(),

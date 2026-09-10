@@ -4,7 +4,7 @@
  * @remarks
  * Portfolio — aggregate root, объединяющий:
  * - **Balance** (баланс): available/reserved средства через `@polymarket/value-objects/balance`
- * - **Positions** (позиции): карта `InstrumentId → IPosition`
+ * - **Positions** (позиции): карта `InstrumentId → Position`
  * - **TokenReservations** (резервации токенов): карта `InstrumentId → Quantity` для SELL ордеров
  *
  * ### Архитектурные решения
@@ -14,7 +14,7 @@
  * Теперь `balance: Balance` инкапсулирует оба поля и предоставляет
  * атомарные операции через `BalanceService` (reserve/unfreezeReserved/consumeReserved).
  *
- * **2. `ReadonlyMap<InstrumentId, IPosition>` вместо строковых ключей:**
+ * **2. `ReadonlyMap<InstrumentId, Position>` вместо строковых ключей:**
  * Typed ключи предотвращают ошибки при перепутывании ID разных сущностей.
  *
  * **3. `upsertPosition(position)` вместо add/update/remove:**
@@ -35,10 +35,23 @@
  * Операции с балансом могут завершиться ошибкой (например, недостаточно средств).
  * Возврат `Result<Portfolio, InvalidBalanceError>` делает это явным на уровне типов.
  *
- * **7. Структурная типизация для позиций (IPosition):**
- * Portfolio не зависит напрямую от конкретного класса Position.
- * Достаточно реализовать интерфейс `IPosition`. Позволяет тестировать
- * Portfolio независимо от Position package.
+ * **7. Позиция — канонический `Position`, без промежуточного интерфейса:**
+ * Раньше здесь жил `IPosition` — структурный контракт, позволявший подставить
+ * любую реализацию. Подставлять оказалось нечего: единственным классом,
+ * объявлявшим `implements IPosition`, был вырожденный `SimplePosition` из
+ * этого же пакета, а `Position` совместимость держал случайно, без `implements`.
+ *
+ * Хуже того, интерфейс мешал: `PortfolioService` — единственный код, который
+ * реально работал с позицией, — был вынужден писать `instanceof Position`,
+ * потому что `IPosition` не выставлял лоты.
+ *
+ * Поэтому Portfolio зависит от `@polymarket/position` напрямую. Цикла нет:
+ * `position` от portfolio не зависит. Заодно ушло ослабление типов —
+ * `Pick<Quantity, 'value'>` заменён настоящими `Quantity`/`OutcomePrice`.
+ *
+ * Вернуть интерфейс стоит только если появится реальная граница подмены;
+ * принцип «у сущности должен быть интерфейс» сам по себе такой границей не
+ * является.
  *
  * **8. tokenReservations — резервации outcome-токенов для SELL ордеров:**
  * При размещении SELL ордера токены резервируются, чтобы предотвратить двойную продажу.
@@ -91,60 +104,15 @@
 
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
-import type { OutcomePrice } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
-import type { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { Result, Ok, Err } from '@polymarket/result';
 import type { InstrumentId, AccountId } from '@polymarket/ids';
 import { InvalidBalanceError } from '@polymarket/errors';
 import { Balance, BalanceService } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
+import type { Position } from '@polymarket/position';
 import type { PortfolioId } from './value-objects/index.js';
 import { PortfolioValidationError } from '@polymarket/errors/portfolio';
-
-/**
- * Полный контракт позиции, используемый Portfolio
- *
- * @remarks
- * Portfolio использует структурную типизацию — не зависит от конкретного
- * класса Position. Любой объект, реализующий IPosition, совместим.
- *
- * Контракт включает все поля, необходимые как для управления позицией
- * (instrumentId, isClosed), так и для оценки риска и стоимости
- * (quantity, side, averageEntryPrice, getUnrealizedPnL).
- *
- * Единый интерфейс устраняет необходимость в IValuablePosition —
- * getTotalValue / getTotalUnrealizedPnL принимают Iterable<IPosition>
- * без каких-либо cast на стороне caller.
- *
- * ### Почему `Pick<Quantity, 'value'>`, а не голый `{ value(): Decimal }`:
- * По ADR (`docs/architecture/boundary-contract.md`, Решение 1) голый `Decimal`
- * легитимен только внутри `value-objects`/`math`. `Pick<Quantity, 'value'>`/
- * `Pick<OutcomePrice, 'value'>`/`Pick<SignedQuantity, 'value'>` — явные структурные типы,
- * привязанные к реальным VO-классам (а не анонимный inline-тип), но **не требуют
- * прямой зависимости от конкретного класса** — `Pick` берёт только сигнатуру метода
- * `value()`, поэтому любой объект со совместимым `.value(): Decimal` (включая
- * `SimplePosition`, `Position` и тестовые заглушки) остаётся совместим без изменений.
- */
-export interface IPosition {
-  /** Идентификатор торгового инструмента */
-  readonly instrumentId: InstrumentId;
-  /** Текущее количество в позиции */
-  readonly quantity: Pick<Quantity, 'value'>;
-  /** Сторона позиции */
-  readonly side: 'LONG' | 'SHORT';
-  /** Средневзвешенная цена входа */
-  readonly averageEntryPrice: Pick<OutcomePrice, 'value'>;
-  /** Проверяет, закрыта ли позиция (quantity = 0) */
-  isClosed(): boolean;
-  /**
-   * Вычисляет unrealized P&L для заданной текущей цены
-   *
-   * @param currentPrice - Текущая цена инструмента (OutcomePrice VO)
-   * @returns Объект с методом value(): Decimal (структурно совместим с SignedQuantity)
-   */
-  getUnrealizedPnL(currentPrice: OutcomePrice): Pick<SignedQuantity, 'value'>;
-}
 
 /**
  * Параметры создания Portfolio
@@ -157,7 +125,7 @@ export interface PortfolioParams {
   /** Начальный баланс (available + reserved) */
   readonly balance: Balance;
   /** Начальные позиции (опционально) */
-  readonly positions?: ReadonlyMap<InstrumentId, IPosition>;
+  readonly positions?: ReadonlyMap<InstrumentId, Position>;
   /** Резервации outcome-токенов для открытых SELL ордеров (опционально) */
   readonly tokenReservations?: ReadonlyMap<InstrumentId, Quantity>;
 }
@@ -178,8 +146,8 @@ export class Portfolio {
   /** Баланс: available + reserved средства */
   public readonly balance: Balance;
 
-  /** Карта открытых позиций: InstrumentId → IPosition */
-  public readonly positions: ReadonlyMap<InstrumentId, IPosition>;
+  /** Карта открытых позиций: InstrumentId → Position */
+  public readonly positions: ReadonlyMap<InstrumentId, Position>;
 
   /**
    * Карта зарезервированных outcome-токенов для открытых SELL ордеров.
@@ -202,7 +170,7 @@ export class Portfolio {
     this.balance = params.balance;
     this.positions = params.positions
       ? new Map(params.positions)
-      : new Map<InstrumentId, IPosition>();
+      : new Map<InstrumentId, Position>();
     this.tokenReservations = params.tokenReservations
       ? new Map(params.tokenReservations)
       : new Map<InstrumentId, Quantity>();
@@ -433,8 +401,8 @@ export class Portfolio {
    * console.log(withClosed.hasPosition(closedPosition.instrumentId)); // false
    * ```
    */
-  public upsertPosition(position: IPosition): Portfolio {
-    const newPositions = new Map<InstrumentId, IPosition>(this.positions);
+  public upsertPosition(position: Position): Portfolio {
+    const newPositions = new Map<InstrumentId, Position>(this.positions);
 
     if (position.isClosed()) {
       newPositions.delete(position.instrumentId);
@@ -455,7 +423,7 @@ export class Portfolio {
    * Возвращает позицию по instrumentId
    *
    * @param instrumentId - Идентификатор инструмента
-   * @returns IPosition или undefined если позиции нет
+   * @returns Position или undefined если позиции нет
    *
    * @example
    * ```typescript
@@ -465,7 +433,7 @@ export class Portfolio {
    * }
    * ```
    */
-  public getPosition(instrumentId: InstrumentId): IPosition | undefined {
+  public getPosition(instrumentId: InstrumentId): Position | undefined {
     return this.positions.get(instrumentId);
   }
 
@@ -489,7 +457,7 @@ export class Portfolio {
   /**
    * Возвращает итератор по всем открытым позициям
    *
-   * @returns IterableIterator<IPosition> — без аллокации массива
+   * @returns IterableIterator<Position> — без аллокации массива
    *
    * @remarks
    * Предпочтительнее `Array.from()` в hot-path коде.
@@ -502,7 +470,7 @@ export class Portfolio {
    * }
    * ```
    */
-  public getPositions(): IterableIterator<IPosition> {
+  public getPositions(): IterableIterator<Position> {
     return this.positions.values();
   }
 

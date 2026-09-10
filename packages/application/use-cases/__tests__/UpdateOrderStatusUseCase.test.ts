@@ -17,7 +17,8 @@ import type {
 import { VersionConflictError } from '@polymarket/ports';
 import { InMemoryOrderedEventOutbox } from '../../../infrastructure/in-memory/src/InMemoryOrderedEventOutbox.js';
 import { InMemoryOrderSubmissionRepository } from '../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
+import type { Portfolio, } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import type { AccountId, OrderId } from '@polymarket/ids';
 import { asPolymarketCtfToken, accountIdToString } from '@polymarket/ids';
 import { OutcomePrice, Quantity } from '@polymarket/value-objects';
@@ -139,7 +140,7 @@ function makePortfolioStore(): IPortfolioStore {
       reserved: new Decimal(0),
       available: new Decimal(1000),
     },
-    positions: new Map() as ReadonlyMap<string, IPosition>,
+    positions: new Map() as ReadonlyMap<string, Position>,
     version: 0,
   } as unknown as Portfolio;
   // Release теперь вызывается после успешного CAS save (см. UpdateOrderStatusUseCase шаг 5)

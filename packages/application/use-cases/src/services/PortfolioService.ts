@@ -21,18 +21,16 @@
  * BUY добавляет лот (`addLots`), SELL закрывает по FIFO (`position.close(..., 'FIFO', ...)`),
  * накапливая `realizedPnL` (логируется). LONG-only: quantity увеличивается при BUY,
  * уменьшается при SELL — SHORT не поддерживается (см. `docs/portfolio-entity.md`).
- * `IPosition`/`Portfolio` сами не знают о конкретном классе `Position` — структурная
- * типизация (см. `IPosition` в `@polymarket/portfolio`); `_applyPositionUpdate` читает
- * существующую позицию через `instanceof Position`, поскольку `IPosition` не выставляет
- * `lots[]`/`close()`/`addLots()`.
- * `reverseFill()` **не переведён** на lot-based — редкий path (on-chain FAILED) остаётся
- * на `SimplePosition`, уже с задокументированной неточностью восстановления. Если
- * `_applyPositionUpdate` встречает существующую позицию, которая НЕ является `Position`
- * (т.е. оставленную `reverseFill()`, либо структурный тестовый мок) — `_toLotBasedPosition`
- * graceful-реконструирует её в `Position` с единственным лотом из известных
- * `quantity`/`averageEntryPrice` (детализация по историческим лотам теряется только для
- * этой части позиции — приемлемо, у источника её и не было), а не возвращает `Err`
- * (см. TSDoc `_toLotBasedPosition`).
+ * `Portfolio` хранит канонический `Position` напрямую: интерфейс `IPosition` и
+ * `SimplePosition` удалены — подставлять оказалось нечего. Вместе с ними исчезли
+ * `instanceof Position` в `_applyPositionUpdate` и метод `_toLotBasedPosition`,
+ * который реконструировал лоты из плоской позиции: реконструировать больше не из
+ * чего, тип в портфеле теперь ровно один.
+ *
+ * `reverseFill()` по-прежнему НЕ ведёт lot-историю — редкий path (on-chain FAILED)
+ * собирает позицию ОДНИМ лотом из известных `quantity`/`averageEntryPrice`. Это та же
+ * задокументированная неточность, что была раньше: у источника истории лотов и не
+ * было. Изменился только тип результата — теперь это канонический `Position`.
  *
  * @example
  * ```typescript
@@ -54,8 +52,7 @@ import type { AccountId, InstrumentId } from '@polymarket/ids';
 import { assetIdToInstrumentId, accountIdToString, AssetIdHelpers, asPositionId } from '@polymarket/ids';
 import { Money, Quantity, OutcomePrice } from '@polymarket/value-objects';
 import { type Timestamp } from '@polymarket/timestamp';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
-import { SimplePosition } from '@polymarket/portfolio';
+import type { Portfolio } from '@polymarket/portfolio';
 import type { IPortfolioStore, VersionConflictError } from '@polymarket/ports';
 import type { Fill } from '@polymarket/fill';
 import type { Order } from '@polymarket/order';
@@ -663,6 +660,69 @@ export class PortfolioService {
    * - Если позиция была закрыта (SELL) и удалена из Portfolio — создаётся заново
    * - FAILED — крайне редкое событие, точность reversal достаточна
    */
+  /**
+   * Строит однолотовую позицию для пути отката.
+   *
+   * @param fill - Исполнение, которое откатывается (даёт владельца, актив, время)
+   * @param instrumentId - Инструмент позиции
+   * @param quantity - Итоговое количество; `0` даёт позицию без лотов
+   * @param averageEntryPrice - Средняя цена входа, которую нужно сохранить
+   * @returns Канонический `Position`
+   *
+   * @remarks
+   * `SimplePosition` удалён вместе с `IPosition`: в портфеле теперь живёт один
+   * тип позиции. Здесь он собирается ОДНИМ лотом — количество и средняя цена у
+   * `Position` выводятся из лотов, и лот `(quantity, averageEntryPrice)` даёт
+   * ровно те же значения, что давал прежний плоский объект.
+   *
+   * Историю лотов это, разумеется, не восстанавливает — но и не ухудшает:
+   * путь отката её и раньше терял, что задокументировано в шапке сервиса.
+   *
+   * Нулевое количество выражается ПУСТЫМ списком лотов: `Position` с нулевым
+   * количеством считается закрытым, и `upsertPosition` его удаляет.
+   */
+  private _reversalPosition(
+    fill: Fill,
+    instrumentId: InstrumentId,
+    quantity: Decimal,
+    averageEntryPrice: Decimal,
+  ): Result<Position, PortfolioSaveError> {
+    const positionId = asPositionId(`reversal:${String(instrumentId)}`);
+    if (positionId === undefined) {
+      return Err(new TradingError(
+        `Cannot build reversal position id for instrument ${String(instrumentId)}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+
+    const lots = quantity.lte(0)
+      ? []
+      : [
+          PositionLot.create({
+            quantity: Quantity.of(quantity),
+            entryPrice: OutcomePrice.of(averageEntryPrice),
+            timestamp: fill.timestamp,
+          }),
+        ];
+
+    const created = Position.create({
+      id: positionId,
+      accountId: fill.accountId,
+      instrumentId,
+      asset: fill.tokenId,
+      side: 'LONG',
+      openedAt: fill.timestamp,
+      lots,
+    });
+    if (!created.ok) {
+      return Err(new TradingError(
+        `Failed to build reversal position: ${created.error.message}`,
+        { context: { fillId: String(fill.id) } },
+      ));
+    }
+    return Ok(created.value);
+  }
+
   public reverseFill(fill: Fill): Result<void, PortfolioSaveError> {
     const version = this._store.getVersion(fill.accountId);
     const portfolio = this._store.get(fill.accountId);
@@ -711,23 +771,17 @@ export class PortfolioService {
       const newQty = currentQty.minus(netFillQty);
 
       if (newQty.lte(0)) {
-        // Позиция полностью обнулилась — SimplePosition с qty=0 будет удалена upsertPosition
-        const zeroPosition = new SimplePosition({
-          instrumentId,
-          quantity: new Decimal(0),
-          averageEntryPrice: new Decimal(0),
-          side: 'LONG',
-        });
-        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(zeroPosition);
+        // Позиция полностью обнулилась — Position без лотов будет удалена upsertPosition
+        const zeroPosition = this._reversalPosition(
+          fill, instrumentId, new Decimal(0), new Decimal(0),
+        );
+        if (!zeroPosition.ok) return zeroPosition;
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(zeroPosition.value);
       } else {
         const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
-        const reversePosition = new SimplePosition({
-          instrumentId,
-          quantity: newQty,
-          averageEntryPrice: avgPrice,
-          side: 'LONG',
-        });
-        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(reversePosition);
+        const reversePosition = this._reversalPosition(fill, instrumentId, newQty, avgPrice);
+        if (!reversePosition.ok) return reversePosition;
+        portfolioAfterBalance = portfolioAfterBalance.upsertPosition(reversePosition.value);
       }
     } else {
       // SELL reversal: дебетуем USDC (снимаем зачисленную выручку)
@@ -746,13 +800,9 @@ export class PortfolioService {
       const avgPrice = existing?.averageEntryPrice.value() ?? fill.price.value();
       const newQty = currentQty.plus(fillQty);
 
-      const restorePosition = new SimplePosition({
-        instrumentId,
-        quantity: newQty,
-        averageEntryPrice: avgPrice,
-        side: 'LONG',
-      });
-      portfolioAfterBalance = portfolioAfterBalance.upsertPosition(restorePosition);
+      const restorePosition = this._reversalPosition(fill, instrumentId, newQty, avgPrice);
+      if (!restorePosition.ok) return restorePosition;
+      portfolioAfterBalance = portfolioAfterBalance.upsertPosition(restorePosition.value);
     }
 
     const saveResult = this._store.save(portfolioAfterBalance, version);
@@ -853,15 +903,7 @@ export class PortfolioService {
         return Ok(portfolio.upsertPosition(positionResult.value));
       }
 
-      const lotBasedResult = this._toLotBasedPosition(existing, portfolio, instrumentId, fill.timestamp);
-      if (!lotBasedResult.ok) {
-        return Err(new TradingError(
-          `Failed to resolve lot-based position: ${lotBasedResult.error.message}`,
-          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
-        ));
-      }
-
-      const addResult = lotBasedResult.value.addLots([newLot], fill.timestamp);
+      const addResult = existing.addLots([newLot], fill.timestamp);
       if (!addResult.ok) {
         return Err(new TradingError(
           `Failed to add lot to position: ${addResult.error.message}`,
@@ -892,15 +934,7 @@ export class PortfolioService {
         ));
       }
 
-      const lotBasedResult = this._toLotBasedPosition(existing, portfolio, instrumentId, fill.timestamp);
-      if (!lotBasedResult.ok) {
-        return Err(new TradingError(
-          `Failed to resolve lot-based position: ${lotBasedResult.error.message}`,
-          { context: { fillId: String(fill.id), instrumentId: String(instrumentId) } },
-        ));
-      }
-
-      const closeResult = lotBasedResult.value.close(
+      const closeResult = existing.close(
         Quantity.of(fillQty), fill.price, 'FIFO', fill.timestamp,
       );
       if (!closeResult.ok) {
@@ -955,44 +989,4 @@ export class PortfolioService {
     });
   }
 
-  /**
-   * Возвращает существующую позицию как lot-based `Position` для мутации (`addLots`/`close`).
-   *
-   * @param existing - Текущая позиция из `Portfolio.getPosition()` (структурный `IPosition`)
-   * @param portfolio - Portfolio (источник accountId)
-   * @param instrumentId - ID инструмента
-   * @param asOfTimestamp - Timestamp текущей операции (используется как `openedAt`
-   *   реконструированной позиции, если применимо)
-   * @returns Result<Position, ValidationError>
-   *
-   * @remarks
-   * `existing instanceof Position` — используется напрямую, без изменений (полная
-   * lot-история сохраняется). Иначе — реконструирует единственный лот из `quantity`/
-   * `averageEntryPrice` (см. TSDoc `_applyPositionUpdate`, раздел "Известное ограничение").
-   */
-  private _toLotBasedPosition(
-    existing: IPosition,
-    portfolio: Portfolio,
-    instrumentId: InstrumentId,
-    asOfTimestamp: Timestamp,
-  ): Result<Position, ValidationError> {
-    if (existing instanceof Position) {
-      return Ok(existing);
-    }
-
-    const qty = existing.quantity.value();
-    if (qty.lte(0)) {
-      return Err(new ValidationError('Cannot reconstruct Position: quantity is non-positive', {
-        context: { instrumentId: String(instrumentId), quantity: qty.toString() },
-      }));
-    }
-
-    const reconstructedLot = PositionLot.create({
-      quantity: Quantity.of(qty),
-      entryPrice: OutcomePrice.of(existing.averageEntryPrice.value()),
-      timestamp: asOfTimestamp,
-    });
-
-    return this._openPosition(portfolio, instrumentId, asOfTimestamp, reconstructedLot);
-  }
 }

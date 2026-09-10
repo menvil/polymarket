@@ -41,6 +41,7 @@
   "dependencies": {
     "@polymarket/errors": "^0.1.0",
     "@polymarket/ids": "^0.1.0",
+    "@polymarket/position": "^0.1.0",
     "@polymarket/result": "^0.1.0",
     "@polymarket/value-objects": "^0.1.0",
     "decimal.js": "^10.4.3"

@@ -101,7 +101,8 @@ import {
   type Order,
   type OrderStatus,
 } from '@polymarket/order';
-import type { IPosition, Portfolio } from '@polymarket/portfolio';
+import type { Portfolio } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import { Err, Ok, type Result } from '@polymarket/result';
 import type { Timestamp } from '@polymarket/timestamp';
 import {
@@ -273,7 +274,7 @@ class AccountRuntimeState implements AccountRuntimeStateView {
   }
 
   /** {@inheritDoc AccountRuntimeStateView.getPosition} */
-  public getPosition(instrumentId: InstrumentId): IPosition | undefined {
+  public getPosition(instrumentId: InstrumentId): Position | undefined {
     return this._portfolio.getPosition(instrumentId);
   }
 

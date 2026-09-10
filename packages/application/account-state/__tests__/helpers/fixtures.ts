@@ -36,6 +36,7 @@ import {
   asMarketId,
   asOrderId,
   asPolymarketCtfToken,
+  asPositionId,
   asStrategyId,
   asVenueId,
   parseAssetId,
@@ -51,7 +52,8 @@ import {
 } from '@polymarket/ids';
 import { Fill } from '@polymarket/fill';
 import { Order } from '@polymarket/order';
-import { Portfolio, SimplePosition, asPortfolioId } from '@polymarket/portfolio';
+import { Portfolio, asPortfolioId } from '@polymarket/portfolio';
+import { Position, PositionLot } from '@polymarket/position';
 import type { TradeStatus } from '@polymarket/fill';
 import type {
   TradingAccountFillAppliedEvent,
@@ -330,27 +332,41 @@ export function fill(overrides: FillOverrides = {}): Fill {
 }
 
 /**
- * Позиция портфеля — настоящая доменная реализация `IPosition`.
+ * Позиция портфеля — канонический доменный `Position`.
  *
  * @param instrumentId - Инструмент позиции
  * @param params - Количество, цена входа и сторона
- * @returns `SimplePosition` из `@polymarket/portfolio`
+ * @returns `Position` из `@polymarket/position`
  *
  * @remarks
- * Именно `SimplePosition`, а не структурная заглушка: тест доказывает, что
- * `getPosition()` читает ИЗ ПОРТФЕЛЯ, и подсовывать в портфель объект, которого
- * домен не признаёт, для такой проверки бессмысленно.
+ * Раньше здесь был `SimplePosition`. Он удалён вместе с `IPosition`: подставлять
+ * оказалось нечего, и в портфеле теперь живёт ровно один тип позиции.
+ *
+ * Один лот, а не пустой список: количество и средняя цена у `Position`
+ * выводятся ИЗ ЛОТОВ, и позиция без лотов считается закрытой.
  */
 export function position(
   instrumentId: InstrumentId,
   params: { quantity?: number; averageEntryPrice?: number; side?: 'LONG' | 'SHORT' } = {},
-): SimplePosition {
-  return new SimplePosition({
-    instrumentId,
-    quantity: qty(params.quantity ?? 40).value(),
-    averageEntryPrice: price(params.averageEntryPrice ?? 0.65).value(),
-    side: params.side ?? 'LONG',
-  });
+): Position {
+  const openedAt = ts(1_700_000_000_000);
+  return must(
+    Position.create({
+      id: asPositionId('position-1') as never,
+      accountId: walletAccount(),
+      instrumentId,
+      asset: AssetIdHelpers.USDC,
+      side: params.side ?? 'LONG',
+      openedAt,
+      lots: [
+        PositionLot.create({
+          quantity: qty(params.quantity ?? 40),
+          entryPrice: price(params.averageEntryPrice ?? 0.65),
+          timestamp: openedAt,
+        }),
+      ],
+    }),
+  );
 }
 
 /**

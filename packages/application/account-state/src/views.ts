@@ -26,7 +26,8 @@
  * публикации `TRADING_ACCOUNT_ORDER_COMMITTED` — см. контракт события.
  */
 import type { AccountId, FillId, InstrumentId, OrderId, VenueId } from '@polymarket/ids';
-import type { IPosition, Portfolio } from '@polymarket/portfolio';
+import type { Portfolio } from '@polymarket/portfolio';
+import type { Position } from '@polymarket/position';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { AccountFillRecord, AccountOrderRecord } from './records.js';
 
@@ -180,7 +181,7 @@ export interface AccountRuntimeStateView {
    * `positions: Map` в состоянии аккаунта нет. Удобный доступ — да, второй
    * источник истины — нет.
    */
-  getPosition(instrumentId: InstrumentId): IPosition | undefined;
+  getPosition(instrumentId: InstrumentId): Position | undefined;
 }
 
 /**

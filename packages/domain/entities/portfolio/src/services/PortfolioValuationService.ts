@@ -14,7 +14,7 @@
  * Portfolio aggregate не должен зависеть от рыночного состояния.
  *
  * ### Отсутствие cast:
- * Функции принимают `Iterable<IPosition>` — тот же тип, что возвращает
+ * Функции принимают `Iterable<Position>` — тот же тип, что возвращает
  * `portfolio.getPositions()`. Нет промежуточных интерфейсов, нет cast.
  *
  * @example
@@ -34,7 +34,7 @@ import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { OutcomePrice } from '@polymarket/value-objects';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
-import type { IPosition } from '../Portfolio.js';
+import type { Position } from '@polymarket/position';
 
 /**
  * Функция-провайдер текущих цен
@@ -65,7 +65,7 @@ export type PriceProvider = (instrumentId: InstrumentId) => OutcomePrice | undef
  * ```
  */
 export function getTotalValue(
-  positions: Iterable<IPosition>,
+  positions: Iterable<Position>,
   getPrice: PriceProvider,
   currency: SupportedCurrency
 ): Money {
@@ -102,7 +102,7 @@ export function getTotalValue(
  * ```
  */
 export function getTotalUnrealizedPnL(
-  positions: Iterable<IPosition>,
+  positions: Iterable<Position>,
   getPrice: PriceProvider
 ): SignedQuantity {
   let total = new Decimal(0);

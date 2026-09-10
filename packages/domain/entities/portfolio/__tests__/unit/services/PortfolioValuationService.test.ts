@@ -12,7 +12,8 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { getTotalValue, getTotalUnrealizedPnL } from '../../../src/services/PortfolioValuationService.js';
-import type { IPosition } from '../../../src/Portfolio.js';
+import type { Position } from '@polymarket/position';
+import { position } from '../../positionFixture.js';
 import { OutcomePrice } from '@polymarket/value-objects';
 import type { InstrumentId } from '@polymarket/ids';
 
@@ -27,23 +28,30 @@ function makePrice(n: number): OutcomePrice {
   return OutcomePrice.of(new Decimal(n));
 }
 
+/**
+ * Настоящий `Position` — структурных заглушек больше нет.
+ *
+ * @remarks
+ * Раньше сюда передавался готовый `pnl`, а `getUnrealizedPnL` был заглушкой:
+ * тест проверял, что сервис ДЕЛЕГИРУЕТ и СУММИРУЕТ, не завися от формулы.
+ * С удалением `IPosition` подставить такую позицию нельзя, поэтому PnL теперь
+ * считается по-настоящему:
+ *
+ * ```text
+ * LONG   (price − avgEntry) × quantity
+ * SHORT  −(price − avgEntry) × quantity
+ * ```
+ *
+ * Проверяемое свойство сохранено — сервис по-прежнему обязан делегировать и
+ * сложить, — но ожидаемые числа теперь выведены из формулы, а не заданы.
+ */
 function makePosition(
   id: string,
   side: 'LONG' | 'SHORT',
   quantity: number,
-  avgPrice: number,
-  pnl = 0
-): IPosition {
-  const instrumentId = makeInstrumentId(id);
-  const pnlDecimal = new Decimal(pnl);
-  return {
-    instrumentId,
-    quantity: { value: () => new Decimal(quantity) },
-    side,
-    averageEntryPrice: makePrice(avgPrice),
-    isClosed: () => false,
-    getUnrealizedPnL: () => ({ value: () => pnlDecimal }),
-  };
+  avgPrice: number
+): Position {
+  return position(makeInstrumentId(id), { side, quantity, entryPrice: avgPrice });
 }
 
 const NO_PRICE = (_id: InstrumentId): OutcomePrice | undefined => undefined;
@@ -134,11 +142,9 @@ describe('getTotalUnrealizedPnL()', () => {
     const id1 = makeInstrumentId('inst-1');
     const id2 = makeInstrumentId('inst-2');
 
-    // pnl делегируется в position.getUnrealizedPnL(price)
-    // Наш стаб возвращает фиксированный pnl независимо от переданной цены
     const positions = [
-      makePosition('inst-1', 'LONG', 100, 0.60, 8.5),
-      makePosition('inst-2', 'LONG', 50, 0.70, -3.0),
+      makePosition('inst-1', 'LONG', 100, 0.60),
+      makePosition('inst-2', 'LONG', 50, 0.70),
     ];
 
     const getPrice = (id: InstrumentId) => {
@@ -147,16 +153,17 @@ describe('getTotalUnrealizedPnL()', () => {
       return undefined;
     };
 
-    // 8.5 + (-3.0) = 5.5
+    // (0.75 − 0.60) × 100 = 15.0 ; (0.64 − 0.70) × 50 = −3.0 ; сумма 12.0
     const result = getTotalUnrealizedPnL(positions, getPrice);
-    expect(result.value().toNumber()).toBeCloseTo(5.5, 10);
+    expect(result.value().toNumber()).toBeCloseTo(12.0, 10);
   });
 
   it('возвращает отрицательный PnL при убыточных позициях', () => {
     const id = makeInstrumentId('losing');
-    const positions = [makePosition('losing', 'LONG', 100, 0.80, -15.0)];
+    const positions = [makePosition('losing', 'LONG', 100, 0.80)];
     const getPrice = (i: InstrumentId) => (i === id ? makePrice(0.65) : undefined);
 
+    // (0.65 − 0.80) × 100 = −15.0
     const result = getTotalUnrealizedPnL(positions, getPrice);
     expect(result.value().toNumber()).toBeCloseTo(-15.0, 10);
   });
@@ -164,14 +171,14 @@ describe('getTotalUnrealizedPnL()', () => {
   it('пропускает позиции без цены', () => {
     const idWithPrice = makeInstrumentId('with-price');
     const positions = [
-      makePosition('with-price', 'LONG', 100, 0.60, 10.0),
-      makePosition('no-price', 'LONG', 50, 0.70, 99.0),
+      makePosition('with-price', 'LONG', 100, 0.60),
+      makePosition('no-price', 'LONG', 50, 0.70),
     ];
 
     const getPrice = (id: InstrumentId) =>
       id === idWithPrice ? makePrice(0.70) : undefined;
 
-    // Только первая позиция: pnl = 10.0
+    // Только первая позиция: (0.70 − 0.60) × 100 = 10.0
     const result = getTotalUnrealizedPnL(positions, getPrice);
     expect(result.value().toNumber()).toBeCloseTo(10.0, 10);
   });

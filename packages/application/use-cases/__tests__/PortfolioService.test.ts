@@ -10,7 +10,7 @@
  * - Известное расхождение averageEntryPrice между FIFO и blended-pool моделями
  *   на multi-lot partial close (см. docs/architecture/position-accounting.md)
  * - Reconstruction non-lot-based позиции (регрессия на найденный баг с тестовыми моками
- *   / SimplePosition от reverseFill())
+ *   / однолотовая позиция от reverseFill())
  *
  * BUY/SELL fill требуют предварительной резервации (USDC/токены соответственно) —
  * `applyFill()`'s баланс-логика списывает из УЖЕ зарезервированного (`applyDebit`/
@@ -21,7 +21,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { PortfolioService } from '../src/services/PortfolioService.js';
 import { InMemoryPortfolioStore } from '../../../infrastructure/in-memory/src/InMemoryPortfolioStore.js';
-import { Portfolio, SimplePosition } from '@polymarket/portfolio';
+import { Portfolio } from '@polymarket/portfolio';
 import { Position } from '@polymarket/position';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Money, OutcomePrice, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
@@ -252,7 +252,7 @@ describe('PortfolioService — lot-based Position (Этап 3)', () => {
       expect(position.quantity.value().toNumber()).toBeCloseTo(70, 8);
 
       // averageEntryPrice: FIFO оставляет 20@0.60 + 50@0.70 → (20*0.6+50*0.7)/70 ≈ 0.6714
-      // Blended-pool модель (старая SimplePosition) держала бы avg=0.65 неизменным —
+      // Blended-pool модель (плоская позиция) держала бы avg=0.65 неизменным —
       // РАСХОЖДЕНИЕ ожидаемо и корректно, не баг (см. docs/architecture/position-accounting.md)
       expect(position.averageEntryPrice.value().toNumber()).toBeCloseTo(0.671428, 5);
       expect(position.averageEntryPrice.value().toNumber()).not.toBeCloseTo(0.65, 2);
@@ -296,49 +296,10 @@ describe('PortfolioService — lot-based Position (Этап 3)', () => {
     });
   });
 
-  describe('Reconstruction — non-lot-based existing IPosition (SimplePosition/тестовые моки)', () => {
-    it('BUY поверх существующего SimplePosition не падает — "переоткрывает" lot-учёт', () => {
-      // Симулирует состояние, оставленное reverseFill() (не переведён на lot-based, п.3а плана)
-      const portfolio = store.get(ACCOUNT_ID)!;
-      const withSimplePosition = portfolio.upsertPosition(
-        new SimplePosition({
-          instrumentId: INSTRUMENT_ID,
-          quantity: new Decimal(40),
-          averageEntryPrice: new Decimal(0.55),
-          side: 'LONG',
-        }),
-      );
-      store.save(withSimplePosition, store.getVersion(ACCOUNT_ID));
-
-      reserveUSDC(service, 0.6, 10);
-      const result = service.applyFill(makeFill({ id: 'f1', price: 0.6, size: 10, side: 'BUY', timestampMs: 5000 }));
-      expect(result.ok).toBe(true);
-
-      const position = store.get(ACCOUNT_ID)!.getPosition(INSTRUMENT_ID)!;
-      expect(position).toBeInstanceOf(Position);
-      // Реконструированный лот (40@0.55) + новый лот (10@0.60) = 50 total
-      expect(position.quantity.value().toNumber()).toBeCloseTo(50, 8);
-    });
-
-    it('SELL поверх существующего SimplePosition не падает — "переоткрывает" lot-учёт', () => {
-      const portfolio = store.get(ACCOUNT_ID)!;
-      const withSimplePosition = portfolio.upsertPosition(
-        new SimplePosition({
-          instrumentId: INSTRUMENT_ID,
-          quantity: new Decimal(40),
-          averageEntryPrice: new Decimal(0.55),
-          side: 'LONG',
-        }),
-      );
-      store.save(withSimplePosition, store.getVersion(ACCOUNT_ID));
-      reserveTokens(service, 15);
-
-      const result = service.applyFill(makeFill({ id: 'f1', price: 0.7, size: 15, side: 'SELL', timestampMs: 5000 }));
-      expect(result.ok).toBe(true);
-
-      const position = store.get(ACCOUNT_ID)!.getPosition(INSTRUMENT_ID)!;
-      expect(position).toBeInstanceOf(Position);
-      expect(position.quantity.value().toNumber()).toBeCloseTo(25, 8);
-    });
-  });
+  // Блок «Reconstruction — non-lot-based existing Position» удалён вместе с
+  // `_toLotBasedPosition`. Он проверял, что сервис не падает, встретив в портфеле
+  // позицию без лотов (`SimplePosition` или структурный мок). Такой позиции больше
+  // не существует: `IPosition` удалён, и `Portfolio` хранит только канонический
+  // `Position`. Сценарий стал невыразим по типам, а не просто непроверяемым —
+  // защищать от него тестом больше нечего.
 });

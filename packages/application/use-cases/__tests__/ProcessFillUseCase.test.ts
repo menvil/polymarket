@@ -23,7 +23,40 @@ import { InMemoryOrderedEventOutbox } from '../../../infrastructure/in-memory/sr
 import { InMemoryOrderSubmissionRepository } from '../../../infrastructure/in-memory/src/InMemoryOrderSubmissionRepository.js';
 import { InMemoryKeyedMutex } from '../../../infrastructure/in-memory/src/InMemoryKeyedMutex.js';
 import { InMemoryProcessedFillRepository } from '../../../infrastructure/in-memory/src/InMemoryProcessedFillRepository.js';
-import type { Portfolio, IPosition } from '@polymarket/portfolio';
+import type { Portfolio, } from '@polymarket/portfolio';
+import { Position, PositionLot } from '@polymarket/position';
+
+/**
+ * Настоящая позиция для SELL-путей.
+ *
+ * @remarks
+ * Раньше здесь стояла структурная заглушка через `as never`: `IPosition`
+ * допускал плоскую позицию, а `PortfolioService._toLotBasedPosition()`
+ * достраивал ей лоты на лету. Оба удалены — `Portfolio` хранит только
+ * канонический `Position`, — поэтому заглушка больше не проходит: SELL идёт
+ * по FIFO и требует настоящих лотов.
+ */
+function makeExistingLongPosition(): Position {
+  const openedAt = { value: () => new Decimal(1000), toNumber: () => 1000,
+    toISO: () => '2024-01-01T00:00:00.000Z' } as never;
+  const created = Position.create({
+    id: 'position-sell' as never,
+    accountId: ACCOUNT_ID,
+    instrumentId: ASSET_ID as unknown as InstrumentId,
+    asset: ASSET_ID,
+    side: 'LONG',
+    openedAt,
+    lots: [
+      PositionLot.create({
+        quantity: makeQty('100') as never,
+        entryPrice: makePrice('0.65') as never,
+        timestamp: openedAt,
+      }),
+    ],
+  });
+  if (!created.ok) throw new Error(`Cannot create Position: ${String(created.error)}`);
+  return created.value;
+}
 import type { AccountId, AssetId, FillId, InstrumentId, OrderId, VenueId, MarketId } from '@polymarket/ids';
 import type { Fill, FillParams } from '@polymarket/fill';
 import { OutcomePrice, Quantity } from '@polymarket/value-objects';
@@ -144,7 +177,7 @@ function makePortfolioMock(): Portfolio {
     },
     version: 0,
     getPosition: (_id: InstrumentId) => undefined,
-    getPositions: () => ([] as IPosition[]).values(),
+    getPositions: () => ([] as Position[]).values(),
     getPositionCount: () => 0,
     reserveForOrder: jest.fn<Portfolio['reserveForOrder']>(),
     releaseReservation: jest.fn<Portfolio['releaseReservation']>(),
@@ -570,13 +603,7 @@ describe('ProcessFillUseCase', () => {
 
       const sellPortfolio: Portfolio = {
         ...makePortfolioMock(),
-        getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue({
-          instrumentId: ASSET_ID as unknown as InstrumentId,
-          quantity: makeQty('100'),
-          averageEntryPrice: makePrice('0.65'),
-          side: 'LONG',
-          isClosed: () => false,
-        } as never),
+        getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue(makeExistingLongPosition()),
       } as unknown as Portfolio;
       (sellPortfolio.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(sellPortfolio));
       (sellPortfolio.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(sellPortfolio);
@@ -667,13 +694,7 @@ describe('ProcessFillUseCase', () => {
     function makeSellPortfolio(releaseFails: boolean): Portfolio {
       const p: Portfolio = {
         ...makePortfolioMock(),
-        getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue({
-          instrumentId: ASSET_ID as unknown as InstrumentId,
-          quantity: makeQty('100'),
-          averageEntryPrice: makePrice('0.65'),
-          side: 'LONG',
-          isClosed: () => false,
-        } as never),
+        getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue(makeExistingLongPosition()),
       } as unknown as Portfolio;
       (p.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
       (p.applyDirectDebit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(p));
@@ -963,13 +984,7 @@ describe('ProcessFillUseCase', () => {
     // Для SELL необходима существующая позиция в Portfolio
     const sellPortfolioMock: Portfolio = {
       ...makePortfolioMock(),
-      getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue({
-        instrumentId: ASSET_ID as unknown as InstrumentId,
-        quantity: makeQty('100'),
-        averageEntryPrice: makePrice('0.65'),
-        side: 'LONG',
-        isClosed: () => false,
-      } as never),
+      getPosition: jest.fn<Portfolio['getPosition']>().mockReturnValue(makeExistingLongPosition()),
     } as unknown as Portfolio;
     (sellPortfolioMock.applyCredit as ReturnType<typeof jest.fn>).mockReturnValue(Ok(sellPortfolioMock));
     (sellPortfolioMock.upsertPosition as ReturnType<typeof jest.fn>).mockReturnValue(sellPortfolioMock);
