@@ -24,8 +24,8 @@
  */
 import { TradingError } from '@polymarket/errors';
 import { accountIdToString, type AccountId, type FillId, type OrderId, type VenueId } from '@polymarket/ids';
-import type { AccountFillFactDifference } from './fillIdentity.js';
-import type { AccountOrderIdentityDifference } from './orderIdentity.js';
+import type { FillFactDifference } from '@polymarket/fill';
+import type { OrderIdentityDifference } from '@polymarket/order';
 import type { AccountFillStatus } from './records.js';
 
 /** Общий контекст ошибки: пара, адресующая аккаунт. */
@@ -304,19 +304,19 @@ export class AccountOrderIdentityConflictError extends TradingError {
     public readonly venueId: VenueId,
     public readonly accountId: AccountId,
     public readonly orderId: OrderId,
-    public readonly difference: AccountOrderIdentityDifference,
+    public readonly difference: OrderIdentityDifference,
   ) {
     super(
       `Order ${orderId} identity conflict on ${difference.field} for trading account ` +
-        `${describeAccount(venueId, accountId)}: stored ${difference.stored}, ` +
-        `incoming ${difference.incoming}`,
+        `${describeAccount(venueId, accountId)}: stored ${difference.left}, ` +
+        `incoming ${difference.right}`,
       {
         context: {
           ...accountContext(venueId, accountId),
           orderId,
           field: difference.field,
-          stored: difference.stored,
-          incoming: difference.incoming,
+          stored: difference.left,
+          incoming: difference.right,
         },
       },
     );
@@ -460,20 +460,20 @@ export class AccountFillIdentityConflictError extends TradingError {
     public readonly accountId: AccountId,
     public readonly fillId: FillId,
     public readonly action: AccountFillAction,
-    public readonly difference: AccountFillFactDifference,
+    public readonly difference: FillFactDifference,
   ) {
     super(
       `Fill ${fillId} identity conflict on ${difference.field} during ${action} for trading ` +
-        `account ${describeAccount(venueId, accountId)}: stored ${difference.stored}, ` +
-        `incoming ${difference.incoming}`,
+        `account ${describeAccount(venueId, accountId)}: stored ${difference.left}, ` +
+        `incoming ${difference.right}`,
       {
         context: {
           ...accountContext(venueId, accountId),
           fillId,
           action,
           field: difference.field,
-          stored: difference.stored,
-          incoming: difference.incoming,
+          stored: difference.left,
+          incoming: difference.right,
         },
       },
     );

@@ -81,8 +81,13 @@ import {
   type OrderId,
   type VenueId,
 } from '@polymarket/ids';
-import type { Fill } from '@polymarket/fill';
-import type { Order, OrderStatus } from '@polymarket/order';
+import { findFillFactDifference, type Fill } from '@polymarket/fill';
+import {
+  findOrderIdentityDifference,
+  sameOrderState,
+  type Order,
+  type OrderStatus,
+} from '@polymarket/order';
 import type { IPosition, Portfolio } from '@polymarket/portfolio';
 import { Err, Ok, type Result } from '@polymarket/result';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -101,9 +106,7 @@ import {
   type AccountFillAction,
   type AccountStateError,
 } from './errors.js';
-import { findFillFactDifference } from './fillIdentity.js';
 import { accountKey, embeddedVenueId } from './identity.js';
-import { findOrderIdentityDifference, sameOrderState } from './orderIdentity.js';
 import type { AccountFillRecord, AccountOrderRecord } from './records.js';
 import type {
   AccountHotStateView,

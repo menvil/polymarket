@@ -7,13 +7,21 @@
  * всего два случая по одному `FillId`:
  *
  * ```text
- * тот же факт      дубликат доставки  → no-op
- * другой факт      конфликт           → Err
+ * тот же факт      то же исполнение, полученное повторно
+ * другой факт      ДРУГОЕ исполнение под чужим идентификатором
  * ```
  *
  * Третьего («законное обновление») быть не может: цена, размер или сторона
- * исполнения не «уточняются» — если они другие, это другое исполнение под
- * чужим идентификатором.
+ * исполнения не «уточняются». Что делать с каждым исходом — решает
+ * потребитель: приватное состояние считает первый дубликатом доставки, а
+ * второй конфликтом, но само это решение здесь не зашито.
+ *
+ * ### Почему это живёт в домене
+ *
+ * «Что делает два `Fill` одним фактом исполнения» — знание об исполнении, а
+ * не о конкретном потребителе. Сверка с площадкой, приватное состояние и
+ * восстановление после разрыва задают один и тот же вопрос, и три
+ * независимых ответа на него разошлись бы.
  *
  * ### Почему не `JSON.stringify` и не сравнение по ссылке
  *
@@ -24,11 +32,11 @@
  * есть даёт и ложные расхождения, и ложные совпадения.
  */
 import { AssetIdHelpers, accountIdEquals, accountIdToString, assetIdToString } from '@polymarket/ids';
-import type { Fill } from '@polymarket/fill';
+import type { Fill } from './Fill.js';
 import { SideService } from '@polymarket/value-objects';
 
 /** Поле факта исполнения, по которому нашлось расхождение. */
-export type AccountFillFactField =
+export type FillFactField =
   | 'id'
   | 'orderId'
   | 'accountId'
@@ -48,21 +56,25 @@ export type AccountFillFactField =
  * @remarks
  * Значения приводятся к строкам ДЛЯ ЛОГА. Сравнение выполняется по value
  * objects и canonical-равенствам, а не по этим строкам.
+ *
+ * Имена `left`/`right` нейтральны намеренно: домен не знает, какое из двух
+ * исполнений «сохранённое», а какое «пришедшее». Эту роль называет
+ * потребитель, когда строит сообщение об ошибке.
  */
-export interface AccountFillFactDifference {
+export interface FillFactDifference {
   /** Поле, по которому исполнения разошлись */
-  readonly field: AccountFillFactField;
-  /** Значение в уже сохранённом исполнении */
-  readonly stored: string;
-  /** Значение в пришедшем исполнении */
-  readonly incoming: string;
+  readonly field: FillFactField;
+  /** Значение в первом аргументе */
+  readonly left: string;
+  /** Значение во втором аргументе */
+  readonly right: string;
 }
 
 /**
  * Ищет расхождение неизменяемого факта двух исполнений.
  *
- * @param stored - Исполнение, уже сохранённое в состоянии
- * @param incoming - Исполнение из пришедшего события
+ * @param left - Первое исполнение
+ * @param right - Второе исполнение
  * @returns Первое расхождение либо `undefined`, если факты идентичны
  *
  * @remarks
@@ -72,89 +84,89 @@ export interface AccountFillFactDifference {
  *
  * @example
  * ```typescript
- * const difference = findFillFactDifference(stored.fill, incoming);
+ * const difference = findFillFactDifference(stored, incoming);
  * if (difference !== undefined) {
- *   return Err(new AccountFillIdentityConflictError(venueId, accountId, id, 'APPLY', difference));
+ *   logger.warn(`fill ${stored.id} differs on ${difference.field}`);
  * }
  * ```
  */
 export function findFillFactDifference(
-  stored: Fill,
-  incoming: Fill,
-): AccountFillFactDifference | undefined {
-  if (stored.id !== incoming.id) {
-    return { field: 'id', stored: stored.id, incoming: incoming.id };
+  left: Fill,
+  right: Fill,
+): FillFactDifference | undefined {
+  if (left.id !== right.id) {
+    return { field: 'id', left: left.id, right: right.id };
   }
 
-  if (stored.orderId !== incoming.orderId) {
-    return { field: 'orderId', stored: stored.orderId, incoming: incoming.orderId };
+  if (left.orderId !== right.orderId) {
+    return { field: 'orderId', left: left.orderId, right: right.orderId };
   }
 
   // accountId — объект, а не строка: сравнивается canonical-равенством.
-  if (!accountIdEquals(stored.accountId, incoming.accountId)) {
+  if (!accountIdEquals(left.accountId, right.accountId)) {
     return {
       field: 'accountId',
-      stored: accountIdToString(stored.accountId),
-      incoming: accountIdToString(incoming.accountId),
+      left: accountIdToString(left.accountId),
+      right: accountIdToString(right.accountId),
     };
   }
 
-  if (stored.venueId !== incoming.venueId) {
-    return { field: 'venueId', stored: stored.venueId, incoming: incoming.venueId };
+  if (left.venueId !== right.venueId) {
+    return { field: 'venueId', left: left.venueId, right: right.venueId };
   }
 
-  if (stored.marketId !== incoming.marketId) {
-    return { field: 'marketId', stored: stored.marketId, incoming: incoming.marketId };
+  if (left.marketId !== right.marketId) {
+    return { field: 'marketId', left: left.marketId, right: right.marketId };
   }
 
-  if (!AssetIdHelpers.equals(stored.tokenId, incoming.tokenId)) {
+  if (!AssetIdHelpers.equals(left.tokenId, right.tokenId)) {
     return {
       field: 'tokenId',
-      stored: assetIdToString(stored.tokenId),
-      incoming: assetIdToString(incoming.tokenId),
+      left: assetIdToString(left.tokenId),
+      right: assetIdToString(right.tokenId),
     };
   }
 
-  if (!AssetIdHelpers.equals(stored.settlementAssetId, incoming.settlementAssetId)) {
+  if (!AssetIdHelpers.equals(left.settlementAssetId, right.settlementAssetId)) {
     return {
       field: 'settlementAssetId',
-      stored: assetIdToString(stored.settlementAssetId),
-      incoming: assetIdToString(incoming.settlementAssetId),
+      left: assetIdToString(left.settlementAssetId),
+      right: assetIdToString(right.settlementAssetId),
     };
   }
 
-  if (!SideService.equals(stored.side, incoming.side)) {
-    return { field: 'side', stored: stored.side, incoming: incoming.side };
+  if (!SideService.equals(left.side, right.side)) {
+    return { field: 'side', left: left.side, right: right.side };
   }
 
-  if (!stored.price.equals(incoming.price)) {
+  if (!left.price.equals(right.price)) {
     return {
       field: 'price',
-      stored: stored.price.value().toString(),
-      incoming: incoming.price.value().toString(),
+      left: left.price.value().toString(),
+      right: right.price.value().toString(),
     };
   }
 
-  if (!stored.size.equals(incoming.size)) {
+  if (!left.size.equals(right.size)) {
     return {
       field: 'size',
-      stored: stored.size.value().toString(),
-      incoming: incoming.size.value().toString(),
+      left: left.size.value().toString(),
+      right: right.size.value().toString(),
     };
   }
 
-  if (!stored.timestamp.equals(incoming.timestamp)) {
+  if (!left.timestamp.equals(right.timestamp)) {
     return {
       field: 'timestamp',
-      stored: stored.timestamp.toISO(),
-      incoming: incoming.timestamp.toISO(),
+      left: left.timestamp.toISO(),
+      right: right.timestamp.toISO(),
     };
   }
 
   // Fee.equals сравнивает и актив комиссии, и её величину — комиссия «та же
   // сумма, но в другом активе» фактом того же исполнения не является.
-  if (!stored.fee.equals(incoming.fee)) {
-    return { field: 'fee', stored: stored.fee.toString(), incoming: incoming.fee.toString() };
+  if (!left.fee.equals(right.fee)) {
+    return { field: 'fee', left: left.fee.toString(), right: right.fee.toString() };
   }
 
   return undefined;
@@ -168,13 +180,13 @@ export function findFillFactDifference(
  * @returns `true`, если совпали ВСЕ поля обоих `Fill`
  *
  * @remarks
- * Это критерий дубликата доставки: тот же `FillId` с тем же фактом означает,
- * что событие пришло повторно и применять его нельзя — в нём может лежать
- * устаревший портфель.
+ * Тот же `FillId` с тем же фактом означает повторно полученное исполнение;
+ * тот же `FillId` с другим фактом — другое исполнение под чужим
+ * идентификатором. Реакцию выбирает потребитель.
  *
  * @example
  * ```typescript
- * if (sameFillFact(stored.fill, incoming)) return Ok(undefined); // no-op
+ * if (sameFillFact(stored, incoming)) return; // уже знаем этот факт
  * ```
  */
 export function sameFillFact(a: Fill, b: Fill): boolean {

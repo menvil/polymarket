@@ -112,19 +112,6 @@ export {
   type AccountPortfolioIdentityField,
   type AccountStateError,
 } from './errors.js';
-export {
-  findFillFactDifference,
-  sameFillFact,
-  type AccountFillFactDifference,
-  type AccountFillFactField,
-} from './fillIdentity.js';
-export {
-  findOrderIdentityDifference,
-  sameOrderIdentity,
-  sameOrderState,
-  type AccountOrderIdentityDifference,
-  type AccountOrderIdentityField,
-} from './orderIdentity.js';
 export { accountKey, embeddedVenueId } from './identity.js';
 export type {
   AccountFillRecord,

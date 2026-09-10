@@ -7,14 +7,13 @@
  * потраченные деньги в available.
  */
 import { describe, expect, it } from '@jest/globals';
-import type { Order } from '@polymarket/order';
+import type { Order, OrderIdentityField } from '@polymarket/order';
 import {
   AccountInstrumentResolutionError,
   AccountIdentityMismatchError,
   AccountNotInitializedError,
   AccountOrderAccountMissingError,
   AccountOrderIdentityConflictError,
-  type AccountOrderIdentityField,
 } from '../src/index.js';
 import {
   DOWN_TOKEN,
@@ -172,7 +171,7 @@ describe('K–M. согласованность заявки с аккаунто
 describe('N. конфликт неизменяемой идентичности заявки', () => {
   /** Способы подменить заявку под тем же `OrderId`. */
   const conflicts: ReadonlyArray<{
-    field: AccountOrderIdentityField;
+    field: OrderIdentityField;
     make: (accountId: ReturnType<typeof walletAccount>) => Order;
   }> = [
     { field: 'asset', make: (a) => order({ accountId: a, asset: DOWN_TOKEN }) },

@@ -1,13 +1,14 @@
 /**
- * Помощники сравнения идентичности — прямые unit-тесты.
+ * Идентичность торгового АККАУНТА — прямые unit-тесты.
  *
  * @remarks
- * Метки `§44`…`§46` соответствуют плану MR.
+ * Метки `§44` и `§10` соответствуют плану MR.
  *
- * Через проектор эти функции уже проверены на реальных сценариях. Здесь
- * проверяется то, чего сценарий не показывает: что сравнение действительно
- * идёт по canonical-равенствам, а не по ссылке и не по строке. Разница видна
- * только на парах, где ссылки различаются, а значения совпадают, — и наоборот.
+ * Сравнение заявок и исполнений живёт в своих доменных пакетах и там же
+ * тестируется (`@polymarket/order` → `orderIdentity.test.ts`,
+ * `@polymarket/fill` → `fillFactIdentity.test.ts`). Здесь остаётся то, что
+ * действительно принадлежит приватному состоянию: как аккаунт адресуется и
+ * какая площадка в него встроена.
  */
 import { describe, expect, it } from '@jest/globals';
 import {
@@ -16,28 +17,14 @@ import {
   accountIdFromVenue,
   asVenueId,
 } from '@polymarket/ids';
+import { accountKey, embeddedVenueId } from '../src/index.js';
 import {
-  accountKey,
-  embeddedVenueId,
-  findFillFactDifference,
-  findOrderIdentityDifference,
-  sameFillFact,
-  sameOrderIdentity,
-  sameOrderState,
-} from '../src/index.js';
-import {
-  DOWN_TOKEN,
   OTHER_VENUE,
-  OUTCOME_TOKEN_ASSET,
   VENUE,
-  fill as makeFill,
   must,
-  order,
-  strategyId,
   venueAccount,
   venueSubaccount,
   walletAccount,
-  withFill,
 } from './helpers/fixtures.js';
 
 describe('§44. ключ аккаунта — canonical строка', () => {
@@ -92,141 +79,5 @@ describe('§10. встроенная площадка AccountId', () => {
     if (custom === undefined) throw new Error('test setup failed: invalid custom venue');
     expect(embeddedVenueId(venueAccount(custom, 'user-1'))).toBe(custom);
     expect(KnownVenues.POLYMARKET).toBe(VENUE);
-  });
-});
-
-describe('§45. идентичность и состояние заявки', () => {
-  it('пересобранная заявка равна исходной по идентичности и по состоянию', () => {
-    const a = order({ accountId: walletAccount() });
-    const b = order({ accountId: walletAccount() });
-    expect(a).not.toBe(b);
-    expect(sameOrderIdentity(a, b)).toBe(true);
-    expect(sameOrderState(a, b)).toBe(true);
-    expect(findOrderIdentityDifference(a, b)).toBeUndefined();
-  });
-
-  it('разные OrderId различаются по полю id', () => {
-    const difference = findOrderIdentityDifference(order({ id: 'order-1' }), order({ id: 'order-2' }));
-    expect(difference?.field).toBe('id');
-    expect(difference?.stored).toBe('order-1');
-    expect(difference?.incoming).toBe('order-2');
-  });
-
-  it('отсутствующий владелец отличается от присутствующего', () => {
-    const withOwner = order({ accountId: walletAccount() });
-    const withoutOwner = order({ accountId: null });
-    expect(findOrderIdentityDifference(withOwner, withoutOwner)?.field).toBe('accountId');
-    expect(findOrderIdentityDifference(withoutOwner, withOwner)?.field).toBe('accountId');
-    expect(findOrderIdentityDifference(withoutOwner, order({ accountId: null }))).toBeUndefined();
-  });
-
-  it('отсутствующая стратегия отличается от заданной', () => {
-    const difference = findOrderIdentityDifference(
-      order({ strategyId: strategyId('alpha') }),
-      order(),
-    );
-    expect(difference?.field).toBe('strategyId');
-    expect(difference?.stored).toBe('alpha');
-    expect(difference?.incoming).toBe('<none>');
-  });
-
-  it('идентичность равна, а состояние — нет: это и есть законное обновление', () => {
-    const open = must(order({ accountId: walletAccount() }).accept());
-    const partially = withFill(open, { size: 40 });
-
-    expect(sameOrderIdentity(open, partially)).toBe(true);
-    expect(sameOrderState(open, partially)).toBe(false);
-  });
-
-  it('состояние различается по каждому изменяемому полю', () => {
-    const open = must(order({ accountId: walletAccount() }).accept());
-
-    // status
-    expect(sameOrderState(open, order({ accountId: walletAccount() }))).toBe(false);
-    // reason
-    const canceled = must(open.cancel('risk'));
-    const canceledOther = must(open.cancel('strategy'));
-    expect(sameOrderIdentity(canceled, canceledOther)).toBe(true);
-    expect(sameOrderState(canceled, canceledOther)).toBe(false);
-    // filledSize и averagePrice
-    const fortyAt65 = withFill(open, { id: 'fill-a', size: 40 });
-    const twentyAt65 = withFill(open, { id: 'fill-a', size: 20 });
-    expect(sameOrderState(fortyAt65, twentyAt65)).toBe(false);
-    // averagePrice при равном объёме, но разной цене
-    const fortyAt70 = withFill(open, { id: 'fill-a', size: 40, price: 0.7 });
-    expect(sameOrderState(fortyAt65, fortyAt70)).toBe(false);
-    // averagePrice: undefined против заданного
-    expect(sameOrderState(open, fortyAt65)).toBe(false);
-    // fillIds: тот же объём, но другое исполнение
-    const fortyOtherFill = withFill(open, { id: 'fill-b', size: 40 });
-    expect(sameOrderIdentity(fortyAt65, fortyOtherFill)).toBe(true);
-    expect(sameOrderState(fortyAt65, fortyOtherFill)).toBe(false);
-    // fillIds: разное количество исполнений при равном суммарном объёме
-    const twiceTwenty = withFill(withFill(open, { id: 'fill-a', size: 20 }), {
-      id: 'fill-b',
-      size: 20,
-    });
-    expect(sameOrderState(fortyAt65, twiceTwenty)).toBe(false);
-  });
-});
-
-describe('§46. неизменяемый факт исполнения', () => {
-  it('пересобранное исполнение равно исходному', () => {
-    const a = makeFill({ accountId: walletAccount() });
-    const b = makeFill({ accountId: walletAccount() });
-    expect(a).not.toBe(b);
-    expect(sameFillFact(a, b)).toBe(true);
-    expect(findFillFactDifference(a, b)).toBeUndefined();
-  });
-
-  it('каждое поле факта участвует в сравнении', () => {
-    const base = makeFill({ accountId: walletAccount() });
-    const cases: ReadonlyArray<[string, ReturnType<typeof makeFill>]> = [
-      ['id', makeFill({ id: 'fill-2' })],
-      ['orderId', makeFill({ orderId: 'order-2' })],
-      ['accountId', makeFill({ accountId: walletAccount('0x9999999999999999999999999999999999999999') })],
-      ['venueId', makeFill({ venueId: OTHER_VENUE })],
-      ['marketId', makeFill({ marketId: 'market-other' as never })],
-      ['tokenId', makeFill({ tokenId: DOWN_TOKEN })],
-      ['side', makeFill({ side: 'SELL' })],
-      ['price', makeFill({ price: 0.7 })],
-      ['size', makeFill({ size: 41 })],
-      ['timestamp', makeFill({ timestampMs: 1_700_000_200_000 })],
-      ['fee', makeFill({ fee: 0.07 })],
-    ];
-
-    for (const [field, other] of cases) {
-      expect(findFillFactDifference(base, other)?.field).toBe(field);
-      expect(sameFillFact(base, other)).toBe(false);
-    }
-  });
-
-  it('расчётный актив тоже входит в факт', () => {
-    const base = makeFill({ accountId: walletAccount() });
-    const otherSettlement = makeFill({ settlementAssetId: DOWN_TOKEN });
-    expect(findFillFactDifference(base, otherSettlement)?.field).toBe('settlementAssetId');
-  });
-
-  it('одинаковая величина комиссии в разных активах фактом не совпадает', () => {
-    // Актив комиссии — часть факта, а не оформление: `Fee.equals` делегирует в
-    // `AssetQuantity.equals`, который сравнивает И актив, И величину.
-    //
-    // Величины здесь равны и равны НУЛЮ — и это единственная форма, которую
-    // домен допускает: `Fill.create` требует `fee.asset === settlementAssetId`
-    // для НЕнулевой комиссии (инвариант корректности `getNetCashFlow`).
-    // Поэтому «0.07 USDC против 0.07 в другом активе» не построить вовсе, а
-    // ненулевое расхождение активов приходит в состояние уже как расхождение
-    // `settlementAssetId` — оно проверено выше.
-    const usdcFee = makeFill({ accountId: walletAccount(), fee: 0 });
-    const outcomeTokenFee = makeFill({
-      accountId: walletAccount(),
-      fee: 0,
-      feeAsset: OUTCOME_TOKEN_ASSET,
-    });
-
-    expect(usdcFee.fee.quantity.amount().equals(outcomeTokenFee.fee.quantity.amount())).toBe(true);
-    expect(usdcFee.fee.asset).not.toEqual(outcomeTokenFee.fee.asset);
-    expect(findFillFactDifference(usdcFee, outcomeTokenFee)?.field).toBe('fee');
-    expect(sameFillFact(usdcFee, outcomeTokenFee)).toBe(false);
   });
 });

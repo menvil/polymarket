@@ -7,7 +7,7 @@
  * (`CONFIRMED → REVERTED` запрещён — финальность на то и финальность).
  */
 import { describe, expect, it } from '@jest/globals';
-import type { Fill } from '@polymarket/fill';
+import type { Fill, FillFactField } from '@polymarket/fill';
 import {
   AccountFillIdentityConflictError,
   AccountFillNotFoundError,
@@ -18,7 +18,6 @@ import {
   AccountNotInitializedError,
   AccountOrderAccountMissingError,
   AccountOrderIdentityConflictError,
-  type AccountFillFactField,
 } from '../src/index.js';
 import {
   DOWN_TOKEN,
@@ -327,7 +326,7 @@ describe('X. повторный APPLY со старым снимком не от
 describe('Y. тот же FillId с другим фактом — конфликт', () => {
   /** Способы подменить факт исполнения под тем же `FillId`. */
   const conflicts: ReadonlyArray<{
-    field: AccountFillFactField;
+    field: FillFactField;
     make: (accountId: ReturnType<typeof walletAccount>) => Fill;
   }> = [
     { field: 'size', make: (a) => makeFill({ accountId: a, size: 41 }) },

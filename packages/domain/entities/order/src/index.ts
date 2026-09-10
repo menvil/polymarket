@@ -65,6 +65,17 @@ export type {
 } from './OrderState.js';
 export { TERMINAL_STATUSES, FILLABLE_STATUSES } from './OrderState.js';
 
+// ─── Identity ─────────────────────────────────────────────────────────────
+/**
+ * Сравнение заявок (см. identity.ts).
+ *
+ * @remarks
+ * Неизменяемая идентичность отдельно от изменяемого состояния — различить их
+ * нужно всем, кто получает заявку из внешнего источника повторно.
+ */
+export { findOrderIdentityDifference, sameOrderIdentity, sameOrderState } from './identity.js';
+export type { OrderIdentityDifference, OrderIdentityField } from './identity.js';
+
 // ─── View Layer ────────────────────────────────────────────────────────────
 export { OrderViewModel, OrderDeserializer } from './view/index.js';
 /** Реэкспорт интерфейса summary-представления Order (см. `view/OrderViewModel.ts`). */
