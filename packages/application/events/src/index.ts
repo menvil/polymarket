@@ -21,6 +21,7 @@
  *   ApplicationEvent,
  *   FillReceivedEvent,
  *   MarketOpenedEvent,
+ *   TradingAccountFillAppliedEvent,
  * } from '@polymarket/application-events';
  * import { EventBus, type IEventBus } from '@polymarket/event-bus';
  * ```
@@ -70,6 +71,21 @@ export type {
   TradingMarketResolvedEvent,
   TradingMarketFinalizedEvent,
 } from './trading-market-lifecycle/index.js';
+/**
+ * Приватный контур торгового аккаунта (см. trading-account/).
+ *
+ * @remarks
+ * POST-COMMIT факты о НАС: инициализация аккаунта, итоговый `Order` вместе с
+ * итоговым `Portfolio`, применение/подтверждение/откат исполнения. Отдельный
+ * read-model (`AccountHotState`), не сливающийся с рыночным.
+ */
+export type {
+  TradingAccountInitializedEvent,
+  TradingAccountOrderCommittedEvent,
+  TradingAccountFillAppliedEvent,
+  TradingAccountFillConfirmedEvent,
+  TradingAccountFillRevertedEvent,
+} from './trading-account/index.js';
 /** Venue-обновления ордеров (см. venue-order/). */
 export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './venue-order/index.js';
 /** Canonical union application-owned событий (см. ApplicationEvent.ts). */

@@ -17,6 +17,8 @@ export default {
     '^@polymarket/value-objects$': '<rootDir>/../../domain/value-objects/src/index.ts',
     '^@polymarket/value-objects/(.*)$': '<rootDir>/../../domain/value-objects/src/$1',
     '^@polymarket/order$': '<rootDir>/../../domain/entities/order/src/index.ts',
+    '^@polymarket/order-events$': '<rootDir>/../../domain/events/order/src/index.ts',
+    '^@polymarket/portfolio$': '<rootDir>/../../domain/entities/portfolio/src/index.ts',
     '^@polymarket/fill$': '<rootDir>/../../domain/entities/fill/src/index.ts',
     '^@polymarket/orderbook$': '<rootDir>/../../domain/entities/orderbook/src/index.ts',
     '^@polymarket/market$': '<rootDir>/../../domain/entities/market/src/index.ts',

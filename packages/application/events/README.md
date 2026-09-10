@@ -10,7 +10,8 @@ Canonical contracts application-level событий: пакет отвечае�
   fill-контур (`FILL_RECEIVED`, …), рыночные данные (`BOOK_UPDATED`, …),
   сигналы стратегий (`STRATEGY_SIGNAL`), legacy-lifecycle старого рантайма
   (`MARKET_OPENED`/`MARKET_CLOSED`), lifecycle нового торгового рантайма
-  (`TRADING_MARKET_ADMITTED`, …), venue-обновления ордеров
+  (`TRADING_MARKET_ADMITTED`, …), приватный контур торгового аккаунта
+  (`TRADING_ACCOUNT_INITIALIZED`, …), venue-обновления ордеров
   (`ORDER_UPDATE_RECEIVED`).
 - **Domain events** — определяются в своих Domain-пакетах. `OrderEvent` живёт
   в `@polymarket/order-events` и в `ApplicationEvent` **НЕ входит** — это
@@ -26,8 +27,15 @@ Canonical contracts application-level событий: пакет отвечае�
 Event definitions не зависят от `@polymarket/event-bus` и
 `@polymarket/message-bus` — только от Domain/Foundation-типов
 (`@polymarket/ids`, `@polymarket/value-objects`, `@polymarket/fill`,
-`@polymarket/order`, `@polymarket/orderbook`, `@polymarket/market`). Обратные
-зависимости (events → bus, domain → events) запрещены.
+`@polymarket/order`, `@polymarket/portfolio`, `@polymarket/orderbook`,
+`@polymarket/market`). Обратные зависимости (events → bus, domain → events)
+запрещены — ни `Order`, ни `Portfolio` от этого пакета не зависят, поэтому
+цикла нет.
+
+`Portfolio` и `Order` попали в зависимости сознательно: приватные события
+несут итоговые domain-снимки, и заводить рядом `AccountPortfolioDto` ради
+«чистоты» значило бы получить второе представление тех же денег и обязанность
+держать его согласованным с первым.
 
 ```text
 @polymarket/event-bus        ← доставка (Application-фасад)
@@ -54,6 +62,11 @@ src/
 │                       TradingMarketAdmittedEvent, TradingMarketActivatedEvent,
 │                       TradingMarketClosedEvent, TradingMarketResolvedEvent,
 │                       TradingMarketFinalizedEvent
+├── trading-account/    TradingAccountInitializedEvent,
+│                       TradingAccountOrderCommittedEvent,
+│                       TradingAccountFillAppliedEvent,
+│                       TradingAccountFillConfirmedEvent,
+│                       TradingAccountFillRevertedEvent
 ├── venue-order/        VenueOrderUpdate, OrderUpdateReceivedEvent
 ├── ApplicationEvent.ts канонический union контура
 └── index.ts            публичные exports
@@ -141,3 +154,64 @@ Producer'а у этих событий пока нет: admission принадл
 owner/composition-слою над `MarketUniverse` + Policy + Subscription Planner.
 Discovery и Planner о них не знают. Единственный подписчик —
 `TradingStateProjector` из `@polymarket/trading-state`.
+
+## Приватный контур торгового аккаунта
+
+Рыночные события отвечают на вопрос «что происходит на рынке». Приватные —
+«что происходит с НАМИ».
+
+| событие | что несёт | смысл |
+| --- | --- | --- |
+| `TRADING_ACCOUNT_INITIALIZED` | `venueId`, `accountId`, `Portfolio` | рантайм начал вести этот аккаунт |
+| `TRADING_ACCOUNT_ORDER_COMMITTED` | `venueId`, `accountId`, `Order`, `Portfolio` | операция над заявкой зафиксирована, вот итог |
+| `TRADING_ACCOUNT_FILL_APPLIED` | `Fill`, `Portfolio`, `Order?` | экономика исполнения УЖЕ применена |
+| `TRADING_ACCOUNT_FILL_CONFIRMED` | `Fill` | исполнение достигло финальности |
+| `TRADING_ACCOUNT_FILL_REVERTED` | `Fill`, `Portfolio`, `Order?`, `reason` | применённое исполнение откачено |
+
+Все пять — **POST-COMMIT**:
+
+```text
+приватное наблюдение / команда
+  ↓
+domain/execution processing        ← здесь считается ВСЯ экономика
+  ↓
+post-commit Order / Portfolio / Fill
+  ↓
+TRADING_ACCOUNT_*                  ← здесь уже только итог
+  ↓
+IEventBus → AccountStateProjector → AccountHotState
+```
+
+### Почему не переиспользованы старые события
+
+| старое событие | что оно на самом деле означает |
+| --- | --- |
+| `FILL_RECEIVED` | исполнение получено и **ещё должно быть обработано** |
+| `FILL_CONFIRMED` | finality в терминах старого use-case flow |
+| `FILL_FAILED` | откат **считает подписчик** |
+| `DIRECT_FILL_APPLIED` | эффект применён вне обычного flow |
+| `ORDER_UPDATE_RECEIVED` | сырой `VenueOrderUpdate` — **без `Order` и без `Portfolio`** |
+
+Все они описывают ВХОД старого контура обработки, а не его итог. Построить на
+них новое состояние значило бы унаследовать чужие гарантии. Семантика старых
+событий не меняется — они остаются своим потребителям.
+
+Domain `OrderEvent` (`ORDER_CREATED`, `ORDER_ACCEPTED`, …) новый контур тоже
+не заменяет и не использует напрямую: они описывают переход агрегата и не
+несут портфель, а приватному состоянию нужна атомарная пара `Order +
+Portfolio`.
+
+### Идентичность и время
+
+`venueId` в приватных событиях обязателен там, где его не даёт полезная
+нагрузка: у `TRADING_ACCOUNT_INITIALIZED` и `TRADING_ACCOUNT_ORDER_COMMITTED`
+он в payload, а у fill-событий берётся из самого `Fill` (`fill.venueId`,
+`fill.accountId`) — дублировать его рядом значило бы завести второе место,
+обязанное совпадать с первым.
+
+Времена переходов — `event.metadata.createdAt`. Отдельных `initializedAt`,
+`appliedAt`, `confirmedAt` в payload нет.
+
+Producer'а у этих событий пока нет: приватный процессор и account reconciler
+— следующие MR. Единственный подписчик — `AccountStateProjector` из
+`@polymarket/account-state`.

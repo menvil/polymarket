@@ -51,6 +51,25 @@
  * законна: мы уже остановились по `expiresAt`, а площадка ещё показывает
  * рынок активным.
  *
+ * ### Приватный контур торгового аккаунта
+ *
+ * ```text
+ * TRADING_ACCOUNT_INITIALIZED       рантайм начал вести аккаунт
+ * TRADING_ACCOUNT_ORDER_COMMITTED   итоговый Order + итоговый Portfolio
+ * TRADING_ACCOUNT_FILL_APPLIED      экономика исполнения УЖЕ применена
+ * TRADING_ACCOUNT_FILL_CONFIRMED    исполнение достигло финальности
+ * TRADING_ACCOUNT_FILL_REVERTED     применённое исполнение откачено
+ * ```
+ *
+ * Это ФАКТЫ О НАС, а не о рынке, и они образуют отдельный read-model
+ * (`AccountHotState`), который с рыночным (`TradingHotState`) не сливается.
+ *
+ * Все события контура — POST-COMMIT: экономика посчитана ДО публикации, а
+ * payload несёт готовые immutable snapshot'ы. Именно поэтому они НЕ
+ * заменяют и не поглощают `FILL_RECEIVED`/`FILL_FAILED`/
+ * `ORDER_UPDATE_RECEIVED` — те описывают ВХОД старой обработки, а не её
+ * итог, и остаются своим потребителям.
+ *
  * Market-data события:
  * - BOOK_UPDATED / BOOK_DEPTH — верхушка и полный стакан инструмента
  * - TRADE_RECEIVED — публичный маркет-принт
@@ -81,6 +100,13 @@ import type {
   TradingMarketResolvedEvent,
   TradingMarketFinalizedEvent,
 } from './trading-market-lifecycle/index.js';
+import type {
+  TradingAccountInitializedEvent,
+  TradingAccountOrderCommittedEvent,
+  TradingAccountFillAppliedEvent,
+  TradingAccountFillConfirmedEvent,
+  TradingAccountFillRevertedEvent,
+} from './trading-account/index.js';
 import type { OrderUpdateReceivedEvent } from './venue-order/index.js';
 
 export type ApplicationEvent =
@@ -110,4 +136,10 @@ export type ApplicationEvent =
   | TradingMarketClosedEvent
   | TradingMarketResolvedEvent
   | TradingMarketFinalizedEvent
+  // Приватный контур торгового аккаунта — post-commit факты о НАС.
+  | TradingAccountInitializedEvent
+  | TradingAccountOrderCommittedEvent
+  | TradingAccountFillAppliedEvent
+  | TradingAccountFillConfirmedEvent
+  | TradingAccountFillRevertedEvent
   | OrderUpdateReceivedEvent;
