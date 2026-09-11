@@ -248,9 +248,18 @@ export function portfolio(overrides: PortfolioOverrides = {}): Portfolio {
   if (overrides.position !== undefined) {
     const held = overrides.position;
     positions.set(held.instrumentId, held);
+    // Токенный двойник строится на владельце ПОЗИЦИИ, а не портфеля: так
+    // расхождение владельцев, если оно есть, отвергнет `create()` с внятным
+    // сообщением, а не превратится в второе, производное несоответствие.
     tokenBalances.set(
       held.instrumentId,
-      TokenBalance.of(held.instrumentId, held.quantity, must(QuantityService.create(0)), accountId, VENUE),
+      TokenBalance.of(
+        held.instrumentId,
+        held.quantity,
+        must(QuantityService.create(0)),
+        held.accountId,
+        VENUE,
+      ),
     );
   }
 
@@ -367,13 +376,26 @@ export function fill(overrides: FillOverrides = {}): Fill {
  */
 export function position(
   instrumentId: InstrumentId,
-  params: { quantity?: number; averageEntryPrice?: number; side?: 'LONG' | 'SHORT' } = {},
+  params: {
+    quantity?: number;
+    averageEntryPrice?: number;
+    side?: 'LONG' | 'SHORT';
+    /**
+     * Владелец позиции.
+     *
+     * @remarks
+     * Задавать нужно, когда портфель строится не на дефолтном кошельке:
+     * `Portfolio.create()` отвергает позицию чужого аккаунта, и умолчание
+     * фикстуры совпадать с владельцем портфеля не обязано.
+     */
+    accountId?: AccountId;
+  } = {},
 ): Position {
   const openedAt = ts(1_700_000_000_000);
   return must(
     Position.create({
       id: asPositionId('position-1') as never,
-      accountId: walletAccount(),
+      accountId: params.accountId ?? walletAccount(),
       instrumentId,
       asset: AssetIdHelpers.USDC,
       side: params.side ?? 'LONG',

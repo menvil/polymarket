@@ -30,14 +30,23 @@ public readonly balance: Balance;
 
 **Решение**: Typed ключ `InstrumentId` — branded type. Компилятор различает его от других строк.
 
-### 3. `upsertPosition()` вместо `addPosition / updatePosition / removePosition`
+### 3. Позиция меняется только исполнением
 
-**Проблема**: Три разных метода требовали знать текущее состояние позиции перед вызовом. Легко вызвать не тот метод.
+**Проблема**: сначала было три метода — `addPosition` / `updatePosition` /
+`removePosition`, — требовавших знать текущее состояние позиции перед вызовом.
+Их свели к одному `upsertPosition(position)`.
 
-**Решение**: Один `upsertPosition(position)` с логикой:
+Этого оказалось мало. Публичный `upsertPosition()` позволял менять позицию, не
+трогая токены и деньги, — то есть выводить агрегат из согласованного состояния
+одним законным вызовом.
 
-- Если `position.isClosed()` → удалить из карты
-- Иначе → добавить/обновить по `instrumentId`
+**Решение**: публичного пути к позиции нет вовсе. `upsertPosition()` приватен и
+возвращает КАРТУ, а не портфель: собрать портфель можно только вместе с
+деньгами и токенными балансами.
+
+Позиция появляется, растёт и закрывается единственным способом —
+`applyFill(fill, { positionId, reservedNotional })`. Нормализация сохранена:
+закрытая позиция удаляется из карты, а не остаётся с нулём.
 
 ### 4. Валюация вынесена в отдельные функции
 
@@ -198,7 +207,7 @@ reservedTokens(id)      →  хранимая часть
 |-------|----------------------|
 | `reserveTokens(id, qty)` | Размещение SELL ордера — заморозить токены |
 | `releaseTokens(id, qty)` | Отмена SELL — освободить токены |
-| `applyFill(fill, positionId)` | Исполнение — деньги, позиция и токены разом |
+| `applyFill(fill, params)` | Исполнение — деньги, позиция и токены разом |
 | `availableTokens(id)` / `reservedTokens(id)` | Чтение хранимых частей |
 
 **Жизненный цикл SELL ордера (симметрия с BUY):**
@@ -270,13 +279,16 @@ const creditResult = portfolio.applyCredit(Money.of(new Decimal(500), 'USDC'));
 ### Управление позициями
 
 ```typescript
-// Добавить/обновить позицию
-const withPosition = portfolio.upsertPosition(openPosition);
-console.log(withPosition.hasPosition(instrumentId)); // true
+// Позиция появляется ТОЛЬКО из исполнения: публичного upsertPosition нет.
+const bought = portfolio.applyFill(buyFill, {
+  positionId,
+  reservedNotional: Money.of(new Decimal(50), 'USDC'),
+});
+console.log(bought.value.hasPosition(instrumentId)); // true
 
-// Закрытая позиция — автоматически удаляется
-const withClosed = portfolio.upsertPosition(closedPosition);
-console.log(withClosed.hasPosition(closedPosition.instrumentId)); // false
+// Полная продажа закрывает позицию — запись удаляется вместе с токенами.
+const sold = reserved.value.applyFill(sellFill, { positionId });
+console.log(sold.value.hasPosition(instrumentId)); // false
 
 // Запросить позицию
 const position = portfolio.getPosition(instrumentId);
@@ -294,8 +306,12 @@ console.log(portfolio.getPositionCount()); // 3
 ### Токенные резервации (SELL ордера)
 
 ```typescript
-// Позиция появляется ТОЛЬКО из исполнения: публичного upsertPosition нет.
-const bought = portfolio.applyFill(buyFill, positionId); // quantity = 100, available = 100
+// Позиция на 100 токенов появляется из исполнения. Под покупку заранее
+// зарезервировано 50 USDC — ровно их и потребляет этот fill.
+const bought = portfolio.applyFill(buyFill, {
+  positionId,
+  reservedNotional: Money.of(new Decimal(50), 'USDC'),
+}); // quantity = 100, available = 100
 
 // Размещение SELL ордера — зарезервировать 80 токенов
 const reserved = bought.value.reserveTokens(instrumentId, Quantity.of(new Decimal(80)));

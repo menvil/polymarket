@@ -204,14 +204,16 @@ export class Portfolio {
   public readonly positions: ReadonlyMap<InstrumentId, Position>;
 
   /**
-   * Карта зарезервированных outcome-токенов для открытых SELL ордеров.
+   * Карта токенных балансов по инструментам.
    *
    * @remarks
-   * Ключ — InstrumentId (тот же, что в positions).
-   * Значение — суммарный зарезервированный объём (Quantity, >= 0).
+   * Ключ — `InstrumentId`, тот же, что в {@link positions}. Значение —
+   * {@link TokenBalance}: доступная и зарезервированная части ХРАНЯТСЯ обе, а
+   * не выводятся одна из другой.
    *
-   * Инвариант: reservedQty <= position.quantity (нельзя зарезервировать больше, чем есть).
-   * Проверяется при вызове `reserveTokensForOrder`.
+   * Согласованность с позициями — владение, структура и равенство количеств —
+   * проверяет {@link _findInvariantViolation} в единственной точке сборки
+   * состояния.
    */
   public readonly tokenBalances: ReadonlyMap<InstrumentId, TokenBalance>;
 
@@ -1162,9 +1164,13 @@ export class Portfolio {
    * @returns Новый баланс либо отказ
    *
    * @remarks
-   * Та же арифметика, что в {@link applyDirectDebit}: `available` не уходит
-   * ниже нуля. Вынесено, чтобы {@link applyFill} не собирал баланс сам —
-   * агрегат меняет деньги ровно одним способом.
+   * Fail-closed: нехватка средств даёт `InvalidBalanceError`, а НЕ списание
+   * «до нуля». Этим отличается от {@link applyDirectDebit}, который зажимает
+   * `available` в ноль намеренно — тот обслуживает восстановление по факту
+   * площадки, где расхождение потом правит сверка.
+   *
+   * Вынесено, чтобы {@link applyFill} не собирал баланс сам — агрегат меняет
+   * деньги ровно одним способом.
    */
   private static _debitAvailable(
     balance: Balance,
