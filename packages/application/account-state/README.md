@@ -56,14 +56,14 @@ AccountFillRecord  runtime-жизненный цикл вокруг этого �
 ```
 
 Параллельных `balance` / `availableBalance` / `reservedBalance` / `positions` /
-`tokenReservations` в состоянии **нет**: второй источник истины по деньгам
+`tokenBalances` в состоянии **нет**: второй источник истины по деньгам
 неизбежно разошёлся бы с первым, и вопрос «сколько у нас свободных средств»
 получил бы два разных ответа.
 
 ```typescript
 account.portfolio.balance;            // деньги: available + reserved
 account.portfolio.positions;          // позиции по инструментам
-account.portfolio.tokenReservations;  // зарезервированные токены
+account.portfolio.tokenBalances;      // токены: доступные + зарезервированные
 account.getPosition(instrumentId);    // удобный доступ — читает из portfolio
 ```
 

@@ -24,20 +24,29 @@ public readonly balance: Balance;
 // balance.total()    — сумма (derived)
 ```
 
-### 2. `ReadonlyMap<InstrumentId, IPosition>` вместо строковых ключей
+### 2. `ReadonlyMap<InstrumentId, Position>` вместо строковых ключей
 
 **Проблема**: `positions: Record<string, Position>` допускал передачу любой строки как ключа. Ошибки (например, перепутать `orderId` с `instrumentId`) не ловились компилятором.
 
 **Решение**: Typed ключ `InstrumentId` — branded type. Компилятор различает его от других строк.
 
-### 3. `upsertPosition()` вместо `addPosition / updatePosition / removePosition`
+### 3. Позиция меняется только исполнением
 
-**Проблема**: Три разных метода требовали знать текущее состояние позиции перед вызовом. Легко вызвать не тот метод.
+**Проблема**: сначала было три метода — `addPosition` / `updatePosition` /
+`removePosition`, — требовавших знать текущее состояние позиции перед вызовом.
+Их свели к одному `upsertPosition(position)`.
 
-**Решение**: Один `upsertPosition(position)` с логикой:
+Этого оказалось мало. Публичный `upsertPosition()` позволял менять позицию, не
+трогая токены и деньги, — то есть выводить агрегат из согласованного состояния
+одним законным вызовом.
 
-- Если `position.isClosed()` → удалить из карты
-- Иначе → добавить/обновить по `instrumentId`
+**Решение**: публичного пути к позиции нет вовсе. `upsertPosition()` приватен и
+возвращает КАРТУ, а не портфель: собрать портфель можно только вместе с
+деньгами и токенными балансами.
+
+Позиция появляется, растёт и закрывается единственным способом —
+`applyFill(fill, { positionId, reservedNotional })`. Нормализация сохранена:
+закрытая позиция удаляется из карты, а не остаётся с нулём.
 
 ### 4. Валюация вынесена в отдельные функции
 
@@ -53,7 +62,7 @@ getTotalValue(prices: Map<InstrumentId, OutcomePrice>): Money
 getTotalValue(portfolio.getPositions(), getPrice, 'USDC')
 ```
 
-### 5. `tokenReservations` — резервации outcome-токенов для SELL ордеров
+### 5. `tokenBalances` — токены по инструментам, доступные и зарезервированные
 
 **Проблема**: При размещении SELL ордера outcome-токены не резервировались. Это приводило к:
 
@@ -61,7 +70,8 @@ getTotalValue(portfolio.getPositions(), getPrice, 'USDC')
 - При отмене SELL ничего не освобождалось
 - При fill SELL резервация не снималась
 
-**Решение**: `tokenReservations: ReadonlyMap<InstrumentId, Quantity>` — симметрично `balance.reserved` для USDC.
+**Решение**: `tokenBalances: ReadonlyMap<InstrumentId, TokenBalance>` — симметрично
+`balance.available`/`balance.reserved` для USDC.
 
 ```typescript
 // Баланс USDC (BUY):
@@ -69,44 +79,78 @@ balance.available()  // USDC доступно
 balance.reserved()   // USDC под открытые BUY ордера
 
 // Токены (SELL):
-availableTokenQuantity(id)          // токены доступно (= position.qty - reserved)
-tokenReservations.get(id)           // токены под открытые SELL ордера
+availableTokens(id)  // токены доступно
+reservedTokens(id)   // токены под открытые SELL ордера
 ```
+
+**Хранятся ОБЕ части, а не одна.** Прежний `availableTokenQuantity(id)`
+вычислял доступное как `position.quantity − reserved` и при отрицательном
+результате молча зажимал в ноль — то есть нарушенный инвариант не просто не
+ловился, а маскировался.
+
+### Инварианты агрегата
+
+Проверяются в единственной точке — и в мутаторах, и в `Portfolio.create()`.
+Второе существенно: иначе оставался бы публичный вход, через который агрегат
+собирается сразу несогласованным, а первая же мутация отвергала бы состояние,
+которое сама не создавала.
+
+**Количество:**
+
+```text
+Position.quantity == TokenBalance.available + TokenBalance.reserved
+```
+
+**Структура:** ключ карты обязан совпадать с идентичностью самой записи.
+Разойдись он с ней, поиск по инструменту вернул бы чужой объект.
+
+**Владение:** позиция, токенный баланс и денежный баланс принадлежат тому же
+аккаунту, что и портфель; токенный баланс — той же площадке, что и денежный.
+
+**Присутствие:** инструмент существует ⟺ существуют ОБЕ половины, обе
+ненулевые. Односторонняя запись — расхождение даже при нулевом количестве:
+мутаторы нормализуют ноль в отсутствие, и принимать состояние, которого они не
+производят, значит впустить набор, из которого сами не выйдем.
+
+Резервация — перекладывание, а не расход: количество позиции при ней не
+меняется.
 
 **Этап 3 плана миграции**: внутреннее хранилище переведено с голого `Decimal` на `Quantity`
 VO — по ADR (`docs/architecture/boundary-contract.md`, Решение 1) `Decimal` легитимен
 только внутри `value-objects`/`math`. `Quantity.of()` не имеет инварианта на минимальное
 значение (только NaN/finite/non-negative — прежняя формулировка "требует >= 0.0001" была
 неточной, путала с диапазоном `OutcomePrice`), поэтому оборачивание безопасно для любого
-неотрицательного остатка резервации. **Публичные сигнатуры** `availableTokenQuantity()`/
-`reserveTokensForOrder()`/`releaseTokenReservation()` осознанно остались на `Decimal` —
-у них 30+ реальных вызывающих в `apps/bot/strategies/*` и `application/use-cases`; смена
-этих сигнатур — отдельная, более масштабная задача вне объёма Этапа 3.
+неотрицательного остатка резервации.
 
-### 6. Структурная типизация для позиций (IPosition)
+Прежняя оговорка про `Decimal` на публичных сигнатурах устарела вместе с теми
+вызывающими: `reserveTokens()`/`releaseTokens()` принимают `Quantity`, а
+`availableTokens()`/`reservedTokens()` его возвращают. Тех «30+ вызывающих в
+`apps/bot/strategies` и `application/use-cases`» больше не существует — контур
+уехал в `legacy-bot/trading-contour-reference/`.
 
-**Проблема**: Прямая зависимость от `Position` entity из другого package требовала, чтобы тот package был скомпилирован. При build errors в position — portfolio тоже не собирался.
+### 6. Канонический `Position`, а не интерфейс
 
-**Решение**: Portfolio определяет единый интерфейс `IPosition` — контракт для управления и оценки стоимости:
+Здесь описывалась структурная типизация через интерфейс `IPosition`, чтобы
+`Portfolio` не зависел от пакета позиции напрямую.
+
+**Решение отменено.** У интерфейса была ровно одна реализация — `SimplePosition`,
+плоская пара «количество + средняя цена» без лотов. Абстракция при единственной
+реализации ничего не давала, зато позволяла тестам подставлять структурные
+заглушки и проверять `Portfolio` против объекта, которого в проде не существует.
+
+Теперь портфель хранит канонический `Position` — с лотами, FIFO-закрытием и
+VWAP:
 
 ```typescript
-export interface IPosition {
-  readonly instrumentId: InstrumentId;
-  readonly quantity: Pick<Quantity, 'value'>;
-  readonly side: 'LONG' | 'SHORT';
-  readonly averageEntryPrice: Pick<OutcomePrice, 'value'>;
-  isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: OutcomePrice): Pick<SignedQuantity, 'value'>;
-}
+readonly positions: ReadonlyMap<InstrumentId, Position>;
 ```
 
-`Pick<Quantity, 'value'>` (Этап 3 плана миграции, было `{ value(): Decimal }`) — явный
-структурный тип, привязанный к реальному VO-классу (устраняет голый `Decimal` со
-структурной границы по ADR), но **не требует прямой зависимости от конкретного класса**:
-`Pick` берёт только сигнатуру метода `value()`, поэтому `SimplePosition`, реальный
-`Position` entity и тестовые заглушки остаются совместимы без единого изменения — принцип
-структурной типизации сохранён полностью. `getTotalValue` / `getTotalUnrealizedPnL`
-принимают `Iterable<IPosition>` без дополнительных интерфейсов или cast.
+Экономику позиции считает сама позиция: закрытие лотов, `realizedPnL`,
+`averageEntryPrice`. Портфель отвечает за согласованность денег, позиций и
+токенов — и ни за что сверх этого.
+
+Вернуть интерфейс стоит только если появится реальная граница подмены; принцип
+«у сущности должен быть интерфейс» сам по себе такой границей не является.
 
 ### 7. `applyCredit()` вместо прямой манипуляции с балансом
 
@@ -153,16 +197,18 @@ applyCredit(amount)        →  available += amount (зачисление при
 ### Outcome-токены (SELL ордера)
 
 ```
-reserveTokensForOrder(id, qty)   →  tokenReservations[id] += qty
-releaseTokenReservation(id, qty) →  tokenReservations[id] -= qty
-availableTokenQuantity(id)       →  position.qty - tokenReservations[id]
+reserveTokens(id, qty)  →  available -= qty, reserved += qty
+releaseTokens(id, qty)  →  reserved -= qty, available += qty
+availableTokens(id)     →  хранимая часть, НЕ вычисляемая
+reservedTokens(id)      →  хранимая часть
 ```
 
 | Метод | Сценарий использования |
 |-------|----------------------|
-| `reserveTokensForOrder(id, qty)` | Размещение SELL ордера — заморозить токены |
-| `releaseTokenReservation(id, qty)` | SELL fill или отмена SELL — освободить токены |
-| `availableTokenQuantity(id)` | Проверка доступного объёма перед новым SELL |
+| `reserveTokens(id, qty)` | Размещение SELL ордера — заморозить токены |
+| `releaseTokens(id, qty)` | Отмена SELL — освободить токены |
+| `applyFill(fill, params)` | Исполнение — деньги, позиция и токены разом |
+| `availableTokens(id)` / `reservedTokens(id)` | Чтение хранимых частей |
 
 **Жизненный цикл SELL ордера (симметрия с BUY):**
 
@@ -171,9 +217,13 @@ BUY order placed:    reserveForOrder(USDC)             → balance.reserved += n
 BUY fill received:   applyDebit(USDC)                  → balance.reserved -= notional
 BUY order cancelled: releaseReservation(USDC)          → balance.reserved -= notional
 
-SELL order placed:    reserveTokensForOrder(id, qty)   → tokenReservations[id] += qty
-SELL fill received:   releaseTokenReservation(id, qty)  → tokenReservations[id] -= qty
-SELL order cancelled: releaseTokenReservation(id, qty)  → tokenReservations[id] -= qty
+BUY  order placed:    reserveForOrder(notional)  → деньги available → reserved
+BUY  fill received:   applyFill(fill, { positionId, reservedNotional })
+                                                 → reserved −номинал, available −комиссия
+SELL order placed:    reserveTokens(id, qty)     → токены available → reserved
+SELL fill received:   applyFill(fill, { positionId })
+                                                 → reserved −size, available +(номинал−комиссия)
+SELL order cancelled: releaseTokens(id, qty)     → reserved → available
 ```
 
 ---
@@ -229,13 +279,16 @@ const creditResult = portfolio.applyCredit(Money.of(new Decimal(500), 'USDC'));
 ### Управление позициями
 
 ```typescript
-// Добавить/обновить позицию
-const withPosition = portfolio.upsertPosition(openPosition);
-console.log(withPosition.hasPosition(instrumentId)); // true
+// Позиция появляется ТОЛЬКО из исполнения: публичного upsertPosition нет.
+const bought = portfolio.applyFill(buyFill, {
+  positionId,
+  reservedNotional: Money.of(new Decimal(50), 'USDC'),
+});
+console.log(bought.value.hasPosition(instrumentId)); // true
 
-// Закрытая позиция — автоматически удаляется
-const withClosed = portfolio.upsertPosition(closedPosition);
-console.log(withClosed.hasPosition(closedPosition.instrumentId)); // false
+// Полная продажа закрывает позицию — запись удаляется вместе с токенами.
+const sold = reserved.value.applyFill(sellFill, { positionId });
+console.log(sold.value.hasPosition(instrumentId)); // false
 
 // Запросить позицию
 const position = portfolio.getPosition(instrumentId);
@@ -253,28 +306,28 @@ console.log(portfolio.getPositionCount()); // 3
 ### Токенные резервации (SELL ордера)
 
 ```typescript
-// Позиция: 100 токенов
-const withPosition = portfolio.upsertPosition(openPosition); // quantity = 100
+// Позиция на 100 токенов появляется из исполнения. Под покупку заранее
+// зарезервировано 50 USDC — ровно их и потребляет этот fill.
+const bought = portfolio.applyFill(buyFill, {
+  positionId,
+  reservedNotional: Money.of(new Decimal(50), 'USDC'),
+}); // quantity = 100, available = 100
 
 // Размещение SELL ордера — зарезервировать 80 токенов
-const reserved = withPosition.reserveTokensForOrder(instrumentId, new Decimal(80));
+const reserved = bought.value.reserveTokens(instrumentId, Quantity.of(new Decimal(80)));
 if (reserved.ok) {
   const p = reserved.value;
-  p.availableTokenQuantity(instrumentId).toNumber(); // 20 (100 - 80)
-  p.tokenReservations.get(instrumentId)?.toNumber(); // 80
+  p.availableTokens(instrumentId).value().toNumber(); // 20
+  p.reservedTokens(instrumentId).value().toNumber();  // 80
+  // Позиция не изменилась: резервация — перекладывание, а не расход.
+  p.getPosition(instrumentId)?.quantity.value().toNumber(); // 100
 }
 
 // Отмена SELL ордера — освободить 80 токенов
-const released = reserved.value.releaseTokenReservation(instrumentId, new Decimal(80));
+const released = reserved.value.releaseTokens(instrumentId, Quantity.of(new Decimal(80)));
 if (released.ok) {
-  released.value.availableTokenQuantity(instrumentId).toNumber(); // 100
-  released.value.tokenReservations.has(instrumentId); // false (запись удалена)
-}
-
-// Проверка перед новым ордером (BalancePolicy)
-const available = portfolio.availableTokenQuantity(instrumentId);
-if (available.gte(orderSize)) {
-  // можно размещать SELL ордер
+  released.value.availableTokens(instrumentId).value().toNumber(); // 100
+  released.value.reservedTokens(instrumentId).value().toNumber();  // 0
 }
 ```
 
@@ -297,85 +350,45 @@ const totalPnL   = getTotalUnrealizedPnL(portfolio.getPositions(), getPrice);
 
 ---
 
-## IPosition — структурный интерфейс
+## Позиции в портфеле — только канонический `Position`
 
-Portfolio работает с любым объектом, реализующим единый `IPosition`:
+Здесь описывался структурный интерфейс `IPosition`, которому `Position` якобы
+«уже удовлетворял», и рассуждение о том, что менять ничего не надо.
 
-```typescript
-export interface IPosition {
-  readonly instrumentId: InstrumentId;
-  readonly quantity: Pick<Quantity, 'value'>;
-  readonly side: 'LONG' | 'SHORT';
-  readonly averageEntryPrice: Pick<OutcomePrice, 'value'>;
-  isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: OutcomePrice): Pick<SignedQuantity, 'value'>;
-}
-```
-
-Единый контракт покрывает как управление позицией (`isClosed`, `instrumentId`),
-так и оценку стоимости и риска (`quantity`, `side`, `getUnrealizedPnL`).
-`getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` напрямую — без промежуточных интерфейсов.
-
-Реальный `Position` entity структурно совместим с `IPosition`. `Pick<Quantity, 'value'>`/
-`Pick<OutcomePrice, 'value'>`/`Pick<SignedQuantity, 'value'>` (Этап 3 плана миграции, было
-`{ value(): Decimal }`) — явные структурные типы, привязанные к реальным VO-классам, без
-номинативной зависимости от них (см. раздел 6 выше).
-
----
-
-## Lot-based учёт в PortfolioService (Этап 3 плана миграции)
-
-**Portfolio и IPosition сами не изменились ради этого — и это не случайность.** Структурная
-типизация из раздела 6 существовала в коде до Этапа 3 именно для того, чтобы такое
-подключение не потребовало менять сам агрегат. `Position` (lot-based FIFO/LIFO,
-`packages/domain/entities/position`) был построен и полностью протестирован (130 тестов)
-задолго до Этапа 3, но не был подключён ни к одному реальному писателю позиций — единственным
-живым путём оставался блендированный `SimplePosition` (агрегированные `quantity` +
-`averageEntryPrice`, без истории отдельных входов) внутри
-`packages/application/use-cases/src/services/PortfolioService.ts`.
-
-Проверка перед реализацией показала: `Position` **уже** удовлетворяет `IPosition`
-поле-в-поле (`quantity`/`averageEntryPrice` — геттеры на `Quantity`/`OutcomePrice`, `side`,
-`isClosed()`, `getUnrealizedPnL()` — все той же формы, что и `SimplePosition`). Значит вся
-работа по подключению локализуется в `PortfolioService`, единственном реальном писателе
-позиций в live fill-пути — сам `Portfolio`/`IPosition` не нуждаются в изменении.
-
-### Механизм подключения — `instanceof Position`, не изменение интерфейса
-
-`IPosition` намеренно не выставляет `lots[]` — это деталь конкретной реализации, которую
-структурная типизация скрывает по дизайну. Значит код, имеющий только `IPosition`, не может
-вызвать `.addLots()`/`.close()`. `PortfolioService._applyPositionUpdate` решает это через
-`instanceof Position`:
+**Интерфейс удалён.** Единственной его реализацией был `SimplePosition` —
+блендированная пара «количество + средняя цена». Проверка показала не то, что
+`Position` совместим с интерфейсом, а то, что интерфейс не нужен: подставлять
+под него оказалось нечего, кроме заглушек в тестах.
 
 ```typescript
-// Существующая позиция — это либо Position (полная история лотов),
-// либо SimplePosition/структурный мок, оставшийся от reverseFill() или теста.
-if (existing instanceof Position) {
-  // Полная история лотов сохранена — работаем напрямую.
-  position = existing;
-} else {
-  // Graceful reconstruction: строим Position с одним лотом
-  // из известных quantity/averageEntryPrice.
-  position = reconstructFromSingleLot(existing);
-}
+readonly positions: ReadonlyMap<InstrumentId, Position>;
 ```
 
-Реконструкция — не заглушка на крайний случай, а осознанное поведение: `reverseFill()`
-(откат fill при on-chain FAILED) намеренно остаётся на `SimplePosition`-подобной логике
-в Этапе 3 (редкий путь, уже задокументированная принятая неточность) — значит после отката
-`PortfolioService` может увидеть позицию без истории лотов. Реконструкция с одним
-синтетическим лотом позволяет системе продолжить работу корректно, вместо жёсткого отказа.
+Лоты, FIFO-закрытие и `realizedPnL` принадлежат `Position` и наружу через
+портфель не выставляются: портфель отвечает за согласованность денег, позиций и
+токенов, а не за экономику каждой позиции.
 
-### BUY / SELL проводка
+## Lot-based учёт: где он живёт
 
-- **BUY** — рассчитывает `netFillQty` (объём за вычетом комиссии в токенах, логика не
-  менялась), строит новый `PositionLot` по цене филла и добавляет его через
-  `position.addLots([lot], timestamp)` (или `Position.create(...)`, если позиции ещё нет).
-- **SELL** — закрывает объём через `position.close(quantity, price, 'FIFO', timestamp)`.
-  FIFO выбран как единственный режим (стандартная бухгалтерская конвенция, наименее
-  неожиданное поведение) — явного текущего потребителя, требующего LIFO, не нашлось.
-  Результат `close()` включает `realizedPnL` — реально накопленное число, которого
-  предыдущая (`SimplePosition`-based) реализация не считала вообще.
+Раздел описывал подключение лотов в `PortfolioService` через `instanceof
+Position` — обход того, что `IPosition` не выставлял `lots[]`. Ни сервиса, ни
+интерфейса больше нет: `PortfolioService` уехал в
+`legacy-bot/trading-contour-reference/`, `IPosition` удалён.
+
+Учёт лотов принадлежит `Position` и вызывается из `Portfolio.applyFill()` —
+единственного публичного пути, которым позиция вообще меняется:
+
+- **BUY** — новый `PositionLot` по цене филла, `Position.create(...)` для первой
+  покупки или `position.addLots([lot], timestamp)` дальше. Количество лота
+  ВАЛОВОЕ: комиссию площадка удерживает деньгами, а не шарами
+  (`docs/guides/polymarket-fee-settlement.md`).
+- **SELL** — `position.close(quantity, price, 'FIFO', timestamp)`. FIFO выбран
+  единственным режимом как стандартная бухгалтерская конвенция; потребителя,
+  требующего LIFO, не нашлось. Результат включает `realizedPnL`.
+
+Портфель экономику не пересчитывает: деньги он берёт из `fill.getNetCashFlow()`,
+количество — валовым, а лоты закрывает сама позиция. Разделение то же, что и в
+инварианте: портфель отвечает за согласованность, позиция — за свою экономику.
 
 ### Почему `averageEntryPrice` может разойтись со старой моделью — не баг
 

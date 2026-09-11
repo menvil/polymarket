@@ -6,6 +6,7 @@
       "@polymarket/logger":        ["../../../foundation/logger/src/index.ts"],
       "@polymarket/ids":           ["../../../foundation/ids/src/index.ts"],
       "@polymarket/value-objects": ["../../../domain/value-objects/src/index.ts"],
+      "@polymarket/value-objects/token-balance": ["../../../domain/value-objects/src/token-balance/index.ts"],
       "@polymarket/ports":         ["../../../application/ports/src/index.ts"],
       "@polymarket/raw-archive-format": ["../raw-archive-format/src/index.ts"],
       "@polymarket/order":         ["../../../domain/entities/order/src/index.ts"],

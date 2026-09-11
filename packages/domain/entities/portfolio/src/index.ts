@@ -36,7 +36,7 @@
 
 // Aggregate
 export { Portfolio } from './Portfolio.js';
-export type { PortfolioParams } from './Portfolio.js';
+export type { PortfolioParams, ApplyFillParams } from './Portfolio.js';
 
 // Value Objects
 export { type PortfolioId, parsePortfolioId, asPortfolioId } from './value-objects/index.js';
