@@ -1,0 +1,23 @@
+packages/domain/entities/portfolio/docs/portfolio-entity.md
+  s_73852eac4506dc::t_3a62ac1f569407 33,35-37,39-41,43-49,210,282-287,289-291,309-314
+packages/application/account-state/__tests__/helpers/fixtures.ts
+  s_73852eac4506dc::t_e978140a30c887 251-253,256-262,379-392,398
+packages/domain/entities/portfolio/src/Portfolio.ts
+  s_73852eac4506dc::t_49cca700974610 207,210-212,214-216,1167-1173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "db1032e9607179b0ea9f7dc2871796531d0608ab",
+  "prompts": {},
+  "sessions": {
+    "s_73852eac4506dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bea18af2-fb45-47de-adc3-ac236eb214e0",
+        "model": "unknown"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
