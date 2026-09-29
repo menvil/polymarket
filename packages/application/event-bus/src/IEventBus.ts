@@ -57,8 +57,9 @@ export interface IEventBus {
    * @param events - Список событий для последовательной публикации
    * @returns См. {@link IEventBus.publish}
    * @remarks
-   * Domain events из Order.pullEvents() имеют FSM-порядок.
-   * Если публиковать параллельно — handlers могут увидеть события в неверном порядке.
+   * События одного агрегата (например, последовательные переходы заявки)
+   * имеют FSM-порядок. Если публиковать параллельно — handlers могут увидеть
+   * события в неверном порядке.
    */
   publishAll(events: readonly EventBusEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
 

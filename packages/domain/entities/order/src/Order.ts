@@ -4,16 +4,18 @@
  * @remarks
  * Вся бизнес-логика сосредоточена в одном классе.
  * Внешние зависимости: @polymarket/result, @polymarket/errors, @polymarket/value-objects,
- * @polymarket/ids, decimal.js.
+ * @polymarket/ids, @polymarket/fill, decimal.js.
  *
- * ### Три фабрики:
- * - `create()`     — новая заявка (всегда PENDING), эмитирует OrderCreatedEvent
- * - `rehydrate()`  — восстановление из доверенного OrderState (без событий)
- * - `fromEvents()` — воспроизведение из лога событий (без событий)
+ * ### Две фабрики:
+ * - `create()`    — новая заявка (всегда PENDING)
+ * - `rehydrate()` — восстановление из доверенного OrderState (с кросс-проверками)
  *
- * ### Domain Event Outbox:
- * Каждая успешная команда записывает событие в внутренний буфер.
- * Application-слой вызывает `pullEvents()` для извлечения и публикации.
+ * ### Команды:
+ * Каждая команда проверяет допустимость перехода и возвращает
+ * `Result<Order, TradingError>` с НОВЫМ экземпляром. Скрытого изменяемого
+ * состояния нет: Order не копит и не публикует события — публикация
+ * совершённых изменений принадлежит Application-слою
+ * (`TRADING_ACCOUNT_ORDER_COMMITTED`).
  *
  * ### Жизненный цикл:
  * ```
@@ -42,11 +44,10 @@
  * });
  *
  * if (result.ok) {
- *   const order = result.value;
- *   // canonical envelope: metadata поставляет Application-слой (M-003)
- *   const events = order.pullEvents(() => generator.nextRoot()); // [OrderCreatedEvent]
- *   const accepted = order.accept();
+ *   const pending = result.value;
+ *   const accepted = pending.accept();
  *   if (accepted.ok) console.log(accepted.value.status); // 'OPEN'
+ *   console.log(pending.status); // 'PENDING' — исходный экземпляр не изменился
  * }
  * ```
  */
@@ -67,57 +68,22 @@ import {
   type OrderSnapshot,
 } from './OrderState.js';
 import type { FillData } from '@polymarket/fill';
-import type {
-  OrderEvent,
-  OrderCreatedEvent,
-  OrderAcceptedEvent,
-  OrderRejectedEvent,
-  OrderCancelledEvent,
-  OrderExpiredEvent,
-  OrderPartiallyFilledEvent,
-  OrderFilledEvent,
-} from '@polymarket/order-events';
-import type { MessageMetadata } from '@polymarket/messages';
 import { TradingError } from '@polymarket/errors';
-import { emptyFill, addFill, isFull } from './_fill.js';
+import { emptyFill, addFill, isFull, DUST_THRESHOLD } from './_fill.js';
 
 const VALID_SIDES = new Set<string>(['BUY', 'SELL']);
-
-/**
- * Внутренний draft доменного события — `{ type, payload }` БЕЗ metadata.
- *
- * @remarks
- * M-003: public `OrderEvent` — canonical envelope `{ type, payload, metadata }`,
- * но Domain детерминирован и не имеет доступа к clock/random/generator.
- * Поэтому команды пишут в outbox именно drafts; canonical событие
- * materialize-ится на границе `pullEvents()` — metadata поставляет caller
- * (Application-слой). Draft НЕ является public system message.
- *
- * Каждый canonical `OrderEvent` структурно совместим со своим draft-ом
- * (лишняя metadata не мешает), поэтому `_applyEventToState` работает и в
- * командах (drafts), и в replay (`fromEvents` с canonical событиями).
- */
-type DraftOf<E extends OrderEvent> = E extends OrderEvent ? Pick<E, 'type' | 'payload'> : never;
-
-/** Union drafts всех доменных событий Order. */
-type OrderEventDraft = DraftOf<OrderEvent>;
 
 /**
  * Агрегат Order — неизменяемая доменная сущность
  *
  * @remarks
- * Хранит состояние в приватном поле `_s: OrderState`.
+ * Хранит состояние в единственном приватном поле `_s: OrderState`.
  * Все публичные свойства — геттеры над `_s`.
- * Команды (accept, reject, cancel, expire, applyFill) возвращают новый экземпляр.
- * Каждая успешная команда записывает событие в `_pendingEvents`.
- * Вызов `pullEvents()` опустошает буфер.
+ * Команды (accept, reject, cancel, expire, applyFill) не меняют текущий
+ * экземпляр — они возвращают новый с новым `OrderState`.
  */
 export class Order {
-  private constructor(
-    private readonly _s: OrderState,
-    /** Буфер drafts доменных событий (Domain Event Outbox; metadata — на границе pullEvents) */
-    private readonly _pendingDrafts: OrderEventDraft[] = [],
-  ) {}
+  private constructor(private readonly _s: OrderState) {}
 
   // ─── Identity ──────────────────────────────────────────────────────────────
 
@@ -213,73 +179,20 @@ export class Order {
   canCancel(): boolean { return FILLABLE_STATUSES.has(this._s.status); }
   canModify(): boolean { return !TERMINAL_STATUSES.has(this._s.status); }
 
-  // ─── Domain Event Outbox ───────────────────────────────────────────────────
-
-  /**
-   * Извлекает накопленные доменные события (canonical envelopes) и очищает буфер
-   *
-   * @param metadataFor - Фабрика metadata: вызывается ОДИН раз на каждое
-   *   событие в порядке их возникновения. Application-слой передаёт замыкание
-   *   над canonical `MessageMetadataGenerator` (`nextChild(parent)` для
-   *   событий, порождённых обработкой сообщения; `nextRoot()` для
-   *   инициативных команд вне event-контекста)
-   * @returns Массив canonical `OrderEvent` с момента последнего pullEvents()
-   *
-   * @remarks
-   * Pattern: Domain Event Outbox + M-003 materialization boundary.
-   * Внутри буфера — детерминированные drafts `{ type, payload }`;
-   * canonical envelope `{ type, payload, metadata }` собирается ЗДЕСЬ,
-   * metadata поставляет caller. Так Domain остаётся без clock/random/generator,
-   * а каждый public OrderEvent получает уникальную системную identity ДО
-   * передачи в шину.
-   *
-   * Вызов pullEvents() опустошает буфер — следующий вызов вернёт [].
-   * `rehydrate()` и `fromEvents()` не эмитируют событий.
-   *
-   * Materialization атомарна: metadata создаётся для ВСЕХ drafts ДО очистки
-   * буфера. Если `metadataFor` бросает (генератор документирует RangeError
-   * при sequence overflow / отрицательном high-res времени и Error при
-   * невалидном времени) — исключение пробрасывается, а outbox остаётся
-   * нетронутым: повторный pullEvents() с исправным поставщиком metadata
-   * вернёт все исходные события в исходном порядке. Ошибка «декорации»
-   * события не уничтожает сами domain events.
-   *
-   * @example
-   * ```typescript
-   * const result = Order.create(params);
-   * if (result.ok) {
-   *   const events = result.value.pullEvents(() => generator.nextRoot());
-   *   await eventBus.publishAll(events);
-   * }
-   * ```
-   */
-  public pullEvents(metadataFor: () => MessageMetadata): readonly OrderEvent[] {
-    // Сначала materialize ВСЕ события, и только при полном успехе очищаем
-    // буфер: throw из metadataFor не должен терять domain events (outbox
-    // остаётся пригодным для повторного pull).
-    const drafts = [...this._pendingDrafts];
-
-    const events = drafts.map((draft) => ({ ...draft, metadata: metadataFor() }));
-
-    this._pendingDrafts.splice(0, drafts.length);
-
-    return events;
-  }
-
   // ─── Factory: create ───────────────────────────────────────────────────────
 
   /**
    * Создаёт новую заявку (всегда PENDING)
    *
    * @param params - Параметры новой заявки
-   * @returns Result<Order, TradingError>
+   * @returns `Ok(Order)` в статусе PENDING или `Err(TradingError)` при невалидных параметрах
+   * @throws Не бросает исключений — все ошибки возвращаются через Result
    *
    * @remarks
    * Единственная точка создания заявки в рамках нормального бизнес-потока.
-   * Статус всегда PENDING — биржа ещё не подтвердила.
-   * Эмитирует OrderCreatedEvent в буфер (pullEvents() вернёт его).
+   * Статус всегда PENDING — биржа ещё не подтвердила; fill-состояние пустое.
    *
-   * Для восстановления существующей заявки → rehydrate() или fromEvents().
+   * Для восстановления существующей заявки → rehydrate().
    *
    * @example
    * ```typescript
@@ -291,9 +204,7 @@ export class Order {
    *   size: Quantity.of(new Decimal('100')),
    *   timestamp: Timestamp.now(),
    * });
-   * if (result.ok) {
-   *   const events = result.value.pullEvents(() => generator.nextRoot()); // [OrderCreatedEvent]
-   * }
+   * if (result.ok) console.log(result.value.status); // 'PENDING'
    * ```
    */
   public static create(params: CreateOrderParams): Result<Order, TradingError> {
@@ -327,21 +238,19 @@ export class Order {
       }));
     }
 
-    const draft: DraftOf<OrderCreatedEvent> = {
-      type: 'ORDER_CREATED',
-      payload: {
-        orderId: params.id,
-        asset: params.asset,
-        side: params.side,
-        price: params.price,
-        size: params.size,
-        timestamp: params.timestamp,
-        strategyId: params.strategyId,
-        accountId: params.accountId,
-      },
-    };
-
-    return Ok(new Order(Order._applyEventToState({} as OrderState, draft), [draft]));
+    // Поля перечислены явно: лишние ключи params в состояние не попадают
+    return Ok(new Order({
+      id: params.id,
+      asset: params.asset,
+      side: params.side,
+      price: params.price,
+      size: params.size,
+      status: 'PENDING',
+      timestamp: params.timestamp,
+      strategyId: params.strategyId,
+      accountId: params.accountId,
+      fill: emptyFill(),
+    }));
   }
 
   // ─── Factory: rehydrate ────────────────────────────────────────────────────
@@ -350,7 +259,8 @@ export class Order {
    * Восстанавливает заявку из доверенного состояния (rehydration)
    *
    * @param state - Внутреннее состояние заявки с value objects
-   * @returns Result<Order, TradingError>
+   * @returns `Ok(Order)` или `Err(TradingError)` при несогласованных полях состояния
+   * @throws Не бросает исключений — все ошибки возвращаются через Result
    *
    * @remarks
    * В отличие от create() не применяет бизнес-валидацию — состояние уже прошло
@@ -361,17 +271,19 @@ export class Order {
    * Проверяет консистентность состояния (кросс-поля):
    * - filledSize не может превышать size
    * - PENDING заявка не может иметь fills
-   * - FILLED заявка должна быть полностью исполнена
+   * - FILLED заявка должна иметь fills и быть завершена по `isFull()`
+   *   (точное исполнение или остаток меньше порога пыли)
+   * - PARTIALLY_FILLED заявка должна иметь fills и НЕ быть завершена по `isFull()`
    *
-   * Не эмитирует события — pullEvents() вернёт [].
+   * Завершённость определяет тот же `isFull()`, что и в `applyFill()`: всё, что
+   * live-переход способен создать, переживает round-trip
+   * `toSnapshot()` → `OrderDeserializer.fromSnapshot()` → `rehydrate()`.
+   * Остаток пыли не нормализуется — `filledSize` не подтягивается к `size`.
    *
    * @example
    * ```typescript
    * const result = Order.rehydrate(state);
-   * if (result.ok) {
-   *   console.log(result.value.status);
-   *   result.value.pullEvents(() => generator.nextRoot()); // всегда []
-   * }
+   * if (result.ok) console.log(result.value.status);
    * ```
    */
   public static rehydrate(state: OrderState): Result<Order, TradingError> {
@@ -392,155 +304,26 @@ export class Order {
       ));
     }
 
-    if (state.status === 'FILLED' && !filledVal.eq(sizeVal)) {
+    // Завершённость — только через isFull(), как в applyFill()
+    const complete = isFull(state.fill, state.size);
+
+    // applyFill() ставит FILLED лишь после положительного fill, поэтому FILLED
+    // без исполнений (возможен на заявке меньше порога пыли) не восстанавливаем
+    if (state.status === 'FILLED' && !(filledVal.gt(0) && complete)) {
       return Err(new TradingError(
-        `FILLED order must have filledSize equal to size (filledSize: ${filledVal}, size: ${sizeVal})`,
+        `FILLED order must have fills and be complete: filledSize equal to size or remaining below ${DUST_THRESHOLD} (filledSize: ${filledVal}, size: ${sizeVal})`,
         { context: { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() } },
       ));
     }
 
-    if (state.status === 'PARTIALLY_FILLED' && !(filledVal.gt(0) && filledVal.lt(sizeVal))) {
+    if (state.status === 'PARTIALLY_FILLED' && !(filledVal.gt(0) && !complete)) {
       return Err(new TradingError(
-        `PARTIALLY_FILLED order must have 0 < filledSize < size (filledSize: ${filledVal}, size: ${sizeVal})`,
+        `PARTIALLY_FILLED order must have fills and remaining of at least ${DUST_THRESHOLD} (filledSize: ${filledVal}, size: ${sizeVal})`,
         { context: { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() } },
       ));
     }
 
     return Ok(new Order(state));
-  }
-
-  // ─── Factory: fromEvents ───────────────────────────────────────────────────
-
-  /**
-   * Воспроизводит заявку из лога событий (replay mode)
-   *
-   * @param events - Последовательность событий в хронологическом порядке; первое должно быть ORDER_CREATED
-   * @returns `Ok(Order)` при успехе, `Err(TradingError)` если массив пуст или первое событие не ORDER_CREATED
-   * @throws Не бросает исключений — все ошибки возвращаются через Result
-   *
-   * @remarks
-   * Применяет события без валидации — предполагает корректность лога.
-   * Используется для воспроизведения истории в режиме paper trading или анализа.
-   * Не эмитирует события — pullEvents() вернёт [].
-   *
-   * @example
-   * ```typescript
-   * const result = Order.fromEvents([
-   *   { type: 'ORDER_CREATED', payload: { orderId, asset, side: 'BUY', price, size, timestamp }, metadata },
-   *   { type: 'ORDER_ACCEPTED', payload: { orderId }, metadata },
-   *   { type: 'ORDER_FILLED', payload: { orderId, fill: fillData, averagePrice }, metadata },
-   * ]);
-   * if (result.ok) console.log(result.value.status); // 'FILLED'
-   * ```
-   */
-  public static fromEvents(events: readonly OrderEvent[]): Result<Order, TradingError> {
-    if (events.length === 0) {
-      return Err(new TradingError('Cannot create Order from empty events list'));
-    }
-
-    const first = events[0];
-    if (first.type !== 'ORDER_CREATED') {
-      return Err(new TradingError(
-        `First event must be ORDER_CREATED, got ${first.type}`,
-        { context: { eventType: first.type } },
-      ));
-    }
-
-    let state: OrderState = {
-      id: first.payload.orderId,
-      asset: first.payload.asset,
-      side: first.payload.side,
-      price: first.payload.price,
-      size: first.payload.size,
-      status: 'PENDING',
-      timestamp: first.payload.timestamp,
-      strategyId: first.payload.strategyId,
-      accountId: first.payload.accountId,
-      fill: emptyFill(),
-    };
-
-    for (let i = 1; i < events.length; i++) {
-      state = Order._applyEventToState(state, events[i]);
-    }
-
-    return Ok(new Order(state));
-  }
-
-  // ─── Private: event application ───────────────────────────────────────────
-
-  /**
-   * Применяет событие к состоянию — единственный источник истины для переходов
-   *
-   * @param state - Текущее состояние
-   * @param event - Событие для применения
-   * @returns Новое состояние (без изменений если событие не применимо)
-   *
-   * @remarks
-   * Используется двояко:
-   * 1. В командах (accept, reject, cancel, expire, applyFill) — state derived from event
-   * 2. В fromEvents() — replay лога событий без валидации
-   *
-   * Гарантии безопасности:
-   * - Если orderId события не совпадает с id текущего состояния — событие игнорируется
-   *   (silent corruption prevention при попадании чужого события в поток)
-   * - Статус-гарды предотвращают недопустимые переходы при replay
-   *
-   * Это гарантирует, что переход состояния всегда проходит через один код,
-   * а не дублируется в каждой команде.
-   *
-   * Принимает draft `{ type, payload }` — canonical `OrderEvent` структурно
-   * совместим (metadata игнорируется), поэтому replay canonical-событий и
-   * применение внутренних drafts идут через один код. Metadata по построению
-   * НЕ влияет на переход состояния.
-   */
-  private static _applyEventToState(state: OrderState, event: OrderEventDraft): OrderState {
-    // Защита от чужих событий: игнорируем если orderId не совпадает (кроме ORDER_CREATED)
-    if (event.type !== 'ORDER_CREATED' && event.payload.orderId !== state.id) return state;
-
-    switch (event.type) {
-      case 'ORDER_CREATED':
-        return {
-          id: event.payload.orderId,
-          asset: event.payload.asset,
-          side: event.payload.side,
-          price: event.payload.price,
-          size: event.payload.size,
-          status: 'PENDING',
-          timestamp: event.payload.timestamp,
-          strategyId: event.payload.strategyId,
-          accountId: event.payload.accountId,
-          fill: emptyFill(),
-        };
-
-      case 'ORDER_ACCEPTED':
-        if (state.status !== 'PENDING') return state;
-        return { ...state, status: 'OPEN' };
-
-      case 'ORDER_REJECTED':
-        if (state.status !== 'PENDING') return state;
-        return { ...state, status: 'REJECTED', reason: event.payload.reason };
-
-      case 'ORDER_CANCELLED':
-        if (!FILLABLE_STATUSES.has(state.status)) return state;
-        return { ...state, status: 'CANCELED', reason: event.payload.reason };
-
-      case 'ORDER_EXPIRED':
-        if (!FILLABLE_STATUSES.has(state.status)) return state;
-        return { ...state, status: 'EXPIRED' };
-
-      case 'ORDER_PARTIALLY_FILLED':
-      case 'ORDER_FILLED': {
-        if (!FILLABLE_STATUSES.has(state.status)) return state;
-        const result = addFill(state.fill, event.payload.fill, state.size);
-        if (!result.ok) return state;
-        const newFill = result.value;
-        const newStatus: OrderStatus = event.type === 'ORDER_FILLED' ? 'FILLED' : 'PARTIALLY_FILLED';
-        return { ...state, status: newStatus, fill: newFill };
-      }
-
-      default:
-        return state;
-    }
   }
 
   // ─── Commands ──────────────────────────────────────────────────────────────
@@ -548,12 +331,13 @@ export class Order {
   /**
    * Принять заявку биржей
    *
-   * @returns Result<Order, TradingError>
+   * @returns `Ok(Order)` в статусе OPEN или `Err(TradingError)`, если статус не PENDING
+   * @throws Не бросает исключений — все ошибки возвращаются через Result
    *
    * @remarks
    * Переход: PENDING → OPEN
    * Биржа подтвердила получение и выставила заявку на исполнение.
-   * Эмитирует OrderAcceptedEvent.
+   * Текущий экземпляр не меняется — возвращается новый.
    *
    * @example
    * ```typescript
@@ -568,20 +352,21 @@ export class Order {
         { context: { orderId: this._s.id } },
       ));
     }
-    const draft: DraftOf<OrderAcceptedEvent> = { type: 'ORDER_ACCEPTED', payload: { orderId: this._s.id } };
-    return Ok(new Order(Order._applyEventToState(this._s, draft), [...this._pendingDrafts, draft]));
+    return Ok(new Order({ ...this._s, status: 'OPEN' }));
   }
 
   /**
    * Отклонить заявку биржей
    *
-   * @param reason - Причина отклонения (обязательна)
-   * @returns Result<Order, TradingError>
+   * @param reason - Причина отклонения (обязательна, непустая)
+   * @returns `Ok(Order)` в статусе REJECTED или `Err(TradingError)` при пустой
+   *   причине либо статусе, отличном от PENDING
+   * @throws Не бросает исключений — все ошибки возвращаются через Result
    *
    * @remarks
    * Переход: PENDING → REJECTED
    * Биржа отклонила заявку (недостаточно средств, невалидная цена и т.д.)
-   * Эмитирует OrderRejectedEvent.
+   * Причина сохраняется как есть — без обрезки пробелов.
    *
    * @example
    * ```typescript
@@ -599,20 +384,21 @@ export class Order {
         { context: { orderId: this._s.id } },
       ));
     }
-    const draft: DraftOf<OrderRejectedEvent> = { type: 'ORDER_REJECTED', payload: { orderId: this._s.id, reason } };
-    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
+    return Ok(new Order({ ...this._s, status: 'REJECTED', reason }));
   }
 
   /**
    * Отменить заявку
    *
    * @param reason - Причина отмены (опционально, по умолчанию 'User cancelled')
-   * @returns Result<Order, TradingError>
+   * @returns `Ok(Order)` в статусе CANCELED или `Err(TradingError)`, если статус
+   *   не OPEN/PARTIALLY_FILLED
+   * @throws Не бросает исключений — все ошибки возвращаются через Result
    *
    * @remarks
    * Переход: OPEN или PARTIALLY_FILLED → CANCELED
    * Заявка снята с биржи по инициативе пользователя или риск-системы.
-   * Эмитирует OrderCancelledEvent.
+   * Fill-состояние (filledSize, VWAP, fillIds) сохраняется.
    *
    * @example
    * ```typescript
@@ -627,23 +413,20 @@ export class Order {
         { context: { orderId: this._s.id } },
       ));
     }
-    const cancelReason = reason ?? 'User cancelled';
-    const draft: DraftOf<OrderCancelledEvent> = {
-      type: 'ORDER_CANCELLED',
-      payload: { orderId: this._s.id, reason: cancelReason },
-    };
-    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
+    return Ok(new Order({ ...this._s, status: 'CANCELED', reason: reason ?? 'User cancelled' }));
   }
 
   /**
    * Истечь заявке по времени
    *
-   * @returns Result<Order, TradingError>
+   * @returns `Ok(Order)` в статусе EXPIRED или `Err(TradingError)`, если статус
+   *   не OPEN/PARTIALLY_FILLED
+   * @throws Не бросает исключений — все ошибки возвращаются через Result
    *
    * @remarks
    * Переход: OPEN или PARTIALLY_FILLED → EXPIRED
    * Автоматически вызывается при истечении TTL заявки.
-   * Эмитирует OrderExpiredEvent.
+   * Fill-состояние сохраняется.
    *
    * @example
    * ```typescript
@@ -658,20 +441,28 @@ export class Order {
         { context: { orderId: this._s.id } },
       ));
     }
-    const draft: DraftOf<OrderExpiredEvent> = { type: 'ORDER_EXPIRED', payload: { orderId: this._s.id } };
-    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
+    return Ok(new Order({ ...this._s, status: 'EXPIRED' }));
   }
 
   /**
    * Применить fill исполнения к заявке
    *
    * @param fill - Данные исполнения
-   * @returns Result<Order, TradingError>
+   * @returns `Ok(Order)` с применённым fill или `Err(TradingError)`, если fill не
+   *   проходит проверки ниже
+   * @throws Не бросает исключений — все ошибки возвращаются через Result
    *
    * @remarks
    * Переходы:
-   * - OPEN → PARTIALLY_FILLED (если остаток > 0) → эмитирует OrderPartiallyFilledEvent
-   * - OPEN или PARTIALLY_FILLED → FILLED (если остаток = 0) → эмитирует OrderFilledEvent
+   * - OPEN или PARTIALLY_FILLED → PARTIALLY_FILLED (если остаток не исчерпан)
+   * - OPEN или PARTIALLY_FILLED → FILLED (если остаток исчерпан с учётом
+   *   порога «пыли», см. `isFull()` в `_fill.ts`)
+   *
+   * Алгоритм:
+   * 1. Проверяем статус и соответствие fill этой заявке (asset/side/orderId).
+   * 2. `addFill()` проверяет размер и дубликат fillId и считает новый
+   *    filledSize и VWAP.
+   * 3. `isFull()` выбирает итоговый статус.
    *
    * Валидирует:
    * - Статус OPEN или PARTIALLY_FILLED
@@ -725,34 +516,14 @@ export class Order {
     const newFill = newFillResult.value;
     const filled = isFull(newFill, this._s.size);
 
-    if (filled) {
-      if (!newFill.averagePrice) {
-        // Should not happen: addFill always sets averagePrice on success
-        return Err(new TradingError('Internal error: averagePrice missing for fully filled order', {
-          context: { orderId: this._s.id, fillId: fill.id },
-        }));
-      }
-      const draft: DraftOf<OrderFilledEvent> = {
-        type: 'ORDER_FILLED',
-        payload: {
-          orderId: this._s.id,
-          fill,
-          averagePrice: newFill.averagePrice,
-        },
-      };
-      return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
+    if (filled && !newFill.averagePrice) {
+      // Should not happen: addFill always sets averagePrice on success
+      return Err(new TradingError('Internal error: averagePrice missing for fully filled order', {
+        context: { orderId: this._s.id, fillId: fill.id },
+      }));
     }
 
-    const draft: DraftOf<OrderPartiallyFilledEvent> = {
-      type: 'ORDER_PARTIALLY_FILLED',
-      payload: {
-        orderId: this._s.id,
-        fill,
-        filledSize: newFill.filledSize,
-        remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
-      },
-    };
-    return Ok(new Order(Order._applyEventToState(this._s, draft), [draft]));
+    return Ok(new Order({ ...this._s, status: filled ? 'FILLED' : 'PARTIALLY_FILLED', fill: newFill }));
   }
 
   /**

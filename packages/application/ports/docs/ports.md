@@ -156,7 +156,8 @@ discovery" выше для подробностей по `IDecisionJournal`/`IMa
   `IDecisionJournal` больше не входит в этот список: `DecisionEntry.strategyId` уже
   брендирован в Этапе 10c). Реальный источник значений — `Order`/`OrderState`/
   `OrderEvent` в `packages/domain/entities/order`, документированный event-replay/
-  журнальный формат (`Order.fromEvents(events)` воспроизводит историю без валидации) —
+  журнальный формат (`Order.fromEvents(events)` воспроизводил историю без валидации; replay
+  с тех пор удалён из `Order`) —
   пакет вне мандата всей этой миграции (Этап 3 дал ему только TSDoc-backfill). Даже
   полная конверсия сигнатур этих 5 портов была бы косметической: реально хранимое/
   сравниваемое поле осталось бы примитивом. `StrategyId` сам по себе уже построен и

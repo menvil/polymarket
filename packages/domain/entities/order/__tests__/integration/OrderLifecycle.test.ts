@@ -10,7 +10,6 @@
  * - Несколько fills с weighted average price (VWAP)
  * - Корректность вычислений после переходов
  * - Round-trip сериализации: toSnapshot → fromSnapshot
- * - Replay через fromEvents
  */
 
 import { OutcomePrice, Quantity } from '@polymarket/value-objects';
@@ -31,7 +30,6 @@ import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import { OrderViewModel } from '../../src/view/OrderViewModel';
 import type { OrderSnapshot } from '../../src/OrderState';
 import type { FillData } from '@polymarket/fill';
-import { replay, nextTestMetadata } from '../helpers';
 
 // ──────────────── Фикстуры ────────────────
 
@@ -383,84 +381,5 @@ describe('Сценарий: вычисления в разных состоян�
 
     const filled = unwrap(open.applyFill(makeFill(0, 100, 0.60)));
     expect(filled.fillPercentage.toNumber()).toBe(100);
-  });
-});
-
-// ──────────────── Сценарий 9: fromEvents replay ────────────────
-
-describe('Сценарий: fromEvents replay', () => {
-  it('воспроизводит полный жизненный цикл из событий', () => {
-    const ts = Timestamp.now();
-
-    const fillData: FillData = {
-      id: FILL_IDS[0],
-      orderId: ORDER_ID,
-      asset: ASSET,
-      side: 'BUY',
-      size: Quantity.of(new Decimal('100')),
-      price: OutcomePrice.of(new Decimal('0.60')),
-    };
-
-    const order = replay([
-      {
-        type: 'ORDER_CREATED',
-        payload: {
-          orderId: ORDER_ID,
-          asset: ASSET,
-          side: 'BUY',
-          price: OutcomePrice.of(new Decimal('0.60')),
-          size: Quantity.of(new Decimal('100')),
-          timestamp: ts,
-        },
-        metadata: nextTestMetadata(),
-      },
-      {
-        type: 'ORDER_ACCEPTED',
-        payload: {
-          orderId: ORDER_ID
-        },
-        metadata: nextTestMetadata(),
-      },
-      {
-        type: 'ORDER_FILLED',
-        payload: {
-          orderId: ORDER_ID, fill: fillData, averagePrice: fillData.price
-        },
-        metadata: nextTestMetadata(),
-      },
-    ]);
-
-    expect(order.status).toBe('FILLED');
-    expect(order.filledSize.value().toNumber()).toBe(100);
-    expect(order.tradeCount).toBe(1);
-  });
-
-  it('воспроизводит отклонение из событий', () => {
-    const ts = Timestamp.now();
-
-    const order = replay([
-      {
-        type: 'ORDER_CREATED',
-        payload: {
-          orderId: ORDER_ID,
-          asset: ASSET,
-          side: 'BUY',
-          price: OutcomePrice.of(new Decimal('0.60')),
-          size: Quantity.of(new Decimal('100')),
-          timestamp: ts,
-        },
-        metadata: nextTestMetadata(),
-      },
-      {
-        type: 'ORDER_REJECTED',
-        payload: {
-          orderId: ORDER_ID, reason: 'Bad price'
-        },
-        metadata: nextTestMetadata(),
-      },
-    ]);
-
-    expect(order.status).toBe('REJECTED');
-    expect(order.reason).toBe('Bad price');
   });
 });

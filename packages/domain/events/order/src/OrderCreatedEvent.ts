@@ -3,9 +3,8 @@
  *
  * @remarks
  * Canonical envelope `{ type, payload, metadata }` (M-003). Semantic-данные —
- * в {@link OrderCreatedPayload}; metadata materialize-ится на границе
- * `Order.pullEvents()` (Domain сам её не генерирует) и НЕ участвует в
- * replay-семантике (`Order.fromEvents()` читает только `type` + `payload`).
+ * в {@link OrderCreatedPayload}. Legacy-контракт: `Order` это событие больше
+ * не создаёт (см. README пакета).
  */
 import type { MessageEnvelope } from '@polymarket/messages';
 import type { AccountId, AssetId, OrderId, StrategyId } from '@polymarket/ids';

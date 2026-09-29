@@ -3,11 +3,15 @@
  *
  * @remarks
  * Самодостаточный агрегат Order — вся бизнес-логика заявки в одном модуле.
+ * `Order` — полностью неизменяемая доменная сущность: команды проверяют
+ * переход и возвращают новый экземпляр, событий агрегат не копит и не
+ * публикует.
  *
  * ## Основные экспорты:
  *
  * ### Entity
- * - **Order** — агрегат заявки (create, rehydrate, fromEvents)
+ * - **Order** — агрегат заявки (фабрики create, rehydrate; команды accept,
+ *   reject, cancel, expire, applyFill)
  *
  * ### Types
  * - **OrderState** — внутреннее состояние (value objects)
@@ -18,9 +22,6 @@
  * - **TERMINAL_STATUSES** — множество терминальных статусов
  * - **FILLABLE_STATUSES** — множество статусов принимающих fills
  *
- * ### Domain Events
- * - Domain-события Order переехали в `@polymarket/order-events` (canonical owner)
- *
  * ### View Layer
  * - **OrderViewModel** — сериализация в JSON/readable/summary
  * - **OrderDeserializer** — десериализация из снэпшота
@@ -30,7 +31,7 @@
  * ```typescript
  * import { Order } from '@polymarket/order';
  * import { OutcomePrice, Quantity } from '@polymarket/value-objects';
-import { Timestamp } from '@polymarket/timestamp';
+ * import { Timestamp } from '@polymarket/timestamp';
  * import { asOrderId } from '@polymarket/ids';
  * import Decimal from 'decimal.js';
  *
