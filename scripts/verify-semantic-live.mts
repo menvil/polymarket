@@ -47,7 +47,7 @@ import { LiveClock } from '@polymarket/time';
 import { LiveHighResolutionClock, MessageMetadataGenerator } from '@polymarket/messages';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { EventBus } from '@polymarket/event-bus';
-import type { EventBusEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { PolymarketSemanticAdapter } from '@polymarket/polymarket-semantic-adapter';
 import { createDataCollector } from '@polymarket/collect-data/runtime';
 import type { ContourMessage, DataCollectorConfig } from '@polymarket/collect-data/runtime';
@@ -199,7 +199,7 @@ async function main(): Promise<void> {
     }
   });
 
-  const record = (event: EventBusEvent): void => {
+  const record = (event: ApplicationEvent): void => {
     bump(semantic, event.type);
     causalityChecked.total++;
     if (event.metadata.causationId !== undefined) causalityChecked.children++;

@@ -1,5 +1,5 @@
 /**
- * EventBus — Application-фасад над generic `MessageBus<EventBusEvent>`.
+ * EventBus — Application-фасад над generic `MessageBus<ApplicationEvent>`.
  *
  * @remarks
  * ### Архитектура после M-002
@@ -12,7 +12,7 @@
  * └── общая operational-диагностика (canonical MessageBusStats)
  *       │
  *       ▼
- * MessageBus<EventBusEvent>   ← вся механика доставки
+ * MessageBus<ApplicationEvent>   ← вся механика доставки
  * ```
  *
  * Собственного механизма доставки у EventBus больше НЕТ: очередь, FIFO,
@@ -55,31 +55,36 @@ import {
   MessageBusClosedError,
 } from '@polymarket/message-bus';
 import type { MessageBusObserver, MessageBusPublishError, MessageBusStats } from '@polymarket/message-bus';
-import type { EventBusEvent } from './EventBusEvent.js';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import type { IEventBus, EventHandler } from './IEventBus.js';
 
 /**
- * Application event bus — тонкий фасад над `MessageBus<EventBusEvent>`.
+ * Application event bus — тонкий фасад над `MessageBus<ApplicationEvent>`.
  *
  * @example
  * ```typescript
  * const bus = new EventBus(logger);
  *
  * // Non-critical (по умолчанию):
- * bus.subscribe('FILL_RECEIVED', async (event) => {
- *   await fillOrchestrator.handle(event.fill);
+ * bus.subscribe('BOOK_UPDATED', async (event) => {
+ *   await strategy.onBookUpdated(event.payload.topOfBook);
  * });
  *
  * // Critical — drain прерывается, bus остаётся работоспособным:
- * bus.subscribe('RISK_LIMIT_BREACHED', riskHandler, { critical: true });
+ * bus.subscribe('TRADING_ACCOUNT_ORDER_COMMITTED', projectorHandler, { critical: true });
  *
- * const result = await bus.publish({ type: 'FILL_RECEIVED', fill, receivedAt });
+ * // Canonical envelope: type + payload + metadata (metadata — от producer'а)
+ * const result = await bus.publish({
+ *   type: 'TRADING_ACCOUNT_ORDER_COMMITTED',
+ *   payload: { venueId, accountId, order, portfolio },
+ *   metadata: metadataGenerator.nextRoot(),
+ * });
  * if (!result.ok) logger.error('Publish failed', { error: result.error.message });
  * ```
  */
 export class EventBus implements IEventBus {
   private readonly _logger: ILogger;
-  private readonly _bus: MessageBus<EventBusEvent>;
+  private readonly _bus: MessageBus<ApplicationEvent>;
 
   /**
    * Создаёт EventBus.
@@ -103,7 +108,7 @@ export class EventBus implements IEventBus {
    */
   constructor(logger: ILogger, maxEventsPerDrain = 10_000, maxQueueSize = 100_000) {
     this._logger = logger.child({ component: 'EventBus' });
-    this._bus = new MessageBus<EventBusEvent>({
+    this._bus = new MessageBus<ApplicationEvent>({
       policy: createMessageBusPolicy({
         queuePolicy: {
           maxQueueSize,
@@ -161,9 +166,9 @@ export class EventBus implements IEventBus {
    * прерывается. Используется для RISK-событий, нарушение которых требует немедленной
    * реакции caller'а.
    */
-  public subscribe<K extends EventBusEvent['type']>(
+  public subscribe<K extends ApplicationEvent['type']>(
     type: K,
-    handler: EventHandler<Extract<EventBusEvent, { type: K }>>,
+    handler: EventHandler<Extract<ApplicationEvent, { type: K }>>,
     options?: { critical?: boolean },
   ): () => void {
     return this._bus.subscribe(type, handler, options);
@@ -172,7 +177,7 @@ export class EventBus implements IEventBus {
   /**
    * Публикует событие всем подписчикам его типа.
    *
-   * @param event - EventBusEvent для публикации
+   * @param event - Canonical `ApplicationEvent` для публикации
    * @returns `Ok(void)`, либо `Err(QueueOverflowError)` при переполнении очереди/лимита
    *   drain-цикла, либо `Err(CriticalHandlerError)` если critical-подписчик бросил
    *
@@ -180,7 +185,7 @@ export class EventBus implements IEventBus {
    * Reentrant-safe (гарантия движка): вызов изнутри handler ставит событие в
    * очередь и подтверждает enqueue, обработка — текущим drain позже.
    */
-  public async publish(event: EventBusEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
+  public async publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
     return this._translateResult(await this._bus.publish(event));
   }
 
@@ -205,7 +210,7 @@ export class EventBus implements IEventBus {
    * его Result (проверка `dispatching` и вызов `drain()` — один синхронный блок,
    * между ними нет yield point).
    */
-  public async publishAll(events: readonly EventBusEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
+  public async publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
     if (events.length === 0) {
       if (this._bus.getStats().dispatching) {
         return Ok(undefined);

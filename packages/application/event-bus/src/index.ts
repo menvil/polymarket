@@ -1,36 +1,34 @@
 /**
- * @polymarket/event-bus — Application-specific delivery façade контура EventBusEvent.
+ * @polymarket/event-bus — Application-фасад доставки canonical `ApplicationEvent`.
  *
  * @remarks
  * ### Разделение ответственности:
  * - **Application event contracts** — `@polymarket/application-events`
- *   (union `ApplicationEvent`; этот пакет их НЕ определяет и НЕ реэкспортирует);
- * - **Domain Order events** — `@polymarket/order-events` (union `OrderEvent`);
+ *   (union `ApplicationEvent`; этот пакет их НЕ определяет и НЕ реэкспортирует).
+ *   Это единственный контур, который ходит по `IEventBus`;
  * - **Delivery mechanics** — `@polymarket/message-bus` (generic-движок:
  *   очередь, fan-out, reentrancy, guards);
- * - **Этот пакет** — Application-фасад доставки: `IEventBus`/`EventBus`,
- *   `EventBusEvent = ApplicationEvent | OrderEvent` (union контура доставки,
- *   не ownership-слой), Application error-контракт, logger-интеграция,
- *   диагностика.
+ * - **Этот пакет** — Application-фасад доставки: `IEventBus`/`EventBus`
+ *   над `MessageBus<ApplicationEvent>`, Application error-контракт,
+ *   logger-интеграция, диагностика.
+ *
+ * Сырые сообщения источников сюда не попадают — это контур
+ * `ExternalMessageBus` (`@polymarket/external-message-bus`).
  *
  * @example
  * ```typescript
- * import type { ApplicationEvent, BookUpdatedEvent } from '@polymarket/application-events';
- * import type { OrderEvent } from '@polymarket/order-events';
- * import { EventBus, type IEventBus, type EventBusEvent } from '@polymarket/event-bus';
+ * import { EventBus, type IEventBus } from '@polymarket/event-bus';
  *
  * const bus: IEventBus = new EventBus(logger);
  *
  * const unsub = bus.subscribe('BOOK_UPDATED', async (event) => {
  *   // event: BookUpdatedEvent — TypeScript знает точный тип
- *   await strategy.onBookUpdated(event.topOfBook);
+ *   await strategy.onBookUpdated(event.payload.topOfBook);
  * });
  * ```
  */
 /** Реэкспорт порта event bus (см. IEventBus.ts). */
 export type { IEventBus, EventHandler } from './IEventBus.js';
-/** Union контура доставки (см. EventBusEvent.ts) — не ownership-слой. */
-export type { EventBusEvent } from './EventBusEvent.js';
 export { EventBus } from './EventBus.js';
 /**
  * Реэкспорт canonical operational-диагностики (см. @polymarket/message-bus).

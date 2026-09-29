@@ -2,11 +2,10 @@
  * Полный union application-owned событий — canonical contract Application-слоя.
  *
  * @remarks
- * Содержит ТОЛЬКО события, которыми владеет Application. Domain-события Order
- * (`OrderEvent` из `@polymarket/order-events`) сюда НЕ входят: это отдельный
- * semantic-контур. Union контура доставки, объединяющий оба —
- * `EventBusEvent = ApplicationEvent | OrderEvent` — определён в
- * `@polymarket/event-bus` (это union доставки, а не принадлежности к слою).
+ * Содержит ТОЛЬКО события, которыми владеет Application, и это единственный
+ * контур, который доставляет `IEventBus` (`@polymarket/event-bus`). Domain-
+ * сущности событий не публикуют: изменение заявки приходит только в составе
+ * `TRADING_ACCOUNT_ORDER_COMMITTED`.
  *
  * User-channel события:
  * - FILL_RECEIVED — fill со статусом MATCHED → запустить ProcessFillUseCase

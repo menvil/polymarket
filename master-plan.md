@@ -1,5 +1,9 @@
 # Master Implementation Plan v2
 
+> **Historical.** План описывает старый торговый контур (`OrderEvent`,
+> `Order.pullEvents()`, use-cases), который удалён или перенесён в `legacy-bot/`.
+> Актуальной документацией не является.
+
 ## Polymarket Trading System — Единый подробный план
 
 **Версия:** 2.0 (исправлено 10 архитектурных проблем v1)

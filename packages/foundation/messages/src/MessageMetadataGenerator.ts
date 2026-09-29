@@ -170,10 +170,10 @@ export class MessageMetadataGenerator {
    * @example
    * ```typescript
    * const reaction = {
-   *   type: 'ORDER_FILLED',
-   *   payload: { orderId, fill, averagePrice },
+   *   type: 'TRADING_ACCOUNT_FILL_APPLIED',
+   *   payload: { fill, portfolio, order },
    *   metadata: generator.nextChild(fillReceived.metadata),
-   * } satisfies OrderFilledEvent;
+   * } satisfies TradingAccountFillAppliedEvent;
    * ```
    */
   public nextChild(parent: MessageMetadata): MessageMetadata {

@@ -164,7 +164,7 @@ Foundation-стандарт (`MessageMetadataGenerator` из `@polymarket/messag
 
 Единственная зависимость — `@polymarket/messages`. Пакет **не** зависит от
 `@polymarket/application-events`, `@polymarket/event-bus`,
-`@polymarket/order-events`, `@polymarket/order`, `@polymarket/value-objects` и
+`@polymarket/order`, `@polymarket/value-objects` и
 никакого Domain/Application-кода: если конкретного Foundation-типа не хватает,
 Domain сюда не затаскивается.
 

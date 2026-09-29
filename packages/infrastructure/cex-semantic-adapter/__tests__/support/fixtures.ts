@@ -15,7 +15,7 @@
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import { EventBus } from '@polymarket/event-bus';
-import type { EventBusEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { LiveClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { CexExternalMessage, CexMarketType } from '@polymarket/cex-v2';
@@ -141,9 +141,9 @@ export interface Harness {
   readonly adapter: CexSemanticAdapter;
   readonly metadataGenerator: MessageMetadataGenerator;
   /** Все события, дошедшие до Application-шины, в порядке доставки. */
-  readonly published: EventBusEvent[];
+  readonly published: ApplicationEvent[];
   /** События одного типа. */
-  eventsOfType<K extends EventBusEvent['type']>(type: K): Extract<EventBusEvent, { type: K }>[];
+  eventsOfType<K extends ApplicationEvent['type']>(type: K): Extract<ApplicationEvent, { type: K }>[];
   /** Публикует наблюдение стакана и дожидается обработки. */
   publishBook(fixture?: OrderbookFixture): Promise<void>;
   /** Публикует наблюдение сделки и дожидается обработки. */
@@ -177,7 +177,7 @@ export function createHarness(
   const bus = new ExternalMessageBus<CexExternalMessage>();
   const eventBus = new EventBus(silentLogger());
   const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
-  const published: EventBusEvent[] = [];
+  const published: ApplicationEvent[] = [];
 
   for (const type of ['BOOK_DEPTH', 'BOOK_UPDATED', 'TRADE_RECEIVED'] as const) {
     eventBus.subscribe(type, (event) => {
@@ -204,8 +204,8 @@ export function createHarness(
     adapter,
     metadataGenerator,
     published,
-    eventsOfType<K extends EventBusEvent['type']>(type: K): Extract<EventBusEvent, { type: K }>[] {
-      return published.filter((event): event is Extract<EventBusEvent, { type: K }> =>
+    eventsOfType<K extends ApplicationEvent['type']>(type: K): Extract<ApplicationEvent, { type: K }>[] {
+      return published.filter((event): event is Extract<ApplicationEvent, { type: K }> =>
         event.type === type,
       );
     },

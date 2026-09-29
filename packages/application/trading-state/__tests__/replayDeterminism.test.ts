@@ -20,7 +20,7 @@ import { describe, expect, it } from '@jest/globals';
 import { EventBus } from '@polymarket/event-bus';
 import { PaperClock } from '@polymarket/time';
 import { isErr } from '@polymarket/result';
-import type { EventBusEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import type { MarketDataSourceId } from '@polymarket/ids';
 import { TradingStateProjector, type TradingHotStateView } from '../src/index.js';
 import {
@@ -46,10 +46,10 @@ const SOURCE = 'chainlink' as MarketDataSourceId;
  *
  * @returns Полный жизненный цикл рынка плюс shared-наблюдения
  */
-function buildTape(): readonly EventBusEvent[] {
+function buildTape(): readonly ApplicationEvent[] {
   const events = new EventFactory();
   const admitted = market();
-  const tape: EventBusEvent[] = [];
+  const tape: ApplicationEvent[] = [];
 
   // Admission — единственный способ создать состояние рынка.
   events.observeAt(1_000);
@@ -97,7 +97,7 @@ function buildTape(): readonly EventBusEvent[] {
 }
 
 /** Применяет ленту к свежему состоянию. */
-async function project(tape: readonly EventBusEvent[]): Promise<TradingHotStateView> {
+async function project(tape: readonly ApplicationEvent[]): Promise<TradingHotStateView> {
   const bus = new EventBus(silentLogger);
   const created = TradingStateProjector.create(bus, retention(), new PaperClock(new Date(0)));
   if (isErr(created)) throw created.error;

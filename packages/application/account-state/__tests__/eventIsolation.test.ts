@@ -2,7 +2,7 @@
  * Проектор реагирует ТОЛЬКО на приватный контур нового рантайма.
  *
  * @remarks
- * Метки `AN` и `AO` соответствуют плану MR.
+ * Метка `AN` соответствует плану MR.
  *
  * Это не формальность. Старые события описывают ВХОД обработки:
  *
@@ -10,7 +10,6 @@
  * FILL_RECEIVED           исполнение получено и ЕЩЁ должно быть обработано
  * FILL_FAILED             откат считает подписчик
  * ORDER_UPDATE_RECEIVED   сырое venue-обновление, БЕЗ Order и Portfolio
- * ORDER_* (Domain)        переход агрегата, БЕЗ Portfolio
  * ```
  *
  * Подписаться на них значило бы принять факт до того, как посчитана его
@@ -21,13 +20,12 @@
  * отсутствие подписки, а не отсутствие строки в коде.
  */
 import { describe, expect, it } from '@jest/globals';
-import type { EventBusEvent } from '@polymarket/event-bus';
 import type {
+  ApplicationEvent,
   FillFailedEvent,
   FillReceivedEvent,
   OrderUpdateReceivedEvent,
 } from '@polymarket/application-events';
-import type { OrderEvent } from '@polymarket/order-events';
 import { AccountStateProjector } from '../src/index.js';
 import {
   VENUE,
@@ -55,7 +53,7 @@ describe('AN. старые application-события игнорируются',
     const fill = makeFill({ accountId });
     const metadata = events.initialized({ accountId, portfolio: portfolio({ accountId }) }).metadata;
 
-    const legacy: readonly EventBusEvent[] = [
+    const legacy: readonly ApplicationEvent[] = [
       {
         type: 'FILL_RECEIVED',
         payload: { fill, receivedAt: ts(2_000) },
@@ -113,69 +111,5 @@ describe('AN. старые application-события игнорируются',
       'TRADING_ACCOUNT_INITIALIZED',
       'TRADING_ACCOUNT_ORDER_COMMITTED',
     ]);
-  });
-});
-
-describe('AO. Domain OrderEvent игнорируются', () => {
-  it('переходы агрегата Order не проецируются напрямую', async () => {
-    const { bus, view, events } = buildRuntime();
-    const accountId = walletAccount();
-
-    events.observeAt(1_000);
-    await publishOk(bus, events.initialized({ accountId, portfolio: portfolio({ accountId }) }));
-
-    const created = order({ accountId });
-    const metadata = events.initialized({ accountId, portfolio: portfolio({ accountId }) }).metadata;
-
-    const domainEvents: readonly OrderEvent[] = [
-      {
-        type: 'ORDER_CREATED',
-        payload: {
-          orderId: created.id,
-          asset: created.asset,
-          side: created.side,
-          price: created.price,
-          size: created.size,
-          timestamp: created.timestamp,
-        },
-        metadata,
-      },
-      {
-        type: 'ORDER_ACCEPTED',
-        payload: { orderId: created.id },
-        metadata,
-      },
-      {
-        type: 'ORDER_CANCELLED',
-        payload: { orderId: created.id, reason: 'strategy exit' },
-        metadata,
-      },
-    ];
-
-    for (const event of domainEvents) {
-      await publishOk(bus, event);
-    }
-
-    const account = view.getAccount(VENUE, accountId);
-    // Домен сообщил о заявке, но БЕЗ портфеля — принять её значило бы
-    // показать обязательство, под которое деньги ещё не зарезервированы.
-    expect(account?.orders()).toHaveLength(0);
-    expect(account?.version).toBe(1);
-    expect(view.getVersion()).toBe(1);
-  });
-
-  it('ни один Domain-тип не входит в список проецируемых', () => {
-    const projected = AccountStateProjector.projectedEventTypes();
-    for (const domainType of [
-      'ORDER_CREATED',
-      'ORDER_ACCEPTED',
-      'ORDER_PARTIALLY_FILLED',
-      'ORDER_FILLED',
-      'ORDER_CANCELLED',
-      'ORDER_REJECTED',
-      'ORDER_EXPIRED',
-    ]) {
-      expect(projected).not.toContain(domainType);
-    }
   });
 });

@@ -6,36 +6,38 @@
 
 ## Обзор
 
-**Application-specific delivery façade контура `EventBusEvent`** — и только она.
+**Application-specific delivery façade canonical `ApplicationEvent`** — и только она.
 С M-002.5 event contracts здесь не определяются и не реэкспортируются:
 
 - **Application event contracts** — `@polymarket/application-events` (union
-  `ApplicationEvent`); **domain-события Order** — `@polymarket/order-events`
-  (union `OrderEvent`); `EventBusEvent = ApplicationEvent | OrderEvent` — union
-  контура доставки (не ownership-слой), определён здесь;
+  `ApplicationEvent`) — единственный контур шины. Сырые сообщения источников
+  идут по `ExternalMessageBus`; domain-сущности событий не публикуют;
 - **Delivery mechanics** — `@polymarket/message-bus` (generic-движок);
 - **Этот пакет** — Application-фасад доставки: `EventBus implements IEventBus`,
   Application error-контракт, logger-интеграция, диагностика.
 
-Handlers (`@polymarket/handlers`), orchestrators (`@polymarket/orchestrators`) и
-strategy зависят от `IEventBus` + `@polymarket/application-events`, а не друг
-от друга.
+Проекции (`@polymarket/trading-state`, `@polymarket/account-state`), handlers
+и strategy зависят от `IEventBus` + `@polymarket/application-events`, а не
+друг от друга.
 
 ```typescript
-import type { ApplicationEvent } from '@polymarket/application-events';
 import { EventBus, type IEventBus } from '@polymarket/event-bus';
 
 const bus: IEventBus = new EventBus(logger);
 
 const unsub = bus.subscribe('BOOK_UPDATED', async (event) => {
-  await strategy.onBookUpdated(event.topOfBook);
+  await strategy.onBookUpdated(event.payload.topOfBook);
 });
 
-const result = await bus.publish({ type: 'FILL_RECEIVED', fill, receivedAt });
+const result = await bus.publish({
+  type: 'TRADING_ACCOUNT_ORDER_COMMITTED',
+  payload: { venueId, accountId, order, portfolio },
+  metadata: metadataGenerator.nextRoot(),
+});
 if (!result.ok) logger.error('Publish failed', { error: result.error.message });
 ```
 
-## `EventBus` — фасад над `MessageBus<EventBusEvent>` (M-002)
+## `EventBus` — фасад над `MessageBus<ApplicationEvent>` (M-002)
 
 С M-002 у `EventBus` НЕТ собственного механизма доставки: очередь, FIFO,
 параллельный fan-out (включая нормализацию sync-throw в rejection), reentrancy,
@@ -52,12 +54,12 @@ EventBus (фасад, composition — не наследование)
 └── общая operational-диагностика (getStats → canonical MessageBusStats)
       │
       ▼
-MessageBus<EventBusEvent>   ← вся механика доставки
+MessageBus<ApplicationEvent>   ← вся механика доставки
 ```
 
-`ApplicationEvent` подключается к движку как есть: flat union структурно
-удовлетворяет `TypedMessage` (есть поле `type`), `MessageEnvelope` в M-002 не
-используется (это M-003). Событие передаётся движку по ссылке — без
+`ApplicationEvent` подключается к движку как есть: каждый член union —
+canonical `MessageEnvelope` `{ type, payload, metadata }` (M-003) и структурно
+удовлетворяет `TypedMessage`. Событие передаётся движку по ссылке — без
 клонирования/сериализации. Generic lifecycle движка (`drain()`/`close()`)
 публичным API `EventBus` сознательно не становится; фасад никогда не вызывает
 `_bus.close()`. Operational-диагностика, напротив, общая: `getStats()` — прямой
@@ -125,36 +127,6 @@ critical handler threw during dispatch of ...`). Происхождение ош
 активном drain — `Ok` сразу (не присоединяясь — reentrant-вызов из handler-а
 иначе ждал бы сам себя), при idle — `_bus.drain()` с трансляцией его Result.
 Закреплено regression-тестами в `EventBus.message-bus-adapter.test.ts`.
-
-## `publishOrThrow()`/`publishAllOrThrow()` — deprecation-мост, снят в Этапе 10d
-
-До Этапа 6 `publish()`/`publishAll()` бросали `Error` напрямую. Реальные вызывающие на
-момент Этапа 6 — 19 сайтов в 8 файлах: 8 внутри `@polymarket/handlers` (сразу переведены
-на `Result`-обработку в Этапе 6) и 11 вне пакета — `apps/bot/src/main.ts` (2),
-`apps/bot/src/bot/buildUseCases.ts` (1, через `IOrderedEventOutbox`),
-`apps/bot/src/bot/MarketRotation.ts` (1),
-`packages/infrastructure/backtesting/src/BacktestEngine.ts` (1),
-`packages/infrastructure/polymarket/rest/adapters/PolymarketExecutionAdapter.ts` (6,
-fire-and-forget). Прямая правка сигнатуры `publish()`/`publishAll()` в Этапе 6 сломала бы
-сборку во всех 11 внешних сайтах, лежавших вне территории того этапа.
-
-Временное решение (Этап 6 — Этап 10c): `publishOrThrow()`/`publishAllOrThrow()` —
-throw-based обёртки над `Result`-based `publish()`/`publishAll()` (`if (!result.ok) throw
-result.error;`), бросавшие **тот же объект ошибки**, что `publish()` вернул бы в `Err`.
-
-**Этап 10d снял мост целиком** — оба метода удалены из `IEventBus`/`EventBus`. Все 11
-внешних сайтов переведены на `Result`-обработку тремя паттернами в зависимости от формы
-вызова: (1) awaited-сайты (`main.ts`, `MarketRotation.ts`, `BacktestEngine.ts`) —
-`if (!result.ok) { ...log...; }`; (2) fire-and-forget-сайты
-(`PolymarketExecutionAdapter.ts`, 6 штук) — `void eventBus.publish(...).then((result) =>
-{ if (!result.ok) ...log...; })`, что дополнительно потребовало починить
-`infrastructure/polymarket`'s собственный узкий локальный `IEventBus`-порт (тот держал
-`publish(): void` вместо `Promise<Result<...>>` — только структурно совместим с реальным
-`EventBus` благодаря нестрогой TS-проверке void-возврата); (3) `buildUseCases.ts`'s
-`InMemoryOrderedEventOutbox`-обёртка (+ 4 тестовых зеркала) — throw-конверсия инлайнится
-локально в `publish`-callback, поскольку `IOrderedEventOutboxDeps.publish` контрактно
-throw-based по архитектурному замыслу (декаплинг `@polymarket/in-memory` от
-`@polymarket/event-bus`'s `Result`-типа), не может перейти на `Result`-ветвление.
 
 ## Диагностика
 

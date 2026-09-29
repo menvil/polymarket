@@ -2,16 +2,13 @@
  * Данные одного исполнения — lightweight domain-контракт.
  *
  * @remarks
- * Общий нижнеуровневый контракт домена исполнений: параметр `Order.applyFill()`
- * и полезная нагрузка fill-событий Order (`ORDER_PARTIALLY_FILLED`/`ORDER_FILLED`
- * в `@polymarket/order-events`). Живёт в `@polymarket/fill`, чтобы
- * `@polymarket/order` и `@polymarket/order-events` могли разделять его без
- * циклической зависимости друг от друга:
+ * Нижнеуровневый контракт домена исполнений — параметр `Order.applyFill()`.
+ * Живёт в `@polymarket/fill`, а не в `@polymarket/order`, чтобы контракт
+ * исполнения не зависел от сущности заявки:
  *
  * ```text
  * @polymarket/fill (FillData)
  *       ↑
- *       ├── @polymarket/order-events
  *       └── @polymarket/order
  * ```
  *

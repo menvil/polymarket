@@ -11,19 +11,19 @@
 ## Implementation note (M-002 / M-002.5)
 
 С M-002 `EventBus` — тонкий Application-фасад над generic-движком
-`MessageBus<EventBusEvent>` (`@polymarket/message-bus`, композиция); с M-002.5
-event contracts извлечены в отдельные owner-пакеты:
+`MessageBus<ApplicationEvent>` (`@polymarket/message-bus`, композиция); с M-002.5
+event contracts извлечены в отдельный owner-пакет:
 
 ```text
-@polymarket/event-bus  =  Application-specific delivery façade for EventBusEvent
+@polymarket/event-bus  =  Application-specific delivery façade for ApplicationEvent
 ```
 
 Разделение ответственности:
 
 - `@polymarket/application-events` — application event contracts (union
-  `ApplicationEvent`); этот пакет их не определяет и не реэкспортирует;
-- `@polymarket/order-events` — domain-события Order (union `OrderEvent`);
-  через bus доставляются, но Application-слою не принадлежат;
+  `ApplicationEvent`); этот пакет их не определяет и не реэкспортирует.
+  Других контуров на шине нет: сырые сообщения источников идут по
+  `ExternalMessageBus`, а domain-сущности событий не публикуют;
 - `@polymarket/message-bus` — delivery mechanics: очередь, FIFO, параллельный
   fan-out, reentrancy, critical-семантика, drain-guards;
 - `@polymarket/event-bus` — Application error-контракт
@@ -39,22 +39,24 @@ event contracts извлечены в отдельные owner-пакеты:
 
 ## Purpose
 
-In-process распределение событий контура Application EventBus
-(`EventBusEvent = ApplicationEvent | OrderEvent` — union доставки, не
-ownership-слой): handlers, orchestrators, use-cases и strategy общаются через
-bus, а не напрямую друг с другом. Application-контракты живут в
-`@polymarket/application-events`, domain-события Order — в
-`@polymarket/order-events`.
+In-process распределение canonical `ApplicationEvent`
+(`@polymarket/application-events`): проекции состояния, handlers и strategy
+общаются через bus, а не напрямую друг с другом.
+
+```text
+sources → ExternalMessage → ExternalMessageBus → semantic adapters
+        → ApplicationEvent → IEventBus → TradingHotState / AccountHotState
+```
 
 ## Public API
 
 ```typescript
 interface IEventBus {
-  publish(event: EventBusEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
-  publishAll(events: readonly EventBusEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
-  subscribe<K extends EventBusEvent['type']>(
+  publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+  publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+  subscribe<K extends ApplicationEvent['type']>(
     type: K,
-    handler: EventHandler<Extract<EventBusEvent, { type: K }>>,
+    handler: EventHandler<Extract<ApplicationEvent, { type: K }>>,
     options?: { critical?: boolean },
   ): () => void; // unsubscribe
 }
@@ -68,9 +70,8 @@ interface IEventBus {
 - `EventBus.getStats()` — диагностика конкретного класса `EventBus` (см. Diagnostics);
   **не входит** в порт `IEventBus`.
 - События — canonical MessageEnvelope `{ type, payload, metadata }` (M-003;
-  contract — `@polymarket/messages`). Оба контура доставки
-  (`ApplicationEvent | OrderEvent`) используют один и тот же конверт; delivery
-  читает только `type`, metadata создаётся producer-ами через canonical
+  contract — `@polymarket/messages`). Шина передаёт конверт подписчикам по
+  ссылке, не пересобирая его; delivery читает только `type`, metadata создаётся producer-ами через canonical
   `MessageMetadataGenerator` ДО публикации.
 
 ## Event routing

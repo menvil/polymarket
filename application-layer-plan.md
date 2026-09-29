@@ -1,5 +1,9 @@
 # Application Layer Implementation Plan
 
+> **Historical.** План описывает старый торговый контур (`OrderEvent`,
+> `Order.pullEvents()`, use-cases), который удалён или перенесён в `legacy-bot/`.
+> Актуальной документацией не является.
+
 ## Polymarket Trading System — `packages/application/`
 
 **Дата создания:** 2026-03-09

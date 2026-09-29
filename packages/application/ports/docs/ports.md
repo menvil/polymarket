@@ -124,8 +124,8 @@ Decimal>`; единственный реальный имплементер об
 `PolymarketBalanceProvider.getAvailableBalance()` через lossy `Money.toNumber() → new
 Decimal(...)` раунд-трип — конверсия порта на `Money` убрала этот раунд-трип полностью, не
 только типовой долг, реальный precision-фикс). `IFillReverter`, `IFillProcessor`,
-`IKeyedMutex`, `IStrategyCommitmentReader`, `IReconciliationIssueRepository`,
-`IOrderedEventOutbox` — однометодные/узкие порты для конкретных use-case-ов (см. TSDoc
+`IKeyedMutex`, `IStrategyCommitmentReader`, `IReconciliationIssueRepository` —
+однометодные/узкие порты для конкретных use-case-ов (см. TSDoc
 каждого файла — уже исчерпывающий, не дублируется здесь).
 
 ## `IMarketFilterConfig` удалён
@@ -154,18 +154,16 @@ discovery" выше для подробностей по `IDecisionJournal`/`IMa
 - **`strategyId?: string`** в `IOrderRepository`, `IOrderStateStore`,
   `IStrategyCommitmentReader`, `IExchangeClient`, `IOrderSubmissionRepository` (5 портов —
   `IDecisionJournal` больше не входит в этот список: `DecisionEntry.strategyId` уже
-  брендирован в Этапе 10c). Реальный источник значений — `Order`/`OrderState`/
-  `OrderEvent` в `packages/domain/entities/order`, документированный event-replay/
-  журнальный формат (`Order.fromEvents(events)` воспроизводил историю без валидации; replay
-  с тех пор удалён из `Order`) —
+  брендирован в Этапе 10c). Реальный источник значений — `Order`/`OrderState` в
+  `packages/domain/entities/order` —
   пакет вне мандата всей этой миграции (Этап 3 дал ему только TSDoc-backfill). Даже
   полная конверсия сигнатур этих 5 портов была бы косметической: реально хранимое/
   сравниваемое поле осталось бы примитивом. `StrategyId` сам по себе уже построен и
   реально используется по всей цепочке `IStrategy`/`ExecutionEngine`/
   `StrategyScheduler`/`apps/bot/strategies/*` (Этапы 1, 10b) — граница валидации между
-  этим типизированным миром и сырым `Order`/`OrderEvent`-миром находится в
-  `OrderEventBridge.ts` (см. Решение 12, `docs/architecture/boundary-contract.md`), не
-  в самих портах.
+  этим типизированным миром и сырым `Order`-миром находилась в `OrderEventBridge.ts`
+  старого контура (теперь `legacy-bot/`; см. Решение 12,
+  `docs/architecture/boundary-contract.md`), не в самих портах.
 - **`DecisionJournalRecorder.close()`'s небезопасный `as MarketId`-каст** — пре-
   существующий, некритичный пробел типобезопасности на строковых ключах внутреннего
   `Map`; не относится ни к одной находке Этапа 10c, не форсируется.

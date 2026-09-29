@@ -6,7 +6,8 @@
  * включая critical-подписки. Подмена шины заглушкой доказала бы работу
  * заглушки.
  */
-import { EventBus, type EventBusEvent, type IEventBus } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
+import { EventBus, type IEventBus } from '@polymarket/event-bus';
 import { AccountStateProjector, type AccountHotStateView } from '../../src/index.js';
 import { EventFactory, silentLogger } from './fixtures.js';
 
@@ -51,7 +52,7 @@ export function buildRuntime(): AccountRuntime {
  * Подписки проектора critical, поэтому отвергнутая мутация приходит сюда как
  * `Err`, а не теряется в шине.
  */
-export async function publishOk(bus: IEventBus, event: EventBusEvent): Promise<void> {
+export async function publishOk(bus: IEventBus, event: ApplicationEvent): Promise<void> {
   const published = await bus.publish(event);
   if (!published.ok) throw new Error(`expected Ok, got ${String(published.error)}`);
 }
@@ -69,7 +70,7 @@ export async function publishOk(bus: IEventBus, event: EventBusEvent): Promise<v
  * контракт состояния, а не механику доставки. `EventBus` кладёт её в
  * `CriticalHandlerError.context.originalError`.
  */
-export async function publishErr(bus: IEventBus, event: EventBusEvent): Promise<unknown> {
+export async function publishErr(bus: IEventBus, event: ApplicationEvent): Promise<unknown> {
   const published = await bus.publish(event);
   if (published.ok) throw new Error(`expected Err for ${event.type}, got Ok`);
   const wrapper = published.error as { context?: { originalError?: unknown } };

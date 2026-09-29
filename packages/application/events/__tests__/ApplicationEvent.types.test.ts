@@ -4,8 +4,8 @@
  * @remarks
  * Пакет types-only, поэтому реальные проверки — compile-time (typecheck/ts-jest):
  * состав union (только application-owned события), canonical envelope-форма
- * каждого member (M-003: `{ type, payload, metadata }`), discriminated narrowing,
- * невхождение Domain `OrderEvent` и публичные exports корня. Runtime-ассерты
+ * каждого member (M-003: `{ type, payload, metadata }`), discriminated narrowing
+ * и публичные exports корня. Runtime-ассерты
  * минимальны.
  */
 import { describe, it, expect } from '@jest/globals';
@@ -94,16 +94,6 @@ describe('ApplicationEvent union contract', () => {
     // @ts-expect-error — metadata required
     const noMetadata: DirectFillAppliedEvent = { type: 'DIRECT_FILL_APPLIED', payload: { fill: {} } };
     void noMetadata;
-    expect(true).toBe(true);
-  });
-
-  it('Domain-события Order НЕ входят в ApplicationEvent (compile-time)', () => {
-    // Литерал с type: 'ORDER_FILLED' не является членом application-union —
-    // domain-контур живёт в @polymarket/order-events, объединение только в
-    // EventBusEvent (@polymarket/event-bus)
-    // @ts-expect-error — ORDER_FILLED не входит в ApplicationEvent
-    const invalid: ApplicationEvent = { type: 'ORDER_FILLED' };
-    void invalid;
     expect(true).toBe(true);
   });
 

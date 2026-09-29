@@ -13,14 +13,13 @@ Canonical contracts application-level событий: пакет отвечае�
   (`TRADING_MARKET_ADMITTED`, …), приватный контур торгового аккаунта
   (`TRADING_ACCOUNT_INITIALIZED`, …), venue-обновления ордеров
   (`ORDER_UPDATE_RECEIVED`).
-- **Domain events** — определяются в своих Domain-пакетах. `OrderEvent` живёт
-  в `@polymarket/order-events` и в `ApplicationEvent` **НЕ входит** — это
-  отдельный semantic-контур. Union контура доставки, объединяющий оба
-  (`EventBusEvent = ApplicationEvent | OrderEvent`), определён в
-  `@polymarket/event-bus`; нужен именно `OrderEvent` — импортируй из
-  `@polymarket/order-events`.
-- **External source messages** — НЕ являются `ApplicationEvent`; будущий
-  infrastructure-контур внешних сообщений будет отдельным.
+- **Domain-сущности событий не публикуют**: `Order` — immutable-сущность без
+  собственной системы событий. Изменение заявки попадает на шину только в
+  составе `TRADING_ACCOUNT_ORDER_COMMITTED`.
+- **External source messages** — НЕ являются `ApplicationEvent`: они идут по
+  `ExternalMessageBus`, а в `ApplicationEvent` их превращают semantic-адаптеры.
+
+`IEventBus` (`@polymarket/event-bus`) доставляет ровно `ApplicationEvent`.
 
 ## Зависимости и границы
 
@@ -217,10 +216,9 @@ IEventBus → AccountStateProjector → AccountHotState
 них новое состояние значило бы унаследовать чужие гарантии. Семантика старых
 событий не меняется — они остаются своим потребителям.
 
-Domain `OrderEvent` (`ORDER_CREATED`, `ORDER_ACCEPTED`, …) новый контур тоже
-не заменяет и не использует напрямую: они описывают переход агрегата и не
-несут портфель, а приватному состоянию нужна атомарная пара `Order +
-Portfolio`.
+Отдельных событий переходов заявки нет: приватному состоянию нужна атомарная
+пара `Order + Portfolio`, поэтому заявка приходит только в
+`TRADING_ACCOUNT_ORDER_COMMITTED`.
 
 ### Идентичность и время
 

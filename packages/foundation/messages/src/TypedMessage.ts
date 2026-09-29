@@ -14,8 +14,8 @@ import type { MessageMetadata } from './MessageMetadata.js';
  * Runtime delivery-слой (`@polymarket/message-bus`) по-прежнему читает ТОЛЬКО
  * `message.type` — `payload`/`metadata` для него прозрачны и не
  * интерпретируются. Ограничение существует ровно для того, чтобы каждый
- * конкретный message-union системы (ApplicationEvent, OrderEvent, будущий
- * ExternalMessage) был обязан нести полную canonical-форму.
+ * конкретный message-union системы (ApplicationEvent, ExternalMessage) был
+ * обязан нести полную canonical-форму.
  *
  * @example
  * ```typescript

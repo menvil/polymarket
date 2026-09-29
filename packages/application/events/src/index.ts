@@ -8,12 +8,11 @@
  *
  * ### Контуры событий системы:
  * - **Application events** (этот пакет) — semantic-уведомления application-слоя;
- * - **Domain events** — определяются в своих Domain-пакетах (например,
- *   `OrderEvent` в `@polymarket/order-events`) и в {@link ApplicationEvent}
- *   НЕ входят; union контура доставки (`EventBusEvent`) — в
- *   `@polymarket/event-bus`;
- * - **External source messages** — НЕ являются ApplicationEvent; будущий
- *   infrastructure-контур внешних сообщений будет отдельным.
+ * - **Domain-сущности** событий не публикуют (`Order` — immutable-сущность);
+ * - **External source messages** — НЕ являются ApplicationEvent: они идут по
+ *   `ExternalMessageBus` и превращаются в ApplicationEvent semantic-адаптерами.
+ *
+ * `IEventBus` (`@polymarket/event-bus`) доставляет ровно {@link ApplicationEvent}.
  *
  * @example
  * ```typescript

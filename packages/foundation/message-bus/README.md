@@ -268,9 +268,9 @@ control flow и Result; его собственное исключение пе�
 - сохранность очереди при crash процесса;
 - exactly-once вне рамок одного in-process вызова.
 
-Отдельно: MessageBus — не event-sourcing bus. Он ничего не знает о Domain-событиях
-и не является хранилищем `OrderEvent`; domain replay/event sourcing — отдельная
-концепция, не связанная с этим пакетом.
+Отдельно: MessageBus — не event-sourcing bus. Он ничего не знает о semantic-контурах
+и не является хранилищем событий; replay/event sourcing — отдельная концепция, не
+связанная с этим пакетом.
 
 ## Future consumers (архитектурная иллюстрация)
 

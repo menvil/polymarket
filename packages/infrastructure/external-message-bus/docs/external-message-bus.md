@@ -30,7 +30,7 @@
                      /             \
         Application EventBus     ExternalMessageBus
                  │                        │
-          EventBusEvent             ExternalMessage
+        ApplicationEvent           ExternalMessage
                  │                        │
         semantic internal           source-native
              events                 observations

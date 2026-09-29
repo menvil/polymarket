@@ -11,7 +11,7 @@
  * Расхождение здесь означало бы, что бэктест считает не то, что торговля.
  */
 import { describe, expect, it } from '@jest/globals';
-import type { EventBusEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
 import { decodeDetachedArchiveLine, toRecordedObservation } from '@polymarket/raw-archive-format';
 import {
@@ -37,7 +37,7 @@ import {
  * каждого прогона by design. Сравнивается ровно то, от чего зависит
  * торговое решение.
  */
-function project(events: readonly EventBusEvent[]): unknown[] {
+function project(events: readonly ApplicationEvent[]): unknown[] {
   return events.map((event) => {
     switch (event.type) {
       case 'BOOK_DEPTH':

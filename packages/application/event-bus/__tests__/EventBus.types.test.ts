@@ -19,10 +19,9 @@ import type { ILogger } from '@polymarket/logger';
 import type { StrategyId } from '@polymarket/ids';
 import { asStrategyId } from '@polymarket/ids';
 import { EventBus } from '../src/index.js';
-import type { IEventBus, EventHandler, EventBusEvent } from '../src/index.js';
-// Event contracts — из canonical owner-пакетов: application-события из
-// @polymarket/application-events, domain-события Order из @polymarket/order-events;
-// пакет доставки владеет только union контура EventBusEvent
+import type { IEventBus, EventHandler } from '../src/index.js';
+// Event contracts — из canonical owner-пакета @polymarket/application-events:
+// шина доставляет ровно union ApplicationEvent и собственных контрактов не имеет
 import type {
   ApplicationEvent,
   BookUpdatedEvent,
@@ -33,7 +32,6 @@ import type {
   MarketOpenedEvent,
   StrategySignalEvent,
 } from '@polymarket/application-events';
-import type { OrderEvent, OrderFilledEvent } from '@polymarket/order-events';
 import { KnownVenues } from '@polymarket/ids';
 import type { DecimalPrice } from '@polymarket/value-objects';
 
@@ -117,49 +115,80 @@ describe('EventBus type-level contract', () => {
     expect(typeof unsubAsync).toBe('function');
   });
 
-  it('EventBusEvent — canonical MessageEnvelope: каждый member несёт type+payload+metadata (compile-time, M-003)', () => {
-    // Оба контура (Application и Domain Order) satisfies canonical TypedMessage
-    const canonical = (e: EventBusEvent): TypedMessage => e;
-    const readMetadata = (e: EventBusEvent): number => e.metadata.sequence;
+  it('ApplicationEvent — canonical MessageEnvelope: каждый member несёт type+payload+metadata (compile-time, M-003)', () => {
+    const canonical = (e: ApplicationEvent): TypedMessage => e;
+    const readMetadata = (e: ApplicationEvent): number => e.metadata.sequence;
     void canonical; void readMetadata;
 
-    // Flat-форма больше не входит в контур доставки
-    // @ts-expect-error — { type, ...поля } без payload/metadata не является EventBusEvent
-    const flat: EventBusEvent = { type: 'ORDER_ACCEPTED', orderId: 'order-1' };
+    // Flat-форма в контур доставки не входит
+    // @ts-expect-error — { type, ...поля } без payload/metadata не является ApplicationEvent
+    const flat: ApplicationEvent = { type: 'BOOK_UPDATED', sequenceNumber: 1 };
     void flat;
 
     expect(true).toBe(true);
   });
 
-  it('EventBusEvent — union двух контуров: Application и Domain Order (compile-time)', () => {
-    const bus = new EventBus(makeLogger());
+  it('IEventBus типизирован ровно через ApplicationEvent: publish, publishAll, subscribe (compile-time)', () => {
+    // Взаимная присваиваемость ⇔ тип параметра совпадает с ApplicationEvent
+    type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+    const publishTakes: Same<Parameters<IEventBus['publish']>[0], ApplicationEvent> = true;
+    const publishAllTakes: Same<Parameters<IEventBus['publishAll']>[0], readonly ApplicationEvent[]> = true;
+    const subscribeKeys: Same<Parameters<IEventBus['subscribe']>[0], ApplicationEvent['type']> = true;
+    void publishTakes; void publishAllTakes; void subscribeKeys;
 
-    // Оба union входят в контур доставки
-    const asDelivery = (e: ApplicationEvent | OrderEvent): EventBusEvent => e;
-    void asDelivery;
+    const bus: IEventBus = new EventBus(makeLogger());
 
-    // Typed subscribe narrowing работает для ОБОИХ контуров
-    const unsubApp = bus.subscribe('FILL_RECEIVED', (event) => {
-      const narrowed: FillReceivedEvent = event;
-      void narrowed;
-    });
-    const unsubOrder = bus.subscribe('ORDER_FILLED', (event) => {
-      const narrowed: OrderFilledEvent = event;
-      const price = event.payload.averagePrice;
-      void narrowed; void price;
-      // @ts-expect-error — у payload OrderFilledEvent нет поля topOfBook
+    // Narrowing через Extract<ApplicationEvent, { type: K }>
+    const unsub = bus.subscribe('TRADING_ACCOUNT_ORDER_COMMITTED', (event) => {
+      const narrowed: Extract<ApplicationEvent, { type: 'TRADING_ACCOUNT_ORDER_COMMITTED' }> = event;
+      void narrowed; void event.payload.order; void event.payload.portfolio;
+      // @ts-expect-error — у payload TRADING_ACCOUNT_ORDER_COMMITTED нет поля topOfBook
       void event.payload.topOfBook;
     });
 
-    // Negative: domain-событие НЕ присваивается application-union
-    const check = (orderEvent: OrderFilledEvent): ApplicationEvent =>
-      // @ts-expect-error — OrderFilledEvent не входит в ApplicationEvent
-      orderEvent;
-    void check;
+    // Тип, которого нет в ApplicationEvent, подписать нельзя
+    // @ts-expect-error — 'NOT_AN_APPLICATION_EVENT' не входит в ApplicationEvent['type']
+    const unsubUnknown = bus.subscribe('NOT_AN_APPLICATION_EVENT', () => {});
 
-    unsubApp();
-    unsubOrder();
+    unsub();
+    unsubUnknown();
     expect(true).toBe(true);
+  });
+
+  it('canonical envelope доставляется подписчику без изменений: type, payload, metadata (runtime)', async () => {
+    const bus: IEventBus = new EventBus(makeLogger());
+    const event: BookUpdatedEvent = {
+      type: 'BOOK_UPDATED',
+      payload: {
+        venueId: KnownVenues.POLYMARKET,
+        topOfBook: {
+          bestBid: undefined,
+          bestAsk: undefined,
+          bestBidSize: undefined,
+          bestAskSize: undefined,
+        },
+        instrumentId: 'token-123' as BookUpdatedEvent['payload']['instrumentId'],
+        marketId: 'market-abc' as BookUpdatedEvent['payload']['marketId'],
+        sequenceNumber: 7,
+        timestamp: { toISO: () => '' } as BookUpdatedEvent['payload']['timestamp'],
+      },
+      metadata: METADATA_GENERATOR.nextRoot(),
+    };
+
+    const received: ApplicationEvent[] = [];
+    bus.subscribe('BOOK_UPDATED', (delivered) => { received.push(delivered); });
+
+    expect((await bus.publish(event)).ok).toBe(true);
+    expect((await bus.publishAll([event])).ok).toBe(true);
+
+    expect(received).toHaveLength(2);
+    for (const delivered of received) {
+      // Шина не клонирует и не пересобирает конверт
+      expect(delivered).toBe(event);
+      expect(delivered.type).toBe('BOOK_UPDATED');
+      expect(delivered.payload).toBe(event.payload);
+      expect(delivered.metadata).toBe(event.metadata);
+    }
   });
 
   it('strategyId в событиях — canonical branded StrategyId, plain string не подставляется (compile-time)', () => {
