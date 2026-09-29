@@ -180,6 +180,19 @@ describe('ApplicationEvent union contract', () => {
           void fill.id;
           return event.type;
         }
+        case 'TRADING_ACCOUNT_RECONCILED': {
+          // Batch-коррекция: весь снимок одним событием и версия, на которой
+          // он основан. Vendor-полей и причины запуска сверки в payload нет.
+          const expected: number = event.payload.expectedAccountVersion;
+          const portfolio: Portfolio = event.payload.portfolio;
+          const orders: readonly Order[] = event.payload.orders;
+          const fills: readonly Fill[] = event.payload.fills;
+          void expected;
+          void portfolio.balance;
+          void orders.length;
+          void fills.length;
+          return event.type;
+        }
         case 'ORDER_UPDATE_RECEIVED': {
           const update: VenueOrderUpdate = event.payload.update;
           void update;

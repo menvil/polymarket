@@ -17,6 +17,10 @@
  * композиции. Fail-closed живого контура обязан быть решён ДО включения
  * Strategy/Execution.
  *
+ * Исключение — {@link AccountReconciliationVersionConflictError}: это не
+ * нарушение инварианта, а нормальная гонка конкурентного рантайма, поэтому
+ * `severity: 'low'`.
+ *
  * ### Общее правило: ошибка приходит ДО мутации
  *
  * Каждая из этих ошибок возвращается на этапе валидации. Портфель, заявки,
@@ -124,12 +128,23 @@ export class AccountNotInitializedError extends TradingError {
  * - `VENUE_BOUND_ACCOUNT` — площадка, встроенная в сам `AccountId`, не
  *   совпала с `venueId` payload;
  * - `ORDER_ACCOUNT` — `order.accountId` не совпал с владельцем из payload;
- * - `FILL_ORDER_ACCOUNT` — `order.accountId` не совпал с `fill.accountId`.
+ * - `FILL_ORDER_ACCOUNT` — `order.accountId` не совпал с `fill.accountId`;
+ * - `FILL_ACCOUNT` — `fill.accountId` не совпал с владельцем из payload
+ *   коррекции;
+ * - `FILL_VENUE` — `fill.venueId` не совпал с площадкой из payload
+ *   коррекции.
+ *
+ * Последние два нужны только `TRADING_ACCOUNT_RECONCILED`: у live-событий
+ * исполнения владельца задаёт сам `Fill`, и сверять его не с чем. Коррекция же
+ * адресует аккаунт полями payload и несёт СПИСОК исполнений — каждое обязано
+ * принадлежать этому аккаунту на этой площадке.
  */
 export type AccountIdentityMismatchSubject =
   | 'VENUE_BOUND_ACCOUNT'
   | 'ORDER_ACCOUNT'
-  | 'FILL_ORDER_ACCOUNT';
+  | 'FILL_ORDER_ACCOUNT'
+  | 'FILL_ACCOUNT'
+  | 'FILL_VENUE';
 
 /**
  * Вложенная идентичность не совпала с идентичностью владельца.
@@ -423,8 +438,18 @@ export class AccountFillOrderLinkError extends TradingError {
   }
 }
 
-/** Событие, при обработке которого обнаружен конфликт факта исполнения. */
-export type AccountFillAction = 'APPLY' | 'CONFIRM' | 'REVERT' | 'OBSERVE_VENUE_STATUS';
+/**
+ * Событие, при обработке которого обнаружен конфликт факта исполнения.
+ *
+ * @remarks
+ * `RECONCILE` — `TRADING_ACCOUNT_RECONCILED`: authoritative-коррекция.
+ */
+export type AccountFillAction =
+  | 'APPLY'
+  | 'CONFIRM'
+  | 'REVERT'
+  | 'OBSERVE_VENUE_STATUS'
+  | 'RECONCILE';
 
 /**
  * Тот же `FillId` пришёл с другим фактом сделки.
@@ -488,14 +513,16 @@ export class AccountFillIdentityConflictError extends TradingError {
  * пропущенной сделки пришлось бы угадать, а угаданные деньги — это неверные
  * деньги.
  *
- * Правильный порядок восстановления пропущенного исполнения:
+ * Пропущенное исполнение восстанавливает authoritative-сверка, а не
+ * `CONFIRM`/`REVERT`:
  *
  * ```text
- * TRADING_ACCOUNT_FILL_APPLIED    ← вместе с посчитанным Portfolio
- * TRADING_ACCOUNT_FILL_CONFIRMED  ← только потом, при наличии финальности
+ * TRADING_ACCOUNT_RECONCILED   ← authoritative Portfolio + само исполнение
+ *                                одной мутацией; запись сразу CONFIRMED
  * ```
  *
- * За это отвечает будущий reconciler, а не проекция.
+ * Там экономику угадывать не нужно: портфель приходит от источника целиком,
+ * а исполнение подтверждено самим фактом его присутствия на площадке.
  *
  * @example
  * ```typescript
@@ -545,6 +572,15 @@ export class AccountFillNotFoundError extends TradingError {
  *
  * `REVERTED → CONFIRMED` запрещён по той же логике: подтверждать откаченное
  * исполнение нечего.
+ *
+ * ### То же правило для сверки
+ *
+ * `TRADING_ACCOUNT_RECONCILED` переводит исполнения в `CONFIRMED` и
+ * подчиняется тем же переходам. Если источник сообщает, что исполнение
+ * существует, а локально оно `REVERTED`, — это противоречие между нашим
+ * откатом и площадкой, а не повод молча «воскресить» сделку: откат уже вернул
+ * деньги, и восстановление без явного recovery-контракта сделало бы их
+ * посчитанными дважды. Коррекция отвергается целиком.
  *
  * @example
  * ```typescript
@@ -632,6 +668,106 @@ export class AccountFillTerminalVenueStatusConflictError extends TradingError {
   }
 }
 
+/**
+ * Коррекция основана на устаревшей версии аккаунта.
+ *
+ * @remarks
+ * `TRADING_ACCOUNT_RECONCILED` несёт `expectedAccountVersion` — версию
+ * аккаунта, которую сверка прочитала ДО запросов к источнику. Пока запросы
+ * шли, живой контур мог изменить аккаунт:
+ *
+ * ```text
+ * сверка прочитала аккаунт        version = 100
+ * идут запросы к источнику
+ *   живое событие                 version = 101
+ * коррекция(expected = 100)       ← этот отказ
+ * ```
+ *
+ * Снимок, основанный на версии 100, не видел изменения, создавшего версию
+ * 101. Наложить его значило бы откатить это изменение — например, вернуть в
+ * `available` деньги, уже зарезервированные под новую заявку. Поэтому
+ * коррекция отвергается целиком: ни мутации, ни приращения версий, ни
+ * изменения `lastMutationAt`.
+ *
+ * ### Это НЕ дефект
+ *
+ * В отличие от остальных ошибок пакета, конфликт версий — нормальная гонка
+ * конкурентного рантайма, а не нарушение инварианта. Отсюда `severity: 'low'`.
+ * Правильная реакция — не повторять ТОТ ЖЕ снимок, а сделать свежее чтение
+ * источника; распознаётся ошибка по классу, а не по тексту.
+ *
+ * @example
+ * ```typescript
+ * throw new AccountReconciliationVersionConflictError(venueId, accountId, 100, 101);
+ * ```
+ */
+export class AccountReconciliationVersionConflictError extends TradingError {
+  public readonly severity = 'low' as const;
+
+  /**
+   * @param venueId - Площадка аккаунта
+   * @param accountId - Аккаунт, для которого пришла коррекция
+   * @param expectedVersion - Версия, на которой основан снимок
+   * @param actualVersion - Текущая версия аккаунта в состоянии
+   */
+  constructor(
+    public readonly venueId: VenueId,
+    public readonly accountId: AccountId,
+    public readonly expectedVersion: number,
+    public readonly actualVersion: number,
+  ) {
+    super(
+      `Reconciliation of trading account ${describeAccount(venueId, accountId)} is stale: ` +
+        `snapshot is based on version ${expectedVersion}, account is at version ${actualVersion}`,
+      {
+        context: { ...accountContext(venueId, accountId), expectedVersion, actualVersion },
+      },
+    );
+  }
+}
+
+/** Вид записи коррекции, идентификатор которой повторился. */
+export type AccountReconciliationEntryKind = 'ORDER' | 'FILL';
+
+/**
+ * Одна и та же заявка или исполнение встречается в коррекции дважды.
+ *
+ * @remarks
+ * `TRADING_ACCOUNT_RECONCILED` — upsert по идентификатору. Две записи под
+ * одним `OrderId`/`FillId` делают результат зависимым от их порядка в
+ * массиве: «последняя побеждает» молча выбрала бы одно из двух утверждений
+ * источника, не сообщив, что они были разными. Даже совпадающие копии
+ * означают дефект сборки снимка (например, пересечение страниц выдачи), и
+ * исправлять его обязана граница источника, а не проекция.
+ *
+ * @example
+ * ```typescript
+ * throw new AccountReconciliationDuplicateEntryError('ORDER', venueId, accountId, 'order-1');
+ * ```
+ */
+export class AccountReconciliationDuplicateEntryError extends TradingError {
+  public readonly severity = 'critical' as const;
+
+  /**
+   * @param kind - Заявка или исполнение
+   * @param venueId - Площадка аккаунта
+   * @param accountId - Аккаунт коррекции
+   * @param entryId - Повторившийся идентификатор
+   */
+  constructor(
+    public readonly kind: AccountReconciliationEntryKind,
+    public readonly venueId: VenueId,
+    public readonly accountId: AccountId,
+    public readonly entryId: string,
+  ) {
+    super(
+      `Reconciliation of trading account ${describeAccount(venueId, accountId)} lists ` +
+        `${kind} ${entryId} more than once`,
+      { context: { ...accountContext(venueId, accountId), kind, entryId } },
+    );
+  }
+}
+
 /** Любой отказ приватного состояния аккаунта. */
 export type AccountStateError =
   | AccountAlreadyInitializedError
@@ -645,4 +781,6 @@ export type AccountStateError =
   | AccountFillIdentityConflictError
   | AccountFillNotFoundError
   | AccountFillTransitionError
-  | AccountFillTerminalVenueStatusConflictError;
+  | AccountFillTerminalVenueStatusConflictError
+  | AccountReconciliationVersionConflictError
+  | AccountReconciliationDuplicateEntryError;

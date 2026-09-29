@@ -28,6 +28,13 @@
  * единственное, чем могут приехать `MINED` и `RETRYING`: экономических
  * двойников у них нет.
  *
+ * ### Коррекция по authoritative-источнику
+ *
+ * `TRADING_ACCOUNT_RECONCILED` — не live-событие, а batch-коррекция от
+ * сверки: authoritative `Portfolio` + заявки + исполнения одной мутацией, под
+ * optimistic concurrency (`expectedAccountVersion`). Идёт по той же шине и
+ * тому же проектору; живые события не заменяет.
+ *
  * ### Все события — POST-COMMIT
  *
  * ```text
@@ -66,7 +73,9 @@
  *   писатель приватного состояния; подписки critical.
  *
  * ### Producer
- * Пока нет: приватный процессор и account reconciler — следующие MR.
+ * - `TRADING_ACCOUNT_RECONCILED` — `AccountReconciler`
+ *   (`@polymarket/account-reconciliation`).
+ * - Остальные — пока нет: приватный процессор — следующий MR.
  */
 export type { TradingAccountInitializedEvent } from './TradingAccountInitializedEvent.js';
 export type { TradingAccountOrderCommittedEvent } from './TradingAccountOrderCommittedEvent.js';
@@ -74,3 +83,4 @@ export type { TradingAccountFillAppliedEvent } from './TradingAccountFillApplied
 export type { TradingAccountFillConfirmedEvent } from './TradingAccountFillConfirmedEvent.js';
 export type { TradingAccountFillRevertedEvent } from './TradingAccountFillRevertedEvent.js';
 export type { TradingAccountFillVenueStatusObservedEvent } from './TradingAccountFillVenueStatusObservedEvent.js';
+export type { TradingAccountReconciledEvent } from './TradingAccountReconciledEvent.js';

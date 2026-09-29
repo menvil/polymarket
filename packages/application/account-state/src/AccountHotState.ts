@@ -75,6 +75,22 @@
  * Исключение — инициализация аккаунта: это ownership-событие, и его повтор
  * является нарушением lifecycle.
  *
+ * ### Authoritative-коррекция — batch под CAS
+ *
+ * `TRADING_ACCOUNT_RECONCILED` — не live-событие, а коррекция по снимку
+ * authoritative-источника: портфель, заявки и исполнения одним событием. Для
+ * неё действуют два дополнительных правила:
+ *
+ * ```text
+ * CAS        account.version === expectedAccountVersion, иначе отказ без мутации
+ * одна запись  весь снимок валидируется целиком → ОДИН commit → version += 1
+ * ```
+ *
+ * Снимок строится запросами к источнику, пока живой контур продолжает менять
+ * аккаунт; устаревший снимок откатил бы изменения, которых не видел. А
+ * частично применённая коррекция оставила бы состояние, которого не было ни у
+ * нас, ни у площадки.
+ *
  * ### Хранение — на время жизни рантайма
  *
  * Заявок и исполнений на порядки меньше, чем публичных обновлений стакана,
@@ -107,7 +123,7 @@ import {
   OPEN_ORDER_STATUSES,
   type Order,
 } from '@polymarket/order';
-import type { Portfolio } from '@polymarket/portfolio';
+import { samePortfolioState, type Portfolio } from '@polymarket/portfolio';
 import type { Position } from '@polymarket/position';
 import { Err, Ok, type Result } from '@polymarket/result';
 import type { Timestamp } from '@polymarket/timestamp';
@@ -124,6 +140,8 @@ import {
   AccountOrderIdentityConflictError,
   AccountFillTerminalVenueStatusConflictError,
   AccountPortfolioIdentityMismatchError,
+  AccountReconciliationDuplicateEntryError,
+  AccountReconciliationVersionConflictError,
   type AccountFillAction,
   type AccountStateError,
 } from './errors.js';
@@ -142,14 +160,20 @@ import type {
  * @remarks
  * Существует затем, чтобы между «проверить» и «записать» не оставалось ни
  * одной операции, способной отказать: всё, что могло не пройти, уже прошло.
+ *
+ * Заявки и исполнения — СПИСКИ, а не одиночные поля: live-событие меняет не
+ * больше одной записи каждого вида, а authoritative-коррекция — сколько
+ * угодно. Одна форма на оба случая означает один путь записи и одно
+ * приращение версии на событие, а не на запись: вызвать `commit()` в цикле по
+ * заявкам коррекции было бы нельзя по построению.
  */
 interface PendingMutation {
   /** Post-commit портфель; `undefined` — портфель не меняется (подтверждение) */
   readonly portfolio?: Portfolio;
-  /** Post-commit заявка; `undefined` — заявка этим событием не менялась */
-  readonly order?: Order;
+  /** Post-commit заявки; отсутствие — заявки этим событием не менялись */
+  readonly orders?: readonly Order[];
   /**
-   * Запись исполнения целиком; `undefined` — исполнения событие не касается.
+   * Записи исполнений целиком; отсутствие — исполнений событие не касается.
    *
    * @remarks
    * Новое исполнение и смена его runtime-статуса записываются одинаково:
@@ -157,7 +181,30 @@ interface PendingMutation {
    * и «переход» отличаются только содержимым записи, а не работой с
    * состоянием.
    */
-  readonly fill?: AccountFillRecord;
+  readonly fills?: readonly AccountFillRecord[];
+}
+
+/**
+ * Authoritative-коррекция аккаунта — payload `TRADING_ACCOUNT_RECONCILED`.
+ *
+ * @remarks
+ * Своя структура, а не тип события: состояние не зависит от формы envelope и
+ * получает от проектора только domain-данные, как и во всех остальных
+ * методах.
+ */
+export interface AccountCorrection {
+  /** Площадка аккаунта */
+  readonly venueId: VenueId;
+  /** Аккаунт */
+  readonly accountId: AccountId;
+  /** Версия аккаунта, на которой основан снимок (CAS) */
+  readonly expectedAccountVersion: number;
+  /** Authoritative-портфель; принимается целиком */
+  readonly portfolio: Portfolio;
+  /** Authoritative-заявки; upsert */
+  readonly orders: readonly Order[];
+  /** Исполнения, существование которых подтвердил источник; upsert */
+  readonly fills: readonly Fill[];
 }
 
 /**
@@ -275,20 +322,25 @@ class AccountRuntimeState implements AccountRuntimeStateView {
    * «наполовину применённого» события не бывает.
    *
    * Версия растёт РОВНО на единицу за ОДНУ принятую canonical-мутацию,
-   * сколько бы её частей — портфель, заявка, исполнение — она ни затронула:
-   * считается принятое событие, а не число изменённых структур.
+   * сколько бы её частей — портфель, заявки, исполнения — она ни затронула:
+   * считается принятое событие, а не число изменённых структур. Коррекция,
+   * исправившая портфель, четыре заявки и пятнадцать исполнений, — это одна
+   * мутация, а не двадцать.
+   *
+   * Запись по ключу, уже присутствующему в `Map`, сохраняет его позицию: порядок
+   * перечисления остаётся порядком ПЕРВОГО принятия записи.
    */
   public commit(mutation: PendingMutation, at: Timestamp): void {
     if (mutation.portfolio !== undefined) {
       this._portfolio = mutation.portfolio;
     }
 
-    if (mutation.order !== undefined) {
-      this._orders.set(mutation.order.id, { order: mutation.order, updatedAt: at });
+    for (const order of mutation.orders ?? []) {
+      this._orders.set(order.id, { order, updatedAt: at });
     }
 
-    if (mutation.fill !== undefined) {
-      this._fills.set(mutation.fill.fill.id, mutation.fill);
+    for (const record of mutation.fills ?? []) {
+      this._fills.set(record.fill.id, record);
     }
 
     this._version += 1;
@@ -471,7 +523,7 @@ export class AccountHotState implements AccountHotStateView {
       if (sameOrderState(stored.order, order)) return Ok(undefined);
     }
 
-    account.commit({ portfolio, order }, at);
+    account.commit({ portfolio, orders: [order] }, at);
     this._version += 1;
     return Ok(undefined);
   }
@@ -516,8 +568,8 @@ export class AccountHotState implements AccountHotStateView {
     account.commit(
       {
         portfolio,
-        ...(order === undefined ? {} : { order }),
-        fill: { fill, status: 'APPLIED', appliedAt: at },
+        ...(order === undefined ? {} : { orders: [order] }),
+        fills: [{ fill, status: 'APPLIED', appliedAt: at }],
       },
       at,
     );
@@ -567,7 +619,7 @@ export class AccountHotState implements AccountHotStateView {
         break;
     }
 
-    account.commit({ fill: { ...record, status: 'CONFIRMED', confirmedAt: at } }, at);
+    account.commit({ fills: [{ ...record, status: 'CONFIRMED', confirmedAt: at }] }, at);
     this._version += 1;
     return Ok(undefined);
   }
@@ -653,7 +705,7 @@ export class AccountHotState implements AccountHotStateView {
       }
     }
 
-    account.commit({ fill: { ...record, venueStatus, venueStatusAt: at } }, at);
+    account.commit({ fills: [{ ...record, venueStatus, venueStatusAt: at }] }, at);
     this._version += 1;
     return Ok(undefined);
   }
@@ -718,8 +770,121 @@ export class AccountHotState implements AccountHotStateView {
     account.commit(
       {
         portfolio,
-        ...(order === undefined ? {} : { order }),
-        fill: { ...record, status: 'REVERTED', revertedAt: at, revertReason: reason },
+        ...(order === undefined ? {} : { orders: [order] }),
+        fills: [{ ...record, status: 'REVERTED', revertedAt: at, revertReason: reason }],
+      },
+      at,
+    );
+    this._version += 1;
+    return Ok(undefined);
+  }
+
+  /**
+   * Применяет authoritative-коррекцию аккаунта одной мутацией.
+   *
+   * @param correction - Снимок источника и версия, на которой он основан
+   * @param at - `metadata.createdAt` события коррекции
+   * @returns `Ok(void)` при применении или no-op, иначе первая непройденная проверка
+   *
+   * @remarks
+   * ### Алгоритм
+   *
+   * ```text
+   * 1. аккаунт существует
+   * 2. CAS: account.version === expectedAccountVersion
+   * 3. портфель принадлежит этому аккаунту на этой площадке
+   * 4. каждая заявка — владелец, инструмент, неизменяемая идентичность
+   * 5. каждое исполнение — владелец, площадка, инструмент, факт, переход
+   *        ↓ (ни одной записи в Map до этого места)
+   * 6. ничего не изменилось → Ok, версии и lastMutationAt не трогаются
+   * 7. иначе ОДИН commit → account.version += 1, global version += 1
+   * ```
+   *
+   * Шаги 4–5 строят полный список изменений, не касаясь состояния: первая же
+   * ошибка возвращается до записи, и частично применённой коррекции не
+   * бывает.
+   *
+   * ### CAS идёт ДО проверки содержимого
+   *
+   * Устаревший снимок описывает аккаунт, которого уже нет, поэтому оценивать
+   * его содержимое относительно текущего состояния бессмысленно: расхождение,
+   * найденное в нём, может оказаться просто следствием того изменения,
+   * которого снимок не видел. Конфликт версий — нормальная гонка
+   * ({@link AccountReconciliationVersionConflictError}), и отвечать на неё
+   * нужно свежим чтением, а не диагнозом снимка.
+   *
+   * ### Семантика по сущностям
+   *
+   * ```text
+   * Portfolio  принимается целиком; тот же по samePortfolioState — не меняется
+   * Order      нет локально → вставить; та же идентичность и состояние → no-op;
+   *            та же идентичность, другое состояние → заменить;
+   *            другая идентичность под тем же OrderId → Err
+   * Fill       нет локально → CONFIRMED (appliedAt = confirmedAt = at);
+   *            APPLIED → CONFIRMED (appliedAt сохраняется); CONFIRMED → no-op;
+   *            REVERTED → Err; другой факт под тем же FillId → Err
+   * ```
+   *
+   * Заявки и исполнения, которых нет в коррекции, остаются в состоянии: это
+   * upsert, а не замена истории. Venue-ось исполнения (`venueStatus`,
+   * `venueStatusAt`) переносится как есть — коррекция её ни стирает, ни
+   * придумывает.
+   *
+   * Переход заявки здесь, как и в `commitOrder`, НЕ проверяется: коррекция —
+   * граница исправления, и живой FSM `Order` она не повторяет.
+   *
+   * @example
+   * ```typescript
+   * const applied = state.reconcileAccount(
+   *   { venueId, accountId, expectedAccountVersion: 5, portfolio, orders, fills },
+   *   createdAt,
+   * );
+   * ```
+   */
+  public reconcileAccount(
+    correction: AccountCorrection,
+    at: Timestamp,
+  ): Result<void, AccountStateError> {
+    const { venueId, accountId, expectedAccountVersion, portfolio } = correction;
+
+    const account = this._resolve(venueId, accountId);
+    if (account === undefined) {
+      return Err(new AccountNotInitializedError(venueId, accountId, 'ACCOUNT_RECONCILED'));
+    }
+
+    if (account.version !== expectedAccountVersion) {
+      return Err(
+        new AccountReconciliationVersionConflictError(
+          venueId,
+          accountId,
+          expectedAccountVersion,
+          account.version,
+        ),
+      );
+    }
+
+    const portfolioIdentity = validatePortfolioIdentity(venueId, accountId, portfolio);
+    if (portfolioIdentity !== undefined) return Err(portfolioIdentity);
+
+    const orders = prepareReconciledOrders(account, correction.orders);
+    if (!orders.ok) return orders;
+
+    const fills = prepareReconciledFills(account, correction.fills, at);
+    if (!fills.ok) return fills;
+
+    const portfolioChanged = !samePortfolioState(account.portfolio, portfolio);
+    if (!portfolioChanged && orders.value.length === 0 && fills.value.length === 0) {
+      // Снимок совпал с состоянием: мутации нет, и версии это обязаны
+      // показывать. Успех сверки — забота её собственного health, а не
+      // приватного состояния.
+      return Ok(undefined);
+    }
+
+    account.commit(
+      {
+        ...(portfolioChanged ? { portfolio } : {}),
+        orders: orders.value,
+        fills: fills.value,
       },
       at,
     );
@@ -874,6 +1039,162 @@ export class AccountHotState implements AccountHotStateView {
 
     return Ok({ account, record });
   }
+}
+
+/**
+ * Проверяет заявки коррекции и отбирает те, что меняют состояние.
+ *
+ * @param account - Аккаунт, к которому применяется коррекция
+ * @param orders - Authoritative-заявки из события
+ * @returns Заявки для записи (новые и изменившиеся) либо первая ошибка
+ *
+ * @remarks
+ * Состояние НЕ трогается: результат — список, который запишет единственный
+ * `commit()`. Проверки для каждой заявки — те же, что у `commitOrder`:
+ * владелец, разрешимость инструмента, неизменяемая идентичность.
+ */
+function prepareReconciledOrders(
+  account: AccountRuntimeState,
+  orders: readonly Order[],
+): Result<readonly Order[], AccountStateError> {
+  const { venueId, accountId } = account;
+  const seen = new Set<OrderId>();
+  const changed: Order[] = [];
+
+  for (const order of orders) {
+    if (seen.has(order.id)) {
+      return Err(new AccountReconciliationDuplicateEntryError('ORDER', venueId, accountId, order.id));
+    }
+    seen.add(order.id);
+
+    const owner = validateOrderOwner(venueId, accountId, order);
+    if (owner !== undefined) return Err(owner);
+
+    if (assetIdToInstrumentId(order.asset) === undefined) {
+      return Err(
+        new AccountInstrumentResolutionError(
+          'ORDER_ASSET',
+          venueId,
+          accountId,
+          assetIdToString(order.asset),
+        ),
+      );
+    }
+
+    const stored = account.getOrder(order.id);
+    if (stored !== undefined) {
+      const difference = findOrderIdentityDifference(stored.order, order);
+      if (difference !== undefined) {
+        return Err(new AccountOrderIdentityConflictError(venueId, accountId, order.id, difference));
+      }
+      // Источник подтвердил то, что уже известно: записывать нечего.
+      if (sameOrderState(stored.order, order)) continue;
+    }
+
+    changed.push(order);
+  }
+
+  return Ok(changed);
+}
+
+/**
+ * Проверяет исполнения коррекции и строит их итоговые записи.
+ *
+ * @param account - Аккаунт, к которому применяется коррекция
+ * @param fills - Исполнения, существование которых подтвердил источник
+ * @param at - `metadata.createdAt` коррекции
+ * @returns Записи для записи (новые и перешедшие в CONFIRMED) либо первая ошибка
+ *
+ * @remarks
+ * Коррекция работает с осью РАНТАЙМА (`APPLIED/CONFIRMED/REVERTED`), а не с
+ * venue-осью (`TradeStatus`). Присутствие исполнения у источника означает,
+ * что сделка на площадке существует, — на нашей оси это подтверждение:
+ *
+ * ```text
+ * нет локально   → { status: CONFIRMED, appliedAt: at, confirmedAt: at }
+ * APPLIED        → CONFIRMED, appliedAt исходный, confirmedAt = at
+ * CONFIRMED      → no-op
+ * REVERTED       → AccountFillTransitionError (REVERTED → CONFIRMED)
+ * ```
+ *
+ * Переход вычисляет тот же `classifyFillTransition`, что и у live
+ * `FILL_CONFIRMED`: у двух входов в `CONFIRMED` одно правило.
+ */
+function prepareReconciledFills(
+  account: AccountRuntimeState,
+  fills: readonly Fill[],
+  at: Timestamp,
+): Result<readonly AccountFillRecord[], AccountStateError> {
+  const { venueId, accountId } = account;
+  const seen = new Set<FillId>();
+  const changed: AccountFillRecord[] = [];
+
+  for (const fill of fills) {
+    if (seen.has(fill.id)) {
+      return Err(new AccountReconciliationDuplicateEntryError('FILL', venueId, accountId, fill.id));
+    }
+    seen.add(fill.id);
+
+    // У live-событий владельца задаёт сам Fill. Коррекция же адресует аккаунт
+    // полями payload, и каждое исполнение обязано им соответствовать.
+    if (fill.venueId !== venueId) {
+      return Err(
+        new AccountIdentityMismatchError('FILL_VENUE', venueId, accountId, venueId, fill.venueId),
+      );
+    }
+    if (!accountIdEquals(fill.accountId, accountId)) {
+      return Err(
+        new AccountIdentityMismatchError(
+          'FILL_ACCOUNT',
+          venueId,
+          accountId,
+          accountIdToString(accountId),
+          accountIdToString(fill.accountId),
+        ),
+      );
+    }
+
+    if (assetIdToInstrumentId(fill.tokenId) === undefined) {
+      return Err(
+        new AccountInstrumentResolutionError(
+          'FILL_TOKEN',
+          venueId,
+          accountId,
+          assetIdToString(fill.tokenId),
+        ),
+      );
+    }
+
+    const stored = account.getFill(fill.id);
+    if (stored === undefined) {
+      // Промежуточного APPLIED нет: экономика уже внутри authoritative-портфеля,
+      // и симулировать для неё живой жизненный цикл незачем.
+      changed.push({ fill, status: 'CONFIRMED', appliedAt: at, confirmedAt: at });
+      continue;
+    }
+
+    const difference = findFillFactDifference(stored.fill, fill);
+    if (difference !== undefined) {
+      return Err(
+        new AccountFillIdentityConflictError(venueId, accountId, fill.id, 'RECONCILE', difference),
+      );
+    }
+
+    switch (classifyFillTransition(stored.status, 'CONFIRMED')) {
+      case 'DUPLICATE':
+        continue;
+      case 'CONFLICT':
+        return Err(
+          new AccountFillTransitionError(venueId, accountId, fill.id, stored.status, 'CONFIRMED'),
+        );
+      case 'ACCEPT':
+        // `...stored` переносит appliedAt и venue-ось как есть.
+        changed.push({ ...stored, status: 'CONFIRMED', confirmedAt: at });
+        break;
+    }
+  }
+
+  return Ok(changed);
 }
 
 /**

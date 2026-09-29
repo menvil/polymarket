@@ -77,6 +77,9 @@ export type {
  * POST-COMMIT факты о НАС: инициализация аккаунта, итоговый `Order` вместе с
  * итоговым `Portfolio`, применение/подтверждение/откат исполнения. Отдельный
  * read-model (`AccountHotState`), не сливающийся с рыночным.
+ *
+ * `TRADING_ACCOUNT_RECONCILED` — authoritative batch-коррекция того же
+ * состояния от сверки аккаунта (CAS по версии, одна мутация).
  */
 export type {
   TradingAccountInitializedEvent,
@@ -85,6 +88,7 @@ export type {
   TradingAccountFillConfirmedEvent,
   TradingAccountFillRevertedEvent,
   TradingAccountFillVenueStatusObservedEvent,
+  TradingAccountReconciledEvent,
 } from './trading-account/index.js';
 /** Venue-обновления ордеров (см. venue-order/). */
 export type { VenueOrderUpdate, OrderUpdateReceivedEvent } from './venue-order/index.js';

@@ -71,8 +71,15 @@
  * (`AccountHotState`, `AccountRuntimeState`) НЕ экспортируются: иначе правило
  * «единственный писатель — проектор» осталось бы комментарием.
  *
- * Reconciliation, strategy, risk и execution в этот слой не входят — они
- * строятся НАД готовым состоянием отдельными этапами.
+ * ### Authoritative-коррекция
+ *
+ * `TRADING_ACCOUNT_RECONCILED` — batch-коррекция от сверки аккаунта
+ * (`@polymarket/account-reconciliation`) через тот же проектор: CAS по версии
+ * аккаунта ({@link AccountReconciliationVersionConflictError}) и одна мутация
+ * на весь снимок.
+ *
+ * Сама сверка, strategy, risk и execution в этот слой не входят — они
+ * строятся НАД готовым состоянием отдельными пакетами.
  *
  * @packageDocumentation
  *
@@ -105,11 +112,14 @@ export {
   AccountOrderAccountMissingError,
   AccountOrderIdentityConflictError,
   AccountPortfolioIdentityMismatchError,
+  AccountReconciliationDuplicateEntryError,
+  AccountReconciliationVersionConflictError,
   type AccountFillAction,
   type AccountFillOrderLinkField,
   type AccountIdentityMismatchSubject,
   type AccountInstrumentSubject,
   type AccountPortfolioIdentityField,
+  type AccountReconciliationEntryKind,
   type AccountStateError,
 } from './errors.js';
 export { accountKey } from './identity.js';

@@ -45,6 +45,15 @@
  * уже материализованы, — то есть неверную свободную сумму ровно в тот момент,
  * когда по ней принимается следующее решение.
  *
+ * ### Коррекция идёт через того же писателя
+ *
+ * `TRADING_ACCOUNT_RECONCILED` — authoritative-коррекция от сверки аккаунта.
+ * Отдельного писателя, отдельной шины или прямого доступа к состоянию у
+ * сверки нет: она публикует canonical-событие, а применяет его этот проектор,
+ * под CAS версии аккаунта и одной мутацией. Конфликт версий, как и любой
+ * другой отказ, возвращается публикующей стороне через critical-подписку — и
+ * сверка распознаёт его по классу ошибки.
+ *
  * ### Что на самом деле означает `critical: true`
  *
  * Ровно одно: отказ обработчика возвращается публикующей стороне как `Err` из
@@ -65,6 +74,7 @@ import type {
   TradingAccountFillVenueStatusObservedEvent,
   TradingAccountInitializedEvent,
   TradingAccountOrderCommittedEvent,
+  TradingAccountReconciledEvent,
 } from '@polymarket/application-events';
 import { isErr } from '@polymarket/result';
 import { AccountHotState } from './AccountHotState.js';
@@ -85,6 +95,7 @@ const PROJECTED_EVENT_TYPES = [
   'TRADING_ACCOUNT_FILL_CONFIRMED',
   'TRADING_ACCOUNT_FILL_REVERTED',
   'TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED',
+  'TRADING_ACCOUNT_RECONCILED',
 ] as const;
 
 /**
@@ -213,6 +224,13 @@ export class AccountStateProjector {
         },
         { critical: true },
       ),
+      this._eventBus.subscribe(
+        'TRADING_ACCOUNT_RECONCILED',
+        (event) => {
+          this._onAccountReconciled(event as TradingAccountReconciledEvent);
+        },
+        { critical: true },
+      ),
     ];
   }
 
@@ -332,6 +350,31 @@ export class AccountStateProjector {
       event.payload.venueStatus,
       event.metadata.createdAt,
     );
+    if (isErr(applied)) throw applied.error;
+  }
+
+  /**
+   * Применяет authoritative-коррекцию аккаунта.
+   *
+   * @param event - Canonical `TRADING_ACCOUNT_RECONCILED`
+   * @throws {AccountReconciliationVersionConflictError} Если снимок основан
+   *   не на текущей версии аккаунта — нормальная гонка, а не дефект
+   * @throws {Error} При неизвестном аккаунте, чужом портфеле, заявке или
+   *   исполнении, неразрешимом инструменте, повторе записи, конфликте
+   *   идентичности заявки или факта исполнения либо противоречии с уже
+   *   откаченным исполнением
+   *
+   * @remarks
+   * Ошибка НЕ перехватывается и не смягчается: ни конфликт версий, ни
+   * валидационный отказ. Critical-подписка вернёт её публикующей стороне, и
+   * только там решается, что с ней делать — для конфликта версий это свежий
+   * проход сверки, а не повтор того же снимка.
+   *
+   * Коррекция, ничего не изменившая, проходит без ошибки и без изменения
+   * версий.
+   */
+  private _onAccountReconciled(event: TradingAccountReconciledEvent): void {
+    const applied = this._state.reconcileAccount(event.payload, event.metadata.createdAt);
     if (isErr(applied)) throw applied.error;
   }
 
