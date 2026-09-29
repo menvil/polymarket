@@ -11,9 +11,8 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { EventBus } from '@polymarket/event-bus';
-import type { EventBusEvent } from '@polymarket/event-bus';
 import { MessageMetadataGenerator } from '@polymarket/messages';
-import type { BookUpdatedEvent } from '@polymarket/application-events';
+import type { ApplicationEvent, BookUpdatedEvent } from '@polymarket/application-events';
 import type { AssetPrice } from '@polymarket/value-objects';
 import { LiveClock } from '@polymarket/time';
 import type { CexExternalMessage } from '@polymarket/cex-v2';
@@ -276,7 +275,7 @@ describe('изоляция отказов semantic-слоя', () => {
     const bus = new ExternalMessageBus<CexExternalMessage>();
     const eventBus = new EventBus(silentLogger());
     const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
-    const published: EventBusEvent[] = [];
+    const published: ApplicationEvent[] = [];
     eventBus.subscribe('BOOK_UPDATED', (event) => {
       published.push(event);
     });
@@ -318,7 +317,7 @@ describe('изоляция отказов semantic-слоя', () => {
     const bus = new ExternalMessageBus<CexExternalMessage>();
     const eventBus = new EventBus(silentLogger());
     const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
-    const published: EventBusEvent[] = [];
+    const published: ApplicationEvent[] = [];
     eventBus.subscribe('TRADE_RECEIVED', (event) => {
       published.push(event);
     });

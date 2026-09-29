@@ -293,7 +293,6 @@ describe('layer boundary внешнего контракта', () => {
   const FORBIDDEN = [
     '@polymarket/application-events',
     '@polymarket/event-bus',
-    '@polymarket/order-events',
     '@polymarket/order',
     '@polymarket/value-objects',
   ];
@@ -414,6 +413,6 @@ describe('M-003/M-001 untouched by M-004', () => {
       'utf8',
     );
     expect(engine).not.toMatch(/ExternalMessage/);
-    expect(engine).not.toMatch(/EventBusEvent/);
+    expect(engine).not.toMatch(/ApplicationEvent/);
   });
 });

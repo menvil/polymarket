@@ -15,8 +15,8 @@
  *   (используется delivery-слоем `@polymarket/message-bus`).
  *
  * Пакет не знает о delivery (`message-bus`), слоях событий и транспортах:
- * `ApplicationEvent`, Domain `OrderEvent` и будущие external-сообщения (M-004)
- * строятся на одном и том же конверте отсюда.
+ * `ApplicationEvent` и external-сообщения (M-004) строятся на одном и том же
+ * конверте отсюда.
  *
  * @example
  * ```typescript

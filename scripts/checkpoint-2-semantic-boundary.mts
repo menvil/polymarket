@@ -43,7 +43,7 @@ import { LiveHighResolutionClock, MessageMetadataGenerator } from '@polymarket/m
 import type { MessageMetadata } from '@polymarket/messages';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { EventBus } from '@polymarket/event-bus';
-import type { EventBusEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { PolymarketSemanticAdapter } from '@polymarket/polymarket-semantic-adapter';
 import { CexSemanticAdapter } from '@polymarket/cex-semantic-adapter';
 import { createDataCollector } from '@polymarket/collect-data/runtime';
@@ -443,7 +443,7 @@ async function main(): Promise<void> {
     track.seen.push(sequenceNumber);
   };
 
-  eventBus.subscribe('BOOK_DEPTH', (event: EventBusEvent) => {
+  eventBus.subscribe('BOOK_DEPTH', (event: ApplicationEvent) => {
     const payload = event.payload as {
       venueId: unknown;
       marketId?: unknown;
@@ -488,7 +488,7 @@ async function main(): Promise<void> {
     }
   });
 
-  eventBus.subscribe('BOOK_UPDATED', (event: EventBusEvent) => {
+  eventBus.subscribe('BOOK_UPDATED', (event: ApplicationEvent) => {
     const payload = event.payload as {
       venueId: unknown;
       marketId?: unknown;
@@ -562,7 +562,7 @@ async function main(): Promise<void> {
     }
   });
 
-  eventBus.subscribe('TRADE_RECEIVED', (event: EventBusEvent) => {
+  eventBus.subscribe('TRADE_RECEIVED', (event: ApplicationEvent) => {
     const payload = event.payload as {
       venueId: unknown;
       marketId?: unknown;
@@ -656,12 +656,12 @@ async function main(): Promise<void> {
     }
   });
 
-  eventBus.subscribe('TICK_SIZE_CHANGED', (event: EventBusEvent) => {
+  eventBus.subscribe('TICK_SIZE_CHANGED', (event: ApplicationEvent) => {
     checkCausality(event.metadata);
     pmEvidence.tickSize += 1;
   });
 
-  eventBus.subscribe('REFERENCE_PRICE_UPDATED', (event: EventBusEvent) => {
+  eventBus.subscribe('REFERENCE_PRICE_UPDATED', (event: ApplicationEvent) => {
     const payload = event.payload as {
       sourceId: unknown;
       baseAsset: unknown;
@@ -1224,7 +1224,7 @@ async function verifyReplayShape(options: {
   >();
   let semanticMismatches = 0;
 
-  replayEventBus.subscribe('BOOK_DEPTH', (event: EventBusEvent) => {
+  replayEventBus.subscribe('BOOK_DEPTH', (event: ApplicationEvent) => {
     const payload = event.payload as {
       venueId: unknown;
       instrumentId: unknown;
@@ -1250,7 +1250,7 @@ async function verifyReplayShape(options: {
   replayEventBus.subscribe('REFERENCE_PRICE_UPDATED', () => {
     seen.pmReference += 1;
   });
-  replayEventBus.subscribe('TRADE_RECEIVED', (event: EventBusEvent) => {
+  replayEventBus.subscribe('TRADE_RECEIVED', (event: ApplicationEvent) => {
     const payload = event.payload as {
       venueId: unknown;
       instrumentId: unknown;

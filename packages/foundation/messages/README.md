@@ -140,10 +140,10 @@ const event = {
 } satisfies MarketOpenedEvent;
 
 const reaction = {
-  type: 'ORDER_FILLED',
+  type: 'TRADING_ACCOUNT_ORDER_COMMITTED',
   payload: { /* ... */ },
   metadata: metadataGenerator.nextChild(parent.metadata),
-} satisfies OrderFilledEvent;
+} satisfies TradingAccountOrderCommittedEvent;
 ```
 
 Запрещено: ручная сборка metadata/messageId в producer-ах, `Date.now()`/`crypto.randomUUID()`
@@ -165,9 +165,8 @@ message-system concerns: identity, runtime identity, ordering, creation time, ca
 @polymarket/messages
         ↑
         ├── @polymarket/message-bus        (generic delivery)
-        ├── @polymarket/order-events       (Domain OrderEvent)
         ├── @polymarket/application-events (ApplicationEvent)
-        └── будущий external-контур (M-004)
+        └── @polymarket/external-messages  (ExternalMessage, M-004)
 ```
 
 Весь граф — внутри Foundation: `messages → timestamp → time`. Foundation не

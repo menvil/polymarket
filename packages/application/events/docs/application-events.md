@@ -19,8 +19,8 @@ contracts — leaf-ish application-пакет без единой зависим
 - все ID — branded-типы из `@polymarket/ids` (после M-002.5/Commit 1 включая
   `strategyId: StrategyId`), денежные/временные поля — VO из
   `@polymarket/value-objects`;
-- `ApplicationEvent.ts` — единственное место сборки union; Domain `OrderEvent`
-  участвует по reference и не реэкспортируется;
+- `ApplicationEvent.ts` — единственное место сборки union; других контуров на
+  `IEventBus` нет;
 - новое поколение событий одного контура — новая папка, а не расширение
   существующей: `trading-market-lifecycle/` рядом с legacy `market-lifecycle/`,
   `trading-account/` рядом с legacy `fill/` и `venue-order/`
@@ -36,7 +36,7 @@ contracts — leaf-ish application-пакет без единой зависим
 ## Тесты
 
 `__tests__/ApplicationEvent.types.test.ts` — compile-time контракт: членство
-всех контрактов в union, discriminated narrowing, участие `OrderEvent`,
+всех контрактов в union, discriminated narrowing,
 публичные exports корня, типизация payload'ов приватного контура
 (`Portfolio`/`Order`/`Fill` вместо DTO). Runtime-поведения у пакета нет —
 behavioral-тесты доставки живут в `@polymarket/event-bus` (M-000 suite), а

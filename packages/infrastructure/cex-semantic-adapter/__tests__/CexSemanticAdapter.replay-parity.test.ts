@@ -26,11 +26,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { EventBus } from '@polymarket/event-bus';
-import type { EventBusEvent } from '@polymarket/event-bus';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import { LiveClock } from '@polymarket/time';
 import type { CexExternalMessage } from '@polymarket/cex-v2';
-import type { BookDepthEvent, TradeReceivedEvent } from '@polymarket/application-events';
+import type { ApplicationEvent, BookDepthEvent, TradeReceivedEvent } from '@polymarket/application-events';
 import type { AssetPrice } from '@polymarket/value-objects';
 import { CexSemanticAdapter } from '../src/index.js';
 import { silentLogger } from './support/fixtures.js';
@@ -50,11 +49,11 @@ function readRecordedPayloads(): RecordedPayload[] {
 /** Прогоняет payload через адаптер и возвращает все полученные события. */
 async function runThroughAdapter(
   payloads: readonly RecordedPayload[],
-): Promise<EventBusEvent[]> {
+): Promise<ApplicationEvent[]> {
   const bus = new ExternalMessageBus<CexExternalMessage>();
   const eventBus = new EventBus(silentLogger());
   const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
-  const published: EventBusEvent[] = [];
+  const published: ApplicationEvent[] = [];
   for (const type of ['BOOK_DEPTH', 'BOOK_UPDATED', 'TRADE_RECEIVED'] as const) {
     eventBus.subscribe(type, (event) => {
       published.push(event);
@@ -82,7 +81,7 @@ async function runThroughAdapter(
 }
 
 /** Сводка финансовых значений события — то, что обязано совпасть. */
-function financialFingerprint(event: EventBusEvent): unknown {
+function financialFingerprint(event: ApplicationEvent): unknown {
   if (event.type === 'BOOK_DEPTH') {
     const depth = event as BookDepthEvent<AssetPrice>;
     const book = depth.payload.snapshot;

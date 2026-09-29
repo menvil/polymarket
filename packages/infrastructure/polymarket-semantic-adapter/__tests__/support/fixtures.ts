@@ -10,7 +10,7 @@
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import { EventBus } from '@polymarket/event-bus';
-import type { EventBusEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { LiveClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { PolymarketExternalMessage } from '@polymarket/polymarket-v2';
@@ -59,9 +59,9 @@ export interface Harness {
   readonly adapter: PolymarketSemanticAdapter;
   readonly metadataGenerator: MessageMetadataGenerator;
   /** Все события, дошедшие до Application-шины, в порядке доставки. */
-  readonly published: EventBusEvent[];
+  readonly published: ApplicationEvent[];
   /** События одного типа. */
-  eventsOfType<K extends EventBusEvent['type']>(type: K): Extract<EventBusEvent, { type: K }>[];
+  eventsOfType<K extends ApplicationEvent['type']>(type: K): Extract<ApplicationEvent, { type: K }>[];
 }
 
 /**
@@ -88,7 +88,7 @@ export function createHarness(options: { autoStart?: boolean } = {}): Harness {
   const bus = new ExternalMessageBus<PolymarketExternalMessage>();
   const eventBus = new EventBus(silentLogger());
   const metadataGenerator = new MessageMetadataGenerator({ clock: new LiveClock() });
-  const published: EventBusEvent[] = [];
+  const published: ApplicationEvent[] = [];
 
   for (const type of [
     'BOOK_DEPTH',
@@ -118,8 +118,8 @@ export function createHarness(options: { autoStart?: boolean } = {}): Harness {
     adapter,
     metadataGenerator,
     published,
-    eventsOfType<K extends EventBusEvent['type']>(type: K) {
-      return published.filter((event): event is Extract<EventBusEvent, { type: K }> =>
+    eventsOfType<K extends ApplicationEvent['type']>(type: K) {
+      return published.filter((event): event is Extract<ApplicationEvent, { type: K }> =>
         event.type === type,
       );
     },

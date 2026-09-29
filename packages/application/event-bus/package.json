@@ -20,7 +20,6 @@
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
     "@polymarket/message-bus": "0.1.0",
-    "@polymarket/order-events": "0.1.0",
     "@polymarket/result": "0.1.0"
   },
   "devDependencies": {

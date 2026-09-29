@@ -9,7 +9,7 @@
  *                     /             \
  *        Application EventBus     ExternalMessageBus (этот класс)
  *                 │                        │
- *          EventBusEvent             ExternalMessage
+ *        ApplicationEvent           ExternalMessage
  *                 │                        │
  *        semantic internal           source-native
  *             events                 observations

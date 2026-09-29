@@ -18,8 +18,8 @@ import type { MessageMetadata } from './MessageMetadata.js';
  *
  * Этот контракт — Foundation-владение (`@polymarket/messages`): он не
  * принадлежит ни delivery-механике (`@polymarket/message-bus`), ни
- * какому-либо слою событий. `ApplicationEvent`, Domain `OrderEvent` и будущие
- * external-сообщения (M-004) строятся на одном и том же конверте.
+ * какому-либо слою событий. `ApplicationEvent` и external-сообщения (M-004)
+ * строятся на одном и том же конверте.
  *
  * Readonly-глубина payload обеспечивается concrete payload-контрактами
  * (их поля readonly) — deep-readonly utility сознательно не вводится.

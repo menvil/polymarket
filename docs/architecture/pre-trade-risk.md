@@ -215,5 +215,4 @@ submission journal) — **отдельная будущая задача**, зд
 ## Связанные документы
 
 - [Reservation journal safety](./reservation-journal-safety.md)
-- [Ordered event outbox](./ordered-event-outbox.md)
 - [@polymarket/risk — API-референс](../../packages/application/risk/docs/risk.md)

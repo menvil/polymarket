@@ -348,6 +348,10 @@ persistence формат, вне мандата миграции типов), в
 пропускать сырое значение непроверенным через границу (оставлять её небезопасной) — третий
 путь: явная валидация (`asX(...)`, Result/undefined-based) в точке пересечения.
 
+> **Historical.** Обоснование ниже описывает старый контур: `OrderEvent`,
+> `OrderEventBridge.ts` и `Order.fromEvents()` удалены (код — в `legacy-bot/`).
+> Общее правило из «Как применять» действует.
+
 **Обоснование:** Найдено при подключении `StrategyId` в Этапе 10b. `StrategyScheduler.
 onOrderChanged(strategyId: StrategyId, ...)` получает значения из `Order`/`OrderEvent`
 (`@polymarket/order`) — сущности, чей собственный докблок называет `strategyId` частью

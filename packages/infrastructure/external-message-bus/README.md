@@ -11,7 +11,7 @@
                      /             \
         Application EventBus     ExternalMessageBus
                  │                        │
-          EventBusEvent             ExternalMessage
+        ApplicationEvent           ExternalMessage
                  │                        │
         semantic internal           source-native
              events                 observations
@@ -20,16 +20,16 @@
 Оба bus используют один и тот же движок; различается **semantic meaning** того,
 что по ним ходит:
 
-- `EventBus` — доставка внутренних Application/Domain-событий;
+- `EventBus` — доставка canonical `ApplicationEvent`;
 - `ExternalMessageBus` — доставка наблюдений от внешних systems/transports.
 
 | | Application `EventBus` | `ExternalMessageBus` |
 |---|---|---|
 | Слой | Application | Infrastructure |
-| Сообщение | `EventBusEvent` | `ExternalMessage` |
+| Сообщение | `ApplicationEvent` | `ExternalMessage` |
 | Публичный lifecycle | скрыт (нет `drain`/`close`) | открыт |
 | Ошибки | транслируются в Application-классы | canonical `MessageBus*Error` |
-| Движок | `MessageBus<EventBusEvent>` | `MessageBus<TExternalMessage>` |
+| Движок | `MessageBus<ApplicationEvent>` | `MessageBus<TExternalMessage>` |
 
 ## Composition, not inheritance
 

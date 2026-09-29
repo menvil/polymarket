@@ -53,7 +53,7 @@ import { LiveClock } from '@polymarket/time';
 import { LiveHighResolutionClock, MessageMetadataGenerator } from '@polymarket/messages';
 import { ExternalMessageBus } from '@polymarket/external-message-bus';
 import { EventBus } from '@polymarket/event-bus';
-import type { EventBusEvent } from '@polymarket/event-bus';
+import type { ApplicationEvent } from '@polymarket/application-events';
 import { CexSemanticAdapter } from '@polymarket/cex-semantic-adapter';
 import { createDataCollector } from '@polymarket/collect-data/runtime';
 import type { ContourMessage, DataCollectorConfig } from '@polymarket/collect-data/runtime';
@@ -255,7 +255,7 @@ async function main(): Promise<void> {
     pendingRawTrade.set(venue, trade as Record<string, unknown>);
   });
 
-  const record = (event: EventBusEvent): void => {
+  const record = (event: ApplicationEvent): void => {
     causality.total++;
     if (event.metadata.causationId !== undefined) causality.children++;
   };

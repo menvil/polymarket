@@ -8,7 +8,6 @@
     "packages/domain/*",
     "packages/domain/accounting/*",
     "packages/domain/entities/*",
-    "packages/domain/events/*",
     "packages/domain/market-data/*",
     "packages/infrastructure/*",
     "packages/infrastructure/persistence/*",

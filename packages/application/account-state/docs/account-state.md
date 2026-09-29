@@ -595,17 +595,14 @@ DIRECT_FILL_APPLIED   эффект применён вне обычного flow
 Несёт сырой `VenueOrderUpdate`, `accountId` и `receivedAt` — и **не** несёт ни
 итогового `Order`, ни `Portfolio`. Это вход старого flow, а не его итог.
 
-### Domain `OrderEvent`
+### Переходы заявки отдельно не публикуются
 
-`ORDER_CREATED`, `ORDER_ACCEPTED`, `ORDER_PARTIALLY_FILLED`, `ORDER_FILLED`,
-`ORDER_CANCELLED`, `ORDER_REJECTED`, `ORDER_EXPIRED` описывают переход агрегата
-и не несут портфель. Подписавшись на них, приватное состояние получило бы
-заявку без гарантии, что соответствующие резервации уже материализованы.
-
-Будущий command/domain-процессор после успешного commit'а публикует именно
-`TRADING_ACCOUNT_ORDER_COMMITTED`. Сам `Order` доменных событий больше не
-производит: `pullEvents()` и `Order.fromEvents()` удалены вместе со старым
-контуром, который их вызывал (`legacy-bot/trading-contour-reference/`).
+`Order` — immutable-сущность без собственной системы событий, а по `IEventBus`
+ходит только canonical `ApplicationEvent`. Изменение заявки попадает в
+состояние только через `TRADING_ACCOUNT_ORDER_COMMITTED` — вместе с итоговым
+портфелем; заявка без портфеля показала бы обязательство, под которое деньги
+ещё не зарезервированы. Будущий command/domain-процессор публикует это событие
+после успешного commit'а.
 
 ## Что означает `critical: true`
 
@@ -659,7 +656,7 @@ objects, и структурная заглушка проверяла бы не
 | `versionsAndTime.test.ts` | глобальная и локальная версии, `metadata.createdAt` как единственный источник времени |
 | `atomicity.test.ts` | полный отпечаток состояния до и после 13 невалидных событий, `Err` из `publish()`, `stop()`/повторный `start()` |
 | `replayDeterminism.test.ts` | одна лента на двух свежих рантаймах даёт эквивалентное состояние |
-| `eventIsolation.test.ts` | старые application-события и Domain `OrderEvent` не проецируются |
+| `eventIsolation.test.ts` | старые application-события не проецируются; список проецируемых типов — ровно `TRADING_ACCOUNT_*` |
 | `venueStatus.test.ts` | вторая ось: доставка `MINED`/`RETRYING`, независимость осей, порядок наблюдений, терминальность, валидация |
 | `identityHelpers.test.ts` | `accountKey` — идентичность аккаунта |
 

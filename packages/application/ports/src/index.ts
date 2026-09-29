@@ -83,12 +83,6 @@ export type {
   ReconciliationIssueType,
   ReconciliationIssueStatus,
 } from './IReconciliationIssueRepository.js';
-/** Реэкспорт порта упорядоченной доставки событий (см. `IOrderedEventOutbox.ts`). */
-export type {
-  IOrderedEventOutbox,
-  OrderedEventBatch,
-} from './IOrderedEventOutbox.js';
-export { OutboxEnqueueError } from './IOrderedEventOutbox.js';
 export { ExchangeError } from './IExchangeClient.js';
 /** Реэкспорт торгового клиента и связанных типов (см. `IExchangeClient.ts`). */
 export type {
