@@ -1,0 +1,33 @@
+packages/domain/entities/portfolio/__tests__/unit/portfolioState.test.ts
+  s_23e5b70dd499f4::t_4240d773ef6fd0 1-12,14-25,37-60,62-65,68-77,80-106,115-139,141-144
+  s_23e5b70dd499f4::t_e49c3365088618 107-114
+  s_23e5b70dd499f4::t_cbfd5cde43a6c7 13,26-36,61,66-67,78-79,140
+packages/domain/entities/position/__tests__/unit/positionState.test.ts
+  s_23e5b70dd499f4::t_f5605addfcd5e2 1-13,23-24,26-30,44-46,48-51,55-56,58-94,96,101-120,122-125
+  s_23e5b70dd499f4::t_7abee258907884 14-22,31-43,47,52-54,57,97-100,121
+  s_23e5b70dd499f4::t_c758bc5d19fe6e 25,95
+packages/domain/entities/portfolio/src/portfolioState.ts
+  s_23e5b70dd499f4::t_347accb9ed38fe 1-121
+packages/domain/entities/position/src/positionState.ts
+  s_23e5b70dd499f4::t_9f60d83647f9fa 1-110
+packages/domain/entities/portfolio/src/index.ts
+  s_23e5b70dd499f4::t_b1dab378d1bb47 12,42-43
+packages/domain/entities/position/src/index.ts
+  s_23e5b70dd499f4::t_4b46cdaec80d7b 19-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "180638e510e841802a5dbcb01b1557ae41dc4831",
+  "prompts": {},
+  "sessions": {
+    "s_23e5b70dd499f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc0e5073-9c9d-40f0-92e9-4659c6679201",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
