@@ -147,8 +147,8 @@ const result = OrderDeserializer.fromSnapshot({
 // rehydrate() проверяет консистентность состояния:
 //   - filledSize не превышает size
 //   - PENDING не может иметь fills
-//   - FILLED должна иметь filledSize === size
-//   - PARTIALLY_FILLED должна иметь 0 < filledSize < size
+//   - FILLED должна иметь fills и быть завершена по isFull()
+//   - PARTIALLY_FILLED должна иметь fills и НЕ быть завершена по isFull()
 ```
 
 ## Публичный API
@@ -246,7 +246,8 @@ order.toString(): string           // "Order[id]: SIDE SIZE @ PRICE (STATUS)"
 
 - `emptyFill()` — начальное состояние (filledSize=0, no VWAP)
 - `addFill(state, fill, orderSize)` — добавить исполнение с валидацией
-- `isFull(state, orderSize)` — заявка полностью исполнена
+- `isFull(state, orderSize)` — заявка завершена; единственное определение
+  завершённости в пакете (им пользуются `applyFill()` и `rehydrate()`)
 - `_vwap(...)` — взвешенная средняя цена (VWAP)
 
 ### Алгоритм VWAP
@@ -266,7 +267,41 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 4. **Fill dedup** — повторный fillId → ошибка
 5. **Fill overflow** — fillSize > remainingSize → ошибка
 6. **Terminal lock** — команды над терминальными статусами → ошибка
-7. **Rehydrate consistency** — filledSize > size, PENDING+fills, FILLED+partial → ошибка
+7. **Rehydrate consistency** — filledSize > size, PENDING+fills, FILLED без
+   завершения, PARTIALLY_FILLED с завершением → ошибка
+8. **Одна завершённость** — `applyFill()` и `rehydrate()` решают «завершена ли
+   заявка» одним `isFull()`, поэтому любое состояние, созданное командами,
+   переживает round-trip `toSnapshot()` → `OrderDeserializer.fromSnapshot()`
+
+## Завершённость (FILLED) и порог пыли
+
+`FILLED` означает `isFull(fillState, size)`:
+
+- точное исполнение: `filledSize === size`, либо
+- положительный остаток меньше `DUST_THRESHOLD` (0.01):
+  `0 < size - filledSize < 0.01`.
+
+Граница строгая: остаток, равный 0.01, завершением не считается — такая заявка
+остаётся `PARTIALLY_FILLED`.
+
+**Остаток пыли НЕ добавляется к `filledSize`.** Завершение по порогу — это
+статус, а не синтетическое исполнение: `filledSize` хранит реально исполненный
+объём, `remainingSize` честно показывает остаток.
+
+```typescript
+// size = 5.071832064, fill = 5.07 → остаток 0.001832064 < 0.01
+const filled = open.applyFill(fill);        // Ok
+filled.value.status;                        // 'FILLED'
+filled.value.filledSize;                    // 5.07 — не 5.071832064
+filled.value.remainingSize;                 // 0.001832064
+
+// И то же состояние восстанавливается из снэпшота
+OrderDeserializer.fromSnapshot(filled.value.toSnapshot()); // Ok, status 'FILLED'
+```
+
+Почему так: Polymarket CLOB округляет размер fill до 2 знаков, и остаток может
+оказаться меньше минимального размера заявки — без порога заявка навсегда
+застряла бы в `PARTIALLY_FILLED`.
 
 ## Кросс-валидация в rehydrate()
 
@@ -274,22 +309,20 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 |--------------------------------|---------------------------------------------|
 | `filledSize > size`            | `filledSize (X) exceeds size (Y)`           |
 | `status=PENDING, filledSize>0` | `PENDING order cannot have fills`           |
-| `status=FILLED, filledSize≠size`| `FILLED order must have filledSize equal to size` |
-| `status=PARTIALLY_FILLED`, не `0 < filledSize < size` | `PARTIALLY_FILLED order must have 0 < filledSize < size` |
+| `status=FILLED`, `filledSize = 0` или `!isFull(fill, size)` | `FILLED order must have fills and be complete: ...` |
+| `status=PARTIALLY_FILLED`, `filledSize = 0` или `isFull(fill, size)` | `PARTIALLY_FILLED order must have fills and remaining of at least 0.01 ...` |
 
-**Известное ограничение.** `applyFill()` переводит заявку в FILLED, когда
-остаток меньше порога пыли (0.01), но `rehydrate()` требует для FILLED строгого
-`filledSize === size`. Поэтому заявка, закрытая по порогу пыли, не проходит
-round-trip `toSnapshot()` → `OrderDeserializer.fromSnapshot()`. Поведение
-унаследовано и в этом документе только зафиксировано.
+`FILLED` без исполнений отвергается отдельно: на заявке меньше порога пыли
+`isFull()` истинен уже при нулевом `filledSize`, но `applyFill()` ставит
+`FILLED` только после положительного fill.
 
 ## Тестовое покрытие
 
 | Файл                      | Тесты | Описание                          |
 |---------------------------|-------|-----------------------------------|
-| `unit/Order.test.ts`      | 109   | create, rehydrate, FSM (все исходные статусы), applyFill-guards, VWAP, пыль, иммутабельность |
+| `unit/Order.test.ts`      | 119   | create, rehydrate (включая завершённость по порогу пыли и границу 0.01), FSM (все исходные статусы), applyFill-guards, VWAP, round-trip пыли, иммутабельность |
 | `unit/orderIdentity.test.ts` | 8  | идентичность против состояния |
 | `unit/view/OrderView.test.ts` | 33 | ViewModel, Deserializer, round-trip |
 | `integration/OrderLifecycle.test.ts` | 28 | End-to-end сценарии, VWAP, round-trip (включая it.each) |
 
-**Итого: 178 тестов**
+**Итого: 188 тестов**

@@ -318,6 +318,84 @@ describe('Order', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.message).toContain('PARTIALLY_FILLED');
     });
+
+    describe('завершённость по isFull() — как в applyFill()', () => {
+      // Заявка на 5.071832064: остаток после fill определяет, завершена ли она
+      const DUST_SIZE = '5.071832064';
+
+      function stateWith(status: 'FILLED' | 'PARTIALLY_FILLED', size: string, filledSize: string): OrderState {
+        const hasFills = !new Decimal(filledSize).isZero();
+        return makeState({
+          status,
+          size: Quantity.of(new Decimal(size)),
+          fill: {
+            filledSize: Quantity.of(new Decimal(filledSize)),
+            averagePrice: hasFills ? OutcomePrice.of(new Decimal('0.65')) : undefined,
+            fillIds: hasFills ? [FILL_ID_1] : [],
+          },
+        });
+      }
+
+      it('FILLED с filledSize == size → Ok', () => {
+        expect(Order.rehydrate(stateWith('FILLED', DUST_SIZE, DUST_SIZE)).ok).toBe(true);
+      });
+
+      it('FILLED с остатком пыли < 0.01 → Ok, filledSize не подтянут к size', () => {
+        const order = unwrap(Order.rehydrate(stateWith('FILLED', DUST_SIZE, '5.07')));
+        expect(order.status).toBe('FILLED');
+        expect(order.filledSize.value().toString()).toBe('5.07');
+        expect(order.remainingSize.value().toString()).toBe('0.001832064');
+      });
+
+      it('FILLED с остатком > 0.01 → Err', () => {
+        const result = Order.rehydrate(stateWith('FILLED', DUST_SIZE, '5.05'));
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.message).toContain('FILLED order must have fills and be complete');
+      });
+
+      it('FILLED с остатком ровно 0.01 → Err (граница строгая: remaining.lt(0.01))', () => {
+        const result = Order.rehydrate(stateWith('FILLED', '100', '99.99'));
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.message).toContain('FILLED order must have fills and be complete');
+      });
+
+      it('FILLED без исполнений на заявке меньше порога пыли → Err', () => {
+        // isFull() здесь true (остаток 0.005 < 0.01), но applyFill() не может
+        // создать FILLED без положительного fill
+        const result = Order.rehydrate(stateWith('FILLED', '0.005', '0'));
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.message).toContain('FILLED order must have fills and be complete');
+      });
+
+      it('PARTIALLY_FILLED с обычным остатком >= 0.01 → Ok', () => {
+        const order = unwrap(Order.rehydrate(stateWith('PARTIALLY_FILLED', DUST_SIZE, '5.05')));
+        expect(order.status).toBe('PARTIALLY_FILLED');
+        expect(order.remainingSize.value().toString()).toBe('0.021832064');
+      });
+
+      it('PARTIALLY_FILLED с остатком ровно 0.01 → Ok', () => {
+        const order = unwrap(Order.rehydrate(stateWith('PARTIALLY_FILLED', '100', '99.99')));
+        expect(order.status).toBe('PARTIALLY_FILLED');
+        expect(order.remainingSize.value().toString()).toBe('0.01');
+      });
+
+      it('PARTIALLY_FILLED с остатком пыли < 0.01 → Err (live applyFill дал бы FILLED)', () => {
+        const result = Order.rehydrate(stateWith('PARTIALLY_FILLED', DUST_SIZE, '5.07'));
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.message).toContain('PARTIALLY_FILLED order must have fills and remaining of at least 0.01');
+      });
+
+      it('граница совпадает с applyFill(): остаток 0.01 → PARTIALLY_FILLED, 0.009 → FILLED', () => {
+        const open = unwrap(unwrap(createValidOrder()).accept());
+        const atBoundary = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('99.99')) })));
+        const belowBoundary = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('99.991')) })));
+
+        expect(atBoundary.status).toBe('PARTIALLY_FILLED');
+        expect(belowBoundary.status).toBe('FILLED');
+        expect(unwrap(OrderDeserializer.fromSnapshot(atBoundary.toSnapshot())).status).toBe('PARTIALLY_FILLED');
+        expect(unwrap(OrderDeserializer.fromSnapshot(belowBoundary.toSnapshot())).status).toBe('FILLED');
+      });
+    });
   });
 
   describe('fromSnapshot() через OrderDeserializer', () => {
@@ -984,6 +1062,27 @@ describe('Order', () => {
       expect(restored.status).toBe('PARTIALLY_FILLED');
       expect(restored.filledSize.value().toNumber()).toBe(30);
       expect(restored.averagePrice?.value().toNumber()).toBe(0.65);
+    });
+
+    it('регрессия: заявка, завершённая по порогу пыли, переживает round-trip', () => {
+      const open = unwrap(unwrap(createValidOrder({
+        size: Quantity.of(new Decimal('5.071832064')),
+      })).accept());
+      const filled = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('5.07')) })));
+
+      expect(filled.status).toBe('FILLED');
+      expect(filled.filledSize.value().toString()).toBe('5.07');
+      expect(filled.remainingSize.value().toString()).toBe('0.001832064');
+
+      const snapshot = filled.toSnapshot();
+      const result = OrderDeserializer.fromSnapshot(snapshot);
+
+      expect(result.ok).toBe(true);
+      const restored = unwrap(result);
+      expect(restored.status).toBe('FILLED');
+      expect(restored.filledSize.value().toString()).toBe('5.07');
+      expect(restored.size.value().toString()).toBe('5.071832064');
+      expect(restored.remainingSize.value().toString()).toBe('0.001832064');
     });
 
     it('toString() должен включать основные поля', () => {

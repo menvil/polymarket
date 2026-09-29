@@ -69,7 +69,7 @@ import {
 } from './OrderState.js';
 import type { FillData } from '@polymarket/fill';
 import { TradingError } from '@polymarket/errors';
-import { emptyFill, addFill, isFull } from './_fill.js';
+import { emptyFill, addFill, isFull, DUST_THRESHOLD } from './_fill.js';
 
 const VALID_SIDES = new Set<string>(['BUY', 'SELL']);
 
@@ -271,8 +271,14 @@ export class Order {
    * Проверяет консистентность состояния (кросс-поля):
    * - filledSize не может превышать size
    * - PENDING заявка не может иметь fills
-   * - FILLED заявка должна быть полностью исполнена
-   * - PARTIALLY_FILLED заявка должна иметь 0 < filledSize < size
+   * - FILLED заявка должна иметь fills и быть завершена по `isFull()`
+   *   (точное исполнение или остаток меньше порога пыли)
+   * - PARTIALLY_FILLED заявка должна иметь fills и НЕ быть завершена по `isFull()`
+   *
+   * Завершённость определяет тот же `isFull()`, что и в `applyFill()`: всё, что
+   * live-переход способен создать, переживает round-trip
+   * `toSnapshot()` → `OrderDeserializer.fromSnapshot()` → `rehydrate()`.
+   * Остаток пыли не нормализуется — `filledSize` не подтягивается к `size`.
    *
    * @example
    * ```typescript
@@ -298,16 +304,21 @@ export class Order {
       ));
     }
 
-    if (state.status === 'FILLED' && !filledVal.eq(sizeVal)) {
+    // Завершённость — только через isFull(), как в applyFill()
+    const complete = isFull(state.fill, state.size);
+
+    // applyFill() ставит FILLED лишь после положительного fill, поэтому FILLED
+    // без исполнений (возможен на заявке меньше порога пыли) не восстанавливаем
+    if (state.status === 'FILLED' && !(filledVal.gt(0) && complete)) {
       return Err(new TradingError(
-        `FILLED order must have filledSize equal to size (filledSize: ${filledVal}, size: ${sizeVal})`,
+        `FILLED order must have fills and be complete: filledSize equal to size or remaining below ${DUST_THRESHOLD} (filledSize: ${filledVal}, size: ${sizeVal})`,
         { context: { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() } },
       ));
     }
 
-    if (state.status === 'PARTIALLY_FILLED' && !(filledVal.gt(0) && filledVal.lt(sizeVal))) {
+    if (state.status === 'PARTIALLY_FILLED' && !(filledVal.gt(0) && !complete)) {
       return Err(new TradingError(
-        `PARTIALLY_FILLED order must have 0 < filledSize < size (filledSize: ${filledVal}, size: ${sizeVal})`,
+        `PARTIALLY_FILLED order must have fills and remaining of at least ${DUST_THRESHOLD} (filledSize: ${filledVal}, size: ${sizeVal})`,
         { context: { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() } },
       ));
     }
