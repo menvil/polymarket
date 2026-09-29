@@ -154,7 +154,7 @@ describe('ApplicationEvent union contract', () => {
           const portfolio: Portfolio = event.payload.portfolio;
           void portfolio.balance;
           void portfolio.positions;
-          void portfolio.tokenReservations;
+          void portfolio.tokenBalances;
           return event.type;
         }
         case 'TRADING_ACCOUNT_ORDER_COMMITTED': {

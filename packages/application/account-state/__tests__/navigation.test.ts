@@ -179,7 +179,9 @@ describe('AI. позиции читаются из портфеля', () => {
     const { bus, view, events } = buildRuntime();
     const accountId = walletAccount();
     const held = position(UP_INSTRUMENT);
-    const withPosition = portfolio({ accountId }).upsertPosition(held);
+    // Позиция задаётся при сборке портфеля: публичного `upsertPosition()`
+    // больше нет — агрегат не даёт менять позицию в обход токенов.
+    const withPosition = portfolio({ accountId, position: held });
 
     events.observeAt(1_000);
     await publishOk(bus, events.initialized({ accountId, portfolio: withPosition }));
@@ -206,7 +208,7 @@ describe('AI. позиции читаются из портфеля', () => {
       bus,
       events.fillApplied({
         fill: makeFill({ accountId }),
-        portfolio: portfolio({ accountId }).upsertPosition(held),
+        portfolio: portfolio({ accountId, position: held }),
       }),
     );
 

@@ -171,24 +171,21 @@ describe('E–G. идентичность портфеля обязана сов
     expect(view.getVersion()).toBe(0);
   });
 
-  it('F. владелец агрегата верный, а владелец баланса — нет', async () => {
-    const { bus, view, events } = buildRuntime();
+  it('F. владелец агрегата верный, а владелец баланса — нет: портфель не собирается', () => {
+    // Утверждение стало СИЛЬНЕЕ. Раньше здесь публиковалось событие с уже
+    // собранным несогласованным портфелем, и отказ давал проектор. Теперь
+    // `Portfolio.create()` проверяет, что владелец баланса совпадает с
+    // владельцем агрегата, — и такого объекта попросту не существует.
+    //
+    // Проверку проектора это не отменяет: он сверяет баланс с владельцем
+    // СОБЫТИЯ, а агрегат — со своим собственным. Совпадение первого со вторым
+    // обеспечивает отдельная проверка `portfolio.accountId` (тест E).
     const accountId = walletAccount();
     const stranger = walletAccount('0x9999999999999999999999999999999999999999');
-    events.observeAt(1_000);
 
-    const error = await publishErr(
-      bus,
-      events.initialized({
-        accountId,
-        portfolio: portfolio({ accountId, balanceAccountId: stranger }),
-      }),
+    expect(() => portfolio({ accountId, balanceAccountId: stranger })).toThrow(
+      /different account/,
     );
-
-    expect(error).toBeInstanceOf(AccountPortfolioIdentityMismatchError);
-    expect((error as AccountPortfolioIdentityMismatchError).field).toBe('balanceAccountId');
-    expect(view.getAccount(VENUE, accountId)).toBeUndefined();
-    expect(view.getVersion()).toBe(0);
   });
 
   it('G. площадка баланса не совпадает с площадкой аккаунта', async () => {

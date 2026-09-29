@@ -24,6 +24,7 @@
   ],
   "references": [
     { "path": "../position/tsconfig.build.json" },
+    { "path": "../fill/tsconfig.build.json" },
     {
       "path": "../../../foundation/errors/tsconfig.build.json"
     },

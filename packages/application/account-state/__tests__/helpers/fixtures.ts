@@ -13,6 +13,7 @@
  * доказывать, а не полагаться на удачу.
  */
 import { PaperClock } from '@polymarket/time';
+import { TokenBalance } from '@polymarket/value-objects/token-balance';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import { TimestampService, type Timestamp } from '@polymarket/timestamp';
 import {
@@ -213,6 +214,8 @@ export interface PortfolioOverrides {
   readonly available?: number;
   /** Зарезервированные средства */
   readonly reserved?: number;
+  /** Позиция в портфеле; токенный баланс под неё собирается автоматически */
+  readonly position?: Position;
   /** Идентификатор портфеля */
   readonly id?: string;
 }
@@ -236,11 +239,37 @@ export function portfolio(overrides: PortfolioOverrides = {}): Portfolio {
     overrides.balanceAccountId ?? accountId,
     overrides.balanceVenueId ?? VENUE,
   );
+
+  // Позиция задаётся ЗДЕСЬ, а не дописывается потом: публичного
+  // `upsertPosition()` у портфеля больше нет, и каждая позиция обязана иметь
+  // токенного двойника на то же количество — иначе `create()` отвергнет набор.
+  const positions = new Map<InstrumentId, Position>();
+  const tokenBalances = new Map<InstrumentId, TokenBalance>();
+  if (overrides.position !== undefined) {
+    const held = overrides.position;
+    positions.set(held.instrumentId, held);
+    // Токенный двойник строится на владельце ПОЗИЦИИ, а не портфеля: так
+    // расхождение владельцев, если оно есть, отвергнет `create()` с внятным
+    // сообщением, а не превратится в второе, производное несоответствие.
+    tokenBalances.set(
+      held.instrumentId,
+      TokenBalance.of(
+        held.instrumentId,
+        held.quantity,
+        must(QuantityService.create(0)),
+        held.accountId,
+        VENUE,
+      ),
+    );
+  }
+
   return must(
     Portfolio.create({
       id: asPortfolioId(overrides.id ?? 'portfolio-1'),
       accountId,
       balance,
+      positions,
+      tokenBalances,
     }),
   );
 }
@@ -347,13 +376,26 @@ export function fill(overrides: FillOverrides = {}): Fill {
  */
 export function position(
   instrumentId: InstrumentId,
-  params: { quantity?: number; averageEntryPrice?: number; side?: 'LONG' | 'SHORT' } = {},
+  params: {
+    quantity?: number;
+    averageEntryPrice?: number;
+    side?: 'LONG' | 'SHORT';
+    /**
+     * Владелец позиции.
+     *
+     * @remarks
+     * Задавать нужно, когда портфель строится не на дефолтном кошельке:
+     * `Portfolio.create()` отвергает позицию чужого аккаунта, и умолчание
+     * фикстуры совпадать с владельцем портфеля не обязано.
+     */
+    accountId?: AccountId;
+  } = {},
 ): Position {
   const openedAt = ts(1_700_000_000_000);
   return must(
     Position.create({
       id: asPositionId('position-1') as never,
-      accountId: walletAccount(),
+      accountId: params.accountId ?? walletAccount(),
       instrumentId,
       asset: AssetIdHelpers.USDC,
       side: params.side ?? 'LONG',
