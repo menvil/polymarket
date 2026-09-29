@@ -28,9 +28,6 @@
       "path": "../../../foundation/errors/tsconfig.build.json"
     },
     {
-      "path": "../../../foundation/messages/tsconfig.build.json"
-    },
-    {
       "path": "../../../foundation/result/tsconfig.build.json"
     },
     {
@@ -38,9 +35,6 @@
     },
     {
       "path": "../fill/tsconfig.build.json"
-    },
-    {
-      "path": "../../events/order/tsconfig.build.json"
     }
   ]
 }

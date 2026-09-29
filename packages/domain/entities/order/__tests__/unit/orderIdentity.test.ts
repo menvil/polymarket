@@ -15,7 +15,6 @@ import {
   sameOrderState,
 } from '../../src/identity';
 import { DOWN_TOKEN, must, order, walletAccount, withFill } from '../identityFixtures';
-import { nextTestMetadata } from '../helpers';
 
 /** Идентификатор стратегии для проверки поля идентичности. */
 function strategyId(raw: string): StrategyId {
@@ -76,24 +75,6 @@ describe('§45. идентичность и состояние заявки', ()
 
     expect(sameOrderIdentity(open, partially)).toBe(true);
     expect(sameOrderState(open, partially)).toBe(false);
-  });
-
-  it('буфер драфтов событий в сравнение НЕ входит', () => {
-    // `Order.create()` кладёт в буфер OrderCreatedEvent, а `pullEvents()`
-    // опустошает его мутацией. Заявка, у которой драфты слиты, и заявка, у
-    // которой ещё нет, — одна и та же заявка: буфер описывает, что осталось
-    // ОПУБЛИКОВАТЬ, а не торговое состояние.
-    //
-    // Если это когда-нибудь перестанет быть так, приватное состояние начнёт
-    // считать повторно доставленный commit «законным обновлением» и применит
-    // устаревший портфель.
-    const withDrafts = order();
-    const drained = order();
-    expect(drained.pullEvents(() => nextTestMetadata()).length).toBeGreaterThan(0);
-
-    expect(sameOrderIdentity(withDrafts, drained)).toBe(true);
-    expect(sameOrderState(withDrafts, drained)).toBe(true);
-    expect(findOrderIdentityDifference(withDrafts, drained)).toBeUndefined();
   });
 
   it('состояние различается по каждому изменяемому полю', () => {

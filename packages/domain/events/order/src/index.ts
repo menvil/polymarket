@@ -2,9 +2,11 @@
  * @polymarket/order-events — canonical источник domain-событий Order.
  *
  * @remarks
- * Domain events — факты изменения Order-агрегата: создаются самим агрегатом
- * (`@polymarket/order`), отражают переходы его FSM и используются для
- * replay/history (`Order.fromEvents()`/`Order.pullEvents()`).
+ * Domain events — факты изменения Order-агрегата, отражают переходы его FSM.
+ *
+ * Legacy-контракт: `Order` больше их не создаёт и не восстанавливается из них
+ * (`pullEvents()`/`fromEvents()` удалены); producer'ов в активном дереве нет,
+ * тип живёт в union доставки `EventBusEvent`. См. README пакета.
  *
  * События — факты, которые уже произошли. Отличие от команд
  * (`accept()`, `applyFill()`):

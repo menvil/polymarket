@@ -7,9 +7,11 @@ import { Timestamp } from '@polymarket/timestamp';
 import type { AssetId, OrderId } from '@polymarket/ids';
 import { unsafeStrategyId } from '@polymarket/ids';
 import {
+  accountIdFromWallet,
   asOrderId,
   asFillId,
   parseConditionId,
+  parseWalletAddress,
   parseOutcomeKey,
   KnownChainIds,
   KnownOnChainProtocols,
@@ -19,7 +21,6 @@ import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import type { FillState, OrderState } from '../../src/OrderState';
 import type { FillData } from '@polymarket/fill';
-import { replay, nextTestMetadata } from '../helpers';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -61,6 +62,26 @@ function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]
   };
 
   return Order.create({ ...defaults, ...overrides });
+}
+
+// Helper: заявка в заданном статусе через доверенное восстановление
+function orderInStatus(status: OrderState['status']): Order {
+  const filledSize = status === 'FILLED' ? '100' : status === 'PARTIALLY_FILLED' ? '40' : '0';
+  const hasFills = filledSize !== '0';
+  return unwrap(Order.rehydrate({
+    id: ORDER_ID,
+    asset: TEST_ASSET,
+    side: 'BUY',
+    price: OutcomePrice.of(new Decimal('0.65')),
+    size: Quantity.of(new Decimal('100')),
+    status,
+    timestamp: Timestamp.now(),
+    fill: {
+      filledSize: Quantity.of(new Decimal(filledSize)),
+      averagePrice: hasFills ? OutcomePrice.of(new Decimal('0.65')) : undefined,
+      fillIds: hasFills ? [FILL_ID_1] : [],
+    },
+  }), `orderInStatus(${status})`);
 }
 
 // Helper для создания FillData
@@ -165,6 +186,32 @@ describe('Order', () => {
         expect(result.error.message).toContain('Order size is required');
       }
     });
+
+    it('должен вернуть Err если timestamp отсутствует', () => {
+      const result = createValidOrder({ timestamp: undefined as unknown as Timestamp });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Timestamp is required');
+      }
+    });
+
+    it('новая заявка: пустое fill-состояние, без причины, владелец и стратегия перенесены', () => {
+      const wallet = parseWalletAddress('0x1234567890abcdef1234567890abcdef12345678')!;
+      const accountId = accountIdFromWallet(wallet);
+      const order = unwrap(createValidOrder({
+        strategyId: unsafeStrategyId('strategy-1'),
+        accountId,
+      }));
+
+      expect(order.status).toBe('PENDING');
+      expect(order.filledSize.isZero()).toBe(true);
+      expect(order.averagePrice).toBeUndefined();
+      expect(order.fillIds).toEqual([]);
+      expect(order.tradeCount).toBe(0);
+      expect(order.reason).toBeUndefined();
+      expect(order.strategyId).toBe('strategy-1');
+      expect(order.accountId).toBe(accountId);
+    });
   });
 
   describe('rehydrate()', () => {
@@ -187,14 +234,6 @@ describe('Order', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.status).toBe('OPEN');
-      }
-    });
-
-    it('rehydrate() не должен эмитировать события', () => {
-      const result = Order.rehydrate(makeState());
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.pullEvents(nextTestMetadata)).toHaveLength(0);
       }
     });
 
@@ -316,556 +355,6 @@ describe('Order', () => {
     it('должен вернуть Err для невалидного id', () => {
       const result = OrderDeserializer.fromSnapshot({ id: '' } as import('../../src/OrderState').OrderSnapshot);
       expect(result.ok).toBe(false);
-    });
-  });
-
-  describe('fromEvents()', () => {
-    it('должен воспроизвести заявку из событий', () => {
-      const ts = Timestamp.now();
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID,
-            asset: TEST_ASSET,
-            side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')),
-            size: Quantity.of(new Decimal('100')),
-            timestamp: ts,
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-
-      expect(order.status).toBe('OPEN');
-      expect(order.id).toBe(ORDER_ID);
-    });
-
-    it('должен вернуть Err для пустого массива событий', () => {
-      const result = Order.fromEvents([]);
-      expect(result.ok).toBe(false);
-    });
-
-    it('должен вернуть Err если первое событие не ORDER_CREATED', () => {
-      const result = Order.fromEvents([
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('First event must be ORDER_CREATED');
-      }
-    });
-
-    it('должен воспроизвести полный жизненный цикл с ORDER_FILLED', () => {
-      const ts = Timestamp.now();
-      const fill: FillData = {
-        id: FILL_ID_1,
-        orderId: ORDER_ID,
-        asset: TEST_ASSET,
-        side: 'BUY',
-        size: Quantity.of(new Decimal('100')),
-        price: OutcomePrice.of(new Decimal('0.65')),
-      };
-
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_FILLED',
-          payload: {
-            orderId: ORDER_ID, fill, averagePrice: fill.price
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-
-      expect(order.status).toBe('FILLED');
-      expect(order.filledSize.value().toNumber()).toBe(100);
-    });
-
-    it('должен воспроизвести частичное исполнение с ORDER_PARTIALLY_FILLED', () => {
-      const ts = Timestamp.now();
-      const fill: FillData = {
-        id: FILL_ID_1,
-        orderId: ORDER_ID,
-        asset: TEST_ASSET,
-        side: 'BUY',
-        size: Quantity.of(new Decimal('30')),
-        price: OutcomePrice.of(new Decimal('0.65')),
-      };
-      const remainingSize = Quantity.of(new Decimal('70'));
-
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_PARTIALLY_FILLED',
-          payload: {
-            orderId: ORDER_ID, fill, filledSize: fill.size, remainingSize
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-
-      expect(order.status).toBe('PARTIALLY_FILLED');
-      expect(order.filledSize.value().toNumber()).toBe(30);
-    });
-
-    it('должен игнорировать fill после отмены заявки (нелегальный переход)', () => {
-      const ts = Timestamp.now();
-      const fillData: FillData = {
-        id: asFillId('fill-1')!,
-        orderId: ORDER_ID,
-        asset: TEST_ASSET,
-        side: 'BUY',
-        size: Quantity.of(new Decimal('30')),
-        price: OutcomePrice.of(new Decimal('0.65')),
-      };
-
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_PARTIALLY_FILLED',
-          payload: {
-            orderId: ORDER_ID, fill: fillData,
-            filledSize: Quantity.of(new Decimal('30')),
-            remainingSize: Quantity.of(new Decimal('70'))
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_CANCELLED',
-          payload: {
-            orderId: ORDER_ID, reason: 'Risk limit'
-          },
-          metadata: nextTestMetadata(),
-        },
-        // fill после cancel — должен быть проигнорирован
-        {
-          type: 'ORDER_PARTIALLY_FILLED',
-          payload: {
-            orderId: ORDER_ID, fill: fillData,
-            filledSize: Quantity.of(new Decimal('50')),
-            remainingSize: Quantity.of(new Decimal('50'))
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-
-      expect(order.status).toBe('CANCELED');
-      expect(order.filledSize.value().toNumber()).toBe(30); // fill после cancel не применился
-    });
-
-    it('должен игнорировать ORDER_ACCEPTED если статус уже не PENDING', () => {
-      const ts = Timestamp.now();
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        }, // дубль — должен быть проигнорирован
-      ]);
-      expect(order.status).toBe('OPEN');
-    });
-
-    it('должен игнорировать ORDER_REJECTED если статус уже не PENDING', () => {
-      const ts = Timestamp.now();
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        }, // уже OPEN
-        {
-          type: 'ORDER_REJECTED',
-          payload: {
-            orderId: ORDER_ID, reason: 'Too late'
-          },
-          metadata: nextTestMetadata(),
-        }, // должен быть проигнорирован
-      ]);
-      expect(order.status).toBe('OPEN');
-    });
-
-    it('должен игнорировать ORDER_CANCELLED если статус не OPEN/PARTIALLY_FILLED', () => {
-      const ts = Timestamp.now();
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        // PENDING — не является fillable, ORDER_CANCELLED должен быть проигнорирован
-        {
-          type: 'ORDER_CANCELLED',
-          payload: {
-            orderId: ORDER_ID, reason: 'Too early'
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-      expect(order.status).toBe('PENDING');
-    });
-
-    it('должен игнорировать ORDER_EXPIRED если статус терминальный', () => {
-      const ts = Timestamp.now();
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_REJECTED',
-          payload: {
-            orderId: ORDER_ID, reason: 'Invalid'
-          },
-          metadata: nextTestMetadata(),
-        }, // REJECTED — терминальный
-        {
-          type: 'ORDER_EXPIRED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        }, // должен быть проигнорирован
-      ]);
-      expect(order.status).toBe('REJECTED');
-    });
-
-    it('должен игнорировать событие с чужим orderId', () => {
-      const FOREIGN_ID = asOrderId('order-foreign')!;
-      const ts = Timestamp.now();
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: FOREIGN_ID
-          },
-          metadata: nextTestMetadata(),
-        }, // чужой orderId — должен быть проигнорирован
-      ]);
-      expect(order.status).toBe('PENDING'); // ORDER_ACCEPTED не применился
-    });
-
-    it('ORDER_FILLED с fill меньше размера заявки ставит статус FILLED в replay', () => {
-      // В режиме replay тип события диктует статус — это намеренное поведение
-      const ts = Timestamp.now();
-      const fillData: FillData = {
-        id: FILL_ID_1, orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-        size: Quantity.of(new Decimal('50')), // только половина заявки
-        price: OutcomePrice.of(new Decimal('0.65')),
-      };
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_FILLED',
-          payload: {
-            orderId: ORDER_ID, fill: fillData,
-            averagePrice: OutcomePrice.of(new Decimal('0.65'))
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-      expect(order.status).toBe('FILLED'); // тип события определяет статус при replay
-      expect(order.filledSize.value().toNumber()).toBe(50);
-    });
-
-    it('должен игнорировать дублирующий fill в replay (addFill → Err)', () => {
-      const ts = Timestamp.now();
-      const fillData: FillData = {
-        id: asFillId('fill-dup')!,
-        orderId: ORDER_ID,
-        asset: TEST_ASSET,
-        side: 'BUY',
-        size: Quantity.of(new Decimal('30')),
-        price: OutcomePrice.of(new Decimal('0.65')),
-      };
-      const partialEvent = {
-        type: 'ORDER_PARTIALLY_FILLED' as const,
-        payload: {
-          orderId: ORDER_ID,
-          fill: fillData,
-          filledSize: Quantity.of(new Decimal('30')),
-          remainingSize: Quantity.of(new Decimal('70')),
-        },
-        metadata: nextTestMetadata(),
-      };
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-        partialEvent,
-        partialEvent, // дубликат того же fill — должен быть проигнорирован
-      ]);
-      expect(order.filledSize.value().toNumber()).toBe(30); // второй fill не применился
-      expect(order.status).toBe('PARTIALLY_FILLED');
-    });
-
-    it('fromEvents() не должен эмитировать события', () => {
-      const ts = Timestamp.now();
-      const order = replay([
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
-            price: OutcomePrice.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts
-          },
-          metadata: nextTestMetadata(),
-        },
-        {
-          type: 'ORDER_ACCEPTED',
-          payload: {
-            orderId: ORDER_ID
-          },
-          metadata: nextTestMetadata(),
-        },
-      ]);
-
-      expect(order.pullEvents(nextTestMetadata)).toHaveLength(0);
-    });
-  });
-
-  describe('pullEvents()', () => {
-    it('create() должен эмитировать ORDER_CREATED', () => {
-      const result = createValidOrder();
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        const events = result.value.pullEvents(nextTestMetadata);
-        expect(events).toHaveLength(1);
-        expect(events[0].type).toBe('ORDER_CREATED');
-      }
-    });
-
-    it('pullEvents() должен очистить буфер после вызова', () => {
-      const order = unwrap(createValidOrder());
-      expect(order.pullEvents(nextTestMetadata)).toHaveLength(1); // ORDER_CREATED
-      expect(order.pullEvents(nextTestMetadata)).toHaveLength(0); // буфер пуст
-    });
-
-    it('materialization атомарна: throw из metadataFor НЕ теряет события (outbox цел)', () => {
-      // 1. Order с ДВУМЯ pending drafts: create (ORDER_CREATED) + accept (ORDER_ACCEPTED —
-      //    accept() переносит накопленный буфер в новый экземпляр)
-      const accepted = unwrap(unwrap(createValidOrder()).accept());
-
-      // 2-3. Первая metadata создаётся успешно, вторая бросает
-      let calls = 0;
-      const failingOnSecond = () => {
-        calls += 1;
-        if (calls === 2) throw new Error('metadata failure on second event');
-        return nextTestMetadata();
-      };
-
-      // 4. pullEvents пробрасывает исключение…
-      expect(() => accepted.pullEvents(failingOnSecond)).toThrow('metadata failure on second event');
-
-      // 5. …но outbox НЕ тронут: повторный pull с исправным поставщиком
-      //    возвращает ОБА исходных события в исходном порядке
-      const events = accepted.pullEvents(nextTestMetadata);
-      expect(events.map((e) => e.type)).toEqual(['ORDER_CREATED', 'ORDER_ACCEPTED']);
-      expect(events[0].metadata).toBeDefined();
-      expect(events[1].metadata).toBeDefined();
-
-      // 6. Следующий pull — буфер пуст
-      expect(accepted.pullEvents(nextTestMetadata)).toHaveLength(0);
-    });
-
-    it('accept() должен эмитировать ORDER_ACCEPTED', () => {
-      const order = unwrap(createValidOrder());
-      order.pullEvents(nextTestMetadata); // очищаем ORDER_CREATED
-      const accepted = unwrap(order.accept());
-      const events = accepted.pullEvents(nextTestMetadata);
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('ORDER_ACCEPTED');
-    });
-
-    it('reject() должен эмитировать ORDER_REJECTED', () => {
-      const order = unwrap(createValidOrder());
-      order.pullEvents(nextTestMetadata);
-      const rejected = unwrap(order.reject('Bad price'));
-      const events = rejected.pullEvents(nextTestMetadata);
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('ORDER_REJECTED');
-    });
-
-    it('cancel() должен эмитировать ORDER_CANCELLED', () => {
-      const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents(nextTestMetadata);
-      const canceled = unwrap(open.cancel('Risk limit'));
-      const events = canceled.pullEvents(nextTestMetadata);
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('ORDER_CANCELLED');
-    });
-
-    it('expire() должен эмитировать ORDER_EXPIRED', () => {
-      const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents(nextTestMetadata);
-      const expired = unwrap(open.expire());
-      const events = expired.pullEvents(nextTestMetadata);
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('ORDER_EXPIRED');
-    });
-
-    it('applyFill() частичный → ORDER_PARTIALLY_FILLED', () => {
-      const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents(nextTestMetadata);
-      const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
-      const events = partial.pullEvents(nextTestMetadata);
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('ORDER_PARTIALLY_FILLED');
-    });
-
-    it('applyFill() полный → ORDER_FILLED', () => {
-      const open = unwrap(unwrap(createValidOrder()).accept());
-      open.pullEvents(nextTestMetadata);
-      const filled = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('100')) })));
-      const events = filled.pullEvents(nextTestMetadata);
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('ORDER_FILLED');
-    });
-
-    it('команды, вернувшие Err, не добавляют события в буфер источника', () => {
-      const pending = unwrap(createValidOrder());
-      pending.pullEvents(nextTestMetadata); // очищаем буфер ORDER_CREATED
-      pending.cancel();     // Err — PENDING нельзя отменить
-      pending.expire();     // Err — PENDING нельзя истечь
-      expect(pending.pullEvents(nextTestMetadata)).toHaveLength(0); // Err не заполняет буфер
-    });
-
-    it('каждый Order инстанс имеет собственный буфер', () => {
-      const order = unwrap(createValidOrder());
-      const open = unwrap(order.accept()); // open._pendingEvents = [ORDER_CREATED, ORDER_ACCEPTED]
-
-      // Оригинальный order содержит ORDER_CREATED
-      const originalEvents = order.pullEvents(nextTestMetadata);
-      expect(originalEvents).toHaveLength(1);
-      expect(originalEvents[0]?.type).toBe('ORDER_CREATED');
-
-      // open содержит ORDER_CREATED (carry-forward) + ORDER_ACCEPTED
-      const openEvents = open.pullEvents(nextTestMetadata);
-      expect(openEvents).toHaveLength(2);
-      expect(openEvents[0]?.type).toBe('ORDER_CREATED');
-      expect(openEvents[1]?.type).toBe('ORDER_ACCEPTED');
     });
   });
 
@@ -1034,6 +523,15 @@ describe('Order', () => {
         const order = unwrap(unwrap(createValidOrder()).accept());
         expect(order.accept().ok).toBe(false);
       });
+
+      it.each(['OPEN', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'] as const)(
+        'должен вернуть Err из статуса %s',
+        (status) => {
+          const result = orderInStatus(status).accept();
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('Only PENDING orders can be accepted');
+        },
+      );
     });
 
     describe('reject()', () => {
@@ -1058,10 +556,25 @@ describe('Order', () => {
         }
       });
 
+      it('должен вернуть Err для причины из одних пробелов', () => {
+        const result = unwrap(createValidOrder()).reject('   ');
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.message).toContain('Reject reason must be a non-empty string');
+      });
+
       it('должен вернуть Err для не-PENDING статуса', () => {
         const order = unwrap(unwrap(createValidOrder()).accept());
         expect(order.reject('Some reason').ok).toBe(false);
       });
+
+      it.each(['OPEN', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'] as const)(
+        'должен вернуть Err из статуса %s',
+        (status) => {
+          const result = orderInStatus(status).reject('Too late');
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('Only PENDING orders can be rejected');
+        },
+      );
     });
 
     describe('cancel()', () => {
@@ -1086,11 +599,32 @@ describe('Order', () => {
         }
       });
 
+      it('должен перейти PARTIALLY_FILLED → CANCELED, сохранив fill-состояние', () => {
+        const open = unwrap(unwrap(createValidOrder()).accept());
+        const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
+        const canceled = unwrap(partial.cancel('Risk limit'));
+
+        expect(canceled.status).toBe('CANCELED');
+        expect(canceled.reason).toBe('Risk limit');
+        expect(canceled.filledSize.value().toNumber()).toBe(30);
+        expect(canceled.averagePrice?.value().toNumber()).toBe(0.65);
+        expect(canceled.fillIds).toEqual([FILL_ID_1]);
+      });
+
       it('должен вернуть Err для терминального статуса', () => {
         const open = unwrap(unwrap(createValidOrder()).accept());
         const filled = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('100')) })));
         expect(filled.cancel().ok).toBe(false);
       });
+
+      it.each(['PENDING', 'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'] as const)(
+        'должен вернуть Err из статуса %s',
+        (status) => {
+          const result = orderInStatus(status).cancel();
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('Only OPEN or PARTIALLY_FILLED orders can be cancelled');
+        },
+      );
     });
 
     describe('expire()', () => {
@@ -1104,11 +638,30 @@ describe('Order', () => {
         }
       });
 
+      it('должен перейти PARTIALLY_FILLED → EXPIRED, сохранив fill-состояние', () => {
+        const open = unwrap(unwrap(createValidOrder()).accept());
+        const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
+        const expired = unwrap(partial.expire());
+
+        expect(expired.status).toBe('EXPIRED');
+        expect(expired.filledSize.value().toNumber()).toBe(30);
+        expect(expired.fillIds).toEqual([FILL_ID_1]);
+      });
+
       it('должен вернуть Err для терминального статуса', () => {
         const open = unwrap(unwrap(createValidOrder()).accept());
         const filled = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('100')) })));
         expect(filled.expire().ok).toBe(false);
       });
+
+      it.each(['PENDING', 'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'] as const)(
+        'должен вернуть Err из статуса %s',
+        (status) => {
+          const result = orderInStatus(status).expire();
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('Only OPEN or PARTIALLY_FILLED orders can expire');
+        },
+      );
     });
 
     describe('applyFill()', () => {
@@ -1207,6 +760,64 @@ describe('Order', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error.message).toContain('orderId');
       });
+
+      it.each(['PENDING', 'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED'] as const)(
+        'должен вернуть Err из статуса %s',
+        (status) => {
+          const result = orderInStatus(status).applyFill(createFill({ id: FILL_ID_2 }));
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('Only OPEN or PARTIALLY_FILLED orders can accept fills');
+        },
+      );
+
+      it('должен вернуть Err с причиной для дублирующего fill ID и превышения остатка', () => {
+        const partial = unwrap(unwrap(unwrap(createValidOrder()).accept())
+          .applyFill(createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('30')) })));
+
+        const duplicate = partial.applyFill(createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('10')) }));
+        expect(duplicate.ok).toBe(false);
+        if (!duplicate.ok) expect(duplicate.error.message).toContain('Duplicate fill id');
+
+        const oversized = partial.applyFill(createFill({ id: FILL_ID_2, size: Quantity.of(new Decimal('71')) }));
+        expect(oversized.ok).toBe(false);
+        if (!oversized.ok) expect(oversized.error.message).toContain('exceeds remaining size');
+      });
+
+      it('PARTIALLY_FILLED → PARTIALLY_FILLED, пока остаток не исчерпан', () => {
+        const open = unwrap(unwrap(createValidOrder()).accept());
+        const first = unwrap(open.applyFill(createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('30')) })));
+        const second = unwrap(first.applyFill(createFill({ id: FILL_ID_2, size: Quantity.of(new Decimal('20')) })));
+
+        expect(second.status).toBe('PARTIALLY_FILLED');
+        expect(second.fillIds).toEqual([FILL_ID_1, FILL_ID_2]);
+        expect(second.remainingSize.value().toNumber()).toBe(50);
+      });
+
+      it('должен считать VWAP по всем fills', () => {
+        const open = unwrap(unwrap(createValidOrder()).accept());
+        const after1 = unwrap(open.applyFill(createFill({
+          id: FILL_ID_1, size: Quantity.of(new Decimal('40')), price: OutcomePrice.of(new Decimal('0.55')),
+        })));
+        expect(after1.averagePrice?.value().toString()).toBe('0.55');
+
+        const after2 = unwrap(after1.applyFill(createFill({
+          id: FILL_ID_2, size: Quantity.of(new Decimal('60')), price: OutcomePrice.of(new Decimal('0.65')),
+        })));
+
+        // (40 × 0.55 + 60 × 0.65) / 100 = (22 + 39) / 100 = 0.61
+        expect(after2.status).toBe('FILLED');
+        expect(after2.averagePrice?.value().toString()).toBe('0.61');
+      });
+
+      it('остаток меньше порога пыли (0.01) переводит заявку в FILLED', () => {
+        const open = unwrap(unwrap(createValidOrder({
+          size: Quantity.of(new Decimal('5.071832064')),
+        })).accept());
+        const filled = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('5.07')) })));
+
+        expect(filled.status).toBe('FILLED');
+        expect(filled.filledSize.value().toString()).toBe('5.07');
+      });
     });
 
     describe('canAcceptFill()', () => {
@@ -1282,9 +893,72 @@ describe('Order', () => {
       expect(result.ok).toBe(true);
       const accepted = unwrap(result);
 
+      expect(accepted).not.toBe(original);
       expect(original.status).toBe('PENDING');
       expect(accepted.status).toBe('OPEN');
       expect(accepted.id).toBe(original.id);
+    });
+
+    it('applyFill не меняет исходную заявку, fill есть только в возвращённой', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+      const before = open.toSnapshot();
+
+      const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
+
+      expect(open.toSnapshot()).toEqual(before);
+      expect(open.status).toBe('OPEN');
+      expect(open.filledSize.isZero()).toBe(true);
+      expect(open.averagePrice).toBeUndefined();
+      expect(open.fillIds).toEqual([]);
+
+      expect(partial.status).toBe('PARTIALLY_FILLED');
+      expect(partial.filledSize.value().toNumber()).toBe(30);
+      expect(partial.fillIds).toEqual([FILL_ID_1]);
+    });
+
+    it('reject/cancel/expire не меняют исходную заявку', () => {
+      const pending = unwrap(createValidOrder());
+      const rejected = unwrap(pending.reject('Bad price'));
+      expect(pending.status).toBe('PENDING');
+      expect(pending.reason).toBeUndefined();
+      expect(rejected.status).toBe('REJECTED');
+
+      const open = unwrap(pending.accept());
+      const canceled = unwrap(open.cancel('Risk limit'));
+      const expired = unwrap(open.expire());
+      expect(open.status).toBe('OPEN');
+      expect(open.reason).toBeUndefined();
+      expect(canceled.status).toBe('CANCELED');
+      expect(expired.status).toBe('EXPIRED');
+    });
+
+    it('команда, вернувшая Err, не меняет заявку', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+      const before = open.toSnapshot();
+
+      expect(open.accept().ok).toBe(false);
+      expect(open.reject('Too late').ok).toBe(false);
+      expect(open.applyFill(createFill({ size: Quantity.of(new Decimal('150')) })).ok).toBe(false);
+
+      expect(open.toSnapshot()).toEqual(before);
+    });
+
+    it('с одной заявки можно разветвить несколько независимых переходов', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+
+      const fillA = unwrap(open.applyFill(createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('30')) })));
+      const fillB = unwrap(open.applyFill(createFill({ id: FILL_ID_2, size: Quantity.of(new Decimal('50')) })));
+
+      expect(fillA.fillIds).toEqual([FILL_ID_1]);
+      expect(fillB.fillIds).toEqual([FILL_ID_2]);
+      expect(open.fillIds).toEqual([]);
+    });
+
+    it('экземпляр не несёт иного состояния, кроме OrderState', () => {
+      // Регрессия против возврата скрытого изменяемого буфера (бывший outbox
+      // драфтов доменных событий): единственное собственное поле — `_s`.
+      const order = unwrap(unwrap(createValidOrder()).accept());
+      expect(Object.keys(order)).toEqual(['_s']);
     });
   });
 

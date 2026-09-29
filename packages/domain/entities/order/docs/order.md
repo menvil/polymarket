@@ -4,17 +4,21 @@
 
 `Order` — неизменяемая доменная сущность, представляющая торговую заявку в системе предсказательных рынков Polymarket.
 
+Весь экземпляр — это одно приватное поле `_s: OrderState`. Команды проверяют
+допустимость перехода и возвращают `Result` с **новым** экземпляром; скрытого
+изменяемого состояния нет, событий агрегат не копит и не публикует.
+
 Пакет: `packages/domain/entities/order/`
 
 **Самодостаточный модуль** — вся бизнес-логика заявки сосредоточена в одной папке, без зависимостей от других domain entities.
 
 ## Структура пакета
 
-```
+```text
 src/
-├── Order.ts          — агрегат (все фабрики + команды + геттеры)
-├── OrderState.ts     — типы (OrderStatus, FillState, FillData, OrderSnapshot, ...)
-├── (domain events переехали в @polymarket/order-events — canonical owner)
+├── Order.ts          — агрегат (фабрики + команды + геттеры)
+├── OrderState.ts     — типы (OrderStatus, FillState, OrderSnapshot, ...)
+├── identity.ts       — сравнение заявок: идентичность отдельно от состояния
 ├── _fill.ts          — арифметика fills (приватный модуль)
 ├── index.ts          — публичный API
 └── view/
@@ -56,12 +60,41 @@ src/
 | OPEN / PARTIALLY_FILLED | expire()         | EXPIRED                      |
 | PARTIALLY_FILLED        | applyFill(fill)  | PARTIALLY_FILLED или FILLED  |
 
-## Три режима использования
+## Почему Order не публикует события
 
-### 1. Нормальный поток (create + commands + pullEvents)
+Раньше `Order` был одновременно состоянием заявки и Domain Event Outbox:
+каждая команда складывала draft `OrderEvent` во внутренний буфер, а
+`pullEvents()` опустошал его **мутацией** (`splice`). Отсюда три проблемы:
+
+1. Объект был immutable только по торговому состоянию — буфер менялся у
+   экземпляра, уже лежащего в чужом состоянии (например, в `AccountHotState`).
+2. Каждый producer был обязан «слить драфты» до публикации, и проверить это
+   на стороне потребителя было нельзя — контракт держался соглашением.
+3. Команды строили фиктивное событие только для того, чтобы вычислить из него
+   новое состояние (`command → draft → _applyEventToState → new Order`).
+
+Живых потребителей у `pullEvents()` и `Order.fromEvents()` не осталось: их
+вызывал только старый торговый контур, перенесённый в
+`legacy-bot/trading-contour-reference/`. Новый рантайм публикует уже
+совершённое изменение одним событием `TRADING_ACCOUNT_ORDER_COMMITTED`
+(`Order` + `Portfolio` атомарно), и за публикацию отвечает Application-слой, а
+не сущность.
+
+Поэтому `Order` — чистый immutable-переход состояния:
+
+```mermaid
+flowchart LR
+  A["Order (_s)"] -->|"command(...)"| G{"переход допустим?"}
+  G -->|"нет"| E["Err(TradingError)<br/>исходный Order не изменился"]
+  G -->|"да"| N["Ok(new Order({ ...state, status, ... }))<br/>исходный Order не изменился"]
+```
+
+## Два пути создания
+
+### 1. Новая заявка: `create()` + команды
 
 ```typescript
-// Создание — всегда PENDING, эмитирует OrderCreatedEvent
+// Создание — всегда PENDING, пустое fill-состояние
 const result = Order.create({
   id: asOrderId('order-1')!,
   asset: myAsset,
@@ -73,40 +106,28 @@ const result = Order.create({
 
 if (result.ok) {
   const pending = result.value;
-  const createdEvents = pending.pullEvents(); // [OrderCreatedEvent]
 
-  // Биржа приняла — эмитирует OrderAcceptedEvent
+  // Биржа приняла: PENDING → OPEN
   const acceptResult = pending.accept();
   if (!acceptResult.ok) throw new Error(acceptResult.error.message);
   const open = acceptResult.value;
-  const acceptedEvents = open.pullEvents(); // [OrderAcceptedEvent]
 
-  // Исполнение — эмитирует OrderFilledEvent или OrderPartiallyFilledEvent
-  const fillId = asFillId('fill-1')!;
+  // Исполнение: OPEN → FILLED
   const fillResult = open.applyFill({
-    id: fillId, orderId: pending.id, asset: myAsset, side: 'BUY',
+    id: asFillId('fill-1')!, orderId: pending.id, asset: myAsset, side: 'BUY',
     size: Quantity.of(new Decimal('100')),
     price: OutcomePrice.of(new Decimal('0.65')),
   });
   if (!fillResult.ok) throw new Error(fillResult.error.message);
-  const fillEvents = fillResult.value.pullEvents(); // [OrderFilledEvent]
+
+  // Каждый шаг вернул новый экземпляр — прежние не изменились
+  pending.status;              // 'PENDING'
+  open.status;                 // 'OPEN'
+  fillResult.value.status;     // 'FILLED'
 }
 ```
 
-### 2. Воспроизведение из лога событий (replay)
-
-```typescript
-const order = Order.fromEvents([
-  { type: 'ORDER_CREATED', orderId, asset, side: 'BUY', price, size, timestamp },
-  { type: 'ORDER_ACCEPTED', orderId },
-  { type: 'ORDER_FILLED', orderId, fill: fillData, averagePrice },
-]);
-
-// order.status === 'FILLED'
-// order.pullEvents() === [] — fromEvents не эмитирует событий
-```
-
-### 3. Восстановление из снэпшота (reconciliation)
+### 2. Восстановление: `rehydrate()` (из снэпшота через `OrderDeserializer`)
 
 ```typescript
 const result = OrderDeserializer.fromSnapshot({
@@ -127,6 +148,7 @@ const result = OrderDeserializer.fromSnapshot({
 //   - filledSize не превышает size
 //   - PENDING не может иметь fills
 //   - FILLED должна иметь filledSize === size
+//   - PARTIALLY_FILLED должна иметь 0 < filledSize < size
 ```
 
 ## Публичный API
@@ -143,7 +165,8 @@ const result = OrderDeserializer.fromSnapshot({
 | `status`     | `OrderStatus`    | Текущий статус         |
 | `timestamp`  | `Timestamp`      | Время создания         |
 | `reason`     | `string?`        | Причина отклонения     |
-| `strategyId` | `string?`        | ID стратегии           |
+| `strategyId` | `StrategyId?`    | ID стратегии           |
+| `accountId`  | `AccountId?`     | ID аккаунта-владельца  |
 
 ### Геттеры (fill state)
 
@@ -178,30 +201,37 @@ order.canModify()        // не терминальный
 ### Фабрики
 
 ```typescript
-Order.create(params)           // PENDING, эмитирует ORDER_CREATED
-Order.rehydrate(state)         // из OrderState, без событий, с кросс-валидацией
-Order.fromEvents(events[])     // replay из лога, без событий
+Order.create(params)           // новая заявка, всегда PENDING
+Order.rehydrate(state)         // из доверенного OrderState, с кросс-валидацией
 ```
 
 ### Команды (возвращают Result<Order, TradingError>)
 
 ```typescript
-order.accept()                    // PENDING → OPEN, эмитирует ORDER_ACCEPTED
-order.reject('reason')            // PENDING → REJECTED, эмитирует ORDER_REJECTED
-order.cancel('reason?')           // OPEN|PARTIALLY_FILLED → CANCELED, эмитирует ORDER_CANCELLED
-order.expire()                    // OPEN|PARTIALLY_FILLED → EXPIRED, эмитирует ORDER_EXPIRED
-order.applyFill(fill: FillData)   // OPEN|PARTIALLY_FILLED → PARTIALLY_FILLED|FILLED, эмитирует ORDER_PARTIALLY_FILLED или ORDER_FILLED
+order.accept()                    // PENDING → OPEN
+order.reject('reason')            // PENDING → REJECTED (причина непустая)
+order.cancel('reason?')           // OPEN|PARTIALLY_FILLED → CANCELED (по умолчанию 'User cancelled')
+order.expire()                    // OPEN|PARTIALLY_FILLED → EXPIRED
+order.applyFill(fill: FillData)   // OPEN|PARTIALLY_FILLED → PARTIALLY_FILLED|FILLED
 order.canAcceptFill(fill: FillData) // boolean (без применения)
 ```
 
-### Domain Event Outbox
+Каждая команда:
 
-```typescript
-order.pullEvents()  // readonly OrderEvent[] — опустошает буфер
-```
+1. проверяет исходный статус (и для `applyFill` — соответствие fill заявке);
+2. при недопустимом переходе возвращает `Err(TradingError)`;
+3. иначе возвращает `Ok(new Order({ ...state, ... }))` — новый экземпляр.
 
-Вызов `pullEvents()` опустошает буфер — следующий вызов вернёт `[]`.
-`rehydrate()` и `fromEvents()` не эмитируют событий.
+Исходный экземпляр не меняется ни в одном из случаев.
+
+### `applyFill()` по шагам
+
+1. Статус OPEN или PARTIALLY_FILLED — иначе `Err`.
+2. `fill.asset`, `fill.side`, `fill.orderId` совпадают с заявкой — иначе `Err`.
+3. `addFill()` отклоняет нулевой размер, дубликат `fillId` и превышение
+   остатка, затем считает новый `filledSize` и VWAP.
+4. `isFull()` выбирает статус: FILLED, если остаток исчерпан с учётом порога
+   пыли (0.01), иначе PARTIALLY_FILLED.
 
 ### Сериализация
 
@@ -230,7 +260,8 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 ## Инварианты
 
 1. **Создание всегда PENDING** — `create()` не принимает статус
-2. **Неизменяемость** — все команды возвращают новый экземпляр
+2. **Неизменяемость** — все команды возвращают новый экземпляр; кроме
+   `OrderState` экземпляр не хранит ничего (буфера событий нет)
 3. **Never Throw** — команды возвращают `Result<Order, TradingError>`, не бросают
 4. **Fill dedup** — повторный fillId → ошибка
 5. **Fill overflow** — fillSize > remainingSize → ошибка
@@ -244,25 +275,21 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 | `filledSize > size`            | `filledSize (X) exceeds size (Y)`           |
 | `status=PENDING, filledSize>0` | `PENDING order cannot have fills`           |
 | `status=FILLED, filledSize≠size`| `FILLED order must have filledSize equal to size` |
+| `status=PARTIALLY_FILLED`, не `0 < filledSize < size` | `PARTIALLY_FILLED order must have 0 < filledSize < size` |
 
-## Domain Events
-
-| Событие                    | Эмитирует       | Поля                                    |
-|----------------------------|-----------------|-----------------------------------------|
-| `ORDER_CREATED`            | `create()`      | orderId, asset, side, price, size, timestamp, strategyId? |
-| `ORDER_ACCEPTED`           | `accept()`      | orderId                                 |
-| `ORDER_REJECTED`           | `reject()`      | orderId, reason                         |
-| `ORDER_CANCELLED`          | `cancel()`      | orderId, reason                         |
-| `ORDER_EXPIRED`            | `expire()`      | orderId                                 |
-| `ORDER_PARTIALLY_FILLED`   | `applyFill()`   | orderId, fill, filledSize, remainingSize |
-| `ORDER_FILLED`             | `applyFill()`   | orderId, fill, averagePrice             |
+**Известное ограничение.** `applyFill()` переводит заявку в FILLED, когда
+остаток меньше порога пыли (0.01), но `rehydrate()` требует для FILLED строгого
+`filledSize === size`. Поэтому заявка, закрытая по порогу пыли, не проходит
+round-trip `toSnapshot()` → `OrderDeserializer.fromSnapshot()`. Поведение
+унаследовано и в этом документе только зафиксировано.
 
 ## Тестовое покрытие
 
 | Файл                      | Тесты | Описание                          |
 |---------------------------|-------|-----------------------------------|
-| `unit/Order.test.ts`      | 89    | create, rehydrate, fromEvents, FSM, computed, pullEvents |
+| `unit/Order.test.ts`      | 109   | create, rehydrate, FSM (все исходные статусы), applyFill-guards, VWAP, пыль, иммутабельность |
+| `unit/orderIdentity.test.ts` | 8  | идентичность против состояния |
 | `unit/view/OrderView.test.ts` | 33 | ViewModel, Deserializer, round-trip |
-| `integration/OrderLifecycle.test.ts` | 30 | End-to-end сценарии, VWAP, replay (включая it.each) |
+| `integration/OrderLifecycle.test.ts` | 28 | End-to-end сценарии, VWAP, round-trip (включая it.each) |
 
-**Итого: 152 теста**
+**Итого: 178 тестов**
