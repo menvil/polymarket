@@ -1,0 +1,115 @@
+packages/foundation/messages/src/index.ts
+  s_1cee06ccb37e06::t_32795114ee34ee 18-19
+packages/application/event-bus/docs/event-bus.md
+  s_1cee06ccb37e06::t_9f4f7fd045d182 9,13-14,19-21,29,32-36,40,57,60-62
+packages/application/event-bus/README.md
+  s_1cee06ccb37e06::t_9f4f7fd045d182 14-15,18,24-26,42-49,55-57,59,73-74
+packages/application/account-state/src/AccountStateProjector.ts
+  s_1cee06ccb37e06::t_e37cc9de0151e3 39,41-45,78
+packages/application/events/README.md
+  s_1cee06ccb37e06::t_4cbb940d8b0d8a 16-22,219-221
+packages/application/trading-state/__tests__/replayDeterminism.test.ts
+  s_1cee06ccb37e06::t_2b66975b83477a 23,49,52,100
+packages/infrastructure/external-message-bus/README.md
+  s_1cee06ccb37e06::t_604a074131caac 14,23,29,32
+packages/application/account-state/__tests__/eventIsolation.test.ts
+  s_1cee06ccb37e06::t_ad625b256aa67e 24,56
+  s_1cee06ccb37e06::t_9aebdd7feac11d 5
+scripts/checkpoint-2-semantic-boundary.mts
+  s_1cee06ccb37e06::t_2b66975b83477a 46,446,491,565,659,664,1227,1253
+packages/application/account-state/docs/account-state.md
+  s_1cee06ccb37e06::t_e37cc9de0151e3 598,600-605,659
+packages/application/ports/src/IOrderSubmissionRepository.ts
+  s_1cee06ccb37e06::t_59ecc5df4ae897 38
+scripts/verify-cex-semantic-live.mts
+  s_1cee06ccb37e06::t_2b66975b83477a 56,258
+packages/application/events/src/ApplicationEvent.ts
+  s_1cee06ccb37e06::t_4cbb940d8b0d8a 5-8
+packages/infrastructure/external-message-bus/__tests__/contour-boundary.test.ts
+  s_1cee06ccb37e06::t_604a074131caac 416
+packages/infrastructure/in-memory/docs/in-memory.md
+  s_1cee06ccb37e06::t_a4e367997ca1a7 53,58-59
+packages/application/ports/docs/ports.md
+  s_1cee06ccb37e06::t_eb1e8fb56dabe9 127-128,157-158,164-166
+packages/foundation/message-bus/README.md
+  s_1cee06ccb37e06::t_32795114ee34ee 271-273
+packages/foundation/messages/src/TypedMessage.ts
+  s_1cee06ccb37e06::t_32795114ee34ee 17-18
+packages/infrastructure/cex-semantic-adapter/__tests__/CexSemanticAdapter.replay-parity.test.ts
+  s_1cee06ccb37e06::t_2b66975b83477a 32,52,56,84
+packages/application/event-bus/src/IEventBus.ts
+  s_1cee06ccb37e06::t_e1637423dc7ab0 15-16,87,91
+  s_1cee06ccb37e06::t_5cfa73e38fbd77 2,5-9,22,29,36,49,57,65-67,69,74,94,96
+packages/infrastructure/external-messages/README.md
+  s_1cee06ccb37e06::t_32795114ee34ee 167
+packages/application/events/docs/application-events.md
+  s_1cee06ccb37e06::t_4cbb940d8b0d8a 22-23,39
+packages/application/event-bus/__tests__/EventBus.types.test.ts
+  s_1cee06ccb37e06::t_f9ffe0cb1caa70 22-24,118-120,123-125,131-137,139,141-145,149-151,153-154,158-191
+scripts/verify-semantic-live.mts
+  s_1cee06ccb37e06::t_2b66975b83477a 50,202
+packages/foundation/messages/src/MessageMetadataGenerator.ts
+  s_1cee06ccb37e06::t_f91346311b8c68 174
+  s_1cee06ccb37e06::t_32795114ee34ee 173,176
+packages/foundation/messages/src/MessageEnvelope.ts
+  s_1cee06ccb37e06::t_32795114ee34ee 21-22
+application-layer-plan.md
+  s_1cee06ccb37e06::t_2a058b89c2d22f 3-6
+packages/domain/entities/fill/src/FillData.ts
+  s_1cee06ccb37e06::t_f91346311b8c68 5-7
+docs/architecture/boundary-contract.md
+  s_1cee06ccb37e06::t_2a058b89c2d22f 351-354
+packages/application/events/__tests__/ApplicationEvent.types.test.ts
+  s_1cee06ccb37e06::t_4cbb940d8b0d8a 7-8
+packages/application/event-bus/__tests__/SourceAgnosticPublish.types.test.ts
+  s_1cee06ccb37e06::t_f9ffe0cb1caa70 11
+packages/infrastructure/polymarket-semantic-adapter/__tests__/PolymarketSemanticAdapter.replay-parity.test.ts
+  s_1cee06ccb37e06::t_2b66975b83477a 14,40
+packages/infrastructure/cex-semantic-adapter/__tests__/CexSemanticAdapter.contour.test.ts
+  s_1cee06ccb37e06::t_2b66975b83477a 15,278,320
+packages/infrastructure/external-message-bus/docs/external-message-bus.md
+  s_1cee06ccb37e06::t_604a074131caac 33
+packages/application/account-state/__tests__/helpers/runtime.ts
+  s_1cee06ccb37e06::t_2b66975b83477a 9-10,55,73
+packages/application/event-bus/src/index.ts
+  s_1cee06ccb37e06::t_5cfa73e38fbd77 2,7-8,11-16,20,26
+packages/infrastructure/external-message-bus/src/ExternalMessageBus.ts
+  s_1cee06ccb37e06::t_604a074131caac 12
+packages/infrastructure/external-message-bus/src/index.ts
+  s_1cee06ccb37e06::t_604a074131caac 13
+packages/infrastructure/polymarket-semantic-adapter/__tests__/support/fixtures.ts
+  s_1cee06ccb37e06::t_2b66975b83477a 13,62,64,91,121-122
+packages/application/event-bus/src/EventBus.ts
+  s_1cee06ccb37e06::t_5cfa73e38fbd77 2,15,58,62,87,111,169,171,180,188,213
+  s_1cee06ccb37e06::t_e1637423dc7ab0 69-70,74,76-81
+docs/guides/fill-processing-transaction.md
+  s_1cee06ccb37e06::t_59ecc5df4ae897 141-154,163-164
+packages/foundation/messages/README.md
+  s_1cee06ccb37e06::t_32795114ee34ee 143,146,169
+packages/domain/entities/order/docs/order.md
+  s_1cee06ccb37e06::t_32795114ee34ee 66
+master-plan.md
+  s_1cee06ccb37e06::t_2a058b89c2d22f 3-6
+packages/application/events/src/index.ts
+  s_1cee06ccb37e06::t_4cbb940d8b0d8a 11-15
+packages/application/events/src/trading-account/TradingAccountOrderCommittedEvent.ts
+  s_1cee06ccb37e06::t_e37cc9de0151e3 29,31-34
+packages/infrastructure/cex-semantic-adapter/__tests__/support/fixtures.ts
+  s_1cee06ccb37e06::t_2b66975b83477a 18,144,146,180,207-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "00eddac201a1aca7e8c053ed989fecec0c4a54b3",
+  "prompts": {},
+  "sessions": {
+    "s_1cee06ccb37e06": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1fed7fa-ab27-45e1-8bba-bdad91beab70",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
