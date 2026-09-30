@@ -1,0 +1,46 @@
+packages/application/account-reconciliation/src/AccountReconciler.ts
+  s_23e5b70dd499f4::t_4ed00d4aa1f824 87-94,115-119,176-192,329-334,346-351,361,368
+packages/application/event-bus/src/IEventBus.ts
+  s_23e5b70dd499f4::t_26d932102bdfa1 60-109
+packages/application/account-reconciliation/__tests__/confirmedDelivery.test.ts
+  s_23e5b70dd499f4::t_39a8d89709d779 1-261
+packages/application/event-bus/README.md
+  s_23e5b70dd499f4::t_77e1365b7994d8 56,164-183
+  s_23e5b70dd499f4::t_9e2c4682a71182 66
+packages/application/event-bus/__tests__/EventBus.publish-confirmed.test.ts
+  s_23e5b70dd499f4::t_d45bc04d85a744 1-260
+packages/application/handlers/__tests__/FillEventHandler.test.ts
+  s_23e5b70dd499f4::t_baa436b2f6e175 30
+packages/application/account-reconciliation/__tests__/publish.test.ts
+  s_23e5b70dd499f4::t_38bcf5859eece6 2,5-8,21-22,25,27-32,34-36,38-41,44
+packages/application/handlers/__tests__/BookUpdateHandler.test.ts
+  s_23e5b70dd499f4::t_baa436b2f6e175 85
+packages/application/event-bus/src/EventBus.ts
+  s_23e5b70dd499f4::t_d127d14cff5f4b 193-263
+packages/application/account-reconciliation/README.md
+  s_23e5b70dd499f4::t_77e1365b7994d8 180-217,226,307-313,341-342
+packages/application/event-bus/docs/event-bus.md
+  s_23e5b70dd499f4::t_77e1365b7994d8 131-155
+packages/application/account-reconciliation/src/AccountReconciliationCoordinator.ts
+  s_23e5b70dd499f4::t_9e2c4682a71182 177-181
+packages/application/account-reconciliation/__tests__/helpers/runtime.ts
+  s_23e5b70dd499f4::t_7935f35eeccd28 18,33-34
+packages/application/handlers/__tests__/OrderUpdateHandler.test.ts
+  s_23e5b70dd499f4::t_baa436b2f6e175 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "70ae9bb476cf50432fbabe158906528c9dc6e54d",
+  "prompts": {},
+  "sessions": {
+    "s_23e5b70dd499f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc0e5073-9c9d-40f0-92e9-4659c6679201",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
