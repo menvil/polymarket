@@ -17,6 +17,7 @@
  * Вид ошибки определяется через `instanceof` либо literal-поле `code`
  * (compile-time discriminated union) — не через парсинг `message`-строки.
  */
+import type { MessageMetadata } from '@polymarket/messages';
 
 /**
  * Очередь MessageBus переполнена — публикация отклонена.
@@ -72,6 +73,12 @@ export class MessageBusOverflowError extends Error {
  * `originalError` — сырое брошенное значение (обработчик может бросить что угодно,
  * не обязательно `Error`), включая случаи, когда обработчик бросил одну из ошибок
  * самого MessageBus.
+ *
+ * `messageId` — identity ИМЕННО того сообщения, на котором упал обработчик.
+ * Drain-Result получает владелец drain, а в одном drain обрабатываются и
+ * сообщения, поставленные в очередь другими публикаторами. Типа сообщения мало,
+ * чтобы понять, чьё сообщение отвергнуто: два сообщения одного типа от разных
+ * публикаторов неразличимы. `messageId` различает их однозначно.
  */
 export class MessageBusCriticalHandlerError extends Error {
   /** Literal-дискриминант вида ошибки (доступен и без экземпляра). */
@@ -80,18 +87,26 @@ export class MessageBusCriticalHandlerError extends Error {
   public readonly code = 'MESSAGE_BUS_CRITICAL_HANDLER' as const;
   /** Тип сообщения, на котором упал critical-обработчик. */
   public readonly messageType: string;
+  /** `metadata.messageId` сообщения, на котором упал critical-обработчик. */
+  public readonly messageId: MessageMetadata['messageId'];
   /** Исходное брошенное значение обработчика (raw `unknown`). */
   public readonly originalError: unknown;
 
   /**
    * @param args - Контекст ошибки
    * @param args.messageType - Тип сообщения
+   * @param args.messageId - `metadata.messageId` сообщения
    * @param args.originalError - Сырое брошенное значение обработчика
    */
-  constructor(args: { messageType: string; originalError: unknown }) {
+  constructor(args: {
+    messageType: string;
+    messageId: MessageMetadata['messageId'];
+    originalError: unknown;
+  }) {
     super(`Message bus critical handler failed for message type '${args.messageType}'`);
     this.name = 'MessageBusCriticalHandlerError';
     this.messageType = args.messageType;
+    this.messageId = args.messageId;
     this.originalError = args.originalError;
   }
 }

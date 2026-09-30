@@ -117,8 +117,11 @@ Default — `critical: false`:
 
 1. все обработчики текущего сообщения settle-ятся (fan-out не отменяется);
 2. первая critical-ошибка в детерминированном порядке subscription snapshot
-   становится канонической: `Err(MessageBusCriticalHandlerError)` с `messageType`
-   и `originalError`;
+   становится канонической: `Err(MessageBusCriticalHandlerError)` с `messageType`,
+   `messageId` (`metadata.messageId` отвергнутого сообщения) и `originalError`.
+   Drain-Result получает владелец drain — в том числе за сообщения, поставленные
+   в очередь другими публикаторами, — поэтому своё сообщение caller узнаёт по
+   `messageId`, а не по типу;
 3. дополнительные critical-ошибки не теряются — уходят observer'у с
    `primaryCritical: false`;
 4. упавшее сообщение считается обработанным — не replay-ится;
@@ -236,7 +239,7 @@ control flow и Result; его собственное исключение пе�
 | Ошибка | Когда | Typed context |
 |---|---|---|
 | `MessageBusOverflowError` | очередь не вмещает публикацию | `maxQueueSize`, `attemptedCount`, `messageType?` |
-| `MessageBusCriticalHandlerError` | упал critical-обработчик | `messageType`, `originalError` |
+| `MessageBusCriticalHandlerError` | упал critical-обработчик | `messageType`, `messageId`, `originalError` |
 | `MessageBusDrainLimitError` | защита от петли публикаций | `maxMessagesPerDrain` |
 | `MessageBusClosedError` | публикация после `close()` | — |
 

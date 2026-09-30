@@ -87,7 +87,7 @@ string-matching):
 |---|---|
 | `MessageBusOverflowError` | `Err(QueueOverflowError)` — legacy message/context: `eventType` для одиночного publish, `eventCount` для batch |
 | `MessageBusDrainLimitError` | `Err(QueueOverflowError)` — M-000 сознательно использует один публичный класс для обеих причин переполнения |
-| `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c `context.eventType` и `context.originalError` |
+| `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c `context.eventType`, `context.messageId` и `context.originalError` |
 | `MessageBusClosedError` | invariant violation → throw (недостижимо: у `IEventBus` нет `close()`) |
 
 Тексты сообщений воспроизводят M-000 дословно (`EventBus queue overflow (N):

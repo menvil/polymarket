@@ -118,7 +118,10 @@ Default (`options` отсутствуют или `{ critical: false }`):
 - **Все handlers текущего события завершаются**: critical-ошибка не отменяет уже
   запущенный параллельный fan-out; исход определяется после settle всех handlers.
 - Caller получает `Err(CriticalHandlerError)`; в `error.context` сохраняются
-  `originalError` (сырое брошенное значение подписчика) и `eventType`.
+  `originalError` (сырое брошенное значение подписчика), `eventType` и
+  `messageId` — identity ОТВЕРГНУТОГО события. Это не обязательно событие
+  caller'а: `publish()` возвращает итог всего drain, а в нём обрабатываются и
+  события других публикаторов. Своё событие caller узнаёт по `messageId`.
 - **Первая critical-ошибка каноническая** (в детерминированном порядке
   подписки/входа); последующие critical-ошибки не теряются — логируются
   (`'EventBus critical handler threw an additional error'`).

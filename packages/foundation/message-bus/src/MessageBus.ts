@@ -415,6 +415,7 @@ export class MessageBus<TMessage extends TypedMessage> implements IMessageBus<TM
       if (isPrimaryCritical) {
         primaryError = new MessageBusCriticalHandlerError({
           messageType: message.type,
+          messageId: message.metadata.messageId,
           originalError: outcome.reason,
         });
       }

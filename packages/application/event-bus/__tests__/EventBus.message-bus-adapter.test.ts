@@ -137,11 +137,12 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
       }
     });
 
-    it('critical-ошибка → CriticalHandlerError c eventType/originalError, не MessageBusCriticalHandlerError', async () => {
+    it('critical-ошибка → CriticalHandlerError c eventType/messageId/originalError, не MessageBusCriticalHandlerError', async () => {
       const bus = new EventBus(logger);
       bus.subscribe('BOOK_UPDATED', () => { throw new Error('critical boom'); }, { critical: true });
+      const event = makeBookEvent();
 
-      const result = await bus.publish(makeBookEvent());
+      const result = await bus.publish(event);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -149,6 +150,7 @@ describe('EventBus ↔ MessageBus adapter boundary (M-002)', () => {
         expect(result.error).not.toBeInstanceOf(MessageBusCriticalHandlerError);
         expect(result.error.message).toBe('EventBus critical handler threw during dispatch of BOOK_UPDATED');
         expect(result.error.context?.eventType).toBe('BOOK_UPDATED');
+        expect(result.error.context?.messageId).toBe(event.metadata.messageId);
         expect((result.error.context?.originalError as Error).message).toBe('critical boom');
       }
     });

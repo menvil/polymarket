@@ -33,8 +33,8 @@
  * | `MessageBusOverflowError`        | `Err(QueueOverflowError)`                |
  * | `MessageBusDrainLimitError`      | `Err(QueueOverflowError)` — M-000: один  |
  * |                                  | публичный класс для обеих причин         |
- * | `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c eventType  |
- * |                                  | и originalError в context                |
+ * | `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c eventType, |
+ * |                                  | messageId и originalError в context      |
  * | `MessageBusClosedError`          | invariant violation (недостижимо: у      |
  * |                                  | IEventBus нет close(), фасад не          |
  * |                                  | закрывает внутренний bus)                |
@@ -275,9 +275,19 @@ export class EventBus implements IEventBus {
     }
 
     if (error instanceof MessageBusCriticalHandlerError) {
+      // `messageId` — identity ИМЕННО отвергнутого события: владелец drain
+      // получает и отказы событий, поставленных в очередь другими
+      // публикаторами, и по одному `eventType` своё событие от чужого того же
+      // типа не отличить.
       return Err(new CriticalHandlerError(
         `EventBus critical handler threw during dispatch of ${error.messageType}`,
-        { context: { originalError: error.originalError, eventType: error.messageType } },
+        {
+          context: {
+            originalError: error.originalError,
+            eventType: error.messageType,
+            messageId: error.messageId,
+          },
+        },
       ));
     }
 

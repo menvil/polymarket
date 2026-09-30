@@ -309,11 +309,19 @@ export class AccountReconciler {
    * `CriticalHandlerError` с исходной ошибкой в `context.originalError`:
    *
    * ```text
-   * originalError — VersionConflict        → вернуть его как есть (гонка)
-   * originalError — любая другая, на НАШЕМ событии → CORRECTION_REJECTED
+   * НАШЕ событие, originalError — VersionConflict → вернуть его как есть (гонка)
+   * НАШЕ событие, любая другая ошибка              → CORRECTION_REJECTED
    * critical-ошибка на ДРУГОМ событии drain'а      → PUBLISH_FAILED
    * QueueOverflowError / исключение               → PUBLISH_FAILED
    * ```
+   *
+   * «Наше» определяется по `context.messageId`, а не по типу события:
+   * `publish()` возвращает итог всего drain, а координатор сверяет разные
+   * аккаунты параллельно. Коррекция аккаунта A, поставленная в очередь, пока
+   * drain ведёт публикация аккаунта B, отвергается в drain'е B — и по одному
+   * `TRADING_ACCOUNT_RECONCILED` B принял бы чужой конфликт или отказ за свой.
+   * Чужой отказ не подтверждает применение нашего события, поэтому он —
+   * `PUBLISH_FAILED`, а не диагноз нашего снимка.
    *
    * Конфликт распознаётся по классу, а не по тексту.
    */
@@ -340,7 +348,8 @@ export class AccountReconciler {
     const failure = published.error;
     if (
       failure instanceof CriticalHandlerError &&
-      failure.context?.['eventType'] === 'TRADING_ACCOUNT_RECONCILED'
+      failure.context?.['eventType'] === event.type &&
+      failure.context['messageId'] === event.metadata.messageId
     ) {
       const original = failure.context['originalError'];
       if (original instanceof AccountReconciliationVersionConflictError) return Err(original);

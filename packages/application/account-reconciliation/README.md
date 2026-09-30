@@ -175,7 +175,15 @@ fake-источник отдаёт заранее собранный валид�
 ```
 
 Никогда не бросает: адаптер, нарушивший контракт порта исключением, даёт тот
-же `AccountReconciliationSourceError`. Проверки согласованности снимка
+же `AccountReconciliationSourceError`.
+
+Отказ canonical-пути признаётся «своим» только по `CriticalHandlerError.context.messageId`,
+совпавшему с `metadata.messageId` опубликованной коррекции. `publish()` возвращает
+итог всего drain, а координатор сверяет аккаунты параллельно: коррекция A,
+поставленная в очередь, пока drain ведёт публикация B, отвергается в drain'е B.
+По одному типу события B принял бы чужой конфликт или отказ за свой; по
+`messageId` он получает `PUBLISH_FAILED` — применение его события не
+подтверждено. Проверки согласованности снимка
 (владелец, инструмент, идентичность, переходы) живут в `AccountHotState` —
 reconciler проверяет только то, без чего снимок не собрать.
 
@@ -186,7 +194,7 @@ reconciler проверяет только то, без чего снимок н
 | `getOrder` → `undefined` | `AccountReconciliationUnresolvedOrderError` | `UNRESOLVED_ORDER` | нет |
 | `getOrder(X)` вернул `Y` | `AccountReconciliationValidationError` (`ORDER_ID_MISMATCH`) | `VALIDATION_FAILED` | нет |
 | состояние отвергло снимок | `AccountReconciliationValidationError` (`CORRECTION_REJECTED`) | `VALIDATION_FAILED` | опубликовано, не применено |
-| шина не подтвердила обработку | `AccountReconciliationPublishError` | `PUBLISH_FAILED` | применение не подтверждено |
+| шина не подтвердила обработку (в т. ч. отказ ЧУЖОГО события в нашем drain'е) | `AccountReconciliationPublishError` | `PUBLISH_FAILED` | применение не подтверждено |
 | снимок устарел | `AccountReconciliationVersionConflictError` | — (не отказ) | опубликовано, не применено |
 
 ## Планирование: `AccountReconciliationCoordinator`
@@ -299,7 +307,7 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 | `reconciler.test.ts` | ровно одно событие на успех; отказ каждого обязательного чтения → события нет; исключение адаптера; `getOrder` для отсутствующих открытых; `undefined` → `UnresolvedOrder`; `PENDING` как открытая; `ORDER_ID_MISMATCH`; `CORRECTION_REJECTED` |
 | `coordinator.test.ts` | single-flight (10 запросов → один свежий проход), цепочка проходов, независимость аккаунтов, CAS-гонка v10 → v11 со свежим проходом, предел конфликтов, дефект reconciler'а |
 | `health.test.ts` | все переходы статуса, времена из `PaperClock`, no-op → `READY`, конфликт ≠ `UNHEALTHY`, независимость аккаунтов |
-| `publish.test.ts` | переполнение шины, исключение `publish`, critical-ошибка чужого события, конфликт по классу |
+| `publish.test.ts` | переполнение шины, исключение `publish`, critical-ошибка чужого события (другого типа и чужой `TRADING_ACCOUNT_RECONCILED` по `messageId`), конфликт по классу, сквозной сценарий на настоящей шине: коррекция A отвергнута в drain'е B |
 | `boundary.test.ts` | нет зависимостей на infrastructure; закрытый список импортов; нет часов, таймеров, `JSON.stringify`, HTTP |
 
 `FakeAccountReconciliationSource` (`__tests__/helpers/`) задаёт данные по
