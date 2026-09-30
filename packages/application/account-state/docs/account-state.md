@@ -501,7 +501,115 @@ account A fill    → global 4, A 3
 ```
 
 Инициализация — уже первая мутация, поэтому у только что созданного аккаунта
-версия равна 1, а не 0. Отвергнутое событие и дубликат версий не меняют.
+версия равна 1, а не 0. Отвергнутое событие, дубликат и коррекция, ничего не
+изменившая, версий не меняют.
+
+Версия аккаунта — ещё и база optimistic concurrency для
+`TRADING_ACCOUNT_RECONCILED` (см. ниже).
+
+## Authoritative-коррекция
+
+### Проблема
+
+Живой контур может потерять событие: разрыв приватного потока, рестарт,
+ошибка в процессоре. Тогда локальное состояние расходится с площадкой, и
+расходится молча. Нужен путь, которым authoritative-снимок источника
+исправляет состояние, — не нарушая правила «один писатель» и не откатывая
+живые изменения, случившиеся, пока снимок собирался.
+
+### Решение
+
+Коррекция — ещё одно canonical-событие на той же шине:
+
+```text
+authoritative source
+        ↓
+AccountReconciler                   (@polymarket/account-reconciliation)
+        ↓
+TRADING_ACCOUNT_RECONCILED { venueId, accountId, expectedAccountVersion,
+                             portfolio, orders, fills }
+        ↓
+IEventBus → AccountStateProjector → AccountHotState.reconcileAccount()
+```
+
+```mermaid
+sequenceDiagram
+    participant R as AccountReconciler
+    participant S as Source
+    participant B as IEventBus
+    participant P as AccountStateProjector
+    participant H as AccountHotState
+    R->>H: view: version = 100
+    R->>S: getPortfolio / getOpenOrders / getFills
+    Note over H: живое событие → version 101
+    S-->>R: снимок
+    R->>B: TRADING_ACCOUNT_RECONCILED(expected = 100)
+    B->>P: critical
+    P->>H: reconcileAccount
+    H-->>P: Err(VersionConflict), ноль мутаций
+    P-->>B: throw
+    B-->>R: Err(CriticalHandlerError → VersionConflict)
+    Note over R: свежий проход, expected = 101
+```
+
+### Алгоритм `reconcileAccount`
+
+```text
+1. аккаунт существует                      иначе AccountNotInitializedError
+2. CAS: version === expectedAccountVersion иначе AccountReconciliationVersionConflictError
+3. портфель — этого аккаунта на этой площадке
+4. каждая заявка:   владелец, инструмент, неизменяемая идентичность, без повторов
+5. каждое исполнение: владелец, площадка, инструмент, факт, переход, без повторов
+        ↓   до этого места НИ ОДНОЙ записи в Map
+6. ничего не изменилось → Ok, версии и lastMutationAt не трогаются
+7. иначе ОДИН commit(PendingMutation) → account.version += 1, global += 1
+```
+
+CAS идёт **до** проверки содержимого: устаревший снимок описывает аккаунт,
+которого уже нет, и расхождение в нём может быть просто следствием изменения,
+которого он не видел. Конфликт — нормальная гонка (`severity: 'low'`), а не
+дефект; ответ на него — свежий проход сверки, а не диагноз снимка.
+
+`PendingMutation` несёт **списки** заявок и исполнений: live-событие кладёт в
+них по одной записи, коррекция — сколько угодно. Путь записи один, и
+`commit()` в цикле по заявкам коррекции вызвать нельзя по построению —
+поэтому портфель, 4 заявки и 15 исполнений дают `version += 1`, а не `+20`.
+
+### Семантика по сущностям
+
+```text
+Portfolio  принимается ЦЕЛИКОМ; тот же по samePortfolioState — не меняется
+           (из заявок и исполнений НЕ пересчитывается)
+Order      нет локально                         → вставить
+           та же идентичность и состояние        → no-op   (sameOrderState)
+           та же идентичность, другое состояние  → заменить (FSM не повторяется)
+           другая неизменяемая идентичность      → Err     (findOrderIdentityDifference)
+Fill       нет локально → { CONFIRMED, appliedAt = confirmedAt = event time }
+           APPLIED      → CONFIRMED, appliedAt исходный
+           CONFIRMED    → no-op
+           REVERTED     → Err (AccountFillTransitionError REVERTED → CONFIRMED)
+           другой факт  → Err (findFillFactDifference)
+```
+
+Заявки и исполнения, которых нет в коррекции, остаются историей: это upsert,
+а не replace-history.
+
+Новое исполнение записывается сразу `CONFIRMED`, без искусственного
+`APPLIED → CONFIRMED`: его экономика уже внутри authoritative-портфеля, и
+симулировать для неё живой жизненный цикл незачем. А `REVERTED` не
+«воскрешается»: наш откат уже вернул деньги, и молчаливое восстановление
+посчитало бы их дважды.
+
+Коррекция работает только с осью рантайма (`AccountFillStatus`). Venue-ось
+(`venueStatus`, `venueStatusAt`) переносится как есть: `TRADING_ACCOUNT_*`
+по-прежнему меняют её только наблюдением площадки.
+
+### Почему не `JSON.stringify`
+
+No-op определяется canonical-равенствами домена: `samePortfolioState`
+(`@polymarket/portfolio`, поверх `samePositionState` из
+`@polymarket/position`), `sameOrderState`, `findFillFactDifference`.
+Бизнес-равенство живёт в домене, а не в проекции и не в пакете сверки.
 
 ## Навигация — производные представления
 
@@ -629,8 +737,9 @@ Strategy/Execution. Для приватного состояния цена мо
 ## Чего в этом слое нет
 
 ```text
-reconciliation      IAccountReconciliationSource, AccountReconciler, REST-опрос,
-                    таймеры сверки баланса и заявок, health, staleness
+reconciliation      IAccountReconciliationSource, AccountReconciler, health —
+                    отдельный пакет @polymarket/account-reconciliation; здесь
+                    только приём коррекции (CAS + одна мутация)
 strategy            TradingContext, DecisionScheduler, Strategy, indicators,
                     features, Decision, RiskModel, TradingRiskGuard, Intent
 execution           ExecutionEngine, IOrderExecutionVenue, новый IExchangeClient
@@ -659,6 +768,9 @@ objects, и структурная заглушка проверяла бы не
 | `eventIsolation.test.ts` | старые application-события не проецируются; список проецируемых типов — ровно `TRADING_ACCOUNT_*` |
 | `venueStatus.test.ts` | вторая ось: доставка `MINED`/`RETRYING`, независимость осей, порядок наблюдений, терминальность, валидация |
 | `identityHelpers.test.ts` | `accountKey` — идентичность аккаунта |
+| `reconciliationBatch.test.ts` | коррекция: CAS (применение/конфликт/CAS до содержимого), атомарность снимка, одна версия на коррекцию, no-op, неизвестный аккаунт, чужой портфель, повтор записи |
+| `reconciliationOrders.test.ts` | коррекция заявок: вставка, no-op, замена состояния, конфликты идентичности (table-driven), чужой владелец, неразрешимый инструмент, история не удаляется |
+| `reconciliationFills.test.ts` | коррекция исполнений: новое сразу `CONFIRMED`, `APPLIED → CONFIRMED` с исходным `appliedAt`, no-op, `REVERTED` → `Err`, конфликты факта, venue-ось сохраняется, чужой аккаунт/площадка |
 
 Сравнение заявок и исполнений живёт в своих доменных пакетах и там же
 тестируется: `@polymarket/order` → `orderIdentity.test.ts`,

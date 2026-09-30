@@ -63,6 +63,7 @@ import type {
   TradingAccountFillVenueStatusObservedEvent,
   TradingAccountInitializedEvent,
   TradingAccountOrderCommittedEvent,
+  TradingAccountReconciledEvent,
 } from '@polymarket/application-events';
 
 /** Разворачивает `Result` фикстуры: отказ здесь — дефект самого теста. */
@@ -587,6 +588,43 @@ export class EventFactory {
       metadata: this._envelope(),
     };
   }
+
+  /**
+   * `TRADING_ACCOUNT_RECONCILED`.
+   *
+   * @param params - Снимок источника и версия, на которой он основан
+   * @returns Canonical событие authoritative-коррекции
+   */
+  public reconciled(params: ReconciledParams): TradingAccountReconciledEvent {
+    return {
+      type: 'TRADING_ACCOUNT_RECONCILED',
+      payload: {
+        venueId: params.venueId ?? VENUE,
+        accountId: params.accountId,
+        expectedAccountVersion: params.expectedAccountVersion,
+        portfolio: params.portfolio,
+        orders: params.orders ?? [],
+        fills: params.fills ?? [],
+      },
+      metadata: this._envelope(),
+    };
+  }
+}
+
+/**
+ * Параметры authoritative-коррекции.
+ *
+ * @remarks
+ * `expectedAccountVersion` обязателен: тест обязан явно сказать, на какой
+ * версии основан снимок, — иначе CAS проверялся бы на случайном числе.
+ */
+export interface ReconciledParams {
+  readonly venueId?: VenueId;
+  readonly accountId: AccountId;
+  readonly expectedAccountVersion: number;
+  readonly portfolio: Portfolio;
+  readonly orders?: readonly Order[];
+  readonly fills?: readonly Fill[];
 }
 
 /**

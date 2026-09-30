@@ -100,18 +100,47 @@ describe('MessageBus failures', () => {
   });
 
   describe('critical handler', () => {
-    it('sync throw → Err(MessageBusCriticalHandlerError) с messageType и originalError', async () => {
+    it('sync throw → Err(MessageBusCriticalHandlerError) с messageType, messageId и originalError', async () => {
       const bus = new MessageBus<TestMessage>();
       bus.subscribe('HEARTBEAT', () => { throw new Error('sync critical'); }, { critical: true });
+      const message = heartbeat(1);
 
-      const result = await bus.publish(heartbeat(1));
+      const result = await bus.publish(message);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(MessageBusCriticalHandlerError);
         const error = result.error as MessageBusCriticalHandlerError;
         expect(error.messageType).toBe('HEARTBEAT');
+        expect(error.messageId).toBe(message.metadata.messageId);
         expect((error.originalError as Error).message).toBe('sync critical');
+      }
+    });
+
+    it('messageId называет ОТВЕРГНУТОЕ сообщение, даже если его поставил в очередь другой публикатор', async () => {
+      const bus = new MessageBus<TestMessage>();
+      const own = heartbeat(1);
+      const foreign = heartbeat(2);
+      // Пока обрабатывается первое сообщение, второй публикатор ставит своё в
+      // очередь — оно будет доставлено в ТОМ ЖЕ drain, и его отказ получит
+      // владелец drain.
+      bus.subscribe('HEARTBEAT', async (message) => {
+        if (message.payload.seq === 1) {
+          const enqueued = await bus.publish(foreign);
+          expect(enqueued.ok).toBe(true);
+          return;
+        }
+        throw new Error('foreign rejected');
+      }, { critical: true });
+
+      const result = await bus.publish(own);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const error = result.error as MessageBusCriticalHandlerError;
+        expect(error.messageType).toBe(own.type);
+        expect(error.messageId).toBe(foreign.metadata.messageId);
+        expect(error.messageId).not.toBe(own.metadata.messageId);
       }
     });
 

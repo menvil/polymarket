@@ -61,6 +61,9 @@
  *
  * TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED
  *                                   площадка сообщила статус, экономика та же
+ *
+ * TRADING_ACCOUNT_RECONCILED        authoritative-коррекция: Portfolio + заявки
+ *                                   + исполнения одной мутацией, под CAS версии
  * ```
  *
  * У исполнения ДВЕ независимые оси: что сделали мы с деньгами и что говорит
@@ -114,6 +117,7 @@ import type {
   TradingAccountFillConfirmedEvent,
   TradingAccountFillRevertedEvent,
   TradingAccountFillVenueStatusObservedEvent,
+  TradingAccountReconciledEvent,
 } from './trading-account/index.js';
 import type { OrderUpdateReceivedEvent } from './venue-order/index.js';
 
@@ -151,4 +155,6 @@ export type ApplicationEvent =
   | TradingAccountFillConfirmedEvent
   | TradingAccountFillRevertedEvent
   | TradingAccountFillVenueStatusObservedEvent
+  // Authoritative-коррекция приватного состояния — тот же проектор, та же шина.
+  | TradingAccountReconciledEvent
   | OrderUpdateReceivedEvent;

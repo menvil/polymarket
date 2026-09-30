@@ -53,6 +53,7 @@ sources → ExternalMessage → ExternalMessageBus → semantic adapters
 ```typescript
 interface IEventBus {
   publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+  publishConfirmed(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
   publishAll(events: readonly ApplicationEvent[]): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
   subscribe<K extends ApplicationEvent['type']>(
     type: K,
@@ -62,7 +63,7 @@ interface IEventBus {
 }
 ```
 
-- `publish()`/`publishAll()` **не бросают** ожидаемые operational-ошибки — queue
+- `publish()`/`publishConfirmed()`/`publishAll()` **не бросают** ожидаемые operational-ошибки — queue
   overflow, drain-limit и critical handler failure возвращаются как typed `Err`.
   Успех — `Ok(undefined)`.
 - `EventHandler<T> = (event: T) => void | Promise<void>` — разрешены и sync-,
@@ -118,7 +119,10 @@ Default (`options` отсутствуют или `{ critical: false }`):
 - **Все handlers текущего события завершаются**: critical-ошибка не отменяет уже
   запущенный параллельный fan-out; исход определяется после settle всех handlers.
 - Caller получает `Err(CriticalHandlerError)`; в `error.context` сохраняются
-  `originalError` (сырое брошенное значение подписчика) и `eventType`.
+  `originalError` (сырое брошенное значение подписчика), `eventType` и
+  `messageId` — identity ОТВЕРГНУТОГО события. Это не обязательно событие
+  caller'а: `publish()` возвращает итог всего drain, а в нём обрабатываются и
+  события других публикаторов. Своё событие caller узнаёт по `messageId`.
 - **Первая critical-ошибка каноническая** (в детерминированном порядке
   подписки/входа); последующие critical-ошибки не теряются — логируются
   (`'EventBus critical handler threw an additional error'`).
@@ -156,6 +160,27 @@ Default (`options` отсутствуют или `{ critical: false }`):
   зациклившейся публикацией.
 - Bus остаётся работоспособным: после устранения петли следующий `publish()`
   обрабатывается нормально.
+
+## Confirmed publication
+
+`publishConfirmed(event)` — отдельный путь для внешней request/response-границы
+(например, `AccountReconciler`), которой нужен исход ИМЕННО своего события.
+Обычный `publish()` и его reentrant-семантика не меняются.
+
+```text
+активен drain / в очереди backlog → дождаться (MessageBus.drain())
+    backlog упал                  → Err; событие в очередь НЕ ставится вовсе
+очередь пуста и drain нет         → событие первое в новом drain
+    critical на этом событии      → Err (context.messageId === event.metadata.messageId)
+    отказ позже, на другом событии → Ok — это событие уже прошло fan-out; отказ логируется
+    лимит drain-цикла после него  → Ok; превышение логируется
+```
+
+Отказ backlog возвращается с `context.messageId` ЧУЖОГО события: caller
+отличает «отвергнуто моё» от «моё не публиковалось» по `messageId`.
+
+**Не вызывать из handler-а**: метод ждёт завершения активного drain, и
+handler, сделавший `await publishConfirmed(...)`, ждал бы сам себя.
 
 ## Reentrancy
 

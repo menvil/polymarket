@@ -33,8 +33,8 @@
  * | `MessageBusOverflowError`        | `Err(QueueOverflowError)`                |
  * | `MessageBusDrainLimitError`      | `Err(QueueOverflowError)` — M-000: один  |
  * |                                  | публичный класс для обеих причин         |
- * | `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c eventType  |
- * |                                  | и originalError в context                |
+ * | `MessageBusCriticalHandlerError` | `Err(CriticalHandlerError)` c eventType, |
+ * |                                  | messageId и originalError в context      |
  * | `MessageBusClosedError`          | invariant violation (недостижимо: у      |
  * |                                  | IEventBus нет close(), фасад не          |
  * |                                  | закрывает внутренний bus)                |
@@ -190,6 +190,78 @@ export class EventBus implements IEventBus {
   }
 
   /**
+   * Публикует событие и подтверждает исход обработки ИМЕННО этого события.
+   *
+   * @param event - Canonical `ApplicationEvent` для публикации
+   * @returns См. {@link IEventBus.publishConfirmed}
+   *
+   * @remarks
+   * Строится на существующих гарантиях движка, не меняя их:
+   *
+   * 1. **Backlog.** Пока идёт drain или в очереди есть сообщения —
+   *    `MessageBus.drain()` (присоединиться к активному либо довести
+   *    сохранённую очередь). Его отказ возвращается сразу, и событие в очередь
+   *    НЕ попадает: иначе caller получил бы отказ, а событие применилось бы
+   *    позже без его ведома. Условие проверяется заново после каждого
+   *    ожидания: `_activeDrain` освобождается синхронно до settle, и между ним
+   *    и возобновлением здесь другой публикатор мог начать новый drain.
+   * 2. **Своё событие.** Проверка «очередь пуста и drain нет» и
+   *    `_bus.publish()` — один синхронный блок (как в `publishAll([])`):
+   *    между ними нет yield point, поэтому событие ставится в пустую очередь и
+   *    его публикация становится владельцем нового drain — событие первое.
+   * 3. **Исход.** Drain обрабатывает сообщения строго по одному, и critical-
+   *    отказ останавливает его на том сообщении, где случился. Значит,
+   *    critical-отказ с ЧУЖИМ `messageId` или срабатывание лимита drain-цикла
+   *    означают, что наше событие уже прошло fan-out без отказа: исход — `Ok`.
+   *    Такой отказ логируется: владелец drain — мы, и иначе о нём не узнал бы
+   *    никто.
+   *
+   * Обычный {@link EventBus.publish} и его reentrant-семантика не меняются.
+   *
+   * @example
+   * ```typescript
+   * const confirmed = await bus.publishConfirmed(event);
+   * ```
+   */
+  public async publishConfirmed(
+    event: ApplicationEvent,
+  ): Promise<Result<void, QueueOverflowError | CriticalHandlerError>> {
+    for (;;) {
+      const stats = this._bus.getStats();
+      if (!stats.dispatching && stats.queueSize === 0) break;
+      const backlog = await this._bus.drain();
+      if (!backlog.ok) return this._translateResult(backlog);
+    }
+
+    const published = await this._bus.publish(event);
+    if (published.ok) return Ok(undefined);
+
+    const failure = published.error;
+    if (
+      failure instanceof MessageBusCriticalHandlerError &&
+      failure.messageId !== event.metadata.messageId
+    ) {
+      this._logger.error('EventBus critical handler failed on a later event of a confirmed publication drain', {
+        err: failure.originalError,
+        eventType: failure.messageType,
+        messageId: failure.messageId,
+        confirmedEventType: event.type,
+        confirmedMessageId: event.metadata.messageId,
+      });
+      return Ok(undefined);
+    }
+    if (failure instanceof MessageBusDrainLimitError) {
+      this._logger.error('EventBus drain limit exceeded after a confirmed publication was dispatched', {
+        maxEventsPerDrain: failure.maxMessagesPerDrain,
+        confirmedEventType: event.type,
+        confirmedMessageId: event.metadata.messageId,
+      });
+      return Ok(undefined);
+    }
+    return this._translateResult(published);
+  }
+
+  /**
    * Публикует список событий с сохранением порядка.
    *
    * @param events - Список событий для последовательной публикации
@@ -275,9 +347,19 @@ export class EventBus implements IEventBus {
     }
 
     if (error instanceof MessageBusCriticalHandlerError) {
+      // `messageId` — identity ИМЕННО отвергнутого события: владелец drain
+      // получает и отказы событий, поставленных в очередь другими
+      // публикаторами, и по одному `eventType` своё событие от чужого того же
+      // типа не отличить.
       return Err(new CriticalHandlerError(
         `EventBus critical handler threw during dispatch of ${error.messageType}`,
-        { context: { originalError: error.originalError, eventType: error.messageType } },
+        {
+          context: {
+            originalError: error.originalError,
+            eventType: error.messageType,
+            messageId: error.messageId,
+          },
+        },
       ));
     }
 

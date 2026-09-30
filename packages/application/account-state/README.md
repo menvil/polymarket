@@ -156,6 +156,39 @@ CONFIRMED ↔ FAILED               два исхода одной сделки  
 Задержкой не объясняются только два **разных терминальных** исхода у одной
 сделки — там мы действительно ничего не понимаем и останавливаемся.
 
+## Authoritative-коррекция: `TRADING_ACCOUNT_RECONCILED`
+
+Кроме живого контура состояние принимает **коррекцию** от сверки аккаунта
+([`@polymarket/account-reconciliation`](../account-reconciliation/README.md)) —
+через ту же шину и тот же проектор:
+
+```text
+authoritative source → AccountReconciler → TRADING_ACCOUNT_RECONCILED
+                                                   ↓
+                                  IEventBus → AccountStateProjector → AccountHotState
+```
+
+Два правила, которых нет у живых событий:
+
+```text
+CAS        account.version === expectedAccountVersion, иначе
+           AccountReconciliationVersionConflictError и НОЛЬ мутаций
+batch      весь снимок валидируется целиком → ОДИН commit → version += 1
+```
+
+Семантика — upsert, а не замена истории:
+
+| сущность | локально нет | то же состояние | изменилось | конфликт |
+| --- | --- | --- | --- | --- |
+| `Portfolio` | — | не меняется | заменяется целиком | чужой владелец/площадка → `Err` |
+| `Order` | вставить | no-op | заменить authoritative-заявкой | другая неизменяемая идентичность → `Err` |
+| `Fill` | вставить `CONFIRMED` | `CONFIRMED` → no-op | `APPLIED` → `CONFIRMED` | `REVERTED` или другой факт → `Err` |
+
+Коррекция, ничего не изменившая, — не мутация: версии и `lastMutationAt` не
+трогаются. Venue-ось исполнения (`venueStatus`, `venueStatusAt`) коррекция не
+стирает и не придумывает. Подробности —
+[`docs/account-state.md`](./docs/account-state.md#authoritative-коррекция).
+
 ## Хранение
 
 Пока — **на время жизни рантайма**: заявок и исполнений на порядки меньше, чем
@@ -165,8 +198,8 @@ CONFIRMED ↔ FAILED               два исхода одной сделки  
 
 ## Что дальше
 
-Ни того, ни другого в этом пакете **нет** — здесь зафиксировано только
-направление.
+Ни живого процессора, ни адаптера сверки в этом пакете **нет** — здесь
+зафиксировано только направление.
 
 **Fast path** (приватный WebSocket):
 
@@ -182,22 +215,24 @@ TRADING_ACCOUNT_* post-commit event
 IEventBus → AccountStateProjector
 ```
 
-**Reconciliation path** (authoritative REST):
+**Reconciliation path** (authoritative REST) — контракт и ядро уже есть
+(`TRADING_ACCOUNT_RECONCILED`, `@polymarket/account-reconciliation`); впереди
+production-адаптер источника и runtime wiring:
 
 ```text
 authoritative REST
     ↓
-будущий AccountReconciler
+Polymarket source adapter         ← следующий этап
     ↓
-обнаружение пропущенных/разошедшихся фактов
+AccountReconciler
     ↓
-canonical account-события
+TRADING_ACCOUNT_RECONCILED
     ↓
 ТА ЖЕ IEventBus → ТОТ ЖЕ AccountStateProjector
 ```
 
-Reconciler **никогда** не будет мутировать `AccountHotState` напрямую: у
-состояния один писатель, и добавление второго вернуло бы ровно ту гонку, ради
+Reconciler **никогда** не мутирует `AccountHotState` напрямую: у состояния
+один писатель, и добавление второго вернуло бы ровно ту гонку, ради
 устранения которой проектор и заведён.
 
 Подробности — в [`docs/account-state.md`](./docs/account-state.md).

@@ -28,6 +28,7 @@ function makeEventBus(): IEventBus {
   return {
     publish: jest.fn<IEventBus['publish']>().mockResolvedValue(Ok(undefined)),
     publishAll: jest.fn<IEventBus['publishAll']>().mockResolvedValue(Ok(undefined)),
+    publishConfirmed: jest.fn<IEventBus['publishConfirmed']>().mockResolvedValue(Ok(undefined)),
     subscribe: jest.fn<IEventBus['subscribe']>().mockReturnValue(() => {}),
   };
 }

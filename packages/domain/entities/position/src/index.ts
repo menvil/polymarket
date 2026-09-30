@@ -16,6 +16,9 @@ export { Position } from './Position.js';
 /** Реэкспорт типов Position entity (см. `Position.ts`). */
 export type { PositionParams, PositionSide, PositionStatus, CloseResult } from './Position.js';
 
+// Сравнение состояния (для сверки и no-op детекции)
+export { samePositionState } from './positionState.js';
+
 // Value Objects
 export { PositionLot } from './core/PositionLot.js';
 /** Реэкспорт параметров создания лота (см. `core/PositionLot.ts`). */

@@ -35,6 +35,22 @@ import type { Timestamp } from '@polymarket/timestamp';
  * APPLIED → REVERTED
  * ```
  *
+ * ### Вход через authoritative-сверку
+ *
+ * `TRADING_ACCOUNT_RECONCILED` подтверждает исполнения самим фактом их
+ * присутствия на площадке:
+ *
+ * ```text
+ * исполнения нет локально    → запись сразу CONFIRMED (appliedAt = confirmedAt)
+ * APPLIED                    → CONFIRMED
+ * CONFIRMED                  → no-op
+ * REVERTED                   → отказ: противоречие нашего отката и площадки
+ * ```
+ *
+ * Искусственного промежуточного `APPLIED` у нового исполнения нет: его
+ * экономика уже внутри authoritative-портфеля, и симулировать для неё живой
+ * жизненный цикл незачем.
+ *
  * `CONFIRMED → REVERTED` запрещён: финальность на то и финальность.
  * Подтверждено контрактом площадки — `TradeStatus.CONFIRMED` документирован
  * как «finality достигнута, транзакция успешна», то есть обратно площадка не
@@ -176,12 +192,23 @@ export interface AccountFillRecord {
    * без on-chain расчётов, а не пропуск.
    *
    * Меняется ТОЛЬКО событием `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED`:
-   * экономические события эту ось не трогают.
+   * экономические события и authoritative-коррекция эту ось не трогают —
+   * ни стирают, ни придумывают.
    */
   readonly venueStatus?: TradeStatus;
-  /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_APPLIED` */
+  /**
+   * `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_APPLIED`.
+   *
+   * @remarks
+   * Для исполнения, впервые появившегося через `TRADING_ACCOUNT_RECONCILED`, —
+   * время этой коррекции: экономика попала в состояние именно тогда, вместе с
+   * authoritative-портфелем.
+   */
   readonly appliedAt: Timestamp;
-  /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_CONFIRMED` */
+  /**
+   * `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_CONFIRMED` либо
+   * `TRADING_ACCOUNT_RECONCILED`, подтвердившего исполнение.
+   */
   readonly confirmedAt?: Timestamp;
   /** `metadata.createdAt` принятого `TRADING_ACCOUNT_FILL_REVERTED` */
   readonly revertedAt?: Timestamp;

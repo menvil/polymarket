@@ -167,6 +167,7 @@ Discovery и Planner о них не знают. Единственный под�
 | `TRADING_ACCOUNT_FILL_CONFIRMED` | `Fill` | исполнение достигло финальности |
 | `TRADING_ACCOUNT_FILL_REVERTED` | `Fill`, `Portfolio`, `Order?`, `reason` | применённое исполнение откачено |
 | `TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED` | `Fill`, `TradeStatus` | площадка сообщила статус; экономика не меняется |
+| `TRADING_ACCOUNT_RECONCILED` | `venueId`, `accountId`, `expectedAccountVersion`, `Portfolio`, `Order[]`, `Fill[]` | authoritative-коррекция по сверке; одна мутация под CAS версии |
 
 Первые пять — **POST-COMMIT**:
 
@@ -231,6 +232,27 @@ IEventBus → AccountStateProjector → AccountHotState
 Времена переходов — `event.metadata.createdAt`. Отдельных `initializedAt`,
 `appliedAt`, `confirmedAt` в payload нет.
 
-Producer'а у этих событий пока нет: приватный процессор и account reconciler
-— следующие MR. Единственный подписчик — `AccountStateProjector` из
+Producer'а у live-событий контура пока нет: приватный процессор — следующий
+MR. Единственный подписчик — `AccountStateProjector` из
 `@polymarket/account-state`.
+
+### Authoritative-коррекция: `TRADING_ACCOUNT_RECONCILED`
+
+Не live-событие и не замена живого контура, а batch-коррекция от сверки
+аккаунта с authoritative-источником. Producer — `AccountReconciler` из
+[`@polymarket/account-reconciliation`](../account-reconciliation/README.md).
+
+```text
+authoritative source → AccountReconciler → TRADING_ACCOUNT_RECONCILED
+                                                   ↓
+                                  IEventBus → AccountStateProjector → AccountHotState
+```
+
+- **Одна мутация.** Портфель, заявки и исполнения применяются вместе, с одним
+  приращением версии — или не применяются вовсе.
+- **CAS.** `expectedAccountVersion` — версия аккаунта, на которой основан
+  снимок. Если с тех пор аккаунт изменился, коррекция отвергается целиком:
+  устаревший снимок откатил бы изменения, которых не видел.
+- **Upsert.** Заявки и исполнения, которых нет в payload, остаются историей.
+- **Только canonical-сущности.** Никаких vendor-DTO и причины запуска
+  сверки; момент применения — `metadata.createdAt`.

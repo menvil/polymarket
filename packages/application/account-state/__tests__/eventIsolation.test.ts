@@ -110,6 +110,7 @@ describe('AN. старые application-события игнорируются',
       'TRADING_ACCOUNT_FILL_VENUE_STATUS_OBSERVED',
       'TRADING_ACCOUNT_INITIALIZED',
       'TRADING_ACCOUNT_ORDER_COMMITTED',
+      'TRADING_ACCOUNT_RECONCILED',
     ]);
   });
 });

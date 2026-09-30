@@ -9,6 +9,7 @@
  * - **PortfolioId** — branded type для идентификатора
  * - **PortfolioErrors** — PortfolioValidationError, PortfolioOperationError
  * - **getTotalValue / getTotalUnrealizedPnL** — оценка стоимости (требуют внешних цен)
+ * - **samePortfolioState** — canonical-равенство полного состояния агрегата
  *
  * @example
  * ```typescript
@@ -37,6 +38,9 @@
 // Aggregate
 export { Portfolio } from './Portfolio.js';
 export type { PortfolioParams, ApplyFillParams } from './Portfolio.js';
+
+// Сравнение состояния (для сверки и no-op детекции)
+export { samePortfolioState } from './portfolioState.js';
 
 // Value Objects
 export { type PortfolioId, parsePortfolioId, asPortfolioId } from './value-objects/index.js';

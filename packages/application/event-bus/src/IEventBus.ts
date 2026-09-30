@@ -57,6 +57,57 @@ export interface IEventBus {
   publish(event: ApplicationEvent): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
 
   /**
+   * Публикует событие и подтверждает исход обработки ИМЕННО этого события.
+   *
+   * @param event - Canonical `ApplicationEvent` для публикации
+   * @returns `Ok(void)` — все handlers ЭТОГО события завершились без critical-
+   *   отказа; `Err(CriticalHandlerError)` — critical-отказ этого события
+   *   (`context.messageId === event.metadata.messageId`) ЛИБО отказ уже
+   *   существовавшего backlog, из-за которого событие не публиковалось вовсе
+   *   (`context.messageId` — чужой); `Err(QueueOverflowError)` — событие не
+   *   принято очередью либо backlog упёрся в лимит drain-цикла
+   *
+   * @remarks
+   * ### Чем отличается от {@link IEventBus.publish}
+   *
+   * `publish()` при уже активном drain только ставит событие в очередь, и его
+   * `Ok` подтверждает постановку, а не обработку. Это правильно для reentrant-
+   * доставки, но не для внешней request/response-границы, которой нужен исход
+   * конкретного события. `publishConfirmed()` устроен так:
+   *
+   * ```text
+   * активен drain / в очереди backlog
+   *     → дождаться его завершения (MessageBus.drain())
+   *     → backlog упал            → Err, событие НЕ ставится в очередь вовсе
+   * очередь пуста и drain нет
+   *     → поставить событие       → оно ПЕРВОЕ в новом drain
+   *     → дождаться drain
+   *     → critical на этом событии           → Err
+   *     → отказ ПОЗЖЕ, на другом событии     → Ok (это событие уже прошло fan-out)
+   * ```
+   *
+   * Отказ, случившийся после события в том же drain, логируется, но исходом
+   * этого события не считается.
+   *
+   * ### НЕ вызывать из handler'а
+   *
+   * Метод ждёт завершения активного drain. Handler, вызвавший его с `await`,
+   * ждал бы сам себя — drain не завершится никогда. Внутри handler'ов —
+   * только `publish()`.
+   *
+   * @example
+   * ```typescript
+   * const confirmed = await eventBus.publishConfirmed(reconciledEvent);
+   * if (!confirmed.ok && confirmed.error.context?.messageId === reconciledEvent.metadata.messageId) {
+   *   // отвергнуто именно это событие
+   * }
+   * ```
+   */
+  publishConfirmed(
+    event: ApplicationEvent,
+  ): Promise<Result<void, QueueOverflowError | CriticalHandlerError>>;
+
+  /**
    * Публикует список событий последовательно.
    *
    * @param events - Список событий для последовательной публикации
