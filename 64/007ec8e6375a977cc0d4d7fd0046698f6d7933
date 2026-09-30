@@ -1,0 +1,43 @@
+packages/foundation/errors/src/event-bus/CriticalHandlerError.ts
+  s_23e5b70dd499f4::t_2fde4d11035c5b 10-14
+packages/foundation/message-bus/src/errors.ts
+  s_23e5b70dd499f4::t_6ba9bacdb02feb 20,76-81,90-91,98,101-105,109
+packages/foundation/message-bus/src/MessageBus.ts
+  s_23e5b70dd499f4::t_6ba9bacdb02feb 418
+packages/application/account-reconciliation/__tests__/publish.test.ts
+  s_23e5b70dd499f4::t_95ab20755be3a5 21-22,148-164,168-193
+  s_23e5b70dd499f4::t_20752f445a5a8c 165-167
+  s_23e5b70dd499f4::t_92fe6810243a74 87-91,100-124,128-142
+packages/application/event-bus/__tests__/EventBus.message-bus-adapter.test.ts
+  s_23e5b70dd499f4::t_2fde4d11035c5b 140,143,145,153
+packages/foundation/message-bus/__tests__/MessageBus.failures.test.ts
+  s_23e5b70dd499f4::t_1f56651c98b0e2 103,106,108,115,120-143
+packages/foundation/message-bus/README.md
+  s_23e5b70dd499f4::t_52c858b4d1d144 120-124,242
+packages/application/event-bus/docs/event-bus.md
+  s_23e5b70dd499f4::t_52c858b4d1d144 90
+packages/application/account-reconciliation/src/AccountReconciler.ts
+  s_23e5b70dd499f4::t_92fe6810243a74 312-313,318-325,351-352
+packages/application/event-bus/README.md
+  s_23e5b70dd499f4::t_52c858b4d1d144 121-124
+packages/application/event-bus/src/EventBus.ts
+  s_23e5b70dd499f4::t_2fde4d11035c5b 36-37,278-281,284-290
+packages/application/account-reconciliation/README.md
+  s_23e5b70dd499f4::t_52c858b4d1d144 178-186,197,310
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "64007ec8e6375a977cc0d4d7fd0046698f6d7933",
+  "prompts": {},
+  "sessions": {
+    "s_23e5b70dd499f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc0e5073-9c9d-40f0-92e9-4659c6679201",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
