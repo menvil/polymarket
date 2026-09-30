@@ -177,15 +177,44 @@ fake-источник отдаёт заранее собранный валид�
 Никогда не бросает: адаптер, нарушивший контракт порта исключением, даёт тот
 же `AccountReconciliationSourceError`.
 
-Отказ canonical-пути признаётся «своим» только по `CriticalHandlerError.context.messageId`,
-совпавшему с `metadata.messageId` опубликованной коррекции. `publish()` возвращает
-итог всего drain, а координатор сверяет аккаунты параллельно: коррекция A,
-поставленная в очередь, пока drain ведёт публикация B, отвергается в drain'е B.
-По одному типу события B принял бы чужой конфликт или отказ за свой; по
-`messageId` он получает `PUBLISH_FAILED` — применение его события не
-подтверждено. Проверки согласованности снимка
-(владелец, инструмент, идентичность, переходы) живут в `AccountHotState` —
-reconciler проверяет только то, без чего снимок не собрать.
+Проверки согласованности снимка (владелец, инструмент, идентичность,
+переходы) живут в `AccountHotState` — reconciler проверяет только то, без
+чего снимок не собрать.
+
+### Граница подтверждения доставки: `publishConfirmed()`
+
+Обычный `IEventBus.publish()` при уже активном drain только ставит событие в
+очередь, и его `Ok` означает «принято в очередь», а не «обработано». Для
+reentrant-доставки это правильно; для сверки — нет: успешный проход обязан
+значить, что ИМЕННО её `TRADING_ACCOUNT_RECONCILED` прошёл critical-проектор.
+Поэтому коррекция публикуется через `IEventBus.publishConfirmed()`:
+
+```text
+активен drain / в очереди backlog → дождаться (MessageBus.drain())
+    backlog упал                  → Err, коррекция в очередь НЕ ставится вовсе
+очередь пуста и drain нет         → коррекция первая в новом drain → её исход
+    отказ ПОЗЖЕ в том же drain    → исход коррекции всё равно Ok
+```
+
+Отказ признаётся «своим» только по `CriticalHandlerError.context.messageId`,
+совпавшему с `metadata.messageId` опубликованной коррекции, — не по типу
+события. Координатор сверяет аккаунты параллельно, и `publishConfirmed()`
+возвращает отказ уже стоявшего backlog — например, коррекции другого
+аккаунта. Чужой отказ означает, что наша коррекция не публиковалась:
+`PUBLISH_FAILED`, а не диагноз нашего снимка. Применить её позже он не может —
+в очереди её нет.
+
+```text
+Ok                    именно эта коррекция прошла critical-обработчики:
+                      состояние приняло её или признало no-op
+Err(VersionConflict)  именно эта коррекция получила CAS-конфликт
+Err(Validation)       именно эта коррекция отвергнута состоянием
+Err(Publish)          эта коррекция не подтверждена (и не применится)
+```
+
+`reconcile()` и `request()` — внешняя request/response-граница: вызывать их с
+`await` из handler'а шины нельзя — `publishConfirmed()` ждал бы drain, который
+держит сам этот handler.
 
 | исход | ошибка | `failureCode` | событие |
 | --- | --- | --- | --- |
@@ -194,7 +223,7 @@ reconciler проверяет только то, без чего снимок н
 | `getOrder` → `undefined` | `AccountReconciliationUnresolvedOrderError` | `UNRESOLVED_ORDER` | нет |
 | `getOrder(X)` вернул `Y` | `AccountReconciliationValidationError` (`ORDER_ID_MISMATCH`) | `VALIDATION_FAILED` | нет |
 | состояние отвергло снимок | `AccountReconciliationValidationError` (`CORRECTION_REJECTED`) | `VALIDATION_FAILED` | опубликовано, не применено |
-| шина не подтвердила обработку (в т. ч. отказ ЧУЖОГО события в нашем drain'е) | `AccountReconciliationPublishError` | `PUBLISH_FAILED` | применение не подтверждено |
+| шина не приняла коррекцию либо упал уже стоявший backlog (чужой `messageId`) | `AccountReconciliationPublishError` | `PUBLISH_FAILED` | не поставлено в очередь, не применится |
 | снимок устарел | `AccountReconciliationVersionConflictError` | — (не отказ) | опубликовано, не применено |
 
 ## Планирование: `AccountReconciliationCoordinator`
@@ -275,11 +304,13 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 
 ## Известные ограничения
 
-- **`publish()` при чужом drain.** `IEventBus` возвращает `Ok` на постановку в
-  очередь, если drain уже ведёт другой публикатор; исход обработки тогда
-  получает владелец drain. Reconciler в такой ситуации посчитает проход
-  успешным до применения. Как живой контур реагирует на отказ приватной
-  публикации — общий открытый вопрос контура (см. `AccountStateProjector`),
+- **Чужой упавший backlog делает проход `UNHEALTHY`.** Если перед коррекцией
+  в очереди упало чужое событие (например, коррекция другого аккаунта с
+  конфликтом версий), коррекция не публикуется и проход получает
+  `PUBLISH_FAILED`. Это fail closed: состояние не подтверждено; следующий
+  запрос сверки делает свежий проход.
+- **Живой контур по-прежнему на `publish()`.** Как он реагирует на отказ
+  приватной публикации — открытый вопрос контура (см. `AccountStateProjector`),
   он обязан быть решён fail-closed до включения Strategy/Execution.
 - **Локальный `APPLIED`, которого нет в `getFills()`,** не интерпретируется:
   ни откат, ни отказ. Порт не даёт «спросить исполнение по id», а список
@@ -307,7 +338,8 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 | `reconciler.test.ts` | ровно одно событие на успех; отказ каждого обязательного чтения → события нет; исключение адаптера; `getOrder` для отсутствующих открытых; `undefined` → `UnresolvedOrder`; `PENDING` как открытая; `ORDER_ID_MISMATCH`; `CORRECTION_REJECTED` |
 | `coordinator.test.ts` | single-flight (10 запросов → один свежий проход), цепочка проходов, независимость аккаунтов, CAS-гонка v10 → v11 со свежим проходом, предел конфликтов, дефект reconciler'а |
 | `health.test.ts` | все переходы статуса, времена из `PaperClock`, no-op → `READY`, конфликт ≠ `UNHEALTHY`, независимость аккаунтов |
-| `publish.test.ts` | переполнение шины, исключение `publish`, critical-ошибка чужого события (другого типа и чужой `TRADING_ACCOUNT_RECONCILED` по `messageId`), конфликт по классу, сквозной сценарий на настоящей шине: коррекция A отвергнута в drain'е B |
+| `publish.test.ts` | классификация исходов `publishConfirmed()` на stub-шине (обычный `publish()` в ней бросает): переполнение, исключение, critical-ошибка чужого события (другого типа и чужой `TRADING_ACCOUNT_RECONCILED` по `messageId`), конфликт по классу |
+| `confirmedDelivery.test.ts` | настоящая шина: A держит drain — B не резолвится и не `READY` до обработки своей коррекции; конфликт A не достаётся B; упавший чужой backlog — коррекция B не встаёт в очередь и не применяется позже; отказ другого события после B в том же drain — исход B успешен |
 | `boundary.test.ts` | нет зависимостей на infrastructure; закрытый список импортов; нет часов, таймеров, `JSON.stringify`, HTTP |
 
 `FakeAccountReconciliationSource` (`__tests__/helpers/`) задаёт данные по

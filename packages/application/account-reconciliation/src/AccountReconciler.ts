@@ -84,7 +84,14 @@ import type { IAccountReconciliationSource } from './IAccountReconciliationSourc
 export interface AccountReconcilerDependencies {
   /** Authoritative-источник состояния аккаунта */
   readonly source: IAccountReconciliationSource;
-  /** Canonical-шина — та же, по которой идут живые события аккаунта */
+  /**
+   * Canonical-шина — та же, по которой идут живые события аккаунта.
+   *
+   * @remarks
+   * Коррекция публикуется через `publishConfirmed()`: сверка — внешняя
+   * request/response-граница, и её исход обязан относиться к её событию.
+   * Поэтому reconcile() нельзя вызывать с `await` из handler'а шины.
+   */
   readonly eventBus: IEventBus;
   /** Read-only проекция приватного состояния */
   readonly accountState: AccountHotStateView;
@@ -105,9 +112,11 @@ export interface AccountReconciliationPass {
    * Опубликованное событие коррекции.
    *
    * @remarks
-   * Успех означает, что состояние приняло снимок — применив его одной
-   * мутацией либо признав no-op. Различать эти случаи сверке не нужно: оба
-   * подтверждают, что локальное состояние совпадает с источником.
+   * Успех означает, что ИМЕННО это событие прошло critical-обработчики и
+   * состояние приняло снимок — применив его одной мутацией либо признав
+   * no-op. Различать эти случаи сверке не нужно: оба подтверждают, что
+   * локальное состояние совпадает с источником. Гарантию даёт
+   * `IEventBus.publishConfirmed()`, а не обычный `publish()`.
    */
   readonly event: TradingAccountReconciledEvent;
 }
@@ -164,11 +173,23 @@ export class AccountReconciler {
    *
    * @remarks
    * Никогда не бросает: отказ источника, исключение адаптера или шины
-   * возвращаются как `Err`. При отказе чтения, неизвестной источнику заявке
-   * и непринятом аккаунте событие не публикуется вовсе. При конфликте версий
-   * и отказе состояния оно опубликовано, но состояние его не приняло и не
-   * изменилось. При отказе шины применение не подтверждено — health обязан
-   * считать его неуспехом.
+   * возвращаются как `Err`. Исходы относятся к ЭТОМУ событию коррекции:
+   *
+   * ```text
+   * Ok                 оно прошло critical-обработчики; состояние приняло
+   *                    коррекцию или no-op
+   * Err(VersionConflict) именно оно получило CAS-конфликт
+   * Err(Validation)    именно оно отвергнуто состоянием (CORRECTION_REJECTED)
+   *                    либо снимок не собран (аккаунт не принят, ответ getOrder
+   *                    противоречит вопросу) — тогда события нет
+   * Err(Source / UnresolvedOrder) снимок не получен — события нет
+   * Err(Publish)       событие не подтверждено: шина его не приняла либо упал
+   *                    уже стоявший backlog, и событие в очередь не попало
+   * ```
+   *
+   * Применение этого события после `Err` невозможно: `publishConfirmed()` не
+   * ставит его в очередь, если backlog упал, а в собственном drain событие
+   * обрабатывается первым.
    *
    * @example
    * ```typescript
@@ -305,6 +326,12 @@ export class AccountReconciler {
    * @returns Проход либо отказ
    *
    * @remarks
+   * Публикация — `IEventBus.publishConfirmed()`, а не `publish()`: обычный
+   * `publish()` при уже активном drain подтверждает только постановку в
+   * очередь, и `Ok` прохода не означал бы, что коррекция применена.
+   * `publishConfirmed()` дожидается существующего backlog, ставит событие
+   * первым в новый drain и возвращает исход ИМЕННО его обработки.
+   *
    * Подписка проектора critical, поэтому отказ состояния приходит сюда как
    * `CriticalHandlerError` с исходной ошибкой в `context.originalError`:
    *
@@ -316,12 +343,12 @@ export class AccountReconciler {
    * ```
    *
    * «Наше» определяется по `context.messageId`, а не по типу события:
-   * `publish()` возвращает итог всего drain, а координатор сверяет разные
-   * аккаунты параллельно. Коррекция аккаунта A, поставленная в очередь, пока
-   * drain ведёт публикация аккаунта B, отвергается в drain'е B — и по одному
-   * `TRADING_ACCOUNT_RECONCILED` B принял бы чужой конфликт или отказ за свой.
-   * Чужой отказ не подтверждает применение нашего события, поэтому он —
-   * `PUBLISH_FAILED`, а не диагноз нашего снимка.
+   * координатор сверяет разные аккаунты параллельно, и `publishConfirmed()`
+   * возвращает отказ уже стоявшего backlog — например, коррекции другого
+   * аккаунта. По одному `TRADING_ACCOUNT_RECONCILED` мы приняли бы чужой
+   * конфликт или отказ за свой. Чужой отказ означает, что наше событие не
+   * публиковалось, поэтому он — `PUBLISH_FAILED`, а не диагноз нашего
+   * снимка.
    *
    * Конфликт распознаётся по классу, а не по тексту.
    */
@@ -331,14 +358,14 @@ export class AccountReconciler {
     const { venueId, accountId } = payload;
 
     let event: TradingAccountReconciledEvent;
-    let published: Awaited<ReturnType<IEventBus['publish']>>;
+    let published: Awaited<ReturnType<IEventBus['publishConfirmed']>>;
     try {
       event = {
         type: 'TRADING_ACCOUNT_RECONCILED',
         payload,
         metadata: this._deps.metadata.nextRoot(),
       };
-      published = await this._deps.eventBus.publish(event);
+      published = await this._deps.eventBus.publishConfirmed(event);
     } catch (error) {
       return Err(new AccountReconciliationPublishError(venueId, accountId, error));
     }

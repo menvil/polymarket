@@ -174,6 +174,11 @@ export class AccountReconciliationCoordinator {
    * `Err`. Отвергается он только при дефекте, выпущенном самим reconciler'ом
    * наружу вопреки контракту.
    *
+   * `Ok` резолвится только после того, как коррекция ЭТОГО прохода прошла
+   * critical-проектор (`IEventBus.publishConfirmed()`). Поэтому ждать
+   * `request()` из handler'а шины нельзя: подтверждённая публикация ждала бы
+   * drain, который держит сам handler.
+   *
    * @example
    * ```typescript
    * const result = await coordinator.request(venueId, accountId, 'RECONNECT');

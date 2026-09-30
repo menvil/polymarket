@@ -15,7 +15,7 @@ import type {
   TradingAccountReconciledEvent,
 } from '@polymarket/application-events';
 import { AccountStateProjector, type AccountHotStateView } from '@polymarket/account-state';
-import { EventBus, type IEventBus } from '@polymarket/event-bus';
+import { EventBus } from '@polymarket/event-bus';
 import type { AccountId } from '@polymarket/ids';
 import { MessageMetadataGenerator } from '@polymarket/messages';
 import type { Order } from '@polymarket/order';
@@ -30,7 +30,8 @@ import { VENUE, portfolio, silentLogger } from './fixtures.js';
 
 /** Готовый рантайм сверки. */
 export interface ReconciliationRuntime {
-  readonly bus: IEventBus;
+  /** Настоящая шина; конкретный класс — ради `getStats()` в тестах очереди */
+  readonly bus: EventBus;
   readonly view: AccountHotStateView;
   readonly clock: PaperClock;
   readonly metadata: MessageMetadataGenerator;

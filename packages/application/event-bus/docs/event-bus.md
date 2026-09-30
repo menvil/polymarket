@@ -128,6 +128,31 @@ critical handler threw during dispatch of ...`). Происхождение ош
 иначе ждал бы сам себя), при idle — `_bus.drain()` с трансляцией его Result.
 Закреплено regression-тестами в `EventBus.message-bus-adapter.test.ts`.
 
+### `publishConfirmed()` — подтверждённая публикация
+
+`publish()` при активном drain подтверждает постановку в очередь, а не
+обработку. `publishConfirmed()` строится поверх тех же гарантий движка, не
+меняя их:
+
+1. **Backlog**: пока `dispatching` или `queueSize > 0` — `_bus.drain()`
+   (присоединиться к активному drain либо довести сохранённую очередь); его
+   отказ возвращается сразу, событие в очередь не попадает. Условие
+   проверяется заново после каждого ожидания: `_activeDrain` освобождается
+   синхронно до settle, и новый drain мог начаться до возобновления.
+2. **Своё событие**: проверка «очередь пуста, drain нет» и `_bus.publish()` —
+   один синхронный блок (тот же приём, что у `publishAll([])`), поэтому
+   событие ставится в пустую очередь и становится первым в новом drain.
+3. **Исход**: drain обрабатывает сообщения по одному, и critical-отказ
+   останавливает его на своём сообщении. Critical с чужим `messageId` или
+   `MessageBusDrainLimitError` значат, что наше событие уже прошло fan-out —
+   исход `Ok`, а сам отказ логируется (`EventBus critical handler failed on a
+   later event of a confirmed publication drain`, `EventBus drain limit
+   exceeded after a confirmed publication was dispatched`): владелец drain —
+   мы, иначе о нём не узнал бы никто.
+
+Вызов из handler-а — self-deadlock (handler ждал бы drain, который держит).
+Закреплено тестами `EventBus.publish-confirmed.test.ts`.
+
 ## Диагностика
 
 `EventBus.getStats(): MessageBusStats` — прямой passthrough canonical-снимка
