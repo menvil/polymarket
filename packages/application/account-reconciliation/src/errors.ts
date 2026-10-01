@@ -58,9 +58,29 @@ export type AccountReconciliationSourceOperation =
   | 'getOrder';
 
 /**
+ * Чтение порта текущего состояния площадки (`IAccountVenueStateSource`),
+ * которое не удалось.
+ *
+ * @remarks
+ * Отдельный union, а не расширение {@link AccountReconciliationSourceOperation}:
+ * тот перечисляет ровно методы transitional-порта `IAccountReconciliationSource`,
+ * которым сверка пользуется сейчас, и на этом полном перечне построены его
+ * потребители. Значение — имя метода порта; состав закреплён тестом против
+ * `keyof IAccountVenueStateSource`.
+ */
+export type AccountVenueStateSourceOperation =
+  | 'getAccountState'
+  | 'getOrderState'
+  | 'getAssetBalance';
+
+/**
  * Обязательное чтение authoritative-источника не удалось.
  *
  * @remarks
+ * Общая ошибка обоих портов — `IAccountReconciliationSource` и
+ * `IAccountVenueStateSource`: какой порт и какое чтение отказали, видно по
+ * {@link operation}.
+ *
  * Создаётся адаптером источника на его границе — сеть, авторизация, rate
  * limit, ответ, который нельзя перевести в canonical-сущность, — либо самой
  * сверкой, если адаптер нарушил контракт порта и бросил исключение вместо
@@ -73,28 +93,36 @@ export type AccountReconciliationSourceOperation =
  * @example
  * ```typescript
  * return Err(new AccountReconciliationSourceError('getFills', venueId, accountId, 'HTTP 503'));
+ * return Err(new AccountReconciliationSourceError(
+ *   'getAccountState', venueId, accountId, 'account trades pagination ended early',
+ * ));
  * ```
  */
 export class AccountReconciliationSourceError extends TradingError {
   public readonly severity = 'high' as const;
   /** {@inheritDoc AccountReconciliationFailureCode} */
   public readonly failureCode = 'SOURCE_FAILED' as const;
-  /** Заявка, на которой не удался `getOrder`; для остальных чтений — `undefined` */
+  /**
+   * Заявка, на которой не удался `getOrder` / `getOrderState`; для
+   * остальных чтений — `undefined`
+   */
   public readonly orderId: OrderId | undefined;
   /** Исходная ошибка транспорта или адаптера, если она есть */
   public readonly originalError: unknown;
 
   /**
-   * @param operation - Какое чтение не удалось
+   * @param operation - Какое чтение какого порта не удалось
    * @param venueId - Площадка аккаунта
    * @param accountId - Аккаунт
    * @param detail - Что именно пошло не так (для лога)
    * @param options - Необязательные подробности
-   * @param options.orderId - Заявка, если не удался `getOrder`
+   * @param options.orderId - Заявка, если не удался `getOrder` / `getOrderState`
    * @param options.originalError - Исходная ошибка транспорта или адаптера
    */
   constructor(
-    public readonly operation: AccountReconciliationSourceOperation,
+    public readonly operation:
+      | AccountReconciliationSourceOperation
+      | AccountVenueStateSourceOperation,
     public readonly venueId: VenueId,
     public readonly accountId: AccountId,
     detail: string,

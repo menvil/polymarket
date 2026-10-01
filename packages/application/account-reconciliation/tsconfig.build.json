@@ -28,6 +28,7 @@
     { "path": "../../domain/entities/fill/tsconfig.build.json" },
     { "path": "../../domain/entities/order/tsconfig.build.json" },
     { "path": "../../domain/entities/portfolio/tsconfig.build.json" },
+    { "path": "../../domain/value-objects/tsconfig.build.json" },
     { "path": "../events/tsconfig.build.json" },
     { "path": "../event-bus/tsconfig.build.json" },
     { "path": "../account-state/tsconfig.build.json" }
