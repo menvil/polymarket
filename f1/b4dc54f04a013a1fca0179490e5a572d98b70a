@@ -1,0 +1,48 @@
+packages/application/account-reconciliation/tsconfig.build.json
+  s_f879ac6c3f0f5c::t_22721f0eff3782 31
+packages/application/account-reconciliation/src/AuthoritativeAccountObservation.ts
+  s_f879ac6c3f0f5c::t_b4bf0720abf8cb 1-46,48-97,99-211,215-262,268-327,330-345,347-352
+  s_f879ac6c3f0f5c::t_a1c9841aaedad0 328-329,346
+  s_f879ac6c3f0f5c::t_999c3799166623 212-214,263-267
+  s_f879ac6c3f0f5c::t_3521033ec21b51 47,98
+package-lock.json
+  ai_agent 8499-8500
+packages/application/account-reconciliation/README.md
+  s_f879ac6c3f0f5c::t_d9ef2763c14fed 22-25,170-386,547,565-566
+packages/application/account-reconciliation/__tests__/boundary.test.ts
+  s_f879ac6c3f0f5c::t_e1ae2e6d570475 52,55-59,61-73,75-76,189-213
+  s_f879ac6c3f0f5c::t_c8fdd81e8fda9d 11-12,14,60,74
+packages/application/account-reconciliation/src/IAccountVenueObservationSource.ts
+  s_f879ac6c3f0f5c::t_246759bc59dc5a 1-5,7-182
+  s_f879ac6c3f0f5c::t_96ad946a65cfb2 6
+docs/guides/account-venue-observations.md
+  s_f879ac6c3f0f5c::t_62d13be56001d6 153-154
+  s_f879ac6c3f0f5c::t_897242d21eee59 1-152,155-224
+packages/application/account-reconciliation/package.json
+  s_f879ac6c3f0f5c::t_22721f0eff3782 41-42
+packages/application/account-reconciliation/src/errors.ts
+  s_f879ac6c3f0f5c::t_67f065dbceab3c 60-71,80-83,96-98,114,123-125
+  s_f879ac6c3f0f5c::t_765ddf7ca09602 72-74,105-108,119
+packages/application/account-reconciliation/__tests__/venueObservation.types.test.ts
+  s_f879ac6c3f0f5c::t_e1ae2e6d570475 153,279
+  s_f879ac6c3f0f5c::t_2014f118db60e9 1-152,154-278,280-302
+packages/application/account-reconciliation/src/index.ts
+  s_f879ac6c3f0f5c::t_67f065dbceab3c 97
+  s_f879ac6c3f0f5c::t_4be583611dfe2d 33-38,62-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f1b4dc54f04a013a1fca0179490e5a572d98b70a",
+  "prompts": {},
+  "sessions": {
+    "s_f879ac6c3f0f5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60a8ea10-4520-4087-86ea-c324b7cb484b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
