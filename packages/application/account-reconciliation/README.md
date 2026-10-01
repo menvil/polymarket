@@ -19,6 +19,10 @@ AccountStateProjector               единственный писатель: C
 AccountHotState
 ```
 
+Рядом объявлен (но сверкой пока не вызывается) контракт **фактов площадки**
+для настоящего venue-адаптера — `IAccountVenueObservationSource`, см.
+[Venue Observations vs Local Portfolio](#venue-observations-vs-local-portfolio).
+
 ```mermaid
 flowchart TD
     RT[runtime: STARTUP / PERIODIC / RECONNECT / MANUAL / INCONSISTENCY] -->|request| C[AccountReconciliationCoordinator]
@@ -162,6 +166,223 @@ No-op определяется canonical-равенством домена — `
 Для materialization authoritative-портфеля адаптеру нужна достаточная история
 исполнений, из которой строятся настоящие лоты. В этом MR адаптера нет —
 fake-источник отдаёт заранее собранный валидный `Portfolio`.
+
+Поэтому настоящий Polymarket-адаптер реализует не этот порт, а порт **фактов
+площадки** `IAccountVenueObservationSource`: лоты остаются локальными, а
+площадка сообщает только то, что знает (см. «Venue Observations vs Local
+Portfolio»).
+
+## Venue Observations vs Local Portfolio
+
+`IAccountReconciliationSource` требует от источника готовый `Portfolio` — то
+есть **наше локальное** состояние. Настоящая площадка его вернуть не может:
+
+```text
+Portfolio
+├── Balance
+│   ├── available        ← локальная бухгалтерия
+│   └── reserved         ← локальная резервация под открытые заявки
+├── Position
+│   └── FIFO lots[]      ← локальная provenance исполнений
+└── TokenBalance
+    ├── available
+    └── reserved         ← локальная резервация под открытые SELL
+```
+
+Polymarket authoritative знает внешние **факты** — collateral, владения
+токенами, открытые заявки, сделки и их on-chain статус, — но не знает нашего
+разделения `available`/`reserved`, наших FIFO-лотов, `strategyId` локальной
+заявки и локальных времён. Адаптер, обязанный отдать `Portfolio`, был бы
+вынужден всё это выдумать. Поэтому для настоящего venue-адаптера введён
+отдельный порт **фактов площадки**:
+
+```text
+               POLYMARKET
+                   ↓
+      AuthoritativeAccountObservation
+      ├── collateralBalance
+      ├── positions[]
+      ├── openOrders[]
+      └── fills[] + venueStatus
+                   ↓
+             future matcher
+                   ↕
+             AccountHotState
+                   ↓
+               Portfolio
+               ├── Balance
+               ├── FIFO Position
+               └── TokenBalance
+```
+
+```typescript
+export interface IAccountVenueObservationSource {
+  getAccountObservation(venueId, accountId):
+    Promise<Result<AuthoritativeAccountObservation, AccountReconciliationSourceError>>;
+  getOrderObservation(venueId, accountId, orderId):
+    Promise<Result<AuthoritativeOrderObservation | undefined, AccountReconciliationSourceError>>;
+  getAssetBalance(venueId, accountId, asset):
+    Promise<Result<Quantity, AccountReconciliationSourceError>>;
+}
+```
+
+**Сейчас это подготовка.** Порт и DTO только объявлены: их не вызывает ни
+`AccountReconciler`, ни runtime, реализаций нет. Существующая сверка работает
+через `IAccountReconciliationSource` без изменений. Переход:
+
+```text
+#107  контракт наблюдений (этот шаг)
+#108  PolymarketAccountVenueObservationSource на официальном @polymarket/client
+#109  matcher наблюдений и коррекция; переключение AccountReconciler на новый порт
+```
+
+### Факт площадки ↔ локальный факт
+
+| факт площадки | | локальный факт |
+| --- | --- | --- |
+| `collateralBalance` | ↔ | `Balance.available + Balance.reserved` |
+| `position.quantity` | ↔ | `Position.quantity` |
+| | ↔ | `TokenBalance.available + TokenBalance.reserved` |
+| открытые BUY | → | reserved cash |
+| открытые SELL | → | reserved tokens |
+| fill + venue status | ↔ | `AccountFillRecord` |
+
+### Что НЕ является authoritative-заменой
+
+```text
+Polymarket position.avgPrice      ≠  источник локальных FIFO-лотов
+Polymarket collateral balance     ≠  локальный Balance.available
+Polymarket token balance          ≠  локальный TokenBalance.available
+Polymarket order                  ≠  canonical локальная идентичность Order
+```
+
+Площадка даёт наблюдаемые факты. Рантайм владеет своей бухгалтерской
+структурой.
+
+### DTO наблюдения
+
+`AuthoritativeAccountObservation` — **один логический проход** наблюдения, а
+не атомарная транзакция площадки. Адаптер соберёт его несколькими запросами
+(баланс, позиции, заявки, сделки), но каждый набор получен **один раз** за
+проход, **целиком** (пагинация исчерпана) и сохранён как есть. Оборванная
+пагинация и непонятая запись — `Err`, а не короткий список: короткий список
+неотличим от «этого нет на площадке».
+
+| DTO | authoritative | чего в нём нет и почему |
+| --- | --- | --- |
+| `collateralBalance: Money` | полное collateral-владение аккаунта | `availableCollateral`/`reservedCollateral` — резервация локальна |
+| `AuthoritativePositionObservation` | `asset + quantity` | `lots[]` — площадка их не знает; `averagePrice`/`entryCost` есть, но только как диагностика |
+| `AuthoritativeOrderObservation` | `orderId`, `asset`, `side`, `price`, `size`, `filledSize`, `status` | `strategyId`, `timestamp`, `reason`, `fillIds`, `accountId` — локальные поля `Order` |
+| `AuthoritativeFillObservation` | canonical `Fill` + **обязательный** `metadata.tradeStatus` | — |
+
+#### Заявка: почему не canonical `Order`
+
+Неизменяемая идентичность `Order` (`findOrderIdentityDifference`) включает
+`strategyId` и `timestamp`. Адаптер поставил бы `strategyId: undefined` там,
+где локально стоит автор заявки, и canonical-сравнение дало бы ложный
+конфликт на каждой заявке стратегии. `timestamp` у локальной заявки — момент
+создания рантаймом, у площадки — момент приёма: это разные факты.
+
+`AuthoritativeOrderStatus = Exclude<OrderStatus, 'PENDING'>`. `PENDING` —
+локальное состояние (отправлена, но не принята), площадка его подтвердить не
+может. Vendor-статус, который нельзя **однозначно** привести к
+`OPEN`/`PARTIALLY_FILLED`/`FILLED`/`CANCELED`/`REJECTED`/`EXPIRED`, — `Err`
+источника. Legacy-правило «неизвестный статус → `OPEN`» не переносится:
+угаданный `OPEN` держал бы резервацию под заявкой, которой на площадке,
+возможно, уже нет. Состав статусов закреплён тестом — новый `OrderStatus` не
+станет authoritative молча.
+
+#### Сделка: почему статус площадки обязателен
+
+```text
+MATCHED    матчинг произошёл — годится для восстановления, но НЕ финальность
+MINED      расчётная транзакция в блоке — ещё НЕ финальность
+RETRYING   расчёт повторяется — НЕ финальность
+CONFIRMED  финальное подтверждение площадки
+FAILED     исполнение окончательно не состоялось
+```
+
+Правило «сделка есть в ответе → `AccountFillStatus.CONFIRMED`» запрещено.
+Это две разные оси, и смешивать их нельзя:
+
+```text
+TradeStatus        MATCHED / MINED / RETRYING / CONFIRMED / FAILED   что говорит площадка
+AccountFillStatus  APPLIED / CONFIRMED / REVERTED                    что сделал рантайм
+```
+
+Наблюдение несёт только первую; во вторую её переведёт matcher (#109).
+`FAILED` после локального `APPLIED` — случай отката/конфликта, решаемый там же.
+
+`Fill` наблюдения обязан иметь **ту же** canonical-идентичность, что и
+исполнение из приватного потока, — иначе одна сделка, увиденная дважды,
+станет двумя исполнениями. Поэтому REST-сделка переводится тем же правилом
+`FillId`, что и WS-событие (`FillMapper`), а не независимым маппером.
+
+#### `getAssetBalance()` — только при расхождении
+
+Независимое подтверждение владения **одним** outcome-активом: полное
+количество на аккаунте, а не `TokenBalance.available`. Нужно, когда
+количество позиции в наблюдении не сошлось с локальным:
+
+```text
+positions[].quantity ≠ Position.quantity
+        ↓
+getAssetBalance(asset)        независимый источник площадки (баланс расчётного слоя)
+        ↕
+TokenBalance.available + TokenBalance.reserved
+        ↕
+Position.quantity
+```
+
+В обычном успешном проходе для каждого токена его **не** вызывают.
+
+### Будущая семантика резерваций (только описание — не реализовано)
+
+Площадка сообщает полное владение, а локальная бухгалтерия делит его на
+`available` и `reserved`. Резервация выводится из authoritative открытых
+заявок:
+
+```text
+BUY   remaining = size - filledSize
+      reserved cash   = remaining × order.price
+
+SELL  remaining = size - filledSize
+      reserved tokens = remaining
+```
+
+Отсюда главное соотношение — и главная причина observation-модели:
+
+```text
+venue holding  ≠  local available
+venue holding  =  local available + local reserved
+```
+
+### Будущая политика сверки инвентаря (только описание — не реализовано)
+
+```text
+external position quantity  vs  local Position.quantity
+```
+
+**Совпадает** → существующие FIFO-лоты **сохраняются**, даже если
+`avgPrice` площадки не равен `Position.averageEntryPrice`: модели учёта
+(комиссии, частичные закрытия, merge) могут отличаться, а количество — нет.
+
+**Не совпадает** → сначала ищется недостающее authoritative-исполнение:
+
+```text
+external qty = 10
+local qty    = 8
+fills[] содержит BUY +2, которого нет локально   → provenance найдена
+```
+
+Коррекция восстанавливает лоты из **настоящего** `Fill`. Если после учёта
+известных исполнений расхождение не объясняется:
+
+```text
+POSITION_QUANTITY_MISMATCH → fail closed
+```
+
+Создать синтетический лот на разницу — **запрещено**.
 
 ## Один проход: `AccountReconciler`
 
@@ -323,6 +544,7 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 | реализовано | не реализовано |
 | --- | --- |
 | узкий canonical-порт `IAccountReconciliationSource` | Polymarket REST-адаптер, SDK, DTO |
+| контракт фактов площадки `IAccountVenueObservationSource` + `Authoritative*Observation` (только типы) | его реализация, matcher наблюдений, реконструкция резерваций, восстановление пропущенных исполнений, `POSITION_QUANTITY_MISMATCH` |
 | `AccountReconciler` — один проход | таймеры, cron, production-каденция |
 | событие `TRADING_ACCOUNT_RECONCILED` с CAS | startup/runtime wiring, CLI |
 | атомарная коррекция в `AccountStateProjector` / `AccountHotState` | private WebSocket reconciliation |
@@ -340,7 +562,8 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 | `health.test.ts` | все переходы статуса, времена из `PaperClock`, no-op → `READY`, конфликт ≠ `UNHEALTHY`, независимость аккаунтов |
 | `publish.test.ts` | классификация исходов `publishConfirmed()` на stub-шине (обычный `publish()` в ней бросает): переполнение, исключение, critical-ошибка чужого события (другого типа и чужой `TRADING_ACCOUNT_RECONCILED` по `messageId`), конфликт по классу |
 | `confirmedDelivery.test.ts` | настоящая шина: A держит drain — B не резолвится и не `READY` до обработки своей коррекции; конфликт A не достаётся B; упавший чужой backlog — коррекция B не встаёт в очередь и не применяется позже; отказ другого события после B в том же drain — исход B успешен |
-| `boundary.test.ts` | нет зависимостей на infrastructure; закрытый список импортов; нет часов, таймеров, `JSON.stringify`, HTTP |
+| `venueObservation.types.test.ts` | compile-time контракт наблюдений: у заявки нет `strategyId`/`timestamp`, `PENDING` не authoritative (и состав статусов закреплён), без `tradeStatus` и голый `Fill` не компилируются, у позиции нет `lots`, у наблюдения нет `available`/`reserved`, `Portfolio` — не наблюдение; порт реализуем одними canonical-типами; операции ошибки = методы порта |
+| `boundary.test.ts` | нет зависимостей на infrastructure; закрытый список импортов; контракт наблюдений зависит только от ids/value-objects/order/fill/result; нет `@polymarket/client`/`@polymarket/bindings`; нет часов, таймеров, `JSON.stringify`, HTTP |
 
 `FakeAccountReconciliationSource` (`__tests__/helpers/`) задаёт данные по
 аккаунтам, отказы (`Err` или исключение), удержание следующего вызова до

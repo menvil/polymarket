@@ -8,10 +8,10 @@
  * Polymarket ни прямо, ни через devDependencies:
  *
  * ```text
- * Infrastructure: Polymarket REST adapter  (следующий этап)
- *         ↓ implements IAccountReconciliationSource
+ * Infrastructure: Polymarket venue adapter  (следующий этап)
+ *         ↓ implements IAccountVenueObservationSource
  * ─────────────────────────────────────────────────────
- * Application: AccountReconciler + Coordinator
+ * Application: контракт наблюдений + AccountReconciler + Coordinator
  * ```
  *
  * Правила проверяются по РЕАЛЬНЫМ артефактам — `package.json`, дереву
@@ -49,7 +49,30 @@ const ALLOWED_IMPORTS = new Set([
   '@polymarket/result',
   '@polymarket/time',
   '@polymarket/timestamp',
+  '@polymarket/value-objects',
 ]);
+
+/**
+ * Файлы контракта наблюдений площадки и их ЕДИНСТВЕННО допустимые внешние
+ * зависимости.
+ *
+ * @remarks
+ * Уже, чем общий закрытый список пакета: контракт фактов площадки не зависит ни
+ * от `Portfolio`/`Position` (он НЕ локальное состояние), ни от шины и
+ * состояния аккаунта (он не участвует в коррекции) — только от canonical
+ * идентификаторов, value objects, заявки, исполнения и `Result`.
+ */
+const OBSERVATION_CONTRACT_FILES = ['AuthoritativeAccountObservation.ts', 'IAccountVenueObservationSource.ts'];
+const OBSERVATION_CONTRACT_IMPORTS = new Set([
+  '@polymarket/fill',
+  '@polymarket/ids',
+  '@polymarket/order',
+  '@polymarket/result',
+  '@polymarket/value-objects',
+]);
+
+/** Vendor-клиенты Polymarket: их типы живут в адаптере, а не в application-пакете. */
+const VENDOR_PACKAGES = ['@polymarket/client', '@polymarket/bindings'];
 
 /**
  * Конструкции, которых не должно быть в КОДЕ пакета.
@@ -161,6 +184,33 @@ describe('граница пакета @polymarket/account-reconciliation', () =>
       }
     }
     expect(undeclared).toEqual([]);
+  });
+
+  it('контракт наблюдений площадки импортирует только canonical ids/value-objects/order/fill/result', () => {
+    const violations: string[] = [];
+    for (const name of OBSERVATION_CONTRACT_FILES) {
+      const file = join(SRC_ROOT, name);
+      expect(existsSync(file)).toBe(true);
+      for (const specifier of collectImports(stripComments(readFileSync(file, 'utf8')))) {
+        if (specifier.startsWith('.')) continue;
+        if (!OBSERVATION_CONTRACT_IMPORTS.has(specifier)) violations.push(`${name}: ${specifier}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('vendor-клиенты Polymarket не попадают ни в src, ни в зависимости пакета', () => {
+    const leakedDependencies = VENDOR_PACKAGES.filter((name) => allDependencies.has(name));
+    const leakedImports: string[] = [];
+    for (const file of sourceFiles) {
+      for (const specifier of collectImports(stripComments(readFileSync(file, 'utf8')))) {
+        if (VENDOR_PACKAGES.includes(packageName(specifier))) {
+          leakedImports.push(`${relative(SRC_ROOT, file).split(sep).join('/')}: ${specifier}`);
+        }
+      }
+    }
+    expect(leakedDependencies).toEqual([]);
+    expect(leakedImports).toEqual([]);
   });
 
   it('в коде нет часов, таймеров, JSON-равенства и HTTP', () => {
