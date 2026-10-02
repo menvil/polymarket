@@ -30,7 +30,12 @@
  * - {@link AccountReconciler} — один проход сверки;
  * - {@link AccountReconciliationCoordinator} — per-account single-flight с
  *   coalescing, свежий проход при конфликте версий, health;
- * - типизированные ошибки с `failureCode`.
+ * - типизированные ошибки с `failureCode`;
+ * - {@link IAccountVenueStateSource} и `Authoritative*State` — target
+ *   production-граница: authoritative ТЕКУЩЕЕ состояние аккаунта на площадке
+ *   (collateral, владения, заявки, сделки со статусом площадки). Сверка его
+ *   пока НЕ вызывает: она работает через transitional
+ *   `IAccountReconciliationSource`, а переход — отдельный миграционный шаг.
  *
  * ### Чего нет
  *
@@ -54,6 +59,18 @@
  * ```
  */
 export type { IAccountReconciliationSource } from './IAccountReconciliationSource.js';
+export type { IAccountVenueStateSource } from './IAccountVenueStateSource.js';
+export type {
+  AuthoritativeAccountState,
+  AuthoritativeFillMetadata,
+  AuthoritativeFillState,
+  AuthoritativeOpenOrderState,
+  AuthoritativeOpenOrderStatus,
+  AuthoritativeOrderState,
+  AuthoritativeOrderStatus,
+  AuthoritativeOutcomeAssetId,
+  AuthoritativePositionState,
+} from './AuthoritativeAccountState.js';
 export {
   AccountReconciler,
   type AccountReconcilerDependencies,
@@ -80,6 +97,7 @@ export {
   type AccountReconciliationFailure,
   type AccountReconciliationFailureCode,
   type AccountReconciliationSourceOperation,
+  type AccountVenueStateSourceOperation,
   type AccountReconciliationValidationReason,
 } from './errors.js';
 /**

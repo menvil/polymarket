@@ -8,10 +8,10 @@
  * Polymarket ни прямо, ни через devDependencies:
  *
  * ```text
- * Infrastructure: Polymarket REST adapter  (следующий этап)
- *         ↓ implements IAccountReconciliationSource
+ * Infrastructure: Polymarket venue adapter  (следующий этап)
+ *         ↓ implements IAccountVenueStateSource
  * ─────────────────────────────────────────────────────
- * Application: AccountReconciler + Coordinator
+ * Application: контракт состояния площадки + AccountReconciler + Coordinator
  * ```
  *
  * Правила проверяются по РЕАЛЬНЫМ артефактам — `package.json`, дереву
@@ -49,7 +49,55 @@ const ALLOWED_IMPORTS = new Set([
   '@polymarket/result',
   '@polymarket/time',
   '@polymarket/timestamp',
+  '@polymarket/value-objects',
 ]);
+
+/**
+ * Файлы контракта состояния площадки и их ЕДИНСТВЕННО допустимые внешние
+ * зависимости.
+ *
+ * @remarks
+ * Уже, чем общий закрытый список пакета: контракт фактов площадки не зависит ни
+ * от `Portfolio`/`Position` (он НЕ локальное состояние), ни от шины и
+ * состояния аккаунта (он не участвует в коррекции) — только от canonical
+ * идентификаторов, value objects, заявки, исполнения и `Result`. Относительные
+ * импорты — только соседние файлы `src`: путь наружу (`../…`) обошёл бы
+ * закрытый список.
+ */
+const VENUE_STATE_CONTRACT_FILES = ['AuthoritativeAccountState.ts', 'IAccountVenueStateSource.ts'];
+const VENUE_STATE_CONTRACT_IMPORTS = new Set([
+  '@polymarket/fill',
+  '@polymarket/ids',
+  '@polymarket/order',
+  '@polymarket/result',
+  '@polymarket/value-objects',
+]);
+
+/**
+ * Что application-пакет не имеет права импортировать ни в одном файле `src`.
+ *
+ * @remarks
+ * - vendor-клиенты Polymarket и HTTP-библиотеки: их типы и транспорт живут в
+ *   Infrastructure-адаптере. `@polymarket/client` и `@polymarket/bindings` —
+ *   официальный SDK, которым уже пользуются активные пакеты (`apps/pnl`,
+ *   `polymarket-v2`, `market-finalizer`, …) и будущий venue-адаптер;
+ *   `@polymarket/clob-client` и `@polymarket/order-utils` — старые vendor-
+ *   клиенты legacy-кода: в зависимостях репозитория их нет, запрет —
+ *   защита от их возврата;
+ * - фрагменты путей `infrastructure`, `apps/pnl`, `legacy-bot`: рабочий код
+ *   `apps/pnl` и legacy — справочник для адаптера, а не зависимость сверки.
+ */
+const FORBIDDEN_PACKAGES = [
+  '@polymarket/client',
+  '@polymarket/bindings',
+  '@polymarket/clob-client',
+  '@polymarket/order-utils',
+  'axios',
+  'node-fetch',
+  'cross-fetch',
+  'undici',
+];
+const FORBIDDEN_PATH_FRAGMENTS = ['infrastructure', 'apps/pnl', 'legacy-bot'];
 
 /**
  * Конструкции, которых не должно быть в КОДЕ пакета.
@@ -161,6 +209,38 @@ describe('граница пакета @polymarket/account-reconciliation', () =>
       }
     }
     expect(undeclared).toEqual([]);
+  });
+
+  it('контракт состояния площадки импортирует только canonical ids/value-objects/order/fill/result', () => {
+    const violations: string[] = [];
+    for (const name of VENUE_STATE_CONTRACT_FILES) {
+      const file = join(SRC_ROOT, name);
+      expect(existsSync(file)).toBe(true);
+      for (const specifier of collectImports(stripComments(readFileSync(file, 'utf8')))) {
+        const allowed = specifier.startsWith('.')
+          ? specifier.startsWith('./') && !specifier.includes('..')
+          : VENUE_STATE_CONTRACT_IMPORTS.has(specifier);
+        if (!allowed) violations.push(`${name}: ${specifier}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('ни src, ни зависимости не тянут vendor-клиентов, HTTP, infrastructure, apps/pnl и legacy-bot', () => {
+    const leakedDependencies = [...allDependencies].filter(
+      (name) => FORBIDDEN_PACKAGES.includes(name) || FORBIDDEN_PATH_FRAGMENTS.some((part) => name.includes(part)),
+    );
+    const leakedImports: string[] = [];
+    for (const file of sourceFiles) {
+      for (const specifier of collectImports(stripComments(readFileSync(file, 'utf8')))) {
+        const forbidden =
+          FORBIDDEN_PACKAGES.includes(packageName(specifier)) ||
+          FORBIDDEN_PATH_FRAGMENTS.some((part) => specifier.includes(part));
+        if (forbidden) leakedImports.push(`${relative(SRC_ROOT, file).split(sep).join('/')}: ${specifier}`);
+      }
+    }
+    expect(leakedDependencies).toEqual([]);
+    expect(leakedImports).toEqual([]);
   });
 
   it('в коде нет часов, таймеров, JSON-равенства и HTTP', () => {
