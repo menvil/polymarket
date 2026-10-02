@@ -1,0 +1,35 @@
+packages/application/account-reconciliation/src/IAccountVenueStateSource.ts
+  s_f879ac6c3f0f5c::t_e3d0f99a0c517d 9
+  s_f879ac6c3f0f5c::t_fda3915761edd1 56,59-63,107-108,143,185
+packages/application/account-reconciliation/README.md
+  s_f879ac6c3f0f5c::t_e3d0f99a0c517d 22,229,233-234,237-241,396,433,441,514-515
+  s_f879ac6c3f0f5c::t_83c68f67d86c3e 725-726
+  s_f879ac6c3f0f5c::t_9765d795d8a40c 268,302-305,311-312,315-319,321-322
+docs/guides/account-venue-state.md
+  s_f879ac6c3f0f5c::t_d527f35350fd25 11-16,35-36,57,73-75,78-82,90-134,144-145,172,174-175,183,208,225,267-269,275,280,289
+packages/application/account-reconciliation/__tests__/venueState.types.test.ts
+  s_f879ac6c3f0f5c::t_5e2b7e4fffffe4 10-12,18-19,24-37,51-52,55,74-116,119,123,134-135,141,156-157,163,198,220,225-269,320-388,450,461,490,502
+packages/application/account-reconciliation/src/index.ts
+  s_f879ac6c3f0f5c::t_fda3915761edd1 67-68,71
+packages/application/account-reconciliation/__tests__/boundary.test.ts
+  s_f879ac6c3f0f5c::t_ce4fb7f2d3f53b 81-86,93-94
+packages/application/account-reconciliation/src/AuthoritativeAccountState.ts
+  s_f879ac6c3f0f5c::t_fda3915761edd1 68-93,120-121,124-145,201-202,215-235,289-290,437-439,457
+  s_f879ac6c3f0f5c::t_9765d795d8a40c 434-436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3243a6f70323823ea893459a2a5e5ac73ab4fe1f",
+  "prompts": {},
+  "sessions": {
+    "s_f879ac6c3f0f5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60a8ea10-4520-4087-86ea-c324b7cb484b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
