@@ -64,8 +64,11 @@ export type {
   AuthoritativeAccountState,
   AuthoritativeFillMetadata,
   AuthoritativeFillState,
+  AuthoritativeOpenOrderState,
+  AuthoritativeOpenOrderStatus,
   AuthoritativeOrderState,
   AuthoritativeOrderStatus,
+  AuthoritativeOutcomeAssetId,
   AuthoritativePositionState,
 } from './AuthoritativeAccountState.js';
 export {

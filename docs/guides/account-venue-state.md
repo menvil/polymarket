@@ -8,9 +8,12 @@ Target production-граница `IAccountVenueStateSource` и DTO
 модель»). Здесь — **почему** граница устроена так и что из legacy-кода
 обязан знать будущий адаптер.
 
-> Статус: граница объявлена (#107), реализаций нет, сверка её не вызывает.
-> Адаптер — #108, state matcher и correction planner — #109, runtime wiring —
-> #110.
+> Статус: граница объявлена, реализаций нет, сверка её не вызывает.
+>
+> - текущий MR — authoritative venue state boundary;
+> - следующий MR — `PolymarketAccountVenueStateSource`;
+> - за ним — state matcher + atomic correction planner;
+> - затем — runtime wiring `STARTUP` / `PERIODIC` / `RECONNECT`.
 
 ## Главный принцип: сходимость к текущему состоянию площадки
 
@@ -29,8 +32,8 @@ reorg. Сверка не доказывает происхождение — о�
 ```mermaid
 flowchart LR
     WS[Private WS] --> EV[ApplicationEvents] --> HS[AccountHotState]
-    REST[Venue REST / current state] -->|#108| ST[AuthoritativeAccountState]
-    ST -->|#109 state matcher| PLAN[correction plan]
+    REST[Venue REST / current state] -->|venue adapter| ST[AuthoritativeAccountState]
+    ST -->|state matcher| PLAN[correction plan]
     PLAN -->|одна атомарная коррекция| HS
     HS --> PF[Portfolio]
 ```
@@ -51,7 +54,7 @@ flowchart LR
 
 ## Почему не `getPortfolio(): Portfolio`
 
-Transitional-порт #106 `IAccountReconciliationSource` требует готовый
+Transitional-порт текущей сверки `IAccountReconciliationSource` требует готовый
 `Portfolio`. Для fake-источника в тестах это удобно, но настоящая площадка не
 знает того, из чего `Portfolio` состоит:
 
@@ -67,19 +70,67 @@ Transitional-порт #106 `IAccountReconciliationSource` требует гот�
 инвентарь — из текущих количеств площадки, provenance — из настоящих
 исполнений, где они есть.
 
-## Шаги будущего прохода (#108)
+## Шаги будущего прохода (Polymarket-адаптер)
+
+Словарь — официальный `@polymarket/client` 0.6.0 (тот же, что в `apps/pnl`):
 
 ```text
-1. collateral   CLOB balance-allowance, asset_type = COLLATERAL     → Money
-2. positions    Data API listPositions(user), все страницы          → asset + quantity
-3. open orders  CLOB /data/orders, все страницы (next_cursor)       → AuthoritativeOrderState[]
-4. trades       CLOB listAccountTrades, все страницы до "LTE="      → правило FillMapper → Fill + tradeStatus
+1. collateral   fetchBalanceAllowance({ assetType: COLLATERAL })      → Money
+2. positions    listPositions({ user, sizeThreshold: 0 })             → AuthoritativePositionState[]
+                каждая страница SDK до конца
+3. open orders  listOpenOrders(...), каждая страница SDK до конца      → AuthoritativeOpenOrderState[]
+4. trades       listAccountTrades(...), каждая страница SDK до конца   → правило FillMapper → Fill + tradeStatus
 5. собрать AuthoritativeAccountState; отказ ЛЮБОГО шага → Err всего прохода
 ```
 
 Каждый набор читается **один раз** за проход. Состояние не атомарно на
 стороне площадки — это свойство источника, а не дефект; CAS в
 `AccountHotState` защищает от гонки с живым контуром.
+
+### Пагинация — контракт SDK, а не sentinel-ы сырого REST
+
+`listPositions`, `listOpenOrders` и `listAccountTrades` возвращают
+`Paginated<T>`: адаптер проходит его **целиком** (`for await` по страницам,
+пока SDK сообщает, что следующей страницы нет). Как SDK понимает «страниц
+больше нет», — его дело:
+
+- для `/data/orders` и `/data/trades` он сам сравнивает курсор с
+  `END_CURSOR` (`"LTE="`) из `@polymarket/bindings`;
+- для `/positions` пагинация по `offset`: страница считается последней, если
+  в ней меньше `pageSize` записей.
+
+Legacy-клиент работал с сырым REST и сам проверял `"LTE="` как
+терминальный курсор. Production-адаптер опирается на контракт пагинации SDK
+и этот sentinel **не дублирует**. Отказ на любой странице — `Err` всего
+прохода, а не укороченный список.
+
+### Позиции: пыль не имеет права пропасть
+
+Data API `/positions` по умолчанию отфильтровывает мелкие владения:
+`sizeThreshold` — `default: 1, minimum: 0` (документация Data API). SDK
+0.6.0 своего значения не подставляет и передаёт параметр как есть. Поэтому:
+
+```text
+Polymarket-адаптер ОБЯЗАН явно запрашивать позиции без фильтра по размеру
+в токенах: listPositions({ user, sizeThreshold: 0 })
+```
+
+Инвариант: позиция меньше порога пыли по умолчанию **не может исчезнуть** из
+authoritative-состояния. Иначе отсутствие актива в `positions[]` (= «аккаунт
+его не держит») занизило бы текущий инвентарь, а сверка «исправила» бы
+настоящие токены в ноль.
+
+Других параметров фильтра по количеству у `listPositions` в SDK 0.6.0 нет:
+`filterType` (`CASH`/`TOKENS`) и `filterAmount` есть только у
+`ListTradesRequest` (публичные сделки Data API), к позициям они не относятся.
+
+Ещё два ограничения `/positions`, которые адаптер обязан учесть:
+
+- `includeArchived` — «позиции в архивных рынках, которые ещё активны»,
+  `default: false`. В схеме `ListPositionsRequest` SDK 0.6.0 этого параметра
+  **нет** (неизвестные поля zod-схема отбрасывает) — см. открытые вопросы;
+- `offset` ограничен `maximum: 10000`, страница — `pageSize ≤ 500`. Отказ
+  площадки на пределе offset — `Err`, а не «последняя страница».
 
 ## Что из legacy-кода сохранить — и что не переносить
 
@@ -90,7 +141,8 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 
 ### Статусы заявок: никакого «неизвестный → OPEN»
 
-`PolymarketOrderMapper.mapStatus` (`rest/mappers/PolymarketOrderMapper.ts`)
+`PolymarketOrderMapper.mapStatus`
+(`legacy-bot/live-account-reference/packages/infrastructure/polymarket/rest/mappers/PolymarketOrderMapper.ts`)
 на любой незнакомый vendor-статус возвращал `open` с предупреждением в лог.
 Под это попадали `canceled` (американское написание), `unmatched`, `delayed`.
 Угаданный `OPEN` держит резервацию под заявкой, которой на площадке, возможно,
@@ -117,8 +169,10 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 
 ### Сделки аккаунта: полнота, владение, идентичность
 
-- `/data/trades` пагинирован курсором до `"LTE="`. Legacy бросал при
+- Legacy читал сырой `/data/trades` курсором до `"LTE="`, бросал при
   превышении лимита страниц и при отсутствии курсора — fail closed правильно.
+  Production-адаптер получает ту же полноту, проходя `Paginated`
+  `listAccountTrades` до конца (см. «Пагинация — контракт SDK»).
 - **Одна непереводимая запись роняет весь вызов.** Эндпоинт возвращает только
   сделки аккаунта, поэтому ошибка маппинга — дефект маппинга или schema drift,
   а не «чужая сделка» (см. `polymarket-venue-lessons.md`). Пустой `Ok`
@@ -126,7 +180,7 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 - **Фильтр `maker_address` — открытый вопрос.** Комментарий в
   `PolymarketExecutionAdapter.getFilledOrders` утверждает, что с ним API
   отдаёт только сделки, где мы maker, и taker-исполнения теряются; при этом
-  `apps/pnl` его передаёт. Перед #108 проверить на живом аккаунте.
+  `apps/pnl` его передаёт. До Polymarket-адаптера проверить на живом аккаунте.
 - **Владение maker-заявкой** — по нашей записи в `maker_orders[]` (`owner` или
   `maker_address`, инжектированный из НАШИХ credentials, а не из ответа). В
   cross-outcome сделке поля верхнего уровня (`owner`, `asset_id`, `side`)
@@ -151,7 +205,7 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 - **`FillMapper` умеет только WS-форму** (snake_case). REST `ClobTrade`
   официального SDK — camelCase (`makerOrders`, `matchedAt` в ISO, статус с
   префиксом `TRADE_STATUS_`). Legacy подгонял REST под WS переименованием
-  полей. Для #108 правило `FillId` и владения нужно **переиспользовать**, а не
+  полей. Для Polymarket-адаптера правило `FillId` и владения нужно **переиспользовать**, а не
   писать второй независимый REST-маппер.
 
 ### Статус сделки: не терять и не угадывать
@@ -168,7 +222,7 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
   автоматически: `VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED` + issue
   рассинхрона. В новой модели текущее
   состояние площадки побеждает: откат, перестроение или коррекция — решение
-  #109, а граница лишь несёт факт `FAILED` без потери.
+  state matcher-а, а граница лишь несёт факт `FAILED` без потери.
 - `FillMapper` превращает незнакомый или префиксный статус в `undefined`, а
   `apps/pnl` сохраняет сделки с пустым статусом. В новой границе статус
   **обязателен**: такая запись — `Err`.
@@ -210,20 +264,20 @@ event-sourced, а единственной on-chain правдой был `CONDI
 - поля `size`, `avgPrice`, `initialValue`, `tokenId` (**может быть `null`**),
   числа — `DecimalString | null`; поля `currentSize` нет;
 - параметры: `user`, `sizeThreshold`, `redeemable`, `mergeable`, курсор;
-  `apps/pnl` `sizeThreshold` не задаёт. Значение по умолчанию надо проверить:
-  отфильтрованная «пыль» неотличима от отсутствия позиции, а инвентарь
-  площадки — authoritative;
+  `apps/pnl` `sizeThreshold` не задаёт и поэтому получает серверный порог 1 —
+  для authoritative-инвентаря так нельзя, нужен явный `sizeThreshold: 0`
+  (см. «Позиции: пыль не имеет права пропасть»);
 - строка без `tokenId` не адресуется по `asset` — `Err`, а не пропуск.
 
 `size` → `quantity`, `avgPrice` → `averagePrice`, `initialValue` →
 `entryCost` (справка).
 
-## Открытые вопросы для #108
+## Открытые вопросы для Polymarket-адаптера
 
 | вопрос | почему важен |
 | --- | --- |
 | режет ли `maker_address` taker-сделки в `listAccountTrades` | неполный `fills[]` = невидимые исполнения |
-| `sizeThreshold` по умолчанию у `listPositions` | пыль пропадёт из `positions[]`, инвентарь занизится |
+| `includeArchived` (`default: false`) отсутствует в SDK 0.6.0: теряются ли позиции архивных, но активных рынков | неполный `positions[]` = заниженный инвентарь |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
 | `delayed` / `unmatched` у заявок → какой `AuthoritativeOrderStatus` | сейчас fail closed |
 | `fills[]` — полная история или окно (`after`) | при окне отсутствие исполнения ничего не доказывает |
@@ -232,7 +286,7 @@ event-sourced, а единственной on-chain правдой был `CONDI
 ## Связанное
 
 - `packages/application/account-reconciliation/README.md` — граница, примеры
-  A/B/C, будущий порядок коррекции, текущая сверка #106.
+  A/B/C, будущий порядок коррекции, текущая сверка.
 - `docs/guides/polymarket-venue-lessons.md` — ошибка маппинга ≠ «чужая
   запись», семантика эндпоинтов.
 - `docs/guides/sell-balance-protection.md` — расхождение баланса токена с

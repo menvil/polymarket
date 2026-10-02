@@ -6,7 +6,7 @@
  * ### Transitional и target
  *
  * ```text
- * IAccountReconciliationSource   transitional-контракт коррекции #106:
+ * IAccountReconciliationSource   transitional-контракт текущей сверки:
  *                                готовый ЛОКАЛЬНЫЙ Portfolio + Order + Fill
  * IAccountVenueStateSource       target production-граница площадки:
  *                                ФАКТЫ площадки — collateral, владения,
@@ -53,10 +53,14 @@
  * }
  * ```
  */
-import type { AccountId, AssetId, OrderId, VenueId } from '@polymarket/ids';
+import type { AccountId, OrderId, VenueId } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import type { Quantity } from '@polymarket/value-objects';
-import type { AuthoritativeAccountState, AuthoritativeOrderState } from './AuthoritativeAccountState.js';
+import type {
+  AuthoritativeAccountState,
+  AuthoritativeOrderState,
+  AuthoritativeOutcomeAssetId,
+} from './AuthoritativeAccountState.js';
 import type { AccountReconciliationSourceError } from './errors.js';
 
 /**
@@ -100,7 +104,8 @@ export interface IAccountVenueStateSource {
    * @param venueId - Площадка аккаунта
    * @param accountId - Аккаунт-владелец
    * @param orderId - Заявка
-   * @returns Состояние заявки (в том числе терминальное); `undefined` —
+   * @returns Полное состояние заявки — в том числе терминальное, поэтому
+   *   `AuthoritativeOrderState`, а не `AuthoritativeOpenOrderState`; `undefined` —
    *   источник не может доказать её состояние; либо отказ источника
    *
    * @remarks
@@ -135,7 +140,7 @@ export interface IAccountVenueStateSource {
    *
    * @param venueId - Площадка аккаунта
    * @param accountId - Аккаунт
-   * @param asset - Outcome-актив (не collateral: он — в
+   * @param asset - Outcome-актив; `CURRENCY` запрещён типом (collateral — в
    *   `AuthoritativeAccountState.collateralBalance`)
    * @returns Фактическое текущее количество актива на аккаунте (`0`, если
    *   аккаунт его не держит) либо отказ источника
@@ -177,6 +182,6 @@ export interface IAccountVenueStateSource {
   getAssetBalance(
     venueId: VenueId,
     accountId: AccountId,
-    asset: AssetId,
+    asset: AuthoritativeOutcomeAssetId,
   ): Promise<Result<Quantity, AccountReconciliationSourceError>>;
 }

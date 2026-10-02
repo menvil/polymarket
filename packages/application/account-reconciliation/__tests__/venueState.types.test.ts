@@ -7,19 +7,34 @@
  * `__tests__`, а ts-jest компилирует файл перед запуском. Если из контракта
  * исчезнет запрет (`PENDING` станет допустимым, `tradeStatus` —
  * необязательным, у позиции появятся лоты, у заявки — `strategyId`, у
- * исполнения — origin), то неиспользованный `@ts-expect-error` или неверное
- * `Equal<…>` сломают компиляцию, а не runtime-ассерт.
+ * исполнения — origin, в `openOrders` пройдёт терминальная заявка, а в
+ * outcome-актив — `CURRENCY`), то неиспользованный `@ts-expect-error` или
+ * неверное `Equal<…>` сломают компиляцию, а не runtime-ассерт.
  *
  * Отсутствие поля проверяется через `keyof`, а не рефлексией: интерфейс —
  * контракт для адаптера, и вопрос «может ли адаптер передать `strategyId`»
  * решает компилятор, а не содержимое конкретного объекта.
  *
- * Все импорты — из корня пакета: заодно фиксируется публичный экспорт.
+ * Все импорты контракта — из корня пакета: заодно фиксируется публичный
+ * экспорт.
  */
 import { describe, expect, it } from '@jest/globals';
 import type { ExecutionMetadata, TradeStatus } from '@polymarket/fill';
 import { Ok, type Result } from '@polymarket/result';
-import { asOrderId, type AccountId, type AssetId, type OrderId, type VenueId } from '@polymarket/ids';
+import {
+  AssetIdHelpers,
+  BinaryOutcome,
+  KnownOnChainProtocols,
+  asOrderId,
+  isOutcomeTokenAsset,
+  isPolymarketCtfToken,
+  type AccountId,
+  type AssetId,
+  type ChainId,
+  type ConditionId,
+  type OrderId,
+  type VenueId,
+} from '@polymarket/ids';
 import {
   MoneyService,
   OutcomePriceService,
@@ -33,8 +48,11 @@ import {
   type AuthoritativeAccountState,
   type AuthoritativeFillMetadata,
   type AuthoritativeFillState,
+  type AuthoritativeOpenOrderState,
+  type AuthoritativeOpenOrderStatus,
   type AuthoritativeOrderState,
   type AuthoritativeOrderStatus,
+  type AuthoritativeOutcomeAssetId,
   type AuthoritativePositionState,
   type IAccountVenueStateSource,
 } from '../src/index.js';
@@ -53,15 +71,56 @@ type Equal<A, B> =
 
 const ORDER_ID = asOrderId('order-1') as OrderId;
 
-/** Состояние заявки площадки с заданными статусом и стороной. */
-function venueOrder(status: AuthoritativeOrderStatus, side: Side = 'BUY'): AuthoritativeOrderState {
+/**
+ * Сырой CTF-токен фикстур, суженный до outcome-актива.
+ *
+ * @remarks
+ * `asPolymarketCtfToken` отдаёт широкий `AssetId`; сужение — canonical-guard,
+ * ровно так, как это будет делать адаптер.
+ */
+const YES_TOKEN: AuthoritativeOutcomeAssetId = (() => {
+  if (!isPolymarketCtfToken(UP_TOKEN)) throw new Error('fixture failed: UP_TOKEN is not a CTF token');
+  return UP_TOKEN;
+})();
+
+/** On-chain outcome-токен (`OUTCOME_TOKEN`) — второй допустимый вариант. */
+const ONCHAIN_UP: AuthoritativeOutcomeAssetId = (() => {
+  const asset = must<AssetId>(
+    AssetIdHelpers.fromOutcomeToken(
+      {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 137 as ChainId,
+        conditionId: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd' as ConditionId,
+      },
+      BinaryOutcome.UP,
+    ),
+  );
+  if (!isOutcomeTokenAsset(asset)) throw new Error('fixture failed: not an OUTCOME_TOKEN');
+  return asset;
+})();
+
+/**
+ * Состояние заявки площадки с согласованным исполнением.
+ *
+ * @remarks
+ * Объём 10; исполнено — 0 у `OPEN` и терминальных без исполнения, 4 у
+ * `PARTIALLY_FILLED`, 10 у `FILLED` — документированные инварианты
+ * `AuthoritativeOrderState`. Статус выводится литералом, поэтому
+ * `venueOrder('OPEN')` годится в `openOrders`, а `venueOrder('FILLED')` — нет.
+ */
+function venueOrder<S extends AuthoritativeOrderStatus>(
+  status: S,
+  side: Side = 'BUY',
+): AuthoritativeOrderState & { readonly status: S } {
+  const filled = status === 'FILLED' ? 10 : status === 'PARTIALLY_FILLED' ? 4 : 0;
   return {
     orderId: ORDER_ID,
-    asset: UP_TOKEN,
+    asset: YES_TOKEN,
     side,
     price: must(OutcomePriceService.create(0.42)),
     size: must(QuantityService.create(10)),
-    filledSize: must(QuantityService.create(status === 'PARTIALLY_FILLED' ? 4 : 0)),
+    filledSize: must(QuantityService.create(filled)),
     status,
   };
 }
@@ -72,12 +131,14 @@ function venueOrder(status: AuthoritativeOrderStatus, side: Side = 'BUY'): Autho
  * @remarks
  * Её существование — тоже проверка: порт реализуем одними canonical-типами,
  * без `Portfolio`, `Position`, canonical `Order` и без какого-либо знания о
- * локальном состоянии.
+ * локальном состоянии. `getOrderState` ищет и среди живых заявок, и среди
+ * известных источнику терминальных — адресный ответ шире списка открытых.
  */
 class InMemoryVenueStateSource implements IAccountVenueStateSource {
   constructor(
     private readonly _state: AuthoritativeAccountState,
     private readonly _assetBalance: Quantity,
+    private readonly _closedOrders: readonly AuthoritativeOrderState[] = [],
   ) {}
 
   async getAccountState(
@@ -92,13 +153,14 @@ class InMemoryVenueStateSource implements IAccountVenueStateSource {
     _accountId: AccountId,
     orderId: OrderId,
   ): Promise<Result<AuthoritativeOrderState | undefined, AccountReconciliationSourceError>> {
-    return Ok(this._state.openOrders.find((order) => order.orderId === orderId));
+    const known: readonly AuthoritativeOrderState[] = [...this._state.openOrders, ...this._closedOrders];
+    return Ok(known.find((order) => order.orderId === orderId));
   }
 
   async getAssetBalance(
     _venueId: VenueId,
     _accountId: AccountId,
-    _asset: AssetId,
+    _asset: AuthoritativeOutcomeAssetId,
   ): Promise<Result<Quantity, AccountReconciliationSourceError>> {
     return Ok(this._assetBalance);
   }
@@ -133,7 +195,7 @@ describe('AuthoritativeAccountState: факты площадки, а не Portfo
     const accountId = walletAccount();
     const state: AuthoritativeAccountState = {
       collateralBalance: must(MoneyService.create(1_000, 'USDC')),
-      positions: [{ asset: UP_TOKEN, quantity: must(QuantityService.create(4)) }],
+      positions: [{ asset: YES_TOKEN, quantity: must(QuantityService.create(4)) }],
       openOrders: [venueOrder('PARTIALLY_FILLED')],
       fills: [
         {
@@ -155,8 +217,53 @@ describe('AuthoritativeAccountState: факты площадки, а не Portfo
     const unknown = await source.getOrderState(VENUE, accountId, asOrderId('order-404') as OrderId);
     expect(unknown).toEqual(Ok(undefined));
 
-    const held = await source.getAssetBalance(VENUE, accountId, UP_TOKEN);
+    const held = await source.getAssetBalance(VENUE, accountId, YES_TOKEN);
     expect(held.ok && held.value.value().toString()).toBe('4');
+  });
+});
+
+describe('AuthoritativeOutcomeAssetId: только outcome-активы', () => {
+  it('OUTCOME_TOKEN и POLYMARKET_CTF_TOKEN допустимы, CURRENCY — ошибка компиляции', () => {
+    const ctf: AuthoritativeOutcomeAssetId = YES_TOKEN;
+    const onChain: AuthoritativeOutcomeAssetId = ONCHAIN_UP;
+    expect([ctf.type, onChain.type]).toEqual(['POLYMARKET_CTF_TOKEN', 'OUTCOME_TOKEN']);
+
+    // @ts-expect-error — collateral не outcome-актив: он живёт в collateralBalance: Money
+    const usdc: AuthoritativeOutcomeAssetId = { type: 'CURRENCY', currency: 'USDC' };
+    void usdc;
+
+    // @ts-expect-error — широкий AssetId (может быть CURRENCY) без сужения не принимается
+    const unchecked: AuthoritativeOutcomeAssetId = AssetIdHelpers.USDC;
+    void unchecked;
+  });
+
+  it('состав закреплён: новый вариант AssetId не станет outcome-активом молча', () => {
+    const exact: Equal<
+      AuthoritativeOutcomeAssetId,
+      Extract<AssetId, { readonly type: 'OUTCOME_TOKEN' | 'POLYMARKET_CTF_TOKEN' }>
+    > = true;
+    void exact;
+    expect(true).toBe(true);
+  });
+
+  it('CURRENCY запрещён в заявке, позиции и getAssetBalance', () => {
+    const usdc = { type: 'CURRENCY', currency: 'USDC' } as const;
+
+    // @ts-expect-error — актив заявки — outcome-токен
+    const order: AuthoritativeOrderState = { ...venueOrder('OPEN'), asset: usdc };
+    void order;
+
+    // @ts-expect-error — позиция — владение outcome-токеном; collateral — collateralBalance
+    const position: AuthoritativePositionState = { asset: usdc, quantity: must(QuantityService.create(1)) };
+    void position;
+
+    const source = new InMemoryVenueStateSource(
+      { collateralBalance: must(MoneyService.create(0, 'USDC')), positions: [], openOrders: [], fills: [] },
+      must(QuantityService.create(0)),
+    );
+    // @ts-expect-error — getAssetBalance отдаёт Quantity без валюты; USDC через него не запросить
+    void source.getAssetBalance(VENUE, walletAccount(), usdc);
+    expect(true).toBe(true);
   });
 });
 
@@ -209,6 +316,75 @@ describe('AuthoritativeOrderState: только факты, которыми в�
       'EXPIRED',
     ];
     expect(statuses.map((status) => venueOrder(status).status)).toEqual(statuses);
+  });
+
+  it('фикстура согласована с инвариантами: FILLED исполнена целиком, OPEN — ничего', () => {
+    const filled = venueOrder('FILLED');
+    expect(filled.filledSize.equals(filled.size)).toBe(true);
+    expect(venueOrder('OPEN').filledSize.isZero()).toBe(true);
+    const partial = venueOrder('PARTIALLY_FILLED');
+    expect(partial.filledSize.isZero() || partial.filledSize.equals(partial.size)).toBe(false);
+  });
+});
+
+describe('AuthoritativeOpenOrderState: в openOrders только живые заявки', () => {
+  it('OPEN и PARTIALLY_FILLED допустимы в openOrders', () => {
+    const open: AuthoritativeAccountState['openOrders'] = [
+      venueOrder('OPEN'),
+      venueOrder('PARTIALLY_FILLED'),
+    ];
+    expect(open.map((order) => order.status)).toEqual(['OPEN', 'PARTIALLY_FILLED']);
+  });
+
+  it('терминальные FILLED / CANCELED / REJECTED / EXPIRED в openOrders — ошибка компиляции', () => {
+    // @ts-expect-error — исполненная заявка ничего не резервирует
+    const filled: AuthoritativeAccountState['openOrders'] = [venueOrder('FILLED')];
+    void filled;
+    // @ts-expect-error — отменённая заявка не живая
+    const canceled: AuthoritativeAccountState['openOrders'] = [venueOrder('CANCELED')];
+    void canceled;
+    // @ts-expect-error — отвергнутая заявка не живая
+    const rejected: AuthoritativeAccountState['openOrders'] = [venueOrder('REJECTED')];
+    void rejected;
+    // @ts-expect-error — истёкшая заявка не живая
+    const expired: AuthoritativeAccountState['openOrders'] = [venueOrder('EXPIRED')];
+    void expired;
+
+    // Широкий AuthoritativeOrderState без сужения статуса тоже не проходит.
+    const wide: AuthoritativeOrderState = venueOrder('OPEN');
+    // @ts-expect-error — статус AuthoritativeOrderState может быть терминальным
+    const unchecked: AuthoritativeOpenOrderState = wide;
+    void unchecked;
+    expect(true).toBe(true);
+  });
+
+  it('состав статусов живой заявки закреплён; поля те же, что у состояния заявки', () => {
+    const exact: Equal<AuthoritativeOpenOrderStatus, 'OPEN' | 'PARTIALLY_FILLED'> = true;
+    const sameKeys: Equal<keyof AuthoritativeOpenOrderState, keyof AuthoritativeOrderState> = true;
+    void exact;
+    void sameKeys;
+
+    // Живая заявка — частный случай состояния заявки.
+    const live: AuthoritativeOpenOrderState = venueOrder('OPEN');
+    const general: AuthoritativeOrderState = live;
+    expect(general.status).toBe('OPEN');
+  });
+
+  it('getOrderState по-прежнему отдаёт полный AuthoritativeOrderState — включая терминальный', async () => {
+    const returns: Equal<
+      Awaited<ReturnType<IAccountVenueStateSource['getOrderState']>>,
+      Result<AuthoritativeOrderState | undefined, AccountReconciliationSourceError>
+    > = true;
+    void returns;
+
+    const filledId = asOrderId('order-filled') as OrderId;
+    const source = new InMemoryVenueStateSource(
+      { collateralBalance: must(MoneyService.create(0, 'USDC')), positions: [], openOrders: [], fills: [] },
+      must(QuantityService.create(0)),
+      [{ ...venueOrder('FILLED'), orderId: filledId }],
+    );
+    const order = await source.getOrderState(VENUE, walletAccount(), filledId);
+    expect(order.ok && order.value?.status).toBe('FILLED');
   });
 });
 
@@ -271,7 +447,7 @@ describe('AuthoritativePositionState: текущий инвентарь без �
     void keys;
 
     const withLots: AuthoritativePositionState = {
-      asset: UP_TOKEN,
+      asset: YES_TOKEN,
       quantity: must(QuantityService.create(10)),
       // @ts-expect-error — площадка лотов не знает; лоты — локальная provenance
       lots: [],
@@ -282,7 +458,7 @@ describe('AuthoritativePositionState: текущий инвентарь без �
 
   it('справочные averagePrice и entryCost необязательны', () => {
     const minimal: AuthoritativePositionState = {
-      asset: UP_TOKEN,
+      asset: YES_TOKEN,
       quantity: must(QuantityService.create(10)),
     };
     const withReference: AuthoritativePositionState = {
@@ -311,7 +487,7 @@ describe('неизвестный инициатор допустим', () => {
     // нет нигде, и ни одно поле не требует это доказать.
     const accountId = walletAccount();
     const externalOrderId = asOrderId('external-ui-order') as OrderId;
-    const externalSell: AuthoritativeOrderState = {
+    const externalSell: AuthoritativeOpenOrderState = {
       ...venueOrder('OPEN', 'SELL'),
       orderId: externalOrderId,
       size: must(QuantityService.create(5)),
@@ -323,7 +499,7 @@ describe('неизвестный инициатор допустим', () => {
     const source = new InMemoryVenueStateSource(
       {
         collateralBalance: must(MoneyService.create(1_000, 'USDC')),
-        positions: [{ asset: UP_TOKEN, quantity: must(QuantityService.create(10)) }],
+        positions: [{ asset: YES_TOKEN, quantity: must(QuantityService.create(10)) }],
         openOrders: [externalSell],
         fills: [externalFill],
       },

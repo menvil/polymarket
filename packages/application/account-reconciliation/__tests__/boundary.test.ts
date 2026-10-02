@@ -78,13 +78,20 @@ const VENUE_STATE_CONTRACT_IMPORTS = new Set([
  *
  * @remarks
  * - vendor-клиенты Polymarket и HTTP-библиотеки: их типы и транспорт живут в
- *   Infrastructure-адаптере;
+ *   Infrastructure-адаптере. `@polymarket/client` и `@polymarket/bindings` —
+ *   официальный SDK, которым уже пользуются активные пакеты (`apps/pnl`,
+ *   `polymarket-v2`, `market-finalizer`, …) и будущий venue-адаптер;
+ *   `@polymarket/clob-client` и `@polymarket/order-utils` — старые vendor-
+ *   клиенты legacy-кода: в зависимостях репозитория их нет, запрет —
+ *   защита от их возврата;
  * - фрагменты путей `infrastructure`, `apps/pnl`, `legacy-bot`: рабочий код
  *   `apps/pnl` и legacy — справочник для адаптера, а не зависимость сверки.
  */
 const FORBIDDEN_PACKAGES = [
   '@polymarket/client',
   '@polymarket/bindings',
+  '@polymarket/clob-client',
+  '@polymarket/order-utils',
   'axios',
   'node-fetch',
   'cross-fetch',

@@ -65,6 +65,33 @@ import type { OrderStatus } from '@polymarket/order';
 import type { Money, OutcomePrice, Quantity, Side } from '@polymarket/value-objects';
 
 /**
+ * Outcome-актив состояния площадки — любой вариант `AssetId`, кроме
+ * `CURRENCY`.
+ *
+ * @remarks
+ * Заявки, позиции и адресная проверка владения на площадке относятся только к
+ * outcome-токенам: collateral — это `AuthoritativeAccountState.collateralBalance`
+ * (`Money`), а не позиция, не актив заявки и не количество токенов. Тип
+ * запрещает `CURRENCY` на этапе компиляции, поэтому, например, USDC нельзя
+ * запросить через `getAssetBalance`, который отдаёт `Quantity` без валюты.
+ *
+ * Canonical `AssetId` не меняется — это сужение на границе application.
+ * Состав закреплён тестом (`OUTCOME_TOKEN | POLYMARKET_CTF_TOKEN`): новый
+ * вариант `AssetId` не станет outcome-активом площадки молча.
+ *
+ * Адаптер, получивший числовой `tokenId`, сужает результат
+ * `asPolymarketCtfToken` canonical-guard-ом `isPolymarketCtfToken`.
+ *
+ * @example
+ * ```typescript
+ * const asset = asPolymarketCtfToken(raw.tokenId);
+ * if (asset === undefined || !isPolymarketCtfToken(asset)) return Err(mappingError);
+ * const outcome: AuthoritativeOutcomeAssetId = asset;
+ * ```
+ */
+export type AuthoritativeOutcomeAssetId = Exclude<AssetId, { readonly type: 'CURRENCY' }>;
+
+/**
  * Статус заявки, который площадка способна подтвердить.
  *
  * @remarks
@@ -90,9 +117,32 @@ import type { Money, OutcomePrice, Quantity, Side } from '@polymarket/value-obje
 export type AuthoritativeOrderStatus = Exclude<OrderStatus, 'PENDING'>;
 
 /**
- * Заявка аккаунта так, как её видит площадка.
+ * Статус ЖИВОЙ заявки — той, что может стоять в
+ * `AuthoritativeAccountState.openOrders`.
  *
  * @remarks
+ * Терминальные `FILLED`/`CANCELED`/`REJECTED`/`EXPIRED` в список открытых
+ * заявок не попадают на этапе компиляции: заявка, которую площадка называет
+ * терминальной, ничего не резервирует, и её место — в ответе
+ * `getOrderState`, а не среди живых.
+ *
+ * @example
+ * ```typescript
+ * const status: AuthoritativeOpenOrderStatus = 'OPEN';
+ * // const filled: AuthoritativeOpenOrderStatus = 'FILLED'; // ошибка компиляции
+ * ```
+ */
+export type AuthoritativeOpenOrderStatus = Extract<AuthoritativeOrderStatus, 'OPEN' | 'PARTIALLY_FILLED'>;
+
+/**
+ * Заявка аккаунта так, как её видит площадка, — в любом authoritative
+ * статусе, включая терминальный.
+ *
+ * @remarks
+ * Это ответ `getOrderState`: адресный запрос обязан уметь вернуть и
+ * `FILLED`/`CANCELED`/`REJECTED`/`EXPIRED`. Для списка живых заявок — более
+ * узкий {@link AuthoritativeOpenOrderState}.
+ *
  * ### Почему не canonical `Order`
  *
  * Неизменяемая идентичность `Order` (`findOrderIdentityDifference`) включает
@@ -148,8 +198,8 @@ export type AuthoritativeOrderStatus = Exclude<OrderStatus, 'PENDING'>;
 export interface AuthoritativeOrderState {
   /** Идентификатор заявки на площадке */
   readonly orderId: OrderId;
-  /** Outcome-актив заявки */
-  readonly asset: AssetId;
+  /** Outcome-актив заявки (`CURRENCY` запрещён типом) */
+  readonly asset: AuthoritativeOutcomeAssetId;
   /** Сторона заявки */
   readonly side: Side;
   /** Лимитная цена заявки */
@@ -160,6 +210,27 @@ export interface AuthoritativeOrderState {
   readonly filledSize: Quantity;
   /** Статус, подтверждаемый площадкой ({@link AuthoritativeOrderStatus}) */
   readonly status: AuthoritativeOrderStatus;
+}
+
+/**
+ * Живая заявка аккаунта на площадке — элемент
+ * `AuthoritativeAccountState.openOrders`.
+ *
+ * @remarks
+ * Те же факты, что у {@link AuthoritativeOrderState}, но статус сужен до
+ * {@link AuthoritativeOpenOrderStatus}: терминальная заявка в списке открытых
+ * не компилируется. Обратное присваивание разрешено — живая заявка является
+ * частным случаем состояния заявки.
+ *
+ * @example
+ * ```typescript
+ * const live: AuthoritativeOpenOrderState = { ...venueOrder, status: 'PARTIALLY_FILLED' };
+ * const any: AuthoritativeOrderState = live; // ок
+ * ```
+ */
+export interface AuthoritativeOpenOrderState extends AuthoritativeOrderState {
+  /** Только `OPEN` или `PARTIALLY_FILLED` */
+  readonly status: AuthoritativeOpenOrderStatus;
 }
 
 /**
@@ -215,8 +286,8 @@ export interface AuthoritativeOrderState {
  * ```
  */
 export interface AuthoritativePositionState {
-  /** Outcome-актив */
-  readonly asset: AssetId;
+  /** Outcome-актив (`CURRENCY` запрещён типом) */
+  readonly asset: AuthoritativeOutcomeAssetId;
   /** Полное текущее количество актива на аккаунте — authoritative инвентарь */
   readonly quantity: Quantity;
   /** Средняя цена входа по модели площадки — справка, НЕ источник лотов */
@@ -360,9 +431,12 @@ export interface AuthoritativeFillState {
  *
  * - `positions` — по одной записи на актив; актива нет в списке — площадка
  *   сообщает, что аккаунт его не держит (запись с нулевым `quantity` значит
- *   то же самое);
- * - `openOrders` — только живые заявки: `OPEN` либо `PARTIALLY_FILLED`,
- *   включая заявки, которые наш рантайм не создавал;
+ *   то же самое). Поэтому владение меньше любого порога «пыли» обязано здесь
+ *   быть: адаптер не имеет права полагаться на фильтр площадки по умолчанию,
+ *   иначе отсутствие записи занизило бы текущий инвентарь;
+ * - `openOrders` — только живые заявки (`OPEN` либо `PARTIALLY_FILLED`, тип
+ *   {@link AuthoritativeOpenOrderState} не пропускает терминальные), включая
+ *   заявки, которые наш рантайм не создавал;
  * - `fills` — сделки аккаунта со статусом площадки, включая нефинальные и
  *   `FAILED`, включая инициированные не нами.
  *
@@ -380,7 +454,7 @@ export interface AuthoritativeAccountState {
   /** Текущие владения outcome-активами, по одной записи на актив */
   readonly positions: readonly AuthoritativePositionState[];
   /** Живые заявки аккаунта на площадке, кто бы их ни создал */
-  readonly openOrders: readonly AuthoritativeOrderState[];
+  readonly openOrders: readonly AuthoritativeOpenOrderState[];
   /** Сделки аккаунта с обязательным статусом на площадке */
   readonly fills: readonly AuthoritativeFillState[];
 }
