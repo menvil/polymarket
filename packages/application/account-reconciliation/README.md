@@ -295,6 +295,13 @@ export interface IAccountVenueStateSource {
 баланс каждого известного токена спрашивается адресно, поэтому отдельный
 метод «баланс одного актива» не нужен — это и есть `assetBalances`.
 
+`assetBalances` — **фактическое** владение, а не кэш торгового слоя площадки
+«что можно продать сейчас». Такой кэш бывает отстающим (известен случай с
+токенами завершившегося MINT, которых CLOB-баланс не показывал), и свести по
+нему настоящие токены к нулю нельзя: адаптер, который не может подтвердить
+фактическое владение, возвращает `Err`. Как именно его подтвердить — в
+`docs/guides/account-venue-state.md`.
+
 **Scope задаёт вызывающий**, а не источник: какие рынки сейчас важны
 стратегии, источник не решает. Для Polymarket `MarketId` — это `conditionId`,
 canonical-идентичность рынка в маршрутизации. Пример — runtime ведёт четыре
@@ -323,9 +330,21 @@ assetBalances  = [{ YES, 5 }, { NO, 0 }]
 **Жизненный цикл рынка и scope.** Рынок в scope, пока он нужен текущему
 торговому или учётному состоянию; когда перестаёт быть релевантным, его
 активы можно убрать из scope — решает будущий runtime wiring, а не источник.
-Исторические позиции не тянутся бесконечно: выплата после settlement/redeem
-всё равно видна через account-wide `collateralBalance`, и продолжать читать
-историю старого рынка ради неё не нужно.
+
+Settlement (резолюция рынка) сам collateral **не** начисляет: до redeem
+выигрышные токены остаются балансом outcome-актива этого рынка, и в
+`collateralBalance` попадает только выплата по redeem:
+
+```text
+резолюция      токены всё ещё в assetBalances, collateralBalance не изменился
+redeem         токены → 0, выплата появляется в account-wide collateralBalance
+```
+
+Поэтому активы рынка, которые аккаунт ещё держит, остаются в scope, пока эти
+балансы важны (обычно до redeem); убирать их стоит, когда балансы нулевые
+(redeem, merge, продажа) или учётно не нужны. После redeem выплата видна в
+`collateralBalance`, и читать историю старого рынка ради неё не нужно —
+исторические позиции не тянутся бесконечно.
 
 ### Неизвестный инициатор — не ошибка
 
@@ -374,6 +393,25 @@ matcher позже приводит к нему cash-состояние. При�
 живых заявок всего аккаунта: collateral общий, и любая живая BUY резервирует
 его часть. Локальная заявка, которая была `OPEN`, но исчезла из `openOrders`,
 разрешается адресным `getOrderState(orderId)`.
+
+**Политика заявок вне scope.** `openOrders` — на весь аккаунт, а
+`assetBalances` — только по scope, поэтому живая заявка может стоять на
+активе, баланса которого в состоянии нет (например, SELL, выставленная
+вручную на другом рынке):
+
+```text
+BUY  вне scope   резервирует account-wide collateral: (size − filledSize) × price
+                 — учитывается полностью, баланс актива не нужен
+SELL вне scope   резервирует токены актива без баланса в этом состоянии
+                 → токенный учёт этого актива по проходу НЕ корректируется
+```
+
+Токенный учёт (`Position`, `TokenBalance`, его `reserved`) корректируется
+только для активов scope — там известны и баланс, и все SELL-резервации, и
+инвариант `Position.quantity == TokenBalance.available + TokenBalance.reserved`
+сохраняется. Чтобы учесть SELL вне scope, вызывающий расширяет scope этим
+активом и повторяет проход; источник scope сам не расширяет, и
+`set(assetBalances.asset) == set(scope.assets)` остаётся точным.
 
 `AuthoritativeOutcomeAssetId = Exclude<AssetId, { type: 'CURRENCY' }>` —
 актив scope, баланса и заявки. Collateral живёт только в
@@ -813,7 +851,7 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 | `health.test.ts` | все переходы статуса, времена из `PaperClock`, no-op → `READY`, конфликт ≠ `UNHEALTHY`, независимость аккаунтов |
 | `publish.test.ts` | классификация исходов `publishConfirmed()` на stub-шине (обычный `publish()` в ней бросает): переполнение, исключение, critical-ошибка чужого события (другого типа и чужой `TRADING_ACCOUNT_RECONCILED` по `messageId`), конфликт по классу |
 | `confirmedDelivery.test.ts` | настоящая шина: A держит drain — B не резолвится и не `READY` до обработки своей коррекции; конфликт A не достаётся B; упавший чужой backlog — коррекция B не встаёт в очередь и не применяется позже; отказ другого события после B в том же drain — исход B успешен |
-| `venueState.types.test.ts` | compile-time контракт target-границы: состояние — ровно `collateralBalance`/`assetBalances`/`openOrders`/`recentFills` (`positions`, `fills`, `available` не компилируются), `Portfolio` — не состояние площадки; scope — ровно `marketIds`/`assets`, лимита исполнений нет, `CURRENCY` запрещён, `getAccountState` принимает scope; fake-источник: `scope [YES, NO]` → `[{ YES, 5 }, { NO, 0 }]` — ноль явно, актив вне scope не возвращается, collateral и `openOrders` от scope не зависят, `recentFills` только на рынках scope; баланс — ровно `asset`/`quantity`, без `lots`; outcome-актив — `OUTCOME_TOKEN`/`POLYMARKET_CTF_TOKEN` (состав закреплён); в `openOrders` только `OPEN`/`PARTIALLY_FILLED`, а `getOrderState` отдаёт полный статус; фикстура заявки согласована с инвариантами; `PENDING` не authoritative; заявка валидна без локальных полей; без `tradeStatus`, голый `Fill` и `Fill[]` не компилируются; нет оси происхождения, заявка и исполнение неизвестного инициатора валидны; у порта ровно `getAccountState`/`getOrderState`, операции ошибки = методы порта |
+| `venueState.types.test.ts` | compile-time контракт target-границы: состояние — ровно `collateralBalance`/`assetBalances`/`openOrders`/`recentFills` (`positions`, `fills`, `available` не компилируются), `Portfolio` — не состояние площадки; scope — ровно `marketIds`/`assets`, лимита исполнений нет, `CURRENCY` запрещён, `getAccountState` принимает scope; fake-источник: `scope [YES, NO]` → `[{ YES, 5 }, { NO, 0 }]` — ноль явно, актив вне scope не возвращается, collateral и `openOrders` от scope не зависят, `recentFills` только на рынках scope; SELL вне scope видна в `openOrders` без баланса своего актива, пока вызывающий не расширит scope; баланс — ровно `asset`/`quantity`, без `lots`; outcome-актив — `OUTCOME_TOKEN`/`POLYMARKET_CTF_TOKEN` (состав закреплён); в `openOrders` только `OPEN`/`PARTIALLY_FILLED`, а `getOrderState` отдаёт полный статус; фикстура заявки согласована с инвариантами; `PENDING` не authoritative; заявка валидна без локальных полей; без `tradeStatus`, голый `Fill` и `Fill[]` не компилируются; нет оси происхождения, заявка и исполнение неизвестного инициатора валидны; у порта ровно `getAccountState`/`getOrderState`, операции ошибки = методы порта |
 | `boundary.test.ts` | нет зависимостей на infrastructure; закрытый список импортов; контракт состояния площадки зависит только от ids/value-objects/order/fill/result; нет `@polymarket/client`/`@polymarket/bindings`/`@polymarket/clob-client`/`@polymarket/order-utils`, HTTP-библиотек, путей `infrastructure`/`apps/pnl`/`legacy-bot`; нет часов, таймеров, `JSON.stringify`, HTTP |
 
 `FakeAccountReconciliationSource` (`__tests__/helpers/`) задаёт данные по

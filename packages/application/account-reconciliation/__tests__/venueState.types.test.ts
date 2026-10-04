@@ -352,6 +352,40 @@ describe('assetBalances: ровно активы scope, ноль — явно', 
     expect(empty.value.assetBalances).toEqual([]);
   });
 
+  it('SELL вне scope видна в openOrders, но её актива нет в assetBalances — источник scope не расширяет', async () => {
+    // Политика заявок вне scope: токенный учёт актива без баланса в состоянии
+    // не корректируется, пока вызывающий не расширит scope этим активом.
+    const accountId = walletAccount();
+    const manualSell: AuthoritativeOpenOrderState = {
+      ...venueOrder('OPEN', 'SELL'),
+      orderId: asOrderId('manual-sell-other-market') as OrderId,
+      asset: OUT_OF_SCOPE_TOKEN,
+    };
+    const source = new InMemoryVenueStateSource(
+      venueFacts({
+        balances: new Map([[assetIdToString(OUT_OF_SCOPE_TOKEN), qty(3)]]),
+        openOrders: [manualSell],
+      }),
+    );
+    const scope: AccountVenueStateScope = { marketIds: [MARKET], assets: [YES_TOKEN] };
+
+    const narrow = await source.getAccountState(VENUE, accountId, scope);
+    if (!narrow.ok) throw narrow.error;
+    expect(narrow.value.openOrders.map((order) => order.orderId)).toEqual([manualSell.orderId]);
+    expect(assetKeys(narrow.value.assetBalances.map((balance) => balance.asset))).toEqual(assetKeys(scope.assets));
+
+    // Вызывающий расширяет scope активом заявки — теперь её резервацию есть с чем сверить.
+    const widened = await source.getAccountState(VENUE, accountId, {
+      marketIds: [MARKET],
+      assets: [YES_TOKEN, OUT_OF_SCOPE_TOKEN],
+    });
+    if (!widened.ok) throw widened.error;
+    const held = widened.value.assetBalances.find(
+      (balance) => assetIdToString(balance.asset) === assetIdToString(OUT_OF_SCOPE_TOKEN),
+    );
+    expect(held?.quantity.value().toString()).toBe('3');
+  });
+
   it('поля баланса — ровно asset и quantity; CURRENCY и лоты запрещены', () => {
     const keys: Equal<keyof AuthoritativeAssetBalance, 'asset' | 'quantity'> = true;
     void keys;

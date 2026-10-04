@@ -78,8 +78,20 @@ flowchart LR
 Scope задаёт вызывающий (будущий runtime), а не источник. Для Polymarket
 `MarketId` — это `conditionId`. Рынок в scope, пока он нужен текущему
 торговому или учётному состоянию; потом его активы убираются из scope.
-Выплата после settlement/redeem старого рынка всё равно видна через
-account-wide `collateralBalance` — читать его историю ради неё не нужно.
+
+Settlement (резолюция рынка) сам collateral **не** начисляет: до redeem
+выигрышные токены остаются балансом outcome-актива, а в `collateralBalance`
+попадает только выплата по redeem (legacy `scripts/test-redeem.ts` видит
+дельту pUSD только после redeem-транзакции). Поэтому активы рынка, которые
+аккаунт ещё держит, остаются в scope, пока эти балансы важны (обычно до
+redeem). После redeem выплата видна в account-wide `collateralBalance`, и
+читать историю старого рынка ради неё не нужно.
+
+`openOrders` — на весь аккаунт, а `assetBalances` — по scope. SELL на активе
+вне scope (например, выставленная вручную на другом рынке) видна, но
+токенный учёт этого актива по ней не корректируется, пока вызывающий не
+расширит scope этим активом; BUY вне scope учитывается полностью — она
+резервирует account-wide collateral. Политика целиком — в README пакета.
 
 ## Почему не `getPortfolio(): Portfolio`
 
@@ -104,9 +116,10 @@ Transitional-порт текущей сверки `IAccountReconciliationSource`
 Словарь — официальный `@polymarket/client` 0.6.0 (тот же, что в `apps/pnl`):
 
 ```text
-1. collateral      fetchBalanceAllowance({ assetType: COLLATERAL })            → Money, весь аккаунт
+1. collateral      updateBalanceAllowance({ assetType: COLLATERAL })            → Money, весь аккаунт
 2. assetBalances   для КАЖДОГО scope.assets:
-                   fetchBalanceAllowance({ assetType: CONDITIONAL, tokenId })  → Quantity, ноль явно
+                   updateBalanceAllowance({ assetType: CONDITIONAL, tokenId })  → Quantity, ноль явно
+                   (обновить кэш CLOB и прочитать — см. «CLOB-баланс — кэш»)
 3. openOrders      listOpenOrders(...), каждая страница SDK до конца           → AuthoritativeOpenOrderState[]
 4. recentFills     ограниченный свежий хвост listAccountTrades(...)            → правило FillMapper
                    → оставить fill.marketId ∈ scope.marketIds                  → Fill + tradeStatus
@@ -127,13 +140,44 @@ Transitional-порт текущей сверки `IAccountReconciliationSource`
 ```
 
 а не сканирование всего листинга позиций аккаунта за его жизнь. Это
-сознательный компромисс: активов в scope мало, и каждый ответ — текущий
-баланс расчётного слоя площадки.
+сознательный компромисс: активов в scope мало, и каждое чтение адресное.
 
 `listPositions` (Data API) намеренно **не** используется как authoritative
 примитив инвентаря: у account-wide листинга есть семантика фильтрации и
 пагинации, ненужная scoped-рантайму. Он может оставаться аналитическим или
 справочным источником, но не основой сверки инвентаря.
+
+### CLOB-баланс — кэш, а `assetBalances` — фактическое владение
+
+Контракт требует от `assetBalances` **фактическое** текущее владение, а не
+представление торгового слоя о том, что сейчас можно продать. У CLOB это
+разные вещи:
+
+- `fetchBalanceAllowance` — это `GET /balance-allowance`: CLOB отдаёт свой
+  взгляд на баланс;
+- `updateBalanceAllowance` — сначала `GET /balance-allowance/update`
+  (обновить этот взгляд), затем то же чтение. Наличие отдельной операции
+  обновления и есть признак того, что без неё значение может отставать;
+- legacy «фантомная позиция» — ровно такое расхождение: MINT завершился,
+  токены у аккаунта есть, а CLOB-баланс их не показывает (см. ниже).
+
+Отсюда требования к адаптеру:
+
+```text
+минимум          читать баланс через updateBalanceAllowance (refresh → read),
+                 а не голый fetchBalanceAllowance
+кросс-проверка   кандидат — on-chain ERC-1155 balanceOf кошелька в контракте
+                 conditional tokens; в SDK 0.6.0 такого чтения нет (известен
+                 только адрес контракта), понадобится RPC — решает MR адаптера
+расхождение      источники не сходятся или подтверждения нет → Err прохода,
+                 НЕ ноль и НЕ меньшее из значений
+```
+
+Свести настоящие токены к нулю по необновлённому кэшу — ровно та ошибка,
+которую сверка должна исключать. «Сколько CLOB позволит продать» —
+отдельный вопрос исполнения (`sell-balance-protection.md`), а не
+`assetBalances`; если он понадобится сверке, это будет отдельное поле, а не
+подмена фактического владения.
 
 ### Пагинация открытых заявок — контракт SDK
 
@@ -346,13 +390,15 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
   расчётом), см. `sell-balance-protection.md`;
 - «фантомная позиция»: cross-outcome MINT-исполнение тейкера дошло до
   `MINED`, заявку отменили, MINT всё равно завершился — токены есть в
-  портфеле, но не в CLOB-балансе, продать их нельзя;
+  портфеле, но не в CLOB-балансе, продать их нельзя. Поэтому необновлённый
+  CLOB-баланс **не** годится как фактическое владение (см. «CLOB-баланс —
+  кэш»);
 - legacy `BalancePolicy` не учитывал открытые SELL — двойная продажа. Отсюда
   правило: venue holding = `available + reserved`, а не `available`.
 
-Legacy-рантайм API позиций не использовал вовсе: единственной on-chain
-правдой о токене был тот же адресный `CONDITIONAL`-баланс, на котором
-строится `assetBalances`.
+Legacy-рантайм API позиций не использовал вовсе: единственным источником о
+токене был адресный CLOB `CONDITIONAL`-баланс — тот самый, у которого
+известен фантомный случай.
 
 ## Открытые вопросы для Polymarket-адаптера
 
@@ -361,6 +407,7 @@ Legacy-рантайм API позиций не использовал вовсе:
 | порядок страниц `listAccountTrades`: есть ли безопасный newest-first хвост | выбор между одним хвостом аккаунта и фильтром `market` / окном `after`/`before` |
 | режет ли `makerAddress` taker-сделки в `listAccountTrades` | неполный `recentFills` = невидимые исполнения |
 | `fetchBalanceAllowance(CONDITIONAL)` для токена, которого площадка не знает: ноль или ошибка | «не знает актив» обязано стать `Err`, а не нулём |
+| закрывает ли `updateBalanceAllowance` фантомный MINT-случай, или нужна on-chain кросс-проверка `balanceOf` | иначе настоящие токены сведутся к нулю по кэшу |
 | `fetchOrder` для неизвестной заявки: как выглядит «не найдено» | `getOrderState` → `undefined`, а не `Err` и не угаданный статус |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
 | `delayed` / `unmatched` у заявок → какой `AuthoritativeOrderStatus` | сейчас fail closed |
