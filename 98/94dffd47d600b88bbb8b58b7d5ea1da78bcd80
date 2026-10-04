@@ -1,0 +1,26 @@
+docs/guides/account-venue-state.md
+  s_f879ac6c3f0f5c::t_ff65251020e1e0 82-94,119,121-122,143,150-181,393-395,399-401,410
+packages/application/account-reconciliation/README.md
+  s_f879ac6c3f0f5c::t_08690de0bd8e30 854
+  s_f879ac6c3f0f5c::t_4b80e64c06d443 298-304,333-347,397-414
+packages/application/account-reconciliation/src/AuthoritativeAccountState.ts
+  s_f879ac6c3f0f5c::t_c7e2654be395a0 282-284,288-296,333-345,543-562
+packages/application/account-reconciliation/__tests__/venueState.types.test.ts
+  s_f879ac6c3f0f5c::t_4669ea531e26f1 355-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9894dffd47d600b88bbb8b58b7d5ea1da78bcd80",
+  "prompts": {},
+  "sessions": {
+    "s_f879ac6c3f0f5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60a8ea10-4520-4087-86ea-c324b7cb484b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
