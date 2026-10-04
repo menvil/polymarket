@@ -33,7 +33,8 @@
  * - типизированные ошибки с `failureCode`;
  * - {@link IAccountVenueStateSource} и `Authoritative*State` — target
  *   production-граница: authoritative ТЕКУЩЕЕ состояние аккаунта на площадке
- *   (collateral, владения, заявки, сделки со статусом площадки). Сверка его
+ *   в пределах текущего торгового контура (account-wide collateral и живые
+ *   заявки, балансы активов scope, свежий хвост сделок). Сверка его
  *   пока НЕ вызывает: она работает через transitional
  *   `IAccountReconciliationSource`, а переход — отдельный миграционный шаг.
  *
@@ -61,7 +62,9 @@
 export type { IAccountReconciliationSource } from './IAccountReconciliationSource.js';
 export type { IAccountVenueStateSource } from './IAccountVenueStateSource.js';
 export type {
+  AccountVenueStateScope,
   AuthoritativeAccountState,
+  AuthoritativeAssetBalance,
   AuthoritativeFillMetadata,
   AuthoritativeFillState,
   AuthoritativeOpenOrderState,
@@ -69,7 +72,6 @@ export type {
   AuthoritativeOrderState,
   AuthoritativeOrderStatus,
   AuthoritativeOutcomeAssetId,
-  AuthoritativePositionState,
 } from './AuthoritativeAccountState.js';
 export {
   AccountReconciler,

@@ -68,10 +68,7 @@ export type AccountReconciliationSourceOperation =
  * потребители. Значение — имя метода порта; состав закреплён тестом против
  * `keyof IAccountVenueStateSource`.
  */
-export type AccountVenueStateSourceOperation =
-  | 'getAccountState'
-  | 'getOrderState'
-  | 'getAssetBalance';
+export type AccountVenueStateSourceOperation = 'getAccountState' | 'getOrderState';
 
 /**
  * Обязательное чтение authoritative-источника не удалось.

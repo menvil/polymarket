@@ -1,12 +1,12 @@
 # Authoritative-состояние аккаунта на площадке: граница и знания для Polymarket-адаптера
 
-Target production-граница `IAccountVenueStateSource` и DTO
-`Authoritative*State` из `@polymarket/account-reconciliation`. Сам контракт,
-таблица «факт площадки ↔ локальный факт», примеры и будущий порядок
-коррекции описаны в README пакета
+Target production-граница `IAccountVenueStateSource`, scope
+`AccountVenueStateScope` и DTO `Authoritative*State` из
+`@polymarket/account-reconciliation`. Сам контракт, таблица «факт площадки ↔
+локальный факт», примеры и будущий порядок коррекции описаны в README пакета
 (`packages/application/account-reconciliation/README.md`, раздел «Целевая
-модель»). Здесь — **почему** граница устроена так и что из legacy-кода
-обязан знать будущий адаптер.
+модель»). Здесь — **почему** граница устроена так и что из legacy-кода и
+`apps/pnl` обязан знать будущий адаптер.
 
 > Статус: граница объявлена, реализаций нет, сверка её не вызывает.
 >
@@ -32,13 +32,15 @@ reorg. Сверка не доказывает происхождение — о�
 ```mermaid
 flowchart LR
     WS[Private WS] --> EV[ApplicationEvents] --> HS[AccountHotState]
-    REST[Venue REST / current state] -->|venue adapter| ST[AuthoritativeAccountState]
+    SC[текущий торговый scope] --> SRC
+    REST[Venue REST / current state] --> SRC[venue adapter]
+    SRC --> ST[AuthoritativeAccountState]
     ST -->|state matcher| PLAN[correction plan]
     PLAN -->|одна атомарная коррекция| HS
     HS --> PF[Portfolio]
 ```
 
-Отсюда три следствия, которые меняют прежнюю постановку «REST нужен, чтобы
+Отсюда следствия, которые меняют прежнюю постановку «REST нужен, чтобы
 найти пропущенное событие»:
 
 1. **Неизвестный инициатор — не ошибка.** Заявка или исполнение аккаунта
@@ -51,6 +53,33 @@ flowchart LR
    `MATCHED`, а площадка позже говорит `FAILED`, локальное состояние в итоге
    возвращается к текущему состоянию площадки, а не остаётся навсегда
    неверным с `UNHEALTHY`.
+4. **Текущий баланс сильнее свежих исполнений.** `recentFills` — свидетельство
+   для восстановления и provenance; текущий инвентарь задаёт баланс актива.
+
+## Только то, что нужно текущему торговому контуру
+
+```text
+Мы НЕ синхронизируем полную историю аккаунта Polymarket.
+Мы синхронизируем только состояние, необходимое текущему trading runtime.
+```
+
+Рантайм обычно торгует на 1–4 рынках, чаще на одном, и совершает на каждом
+десятки операций, а не тысячи. Поэтому не нужны ни все позиции аккаунта за
+всю жизнь, ни все его исполнения, ни полная историческая реконструкция
+портфеля.
+
+| набор | охват | роль |
+| --- | --- | --- |
+| `collateralBalance` | весь аккаунт | текущая правда |
+| `assetBalances` | `scope.assets` — каждый, ноль явно | текущая правда |
+| `openOrders` | весь аккаунт, только живые | текущая правда |
+| `recentFills` | рынки `scope.marketIds`, ограниченный хвост | восстановление и provenance |
+
+Scope задаёт вызывающий (будущий runtime), а не источник. Для Polymarket
+`MarketId` — это `conditionId`. Рынок в scope, пока он нужен текущему
+торговому или учётному состоянию; потом его активы убираются из scope.
+Выплата после settlement/redeem старого рынка всё равно видна через
+account-wide `collateralBalance` — читать его историю ради неё не нужно.
 
 ## Почему не `getPortfolio(): Portfolio`
 
@@ -67,7 +96,7 @@ Transitional-порт текущей сверки `IAccountReconciliationSource`
 
 Поэтому адаптер отдаёт **только факты**, а локальную бухгалтерию из них
 строит будущий reconciler: резервации — из authoritative открытых заявок,
-инвентарь — из текущих количеств площадки, provenance — из настоящих
+инвентарь — из текущих балансов активов, provenance — из настоящих
 исполнений, где они есть.
 
 ## Шаги будущего прохода (Polymarket-адаптер)
@@ -75,11 +104,12 @@ Transitional-порт текущей сверки `IAccountReconciliationSource`
 Словарь — официальный `@polymarket/client` 0.6.0 (тот же, что в `apps/pnl`):
 
 ```text
-1. collateral   fetchBalanceAllowance({ assetType: COLLATERAL })      → Money
-2. positions    listPositions({ user, sizeThreshold: 0 })             → AuthoritativePositionState[]
-                каждая страница SDK до конца
-3. open orders  listOpenOrders(...), каждая страница SDK до конца      → AuthoritativeOpenOrderState[]
-4. trades       listAccountTrades(...), каждая страница SDK до конца   → правило FillMapper → Fill + tradeStatus
+1. collateral      fetchBalanceAllowance({ assetType: COLLATERAL })            → Money, весь аккаунт
+2. assetBalances   для КАЖДОГО scope.assets:
+                   fetchBalanceAllowance({ assetType: CONDITIONAL, tokenId })  → Quantity, ноль явно
+3. openOrders      listOpenOrders(...), каждая страница SDK до конца           → AuthoritativeOpenOrderState[]
+4. recentFills     ограниченный свежий хвост listAccountTrades(...)            → правило FillMapper
+                   → оставить fill.marketId ∈ scope.marketIds                  → Fill + tradeStatus
 5. собрать AuthoritativeAccountState; отказ ЛЮБОГО шага → Err всего прохода
 ```
 
@@ -87,50 +117,121 @@ Transitional-порт текущей сверки `IAccountReconciliationSource`
 стороне площадки — это свойство источника, а не дефект; CAS в
 `AccountHotState` защищает от гонки с живым контуром.
 
-### Пагинация — контракт SDK, а не sentinel-ы сырого REST
+`getOrderState(orderId)` — адресный `fetchOrder({ orderId })` для локальной
+заявки, исчезнувшей из `openOrders`.
 
-`listPositions`, `listOpenOrders` и `listAccountTrades` возвращают
-`Paginated<T>`: адаптер проходит его **целиком** (`for await` по страницам,
-пока SDK сообщает, что следующей страницы нет). Как SDK понимает «страниц
-больше нет», — его дело:
-
-- для `/data/orders` и `/data/trades` он сам сравнивает курсор с
-  `END_CURSOR` (`"LTE="`) из `@polymarket/bindings`;
-- для `/positions` пагинация по `offset`: страница считается последней, если
-  в ней меньше `pageSize` записей.
-
-Legacy-клиент работал с сырым REST и сам проверял `"LTE="` как
-терминальный курсор. Production-адаптер опирается на контракт пагинации SDK
-и этот sentinel **не дублирует**. Отказ на любой странице — `Err` всего
-прохода, а не укороченный список.
-
-### Позиции: пыль не имеет права пропасть
-
-Data API `/positions` по умолчанию отфильтровывает мелкие владения:
-`sizeThreshold` — `default: 1, minimum: 0` (документация Data API). SDK
-0.6.0 своего значения не подставляет и передаёт параметр как есть. Поэтому:
+### Балансы активов — адресно, а не листингом позиций
 
 ```text
-Polymarket-адаптер ОБЯЗАН явно запрашивать позиции без фильтра по размеру
-в токенах: listPositions({ user, sizeThreshold: 0 })
+8 активов в scope  →  ~8 маленьких адресных чтений баланса
 ```
 
-Инвариант: позиция меньше порога пыли по умолчанию **не может исчезнуть** из
-authoritative-состояния. Иначе отсутствие актива в `positions[]` (= «аккаунт
-его не держит») занизило бы текущий инвентарь, а сверка «исправила» бы
-настоящие токены в ноль.
+а не сканирование всего листинга позиций аккаунта за его жизнь. Это
+сознательный компромисс: активов в scope мало, и каждый ответ — текущий
+баланс расчётного слоя площадки.
 
-Других параметров фильтра по количеству у `listPositions` в SDK 0.6.0 нет:
-`filterType` (`CASH`/`TOKENS`) и `filterAmount` есть только у
-`ListTradesRequest` (публичные сделки Data API), к позициям они не относятся.
+`listPositions` (Data API) намеренно **не** используется как authoritative
+примитив инвентаря: у account-wide листинга есть семантика фильтрации и
+пагинации, ненужная scoped-рантайму. Он может оставаться аналитическим или
+справочным источником, но не основой сверки инвентаря.
 
-Ещё два ограничения `/positions`, которые адаптер обязан учесть:
+### Пагинация открытых заявок — контракт SDK
 
-- `includeArchived` — «позиции в архивных рынках, которые ещё активны»,
-  `default: false`. В схеме `ListPositionsRequest` SDK 0.6.0 этого параметра
-  **нет** (неизвестные поля zod-схема отбрасывает) — см. открытые вопросы;
-- `offset` ограничен `maximum: 10000`, страница — `pageSize ≤ 500`. Отказ
-  площадки на пределе offset — `Err`, а не «последняя страница».
+`listOpenOrders` возвращает `Paginated<T>`: адаптер проходит его **целиком**
+(`for await` по страницам, пока SDK сообщает, что следующей страницы нет).
+Живых заявок мало, но список обязан быть полным: отсутствие локальной
+заявки в нём ведёт к адресному `getOrderState`.
+
+Legacy-клиент работал с сырым REST и сам проверял `"LTE="` как
+терминальный курсор. SDK делает это сам (`END_CURSOR` из
+`@polymarket/bindings`), поэтому production-адаптер опирается на контракт
+пагинации SDK и этот sentinel **не дублирует**. Отказ на любой странице —
+`Err` всего прохода, а не укороченный список.
+
+### Свежие сделки — ограниченный хвост, а не вся история
+
+Всю историю сделок аккаунта читать не нужно. Для нашего профиля нагрузки
+хватает небольшого свежего хвоста — ориентир **500–1000 последних сделок
+аккаунта**, с большим запасом относительно реального числа операций на
+текущих рынках. Затем:
+
+```text
+оставить сделки рынков scope.marketIds
+(при необходимости — и по orderId, если это нужно восстановлению)
+```
+
+Число 500–1000 — деталь адаптера, а **не** application-контракта: в
+`AccountVenueStateScope` лимита нет и не будет. Контракт говорит только одно:
+`recentFills` — ограниченное свежее свидетельство, и отсутствие исполнения в
+нём ничего не доказывает.
+
+Что известно о SDK 0.6.0 и что ещё надо проверить:
+
+- `listAccountTrades({ market?, tokenId?, after?, before?, id?, makerAddress? })`
+  → `Paginated<ClobTrade[]>`; `market` — одна строка (`conditionId`), а не
+  список;
+- параметра размера выборки нет, и ни SDK, ни его документация не обещают,
+  что первая страница содержит самые свежие сделки. Эта граница такого
+  порядка тоже **не** обещает — его фактически проверяет MR адаптера.
+
+Желаемая реализация и запасной вариант:
+
+```text
+предпочтительно   один ограниченный свежий хвост аккаунта
+                  → примерно последние 500–1000 → фильтр по scope.marketIds
+запасной вариант  если безопасного newest-first хвоста API/SDK не гарантирует:
+                  фильтр market (1–4 вызова на scope) и/или окно after/before
+```
+
+Это выбор реализации: семантика `recentFills` от него не меняется. Отказ
+чтения любой страницы — `Err` прохода; остановка на границе хвоста — не
+ошибка, а его определение.
+
+## Опыт `apps/pnl` — справочник, а не зависимость
+
+`apps/pnl` уже ходит в официальный SDK, но его код **не импортируется** в
+application- или infrastructure-слой сверки: это аналитика с другими
+правилами.
+
+### `apps/pnl/src/core/ActivityFetcher.ts`
+
+Уже делает то, что подтверждает общий подход «читать ограниченные
+релевантные данные, а не историю жизни»:
+
+- ограниченное окно времени (`start`/`end`);
+- итерация `Paginated` SDK без ручного курсора;
+- выборка по кошельку и локальная фильтрация (`type === TRADE`, без combo).
+
+Но публичный `listActivity()` **не** основной источник `recentFills`: в его
+`TradeActivity` есть `transactionHash`, но нет статуса сделки площадки
+(`TradeStatus`), роли MAKER/TAKER, id сделки CLOB и id заявки — то есть нет
+данных для canonical `FillId`, общего с приватным WS.
+
+### `apps/pnl/src/core/TradesFetcher.ts`
+
+Уже использует `listAccountTrades({ makerAddress, after, before })`,
+пагинацию SDK и знает про `makerOrders` (наша сторона суб-мейкера — в
+`makerOrders[i]`, а не на верхнем уровне). Но для сверки его напрямую не
+переиспользовать, потому что эта аналитика:
+
+- отбрасывает `FAILED`/`RETRYING`, оставляя только «исполненные» статусы, и
+  сохраняет сделки с пустым статусом;
+- строит `NormalizedFill` для PnL, а не canonical `Fill`;
+- при ненайденном адресе в `makerOrders` откатывается на поля верхнего
+  уровня — то есть может записать сторону контрагента как свою;
+- переводит числа через `Number()`.
+
+Источник сверки обязан сохранять `MATCHED`, `MINED`, `CONFIRMED`, `RETRYING`
+и `FAILED` и fail closed при неоднозначном владении или маппинге.
+
+## Та же canonical-идентичность `Fill`
+
+Приватная WS-сделка и свежая REST-сделка аккаунта, если это одно исполнение
+площадки, **обязаны** дать один и тот же canonical `FillId`. Отдельный
+упрощённый PnL-style маппер недопустим: правило уже есть в `FillMapper` и
+учитывает TAKER, MAKER, `makerOrders`, cross-outcome, multi-maker и
+`owner`/`makerAddress` (подробности — ниже, в разделе о сделках аккаунта).
+Реализация — в следующем infrastructure MR.
 
 ## Что из legacy-кода сохранить — и что не переносить
 
@@ -155,9 +256,9 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 
 ### Открытые заявки: пагинация и «отсутствие ≠ отмена»
 
-- `/data/orders` пагинирован (`{count, data, limit, next_cursor}`), а legacy
-  читал одну страницу и превращал не-массив в `[]` — то есть мог молча вернуть
-  пустой список.
+- Сырой `/data/orders` пагинирован (`{count, data, limit, next_cursor}`), а
+  legacy читал одну страницу и превращал не-массив в `[]` — то есть мог
+  молча вернуть пустой список.
 - Фильтр `signature_type` у proxy-кошелька скрывал наши же заявки: он
   фильтрует по адресу подписанта, а не мейкера.
 - Legacy считал локальную заявку, которой нет среди открытых, **отменённой**.
@@ -167,12 +268,8 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 - Открытая заявка, которой нет локально, в новой модели — заявка аккаунта:
   она резервирует его деньги или токены, кто бы её ни создал.
 
-### Сделки аккаунта: полнота, владение, идентичность
+### Сделки аккаунта: владение и идентичность
 
-- Legacy читал сырой `/data/trades` курсором до `"LTE="`, бросал при
-  превышении лимита страниц и при отсутствии курсора — fail closed правильно.
-  Production-адаптер получает ту же полноту, проходя `Paginated`
-  `listAccountTrades` до конца (см. «Пагинация — контракт SDK»).
 - **Одна непереводимая запись роняет весь вызов.** Эндпоинт возвращает только
   сделки аккаунта, поэтому ошибка маппинга — дефект маппинга или schema drift,
   а не «чужая сделка» (см. `polymarket-venue-lessons.md`). Пустой `Ok`
@@ -185,9 +282,6 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
   `maker_address`, инжектированный из НАШИХ credentials, а не из ответа). В
   cross-outcome сделке поля верхнего уровня (`owner`, `asset_id`, `side`)
   принадлежат тейкеру; наш токен, сторона, цена и объём — из нашей записи.
-  `apps/pnl` `TradesFetcher` при ненайденном адресе откатывается на поля
-  верхнего уровня, то есть может записать сторону контрагента как свою, — это
-  поведение не переносится.
 - **Тот же `Fill`, что у приватного WS.** Два P0 legacy
   (`mapUserFillsToVenueTrades.ts`): REST принимал чужие maker-заявки за свои
   и давал другой `FillId`, чем WS, — исполнение применялось дважды. Правило
@@ -205,8 +299,8 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 - **`FillMapper` умеет только WS-форму** (snake_case). REST `ClobTrade`
   официального SDK — camelCase (`makerOrders`, `matchedAt` в ISO, статус с
   префиксом `TRADE_STATUS_`). Legacy подгонял REST под WS переименованием
-  полей. Для Polymarket-адаптера правило `FillId` и владения нужно **переиспользовать**, а не
-  писать второй независимый REST-маппер.
+  полей. Для Polymarket-адаптера правило `FillId` и владения нужно
+  **переиспользовать**, а не писать второй независимый REST-маппер.
 
 ### Статус сделки: не терять и не угадывать
 
@@ -220,9 +314,9 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
   `CONFIRMED` (`MINED` недостаточно).
 - `FAILED` после локального применения legacy **не откатывал**
   автоматически: `VENUE_FILL_FAILED_AFTER_LOCAL_APPLIED` + issue
-  рассинхрона. В новой модели текущее
-  состояние площадки побеждает: откат, перестроение или коррекция — решение
-  state matcher-а, а граница лишь несёт факт `FAILED` без потери.
+  рассинхрона. В новой модели текущее состояние площадки побеждает: откат,
+  перестроение или коррекция — решение state matcher-а, а граница лишь несёт
+  факт `FAILED` без потери.
 - `FillMapper` превращает незнакомый или префиксный статус в `undefined`, а
   `apps/pnl` сохраняет сделки с пустым статусом. В новой границе статус
   **обязателен**: такая запись — `Err`.
@@ -235,16 +329,17 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
   `asset_type = CONDITIONAL` + `token_id`. Оба в базовых единицах 1e6. Legacy
   делил через `parseFloat` и на `NaN` возвращал **ноль** с предупреждением —
   в новой границе `Err`, а перевод точный, без `number`.
-- Официальный SDK `fetchBalanceAllowance` отдаёт `{ balance, allowances }`
-  (карта по адресам), а не одиночный `allowance`, как ожидал legacy.
+- Официальный SDK `fetchBalanceAllowance({ assetType, tokenId? })` отдаёт
+  `{ balance, allowances }` (карта по адресам), а не одиночный `allowance`,
+  как ожидал legacy.
 - Legacy-провайдер на невалидный `tokenId` возвращал нулевой баланс. Для
-  `getAssetBalance` «площадка не знает актив» и «аккаунт держит 0» — разные
-  ответы; первое — `Err`.
+  `assetBalances` «площадка не знает актив» и «аккаунт держит 0» — разные
+  ответы; первое — `Err`, второе — явная запись с нулём.
 
 ### Фактический баланс токена расходится с event-sourced портфелем
 
 Именно поэтому текущее состояние площадки побеждает историю событий, а
-`getAssetBalance` служит более сильной проверкой. Наблюдавшиеся случаи:
+`assetBalances` — текущая правда об инвентаре. Наблюдавшиеся случаи:
 
 - CLOB: `balance: 9557200, order amount: 9560000` — портфель 9.56, on-chain
   9.5572 (округление MINT/MERGE, меньший частичный fill, зазор между WS и
@@ -255,38 +350,28 @@ Legacy-код лежит в `legacy-bot/live-account-reference/` и
 - legacy `BalancePolicy` не учитывал открытые SELL — двойная продажа. Отсюда
   правило: venue holding = `available + reserved`, а не `available`.
 
-### Позиции: Data API, а не legacy
-
-Legacy-рантайм API позиций не использовал вовсе: позиции были только
-event-sourced, а единственной on-chain правдой был `CONDITIONAL`-баланс.
-Официальный SDK (`listPositions`, как в `apps/pnl`):
-
-- поля `size`, `avgPrice`, `initialValue`, `tokenId` (**может быть `null`**),
-  числа — `DecimalString | null`; поля `currentSize` нет;
-- параметры: `user`, `sizeThreshold`, `redeemable`, `mergeable`, курсор;
-  `apps/pnl` `sizeThreshold` не задаёт и поэтому получает серверный порог 1 —
-  для authoritative-инвентаря так нельзя, нужен явный `sizeThreshold: 0`
-  (см. «Позиции: пыль не имеет права пропасть»);
-- строка без `tokenId` не адресуется по `asset` — `Err`, а не пропуск.
-
-`size` → `quantity`, `avgPrice` → `averagePrice`, `initialValue` →
-`entryCost` (справка).
+Legacy-рантайм API позиций не использовал вовсе: единственной on-chain
+правдой о токене был тот же адресный `CONDITIONAL`-баланс, на котором
+строится `assetBalances`.
 
 ## Открытые вопросы для Polymarket-адаптера
 
 | вопрос | почему важен |
 | --- | --- |
-| режет ли `maker_address` taker-сделки в `listAccountTrades` | неполный `fills[]` = невидимые исполнения |
-| `includeArchived` (`default: false`) отсутствует в SDK 0.6.0: теряются ли позиции архивных, но активных рынков | неполный `positions[]` = заниженный инвентарь |
+| порядок страниц `listAccountTrades`: есть ли безопасный newest-first хвост | выбор между одним хвостом аккаунта и фильтром `market` / окном `after`/`before` |
+| режет ли `makerAddress` taker-сделки в `listAccountTrades` | неполный `recentFills` = невидимые исполнения |
+| `fetchBalanceAllowance(CONDITIONAL)` для токена, которого площадка не знает: ноль или ошибка | «не знает актив» обязано стать `Err`, а не нулём |
+| `fetchOrder` для неизвестной заявки: как выглядит «не найдено» | `getOrderState` → `undefined`, а не `Err` и не угаданный статус |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
 | `delayed` / `unmatched` у заявок → какой `AuthoritativeOrderStatus` | сейчас fail closed |
-| `fills[]` — полная история или окно (`after`) | при окне отсутствие исполнения ничего не доказывает |
 | правило `FillMapper` для camelCase `ClobTrade` | тот же `Fill`, что у WS |
 
 ## Связанное
 
-- `packages/application/account-reconciliation/README.md` — граница, примеры
-  A/B/C, будущий порядок коррекции, текущая сверка.
+- `packages/application/account-reconciliation/README.md` — граница, scope,
+  примеры, будущий порядок коррекции, текущая сверка.
+- `apps/pnl/src/core/ActivityFetcher.ts`, `apps/pnl/src/core/TradesFetcher.ts`
+  — справочник по SDK, не зависимость.
 - `docs/guides/polymarket-venue-lessons.md` — ошибка маппинга ≠ «чужая
   запись», семантика эндпоинтов.
 - `docs/guides/sell-balance-protection.md` — расхождение баланса токена с

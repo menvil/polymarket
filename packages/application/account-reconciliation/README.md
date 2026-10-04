@@ -220,14 +220,14 @@ CURRENT VENUE STATE > EVENT HISTORY
 ```
 
 История событий помогает provenance, но не может перекрыть противоречащие
-ей authoritative текущие владения, заявки и статусы.
+ей authoritative текущие балансы, заявки и статусы.
 
 ### Transitional и target
 
 | контракт | роль |
 | --- | --- |
 | `IAccountReconciliationSource` | **transitional**-контракт текущей сверки: источник отдаёт готовый локальный `Portfolio` |
-| `IAccountVenueStateSource` | **target** production-граница площадки: источник отдаёт факты площадки |
+| `IAccountVenueStateSource` | **target** production-граница площадки: источник отдаёт факты площадки в пределах текущего торгового контура |
 
 Сегодня новый порт только объявлен: его не вызывает ни `AccountReconciler`,
 ни runtime, реализаций нет. Текущая сверка работает без изменений до
@@ -241,34 +241,91 @@ CURRENT VENUE STATE > EVENT HISTORY
 затем         runtime wiring: STARTUP / PERIODIC / RECONNECT
 ```
 
+### Только то, что нужно текущему торговому контуру
+
 ```text
-           VENUE
-             ↓
- AuthoritativeAccountState
- ├── collateral
- ├── positions
- ├── open orders
- └── fills + venue status
-             ↓
-      future reconciler
-             ↓
-       correction plan
-             ↓
-       AccountHotState
-             ↓
-          Portfolio
+Мы НЕ синхронизируем полную историю аккаунта Polymarket.
+Мы синхронизируем только состояние, необходимое текущему trading runtime.
+```
+
+Рантайм обычно торгует на 1–4 рынках, чаще на одном, и совершает на каждом
+десятки операций, а не тысячи. Поэтому источник отвечает в пределах **scope**,
+который задаёт вызывающий:
+
+```text
+                 CURRENT TRADING SCOPE
+                 market A / B / C
+                 relevant assets
+                         ↓
+              IAccountVenueStateSource
+                         ↓
+        ┌────────────────────────────────┐
+        │ collateralBalance   account-wide
+        │ assetBalances[]     scoped
+        │ openOrders[]        current
+        │ recentFills[]       bounded evidence
+        └────────────────────────────────┘
+                         ↓
+                 future matcher
+                         ↓
+                  AccountHotState
+```
+
+```text
+CURRENT STATE TRUTH       collateral + asset balances + open orders
+RECOVERY / PROVENANCE     recent fills
 ```
 
 ```typescript
+export interface AccountVenueStateScope {
+  readonly marketIds: readonly MarketId[];
+  readonly assets: readonly AuthoritativeOutcomeAssetId[];
+}
+
 export interface IAccountVenueStateSource {
-  getAccountState(venueId, accountId):
+  getAccountState(venueId, accountId, scope: AccountVenueStateScope):
     Promise<Result<AuthoritativeAccountState, AccountReconciliationSourceError>>;
   getOrderState(venueId, accountId, orderId):
     Promise<Result<AuthoritativeOrderState | undefined, AccountReconciliationSourceError>>;
-  getAssetBalance(venueId, accountId, asset: AuthoritativeOutcomeAssetId):
-    Promise<Result<Quantity, AccountReconciliationSourceError>>;
 }
 ```
+
+Нет сканирования позиций за всю жизнь аккаунта, нет сканирования всех
+исполнений и нет зависимости от полноты Data API `listPositions()`: текущий
+баланс каждого известного токена спрашивается адресно, поэтому отдельный
+метод «баланс одного актива» не нужен — это и есть `assetBalances`.
+
+**Scope задаёт вызывающий**, а не источник: какие рынки сейчас важны
+стратегии, источник не решает. Для Polymarket `MarketId` — это `conditionId`,
+canonical-идентичность рынка в маршрутизации. Пример — runtime ведёт четыре
+бинарных рынка:
+
+```text
+marketIds   A, B, C, D
+assets      A.UP, A.DOWN, B.UP, B.DOWN, C.UP, C.DOWN, D.UP, D.DOWN
+```
+
+Источник обязан вернуть баланс **каждого** актива scope — даже нулевой:
+
+```text
+set(assetBalances.asset) == set(scope.assets)
+без дубликатов, без лишних активов, ноль — явной записью
+```
+
+```text
+scope.assets   = [YES, NO]
+assetBalances  = [{ YES, 5 }, { NO, 0 }]
+```
+
+Отсутствие строки **не** означает ноль: детерминированному matcher-у нужна
+полная и однозначная картина.
+
+**Жизненный цикл рынка и scope.** Рынок в scope, пока он нужен текущему
+торговому или учётному состоянию; когда перестаёт быть релевантным, его
+активы можно убрать из scope — решает будущий runtime wiring, а не источник.
+Исторические позиции не тянутся бесконечно: выплата после settlement/redeem
+всё равно видна через account-wide `collateralBalance`, и продолжать читать
+историю старого рынка ради неё не нужно.
 
 ### Неизвестный инициатор — не ошибка
 
@@ -296,46 +353,82 @@ UNKNOWN INITIATOR IS VALID
 ### DTO состояния площадки
 
 `AuthoritativeAccountState` — **один проход** сверки, а **не** снимок
-транзакции базы данных. Адаптер соберёт collateral, позиции, заявки и сделки
-разными запросами, но обязан получить каждый набор целиком (пагинация пройдена
-до конца), не возвращать частично успешное состояние и fail closed при schema
-drift, оборванной пагинации и ошибке маппинга. Позиции запрашиваются **без**
-фильтра пыли площадки: владение меньше любого порога по умолчанию не может
-исчезнуть из authoritative-состояния (требование к Polymarket-адаптеру — в
-`docs/guides/account-venue-state.md`).
+транзакции базы данных. Адаптер соберёт collateral, балансы, заявки и сделки
+разными запросами, но обязан получить каждый набор один раз, не возвращать
+частично успешное состояние и fail closed при schema drift, оборванной
+пагинации и ошибке маппинга.
 
-| DTO | факт площадки | чего в нём нет и почему |
-| --- | --- | --- |
-| `collateralBalance: Money` | фактическое текущее collateral-владение | `available`/`reserved` — наша форма представления |
-| `AuthoritativePositionState` | `asset + quantity` — текущий инвентарь | `lots[]` — площадка их не знает; `averagePrice`/`entryCost` — только справка |
-| `AuthoritativeOrderState` | `orderId`, `asset`, `side`, `price`, `size`, `filledSize`, `status` — в любом authoritative статусе (ответ `getOrderState`) | `strategyId`, `decisionId`, `intentId`, локальные времена, `reason`, metadata |
-| `AuthoritativeOpenOrderState` | то же, но `status` — только `OPEN`/`PARTIALLY_FILLED` (элемент `openOrders`) | терминальные статусы — не компилируются |
-| `AuthoritativeFillState` | canonical `Fill` + **обязательный** `metadata.tradeStatus` | origin, локальное владение заявкой |
+| поле / DTO | охват | факт площадки | чего в нём нет и почему |
+| --- | --- | --- | --- |
+| `collateralBalance: Money` | весь аккаунт | фактическое текущее collateral-владение | `available`/`reserved` — наша форма представления |
+| `assetBalances: AuthoritativeAssetBalance[]` | scope | `asset + quantity` — текущий баланс каждого актива scope | `lots[]` — площадка их не знает |
+| `openOrders: AuthoritativeOpenOrderState[]` | весь аккаунт | живые заявки, `status` — только `OPEN`/`PARTIALLY_FILLED` | терминальные статусы — не компилируются |
+| `recentFills: AuthoritativeFillState[]` | рынки scope | свежий хвост сделок: canonical `Fill` + **обязательный** `metadata.tradeStatus` | полной истории, origin, локального владения заявкой |
+| `AuthoritativeOrderState` | — | ответ `getOrderState`: те же поля заявки в любом authoritative статусе | `strategyId`, `decisionId`, `intentId`, локальные времена, `reason`, metadata |
+
+**`collateralBalance` — на весь аккаунт.** Депозит, вывод, claim/redeem,
+продажа вне нашего рантайма — следующий проход видит новое значение, а
+matcher позже приводит к нему cash-состояние. Причина изменения не нужна.
+
+**`openOrders` — текущее состояние, не история заявок.** Небольшой набор
+живых заявок всего аккаунта: collateral общий, и любая живая BUY резервирует
+его часть. Локальная заявка, которая была `OPEN`, но исчезла из `openOrders`,
+разрешается адресным `getOrderState(orderId)`.
 
 `AuthoritativeOutcomeAssetId = Exclude<AssetId, { type: 'CURRENCY' }>` —
-актив заявки, позиции и `getAssetBalance`. Collateral живёт только в
+актив scope, баланса и заявки. Collateral живёт только в
 `collateralBalance: Money`, поэтому `CURRENCY` там запрещён на этапе
 компиляции; canonical `AssetId` не меняется.
 
 `AuthoritativeOrderStatus = Exclude<OrderStatus, 'PENDING'>`: `PENDING` —
 локальный жизненный цикл до приёма площадкой. Для списка живых заявок —
-`AuthoritativeOpenOrderStatus = Extract<…, 'OPEN' | 'PARTIALLY_FILLED'>`. Vendor-статус, который нельзя
-**однозначно** привести к `OPEN`/`PARTIALLY_FILLED`/`FILLED`/`CANCELED`/
-`REJECTED`/`EXPIRED`, — `Err` источника; legacy-правило «неизвестный →
-`OPEN`» не переносится. Canonical `Order` здесь не используется: его
-идентичность включает `strategyId`, и `undefined` от площадки дал бы ложный
-конфликт на каждой заявке стратегии.
+`AuthoritativeOpenOrderStatus = Extract<…, 'OPEN' | 'PARTIALLY_FILLED'>`.
+Vendor-статус, который нельзя **однозначно** привести к `OPEN`/
+`PARTIALLY_FILLED`/`FILLED`/`CANCELED`/`REJECTED`/`EXPIRED`, — `Err`
+источника; legacy-правило «неизвестный → `OPEN`» не переносится. Canonical
+`Order` здесь не используется: его идентичность включает `strategyId`, и
+`undefined` от площадки дал бы ложный конфликт на каждой заявке стратегии.
+
+### `recentFills` — свидетельство, а не правда об инвентаре
+
+`recentFills`:
+
+- **не** полная история аккаунта и **не** ledger от genesis;
+- **не** доказательство того, что какого-то старого исполнения никогда не
+  было;
+- это ограниченная свежая активность аккаунта на рынках scope, нужная, чтобы
+  восстановить пропущенное WS-исполнение, сохранить настоящую provenance,
+  обновить `tradeStatus` и понять недавнее изменение позиции.
+
+Глубина хвоста — деталь адаптера: числа исполнений в контракте нет и не
+будет.
+
+**Текущий баланс сильнее `recentFills`:**
+
+```text
+asset balance  = authoritative current truth
+recentFills    = supporting provenance / recovery information
+```
+
+```text
+local Position = 10
+venue asset balance = 7
+recentFills не содержит SELL −3
+
+НЕЛЬЗЯ:  «исполнение не найдено → оставить Position = 10»
+ВЕРНО:   текущий инвентарь в итоге → 7; provenance этих −3 просто неизвестна
+```
 
 ### Факт площадки ↔ локальный факт
 
 | факт площадки | | локальный факт |
 | --- | --- | --- |
 | `collateralBalance` | ↔ | `Balance.available + Balance.reserved` |
-| `position.quantity` | ↔ | `Position.quantity` |
+| `assetBalance.quantity` | ↔ | `Position.quantity` |
 | | ↔ | `TokenBalance.available + TokenBalance.reserved` |
 | открытые BUY | → | reserved cash |
 | открытые SELL | → | reserved tokens |
-| fill + venue status | ↔ | `AccountFillRecord` |
+| recent fill + venue status | ↔ | `AccountFillRecord` |
 
 Что **не** является authoritative-заменой:
 
@@ -366,7 +459,7 @@ venue total collateral + venue open orders  →  local available/reserved split
 venue collateral = 1000, open BUY reservations = 250
 → Balance:      available = 750, reserved = 250
 
-venue token holding = 10, open SELL remaining = 4
+venue asset balance = 10, open SELL remaining = 4
 → TokenBalance: available = 6,   reserved = 4
 ```
 
@@ -380,14 +473,14 @@ ACCOUNTING PROVENANCE       какие исполнения образовали
 FIFO-лоты — не состояние площадки. Запрещены **оба** искажения:
 
 ```text
-venue quantity + avgPrice → синтетический единственный PositionLot   выдуманная provenance
+venue balance + avgPrice  → синтетический единственный PositionLot   выдуманная provenance
 не можем восстановить лоты → оставить неверное количество            выдуманный инвентарь
 ```
 
 Правда о текущем инвентаре важнее provenance:
 
 ```text
-venue quantity = 10
+venue asset balance = 10
 известные локальные FIFO-лоты объясняют только 8
 → текущий инвентарь всё равно 10
 ```
@@ -430,18 +523,18 @@ WS: MATCHED → локальный fill APPLIED → Position увеличена
 
 Оставить позицию увеличенной навсегда и просто стать `UNHEALTHY` нельзя.
 Задача сверки — вернуть `AccountHotState` к текущему состоянию площадки
-(откат, перестроение или коррекция — решит state matcher); текущее состояние площадки
-побеждает provisional историю событий.
+(откат, перестроение или коррекция — решит state matcher); текущее состояние
+площадки побеждает provisional историю событий.
 
-**Та же идентичность `Fill`.** Приватная WS-сделка и REST-сделка аккаунта,
-если это одно исполнение площадки, обязаны дать **один и тот же** canonical
-`Fill`. Правило уже есть (`FillMapper`: taker/maker, `maker_orders`,
-`owner`/`makerAddress`, cross-outcome, составной `FillId` при нескольких наших
-maker-заявках) — второй независимый REST-маппер с другой политикой
-идентичности недопустим. Подробности для Polymarket-адаптера — в
-`docs/guides/account-venue-state.md`.
+**Та же идентичность `Fill`.** Приватная WS-сделка и свежая REST-сделка
+аккаунта, если это одно исполнение площадки, обязаны дать **один и тот же**
+canonical `FillId`. Правило уже есть (`FillMapper`: taker/maker,
+`maker_orders`, `owner`/`makerAddress`, cross-outcome, составной `FillId` при
+нескольких наших maker-заявках) — отдельный упрощённый PnL-style маппер с
+другой политикой идентичности недопустим. Подробности для Polymarket-адаптера
+— в `docs/guides/account-venue-state.md`.
 
-### `getOrderState` и `getAssetBalance` — адресные запросы
+### `getOrderState` — адресный запрос
 
 `openOrders` содержит только живые заявки. Из «локально `OPEN`, а среди
 живых её нет» состояние не выводится, поэтому:
@@ -452,16 +545,6 @@ getOrderState(A)
   undefined                                источник не может доказать — неразрешённый случай,
                                            терминальный статус НЕ угадывается
 ```
-
-`getAssetBalance(asset)` — независимая проверка фактического текущего
-владения одним активом (не `TokenBalance.available`/`reserved`):
-
-```text
-external holding  ↔  TokenBalance.available + reserved  ↔  Position.quantity
-```
-
-Прежде всего — как более сильная проверка при расхождении; обязательной для
-каждого токена в каждом проходе она не является.
 
 ### Будущая сверка — state-based (описание; не реализовано)
 
@@ -476,9 +559,9 @@ external holding  ↔  TokenBalance.available + reserved  ↔  Position.quantity
 не единственный источник коррекции. Порядок:
 
 ```text
-1. получить authoritative состояние площадки
-2. сравнить: collateral, позиции/владения токенами, открытые заявки,
-   известные состояния заявок, исполнения + статусы площадки
+1. получить authoritative состояние площадки в пределах scope
+2. сравнить: collateral, балансы активов scope, открытые заявки,
+   известные состояния заявок, свежие исполнения + статусы площадки
 3. использовать настоящие исполнения и заявки там, где они улучшают provenance
 4. построить желаемое текущее состояние аккаунта
 5. вывести резервации из authoritative открытых заявок
@@ -506,7 +589,7 @@ completeness
 ```
 
 ```text
-venue position = 10, локальный инвентарь скорректирован до 10,
+venue asset balance = 10, локальный инвентарь скорректирован до 10,
 FIFO-provenance известна для 8
 → venue sync может быть READY, а cost basis/PnL provenance — PARTIAL
 ```
@@ -530,7 +613,7 @@ venue:   SELL 5 YES OPEN
 
 ```text
 local:   Position = 0
-venue:   BUY fill 10 @ 0.42 CONFIRMED, position quantity = 10
+venue:   BUY fill 10 @ 0.42 CONFIRMED в recentFills, asset balance = 10
 будущая сверка: текущий инвентарь аккаунта → 10
 ```
 
@@ -538,11 +621,19 @@ venue:   BUY fill 10 @ 0.42 CONFIRMED, position quantity = 10
 
 ```text
 WS:              MATCHED BUY 10 → local Position → 10
-позже venue:     сделка FAILED, текущая позиция = 0
+позже venue:     сделка FAILED, asset balance = 0
 будущая сверка:  побеждает authoritative текущее состояние → local → 0
 ```
 
 Оставить 10 только потому, что событие когда-то существовало, нельзя.
+
+**D. Баланс расходится, а исполнения в свежем хвосте нет.**
+
+```text
+local:   Position = 10
+venue:   asset balance = 7, recentFills без SELL −3
+будущая сверка: текущий инвентарь → 7; provenance −3 неизвестна (PARTIAL)
+```
 
 ## Один проход: `AccountReconciler`
 
@@ -704,7 +795,7 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 | реализовано | не реализовано |
 | --- | --- |
 | узкий canonical-порт `IAccountReconciliationSource` (transitional) | Polymarket REST-адаптер, SDK, DTO |
-| target-граница `IAccountVenueStateSource` + `Authoritative*State` (только типы) | её реализация, state matcher, correction planner, импорт внешних заявок, откат исполнений, пересчёт резерваций, модель неатрибутированного инвентаря, accounting health |
+| target-граница `IAccountVenueStateSource` + `AccountVenueStateScope` + `Authoritative*State` (только типы) | её реализация, построение scope в runtime, чтение свежего хвоста сделок, state matcher, correction planner, импорт внешних заявок, откат исполнений, пересчёт резерваций, модель неатрибутированного инвентаря, accounting health |
 | `AccountReconciler` — один проход | таймеры, cron, production-каденция |
 | событие `TRADING_ACCOUNT_RECONCILED` с CAS | startup/runtime wiring, CLI |
 | атомарная коррекция в `AccountStateProjector` / `AccountHotState` | private WebSocket reconciliation |
@@ -722,7 +813,7 @@ coordinator.health().get(venueId, accountId).status; // 'READY' | 'UNHEALTHY' | 
 | `health.test.ts` | все переходы статуса, времена из `PaperClock`, no-op → `READY`, конфликт ≠ `UNHEALTHY`, независимость аккаунтов |
 | `publish.test.ts` | классификация исходов `publishConfirmed()` на stub-шине (обычный `publish()` в ней бросает): переполнение, исключение, critical-ошибка чужого события (другого типа и чужой `TRADING_ACCOUNT_RECONCILED` по `messageId`), конфликт по классу |
 | `confirmedDelivery.test.ts` | настоящая шина: A держит drain — B не резолвится и не `READY` до обработки своей коррекции; конфликт A не достаётся B; упавший чужой backlog — коррекция B не встаёт в очередь и не применяется позже; отказ другого события после B в том же drain — исход B успешен |
-| `venueState.types.test.ts` | compile-time контракт target-границы: outcome-актив — `OUTCOME_TOKEN`/`POLYMARKET_CTF_TOKEN`, `CURRENCY` запрещён в заявке, позиции и `getAssetBalance` (состав закреплён); в `openOrders` только `OPEN`/`PARTIALLY_FILLED`, терминальные не компилируются, а `getOrderState` отдаёт полный статус; фикстура заявки согласована с инвариантами (`FILLED` исполнена целиком); `PENDING` не authoritative (состав статусов закреплён); заявка валидна без `strategyId`/`decisionId`/`intentId`; без `tradeStatus`, голый `Fill` и `Fill[]` не компилируются; у позиции нет `lots`; у состояния нет `available`/`reserved`; `Portfolio` — не состояние площадки; нет оси происхождения, заявка и исполнение неизвестного инициатора валидны; порт реализуем одними canonical-типами; операции ошибки = методы порта |
+| `venueState.types.test.ts` | compile-time контракт target-границы: состояние — ровно `collateralBalance`/`assetBalances`/`openOrders`/`recentFills` (`positions`, `fills`, `available` не компилируются), `Portfolio` — не состояние площадки; scope — ровно `marketIds`/`assets`, лимита исполнений нет, `CURRENCY` запрещён, `getAccountState` принимает scope; fake-источник: `scope [YES, NO]` → `[{ YES, 5 }, { NO, 0 }]` — ноль явно, актив вне scope не возвращается, collateral и `openOrders` от scope не зависят, `recentFills` только на рынках scope; баланс — ровно `asset`/`quantity`, без `lots`; outcome-актив — `OUTCOME_TOKEN`/`POLYMARKET_CTF_TOKEN` (состав закреплён); в `openOrders` только `OPEN`/`PARTIALLY_FILLED`, а `getOrderState` отдаёт полный статус; фикстура заявки согласована с инвариантами; `PENDING` не authoritative; заявка валидна без локальных полей; без `tradeStatus`, голый `Fill` и `Fill[]` не компилируются; нет оси происхождения, заявка и исполнение неизвестного инициатора валидны; у порта ровно `getAccountState`/`getOrderState`, операции ошибки = методы порта |
 | `boundary.test.ts` | нет зависимостей на infrastructure; закрытый список импортов; контракт состояния площадки зависит только от ids/value-objects/order/fill/result; нет `@polymarket/client`/`@polymarket/bindings`/`@polymarket/clob-client`/`@polymarket/order-utils`, HTTP-библиотек, путей `infrastructure`/`apps/pnl`/`legacy-bot`; нет часов, таймеров, `JSON.stringify`, HTTP |
 
 `FakeAccountReconciliationSource` (`__tests__/helpers/`) задаёт данные по

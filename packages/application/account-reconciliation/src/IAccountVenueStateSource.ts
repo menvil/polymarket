@@ -9,8 +9,8 @@
  * IAccountReconciliationSource   transitional-контракт текущей сверки:
  *                                готовый ЛОКАЛЬНЫЙ Portfolio + Order + Fill
  * IAccountVenueStateSource       target production-граница площадки:
- *                                ФАКТЫ площадки — collateral, владения,
- *                                заявки, сделки со статусом площадки
+ *                                ФАКТЫ площадки в пределах текущего
+ *                                торгового контура
  * ```
  *
  * Настоящая площадка не может вернуть наш `Portfolio`: резервации, FIFO-лоты
@@ -22,13 +22,30 @@
  * runtime, реализаций нет. Существующая сверка работает через
  * `IAccountReconciliationSource` без изменений до миграционного шага.
  *
+ * ### Состояние текущего торгового контура, а не история аккаунта
+ *
+ * Источник отвечает в пределах `AccountVenueStateScope`, который задаёт
+ * вызывающий, — обычно 1–4 рынка и их outcome-токены:
+ *
+ * ```text
+ * на весь аккаунт        collateralBalance, openOrders
+ * в пределах scope       assetBalances (каждый актив scope, ноль явно)
+ * ограниченный хвост     recentFills на рынках scope
+ * ```
+ *
+ * Сканирования позиций и исполнений за всю жизнь аккаунта нет, и от полноты
+ * account-wide листинга позиций контракт не зависит: баланс каждого
+ * известного токена — адресный запрос. Отдельного метода «баланс одного
+ * актива» поэтому тоже нет: это и есть `assetBalances` основной операции.
+ *
  * ### Сверка будет state-based
  *
  * Будущий reconciler спрашивает не только «какие события мы пропустили?», а
  * «какое состояние аккаунта должно существовать СЕЙЧАС по authoritative
  * фактам площадки?». Пропущенные исполнения и заявки помогают сохранить
  * provenance, но не единственный источник коррекции: текущее состояние
- * площадки побеждает противоречащую ему историю событий.
+ * площадки побеждает противоречащую ему историю событий, а текущий баланс
+ * актива — `recentFills`.
  *
  * ### Граница
  *
@@ -46,20 +63,22 @@
  * @example
  * ```typescript
  * class PolymarketAccountVenueStateSource implements IAccountVenueStateSource {
- *   async getAccountState(venueId, accountId) {
- *     // collateral + positions + open orders + account trades → один проход
+ *   async getAccountState(venueId, accountId, scope) {
+ *     // collateral + балансы scope.assets + open orders + свежий хвост сделок
+ *     // на scope.marketIds → один проход
  *   }
- *   // …
+ *   async getOrderState(venueId, accountId, orderId) {
+ *     // адресный запрос одной заявки
+ *   }
  * }
  * ```
  */
 import type { AccountId, OrderId, VenueId } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
-import type { Quantity } from '@polymarket/value-objects';
 import type {
+  AccountVenueStateScope,
   AuthoritativeAccountState,
   AuthoritativeOrderState,
-  AuthoritativeOutcomeAssetId,
 } from './AuthoritativeAccountState.js';
 import type { AccountReconciliationSourceError } from './errors.js';
 
@@ -73,29 +92,37 @@ import type { AccountReconciliationSourceError } from './errors.js';
  */
 export interface IAccountVenueStateSource {
   /**
-   * Текущее состояние аккаунта за один проход сверки.
+   * Текущее состояние аккаунта в пределах scope за один проход сверки.
    *
    * @param venueId - Площадка аккаунта
    * @param accountId - Аккаунт
-   * @returns Collateral, владения, живые заявки и сделки со статусом площадки
-   *   либо отказ источника
+   * @param scope - Рынки и outcome-активы текущего торгового контура; задаёт
+   *   вызывающий, а не источник
+   * @returns Account-wide collateral и живые заявки, балансы ровно активов
+   *   scope и свежий хвост сделок на рынках scope либо отказ источника
    *
    * @remarks
    * Не снимок транзакции площадки: адаптер собирает состояние несколькими
-   * запросами. Обещание другое — каждый набор получен ОДИН раз за проход,
-   * целиком (пагинация пройдена) и сохранён как есть. Отказ ЛЮБОГО набора —
-   * `Err` всего прохода: частичное состояние исправило бы одно и молча
-   * оставило бы расходиться другое.
+   * запросами. Обещание другое — каждый набор получен ОДИН раз за проход и
+   * сохранён как есть. Отказ ЛЮБОГО набора — `Err` всего прохода: частичное
+   * состояние исправило бы одно и молча оставило бы расходиться другое.
+   *
+   * `set(assetBalances.asset) == set(scope.assets)`: по каждому активу scope
+   * ровно одна запись, ноль явно, лишних нет.
    *
    * @example
    * ```typescript
-   * const state = await source.getAccountState(venueId, accountId);
+   * const state = await source.getAccountState(venueId, accountId, {
+   *   marketIds: [market],
+   *   assets: [yesToken, noToken],
+   * });
    * if (!state.ok) return state; // SOURCE_FAILED, коррекции нет
    * ```
    */
   getAccountState(
     venueId: VenueId,
     accountId: AccountId,
+    scope: AccountVenueStateScope,
   ): Promise<Result<AuthoritativeAccountState, AccountReconciliationSourceError>>;
 
   /**
@@ -134,54 +161,4 @@ export interface IAccountVenueStateSource {
     accountId: AccountId,
     orderId: OrderId,
   ): Promise<Result<AuthoritativeOrderState | undefined, AccountReconciliationSourceError>>;
-
-  /**
-   * Независимая проверка текущего владения одним outcome-активом.
-   *
-   * @param venueId - Площадка аккаунта
-   * @param accountId - Аккаунт
-   * @param asset - Outcome-актив; `CURRENCY` запрещён типом (collateral — в
-   *   `AuthoritativeAccountState.collateralBalance`)
-   * @returns Фактическое текущее количество актива на аккаунте (`0`, если
-   *   аккаунт его не держит) либо отказ источника
-   *
-   * @remarks
-   * ### Что это значит
-   *
-   * Сколько актива аккаунт ДЕРЖИТ сейчас — полное владение. Это НЕ
-   * `TokenBalance.available` и НЕ `TokenBalance.reserved`: площадка не знает
-   * нашей резервации под открытые SELL. Позже сравнение будет таким:
-   *
-   * ```text
-   * getAssetBalance(asset)
-   *   ↕
-   * TokenBalance.available + TokenBalance.reserved
-   *   ↕
-   * Position.quantity
-   * ```
-   *
-   * ### Когда вызывать
-   *
-   * Прежде всего как более сильная проверка при расхождении: количество в
-   * `positions` не совпало с локальным, и нужно подтверждение из независимого
-   * источника площадки (баланс расчётного слоя вместо агрегатора позиций).
-   * Обязательным для каждого токена в каждом проходе он НЕ является.
-   *
-   * «Площадка не знает такой актив» и «аккаунт держит 0» — разные ответы:
-   * первое — `Err`. Количество точное: базовые единицы площадки переводятся в
-   * `Quantity` без промежуточного `number`.
-   *
-   * @example
-   * ```typescript
-   * const held = await source.getAssetBalance(venueId, accountId, yesToken);
-   * if (held.ok && !held.value.equals(localPosition.quantity)) {
-   *   // расхождение подтверждено независимым источником площадки
-   * }
-   * ```
-   */
-  getAssetBalance(
-    venueId: VenueId,
-    accountId: AccountId,
-    asset: AuthoritativeOutcomeAssetId,
-  ): Promise<Result<Quantity, AccountReconciliationSourceError>>;
 }
