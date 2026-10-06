@@ -681,6 +681,129 @@ PARTIALLY_FILLED   исполнена частично
 через отрицание молча стал бы «открытым»; здесь он сломает тест полноты и
 потребует осознанного решения.
 
+## Market-centric read model
+
+### Проблема
+
+Будущим `TradingContext`, `Strategy` и `Risk` нужно приватное состояние
+аккаунта **по рынку**: позиция и токены каждого исхода, заявки и исполнения
+по ним. Хранится же оно нормализованно — по инструменту и идентификатору:
+
+```text
+AccountHotState
+└── AccountRuntimeState
+    ├── Portfolio
+    │   ├── Balance
+    │   ├── Position[instrumentId]
+    │   └── TokenBalance[instrumentId]
+    ├── Orders[orderId]
+    └── Fills[fillId]
+```
+
+Завести рядом хранение по `MarketId` (`ordersByMarket`, `fillsByMarket`,
+`positionsByMarket`) значило бы вернуть ровно тот класс дефектов, от которого
+отказалась навигация: вторую структуру, обязанную синхронно меняться в каждой
+мутации, переживать откаты и совпадать после replay.
+
+### Решение
+
+Производное представление без хранения:
+
+```text
+Market
+↓
+outcomes[0].instrumentId, outcomes[1].instrumentId
+↓
+выбрать positions / token balances / orders / fills по инструменту
+↓
+MarketAccountView
+```
+
+`buildMarketAccountView(account, market)` — чистая синхронная функция в
+`src/marketView.ts`. Связь рынка с состоянием задаёт сам `Market`: исход несёт
+canonical `InstrumentId`, и состояние уже адресует им позиции, токены, заявки
+(`assetIdToInstrumentId(order.asset)`) и исполнения
+(`assetIdToInstrumentId(fill.tokenId)`). Это и есть ответ на «рынок заявки
+определяется позже, при сборке торгового контекста» из раздела о `marketId`
+у заявки.
+
+### Шаги построения
+
+1. `market.venueId !== account.venueId` → `Err(AccountIdentityMismatchError)`
+   с `subject = 'MARKET_VENUE'`; частичного результата нет. Отдельного класса
+   ошибки нет: это тот же случай «вторая копия идентичности разошлась с
+   первой», что и остальные `subject`.
+2. Для каждого исхода по `outcome.instrumentId`:
+
+   ```text
+   position         account.getPosition(instrumentId)
+   availableTokens  account.portfolio.availableTokens(instrumentId)
+   reservedTokens   account.portfolio.reservedTokens(instrumentId)
+   orders           account.ordersForInstrument(instrumentId)
+   openOrders       orders ∩ OPEN_ORDER_STATUSES
+   fills            account.fillsForInstrument(instrumentId)
+   ```
+
+3. Добавить account-wide `balance` (`account.portfolio.balance`), живые заявки
+   всего аккаунта (`account.openOrders()`), `accountVersion` и
+   `lastMutationAt`.
+
+```mermaid
+flowchart LR
+    M[Market] -->|"outcomes[i].instrumentId"| B[buildMarketAccountView]
+    A[AccountRuntimeStateView] --> B
+    B --> V[MarketAccountView]
+    A -.->|"portfolio.balance, openOrders()"| V
+```
+
+### Почему деньги не делятся по рынкам
+
+Collateral общий: `balance.available` уже уменьшен резервациями под живые BUY
+на всех рынках, включая выставленные вручную. Любое «деньги рынка A» было бы
+произвольной атрибуцией, а не фактом. Поэтому представление отдаёт общий
+`Balance` как есть и рядом — `accountOpenOrders`, чтобы потребитель видел
+обязательства вне рынка. Аналитическая атрибуция, если понадобится, — отдельный
+производный расчёт.
+
+### Почему `openOrders` исхода — через `OPEN_ORDER_STATUSES`
+
+Тот же canonical-список, что у `account.openOrders()`: `PENDING` входит, потому
+что под неё уже зарезервированы деньги или токены (см. раздел `openOrders()`).
+Второго списка статусов вручную нет. Терминальные заявки остаются в `orders` —
+это история исхода.
+
+### Почему `fills` не фильтруются
+
+Это срез текущего состояния рантайма, а не свежий хвост площадки
+(`recentFills` из `@polymarket/account-reconciliation` — другое понятие).
+`AccountFillRecord` несёт обе оси — `AccountFillStatus` и `venueStatus`, — и
+`REVERTED`/`FAILED` тоже факты, которые потребителю нужно видеть.
+
+### Снимок и версия
+
+Построение синхронно: JavaScript не может выполнить обработчик события
+посреди него, поэтому все части описывают одну версию аккаунта. Она записана
+в `accountVersion` (вместе с `lastMutationAt`) — по ней будущий
+`TradingContext` сохранит provenance и проверит согласованность.
+
+### Пример
+
+```typescript
+import { buildMarketAccountView } from '@polymarket/account-state';
+
+const account = projector.state().getAccount(venueId, accountId);
+if (account !== undefined) {
+  const view = buildMarketAccountView(account, market);
+  if (view.ok) {
+    const [first, second] = view.value.outcomes;
+    first.availableTokens;            // свободные токены первого исхода
+    second.openOrders;                // живые заявки второго исхода
+    view.value.balance.available();   // общий collateral аккаунта
+    view.value.accountVersion;        // версия, на которой построен снимок
+  }
+}
+```
+
 ## Что не подключено намеренно
 
 ### Старые fill-события
@@ -741,7 +864,8 @@ reconciliation      IAccountReconciliationSource, AccountReconciler, health —
                     отдельный пакет @polymarket/account-reconciliation; здесь
                     только приём коррекции (CAS + одна мутация)
 strategy            TradingContext, DecisionScheduler, Strategy, indicators,
-                    features, Decision, RiskModel, TradingRiskGuard, Intent
+                    features, Decision, RiskModel, TradingRiskGuard, Intent;
+                    MarketAccountView — лишь его будущий account-side блок
 execution           ExecutionEngine, IOrderExecutionVenue, новый IExchangeClient
 ```
 
@@ -762,6 +886,7 @@ objects, и структурная заглушка проверяла бы не
 | `orderCommit.test.ts` | атомарный commit, владелец заявки, разрешение инструмента, конфликты идентичности (table-driven), дубликат со stale-портфелем, законная эволюция, навигация по инструменту |
 | `fillLifecycle.test.ts` | apply с заявкой и без, связь заявки и исполнения, дубликаты, конфликты факта (table-driven), `CONFIRMED`, `REVERTED`, запрещённые переходы |
 | `navigation.test.ts` | навигационные API, `getPosition` из портфеля, семантика и полнота `openOrders`, идемпотентность канонических коллекций |
+| `marketView.test.ts` | `buildMarketAccountView`: пустой аккаунт, раскладка по исходам строго через `instrumentId`, терминальные заявки только в `orders`, заявки другого рынка — только в `accountOpenOrders`, полная `AccountFillRecord` (обе оси), `MARKET_VENUE`, метаданные и порядок исходов, только чтение (отпечаток состояния + прокси обращений) |
 | `versionsAndTime.test.ts` | глобальная и локальная версии, `metadata.createdAt` как единственный источник времени |
 | `atomicity.test.ts` | полный отпечаток состояния до и после 13 невалидных событий, `Err` из `publish()`, `stop()`/повторный `start()` |
 | `replayDeterminism.test.ts` | одна лента на двух свежих рантаймах даёт эквивалентное состояние |
