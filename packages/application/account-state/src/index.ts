@@ -78,6 +78,13 @@
  * аккаунта ({@link AccountReconciliationVersionConflictError}) и одна мутация
  * на весь снимок.
  *
+ * ### Market-centric read model
+ *
+ * {@link buildMarketAccountView} собирает из `AccountRuntimeStateView` и
+ * `Market` всё приватное состояние аккаунта по одному рынку — по
+ * `outcome.instrumentId` каждого исхода. Это производный синхронный снимок,
+ * а не хранимое состояние: индексов по `MarketId` и копий данных нет.
+ *
  * Сама сверка, strategy, risk и execution в этот слой не входят — они
  * строятся НАД готовым состоянием отдельными пакетами.
  *
@@ -139,3 +146,8 @@ export type {
   AccountRuntimeStateView,
   TradingAccountIdentity,
 } from './views.js';
+export {
+  buildMarketAccountView,
+  type MarketAccountOutcomeView,
+  type MarketAccountView,
+} from './marketView.js';

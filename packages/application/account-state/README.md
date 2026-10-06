@@ -189,6 +189,106 @@ batch      весь снимок валидируется целиком → О�
 стирает и не придумывает. Подробности —
 [`docs/account-state.md`](./docs/account-state.md#authoritative-коррекция).
 
+## Market-centric read model
+
+Задача — имея `Market` и `AccountRuntimeStateView`, **одним вызовом**
+получить всё приватное состояние аккаунта по этому рынку:
+
+```typescript
+const view = buildMarketAccountView(account, market); // Result<MarketAccountView, AccountIdentityMismatchError>
+```
+
+```text
+NORMALIZED STORAGE
+
+AccountRuntimeState
+├── Portfolio
+├── Orders
+└── Fills
+
+          +
+        Market
+          ↓
+
+DERIVED VIEW
+
+MarketAccountView
+├── account-wide Balance
+├── account-wide live orders
+├── outcome[0]
+│   ├── Position
+│   ├── available/reserved tokens
+│   ├── orders/openOrders
+│   └── fills
+└── outcome[1]
+    ├── Position
+    ├── available/reserved tokens
+    ├── orders/openOrders
+    └── fills
+```
+
+```text
+MarketAccountView is NOT stored state.
+```
+
+Нормализованное хранение остаётся **единственным** источником истины. Второго
+хранения по `MarketId`, индексов `ordersByMarket`/`fillsByMarket`/
+`positionsByMarket` и переноса заявок/исполнений внутрь `Market` нет. Связь
+задаёт сам `Market`: каждый его исход несёт canonical `instrumentId`, а
+приватное состояние уже адресуется тем же инструментом.
+
+| часть исхода | откуда |
+| --- | --- |
+| `position` | `account.getPosition(instrumentId)` |
+| `availableTokens` / `reservedTokens` | `account.portfolio.availableTokens/reservedTokens(instrumentId)` — ноль, если токенного баланса нет |
+| `orders` | `account.ordersForInstrument(instrumentId)` — вся история, включая терминальные |
+| `openOrders` | `orders`, отфильтрованные по canonical `OPEN_ORDER_STATUSES` (`PENDING`, `OPEN`, `PARTIALLY_FILLED`) |
+| `fills` | `account.fillsForInstrument(instrumentId)` — `AccountFillRecord` с обеими осями статуса, ничего не отфильтровано |
+
+**Деньги — общие на аккаунт.** `view.balance` — это
+`account.portfolio.balance`, а не баланс рынка: его `available` уже учитывает
+резервации под живые BUY на **всех** рынках. Распределять collateral по рынкам
+представление не пытается — `marketAvailableCash`/`marketReservedCash` нет.
+Поэтому рядом лежит `accountOpenOrders` — все живые заявки аккаунта:
+
+```text
+collateral 1000; Market A BUY reserved 100; Market X manual BUY reserved 500
+→ view(A).balance.available уже учитывает обе резервации
+→ view(A).accountOpenOrders показывает, что кроме A есть и другие обязательства
+```
+
+**Исходы — в canonical порядке `Market.outcomes`.** Никаких `YES`/`NO`/`UP`/
+`DOWN` в этом пакете: исход сам несёт `index`, `label` и `instrumentId`, и
+представление не зависит ни от площадки, ни от семейства рынка.
+
+**Площадка обязана совпасть.** `market.venueId !== account.venueId` →
+`Err(AccountIdentityMismatchError)` с `subject = 'MARKET_VENUE'`
+(`expected` — площадка аккаунта, `actual` — площадка рынка), без частичного
+результата.
+
+**Синхронный снимок.** Функция чистая: без `async`, часов, событий и
+мутаций. JavaScript не может вклинить мутацию посреди синхронного построения,
+поэтому всё представление описывает одну версию аккаунта — она записана в
+`accountVersion` вместе с `lastMutationAt`.
+
+**Не путать с `AuthoritativeAccountState`.** Тот (из
+`@polymarket/account-reconciliation`) — факты площадки для сверки; этот — срез
+НАШЕГО состояния для будущих `TradingContext`/`Strategy`/`Risk`. Пакеты не
+связаны, и сверку этот пакет не импортирует.
+
+Следующий слой — `TradingContext` — соберёт:
+
+```text
+MarketAccountView
++
+TradingHotState market data
++
+CEX/reference data
+```
+
+`TradingContext` здесь **не** реализован. Подробности —
+[`docs/account-state.md`](./docs/account-state.md#market-centric-read-model).
+
 ## Хранение
 
 Пока — **на время жизни рантайма**: заявок и исполнений на порядки меньше, чем
