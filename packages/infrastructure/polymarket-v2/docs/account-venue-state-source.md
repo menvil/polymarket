@@ -46,10 +46,12 @@ NO reconciliation/mutation
 ```mermaid
 flowchart TD
     S[AccountVenueStateScope] --> A[PolymarketAccountVenueStateSource]
-    A -->|updateBalanceAllowance| R[PolymarketRefreshedBalanceReader]
+    A -->|updateBalanceAllowance| R[PolymarketClobRefreshedBalanceReader]
     A -->|listOpenOrders, все страницы| C[secure client SDK]
     A -->|"listAccountTrades({ market }), все страницы"| C
     A -->|ClobTrade → snake_case| F[FillMapper]
+    A -->|ставка TAKER по рынку| T[PolymarketTakerFeeRateResolver]
+    T -->|takerFeeRate| F
     A --> ST[AuthoritativeAccountState]
 ```
 
@@ -70,8 +72,10 @@ flowchart TD
    страницы; рынки параллельно. Фильтр `makerAddress` НЕ передаётся:
    эндпоинт уже ограничен аккаунтом, а legacy наблюдал, что maker-фильтр
    скрывает taker-сделки.
-6. **Исполнения** — каждая сделка через `FillMapper` (см. ниже), слияние
-   повторов, проверка аккаунта, площадки `POLYMARKET` и рынка scope.
+6. **Исполнения** — каждая сделка через `FillMapper` (см. ниже); комиссия
+   TAKER — по ставке `PolymarketTakerFeeRateResolver` рынка сделки, а не по
+   `feeRateBps` ответа. Затем слияние повторов, проверка аккаунта, площадки
+   `POLYMARKET` и рынка scope.
 7. **Ответ** — одно `AuthoritativeAccountState`. Отказ любого шага — `Err`
    всего прохода; уже прочитанные страницы наружу не уходят.
 
@@ -81,21 +85,28 @@ flowchart TD
 
 ## Балансы: обновлённый CLOB-взгляд
 
-`PolymarketRefreshedBalanceReader` читает через `updateBalanceAllowance`, а
+`PolymarketClobRefreshedBalanceReader` читает через `updateBalanceAllowance`, а
 не `fetchBalanceAllowance`:
 
 ```text
 updateBalanceAllowance = GET /balance-allowance/update → GET /balance-allowance
 ```
 
-This implementation refreshes the CLOB balance cache before reading.
+```text
+This reader is a refreshed CLOB balance reader.
+It MUST NOT be treated as independently verified on-chain truth.
+A production composition that requires physical inventory truth may
+replace/wrap it with an on-chain verifier without changing
+PolymarketAccountVenueStateSource.
 It MUST NOT silently convert transport/schema failures to zero.
-An optional/stronger on-chain verifier can replace or wrap this reader
-without changing IAccountVenueStateSource.
+```
 
-Это обновлённый ВЗГЛЯД CLOB, а не доказательство on-chain владения (legacy
-«фантомный MINT»). Для текущего MR это рабочий production-кандидат; RPC/
-ERC-1155 `balanceOf` не реализован и проверяется live отдельно.
+Authoritative здесь — порт `PolymarketAuthoritativeBalanceReader` и
+источник состояния: гарантию «фактического» баланса даёт reader, который
+внедрил composition root. Конкретный `PolymarketClobRefreshedBalanceReader`
+отдаёт обновлённый ВЗГЛЯД CLOB, а не доказательство on-chain владения
+(legacy «фантомный MINT»). RPC/ERC-20/ERC-1155 `balanceOf` в этом MR не
+реализован.
 
 `balance` — целое в базовых единицах с шестью знаками. Перевод — сдвигом
 запятой в строке, без `number`:
@@ -105,8 +116,10 @@ ERC-1155 `balanceOf` не реализован и проверяется live о
 undefined / NaN / "-5" / "1.5" / "1e6" / " 5" / 23+ цифр → Err
 ```
 
-Collateral выражен в canonical `USDC` — том же активе, что
-`Fill.settlementAssetId`.
+Collateral выражен в canonical `USDC`, потому что это единственная валюта
+canonical `Money`/`Portfolio` и `Fill.settlementAssetId`. Это НЕ утверждение,
+что collateral-токен площадки — USDC: collateral Polymarket CLOB V2 — pUSD.
+Решение не принято — см. [NEXT / BLOCKERS](#next--blockers).
 
 ## Заявки: статус CLOB + `sizeMatched`
 
@@ -155,7 +168,7 @@ REST `ClobTrade` переводится в snake_case-форму WS-событи
 | `conditionId` | `market` |
 | `tokenId` | `asset_id` |
 | `side`, `price`, `size` | как есть (строки) |
-| `feeRateBps` | `fee_rate_bps` |
+| `feeRateBps` (и у maker-заявок) | НЕ передаётся — ставку даёт резолвер |
 | `status` (`TRADE_STATUS_*`) | canonical без префикса |
 | `matchedAt` (ISO) | `timestamp` (мс) |
 | `makerOrders[]` | `maker_orders[]` (`order_id`, `matched_amount`, `price`, `asset_id`, `side`, `owner`, `maker_address`) |
@@ -183,7 +196,53 @@ TAKER-сделка, где наш адрес есть и среди maker-зап
 время матчинга (`match_time`), а не время сообщения. Сегодня
 `FillEventHandler` передаёт поле `timestamp` WS-события как есть; если оно
 расходится с `match_time`, REST и WS дадут один `FillId`, но разный факт —
-это проверяется тестом и должно быть закрыто в MR приватного WS.
+это проверяется тестом. Приватный WS в этом MR не меняется; требование
+вынесено в [NEXT / BLOCKERS](#next--blockers).
+
+### Комиссия TAKER: ставка от резолвера, не из `feeRateBps`
+
+`fee` входит в canonical факт исполнения. Если одна сделка из WS и из REST
+получит разную комиссию, это конфликт неизменяемого факта, а не уточнение.
+
+Почему REST-путь не берёт `feeRateBps` из ответа: в записи сделки
+аутентифицированного REST он приходит `"0"` (см. `polymarket-fee.ts` в
+`@polymarket/fill`). Правило «`fee_rate_bps > 0` → комиссия» дало бы
+тейкерской REST-сделке нулевую комиссию, а приватный WS — положительную.
+
+Решение:
+
+```text
+PolymarketTakerFeeRateResolver.getTakerFeeRate(conditionId)
+        ↓ rate
+FillMapper.allFromPolymarketTradeEvent(raw, accountId, { takerFeeRate: rate })
+        ↓
+TAKER: fee = size × rate × p × (1 − p)   (calculatePolymarketTakerFeeWithRate)
+MAKER: fee = 0, резолвер не вызывается
+```
+
+1. Для каждой TAKER-сделки адаптер спрашивает ставку у резолвера по
+   `conditionId` сделки.
+2. Отказ резолвера (рынок неизвестен, ставки нет) — `Err` всего прохода,
+   а не нулевая комиссия.
+3. `feeRateBps` в compat-вход `FillMapper` не передаётся ни на верхнем
+   уровне, ни у maker-заявок: на комиссию он не влияет.
+4. Опция `takerFeeRate` у `FillMapper` необязательна. Без неё (приватный
+   WS) поведение прежнее: `fee_rate_bps > 0` → crypto-ставка `0.07`.
+
+```typescript
+interface PolymarketTakerFeeRateResolver {
+  getTakerFeeRate(marketId: MarketId): Result<number, PolymarketAccountStateError>;
+}
+
+// Набор ставок рынков scope — от composition root.
+const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([
+  [conditionId, POLYMARKET_CRYPTO_TAKER_FEE_RATE], // 0.07, @polymarket/fill
+]);
+```
+
+`PolymarketStaticTakerFeeRateResolver` сравнивает condition id без учёта
+регистра. Ставка обязана быть конечной и неотрицательной, повтор рынка —
+отказ создания.
 
 **Статусы сделки** — явная таблица по ВСЕМ значениям enum `TradeStatus` SDK
 (`Record` по template literal type: новый статус SDK не скомпилируется):
@@ -218,6 +277,7 @@ TAKER-сделка, где наш адрес есть и среди maker-зап
 | баланс актива | `balances: token 1000…: balance refresh failed`, `balances: token 1000…: outcome token balance: expected non-negative integer base units, got "-5"` |
 | открытые заявки | `open orders pagination failed`, `open orders: open order …: …` |
 | сделки рынка | `trades market 0x…: pagination failed`, `trades market 0x…: trade …: …` |
+| ставка комиссии | `trades market 0x…: trade …: taker fee rate is unknown for market 0x…` |
 | исполнения | `trades: fill … belongs to market … outside scope` |
 | заявка | `order lookup …: request failed`, `order lookup …: venue returned order …` |
 
@@ -230,20 +290,28 @@ Reader, бросивший исключение вместо `Err`, тоже д�
 import { AssetType, createSecureClient } from '@polymarket/client';
 import { updateBalanceAllowance } from '@polymarket/client/actions';
 import { KnownVenues } from '@polymarket/ids';
+import { POLYMARKET_CRYPTO_TAKER_FEE_RATE } from '@polymarket/fill';
 import {
   PolymarketAccountVenueStateSource,
-  PolymarketRefreshedBalanceReader,
+  PolymarketClobRefreshedBalanceReader,
+  PolymarketStaticTakerFeeRateResolver,
 } from '@polymarket/polymarket-v2/account';
 
 const secureClient = await createSecureClient(/* signer, wallet, credentials */);
+const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([
+  [conditionId, POLYMARKET_CRYPTO_TAKER_FEE_RATE],
+]);
+if (!takerFeeRates.ok) throw takerFeeRates.error;
+
 const source = PolymarketAccountVenueStateSource.create(
   { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: funderAddress },
   {
     client: secureClient,
-    balanceReader: PolymarketRefreshedBalanceReader.fromSdk(secureClient, {
+    balanceReader: PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, {
       updateBalanceAllowance,
       assetTypes: AssetType,
     }),
+    takerFeeRates: takerFeeRates.value,
   },
 );
 if (!source.ok) throw source.error;
@@ -258,6 +326,32 @@ const state = await source.value.getAccountState(KnownVenues.POLYMARKET, account
 `contour-boundary.test.ts`): действие `updateBalanceAllowance` и enum
 `AssetType` передаёт composition root.
 
+## NEXT / BLOCKERS
+
+Что обязано быть решено ДО того, как matcher или runtime начнут опираться
+на этот источник. Ни один пункт этот MR не закрывает.
+
+| блокер | почему | до чего |
+| --- | --- | --- |
+| REST `matchedAt` must be reconciled with private WS execution timestamp | `timestamp` — часть canonical факта; сегодня WS передаёт `timestamp` сообщения как есть | matcher / runtime wiring |
+| pUSD vs USDC (см. ниже) | collateral площадки — pUSD, canonical `Portfolio` знает только USDC | matcher мутирует `Portfolio` |
+| источник ставки комиссии в приватном WS | WS-путь всё ещё решает по `fee_rate_bps > 0` со ставкой `0.07`; если WS тоже присылает `"0"` у тейкерской сделки, WS-путь обязан брать ставку у того же резолвера | matcher сравнивает факты WS и REST |
+| CLOB-баланс ≠ on-chain | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не проверенный on-chain | композиция, которой нужна физическая истина инвентаря |
+
+Open architectural decision (pUSD/USDC):
+
+```text
+Current canonical Portfolio supports only USDC.
+Current Polymarket CLOB V2 collateral is pUSD.
+Before state matcher is allowed to mutate Portfolio, the canonical
+collateral representation must explicitly decide whether pUSD is
+represented as its own currency or intentionally normalized to a
+USD-equivalent accounting unit.
+```
+
+Вне этого MR: on-chain reader, matcher, `CorrectionPlan`, коррекция
+`Portfolio`, runtime wiring, `TradingContext`.
+
 ## Проверить live
 
 | вопрос | что зависит |
@@ -267,13 +361,16 @@ const state = await source.value.getAccountState(KnownVenues.POLYMARKET, account
 | смысл `INVALID`; статус истёкшей GTD-заявки | сейчас `Err` |
 | `TRADE_STATUS_MATCHED_NOT_BROADCASTED` | сейчас `Err` |
 | совпадает ли WS `timestamp` с `match_time` | идентичность факта REST ↔ WS |
+| приходит ли в WS `fee_rate_bps` положительным у тейкерской сделки | комиссия WS-пути без резолвера |
+| ставка taker-комиссии рынков scope (fee schedule) | набор `PolymarketStaticTakerFeeRateResolver` |
 | полнота `listAccountTrades({ market })` без `makerAddress` для TAKER и MAKER | полнота `recentFills` |
 
 ## Тесты
 
 | файл | что покрывает |
 | --- | --- |
-| `PolymarketRefreshedBalanceReader.test.ts` | точный перевод базовых единиц, настоящий ноль, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK |
-| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome), требование к времени, владение только по адресу, self-match, слияние повторов |
-| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, балансы scope (ноль явно), отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
+| `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц, настоящий ноль, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK |
+| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome), **P0 комиссии: WS `fee_rate_bps > 0` и REST `feeRateBps "0"` + ставка резолвера → тот же `FillId` и факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, требование к времени, владение только по адресу, self-match, слияние повторов |
+| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, балансы scope (ноль явно), отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
+| `PolymarketTakerFeeRateResolver.test.ts` | ставка по рынку без учёта регистра, неизвестный рынок → `Err`, невалидная ставка и повтор рынка → отказ создания |
 | `contour-boundary.test.ts` | закрытый список импортов account plane, `@polymarket/fill` только в нём, из SDK — только `import type` |

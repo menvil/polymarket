@@ -42,6 +42,7 @@ import {
   PolymarketAccountVenueStateSource,
   type PolymarketAuthoritativeBalanceReader,
   type PolymarketSecureAccountClient,
+  type PolymarketTakerFeeRateResolver,
 } from '@polymarket/polymarket-v2/account';
 
 /**
@@ -352,6 +353,39 @@ export class FakeBalanceReader implements PolymarketAuthoritativeBalanceReader {
   }
 }
 
+/**
+ * Ставка taker-комиссии crypto up/down рынков — та же, что
+ * `POLYMARKET_CRYPTO_TAKER_FEE_RATE` в `@polymarket/fill`.
+ */
+export const CRYPTO_TAKER_FEE_RATE = 0.07;
+
+/**
+ * Fake-резолвер ставки taker-комиссии: ставка по рынку + журнал запросов.
+ *
+ * @remarks
+ * По умолчанию знает оба рынка фикстур со ставкой
+ * {@link CRYPTO_TAKER_FEE_RATE}. Рынок без записи — отказ, как у настоящего
+ * статического резолвера.
+ */
+export class FakeTakerFeeRates implements PolymarketTakerFeeRateResolver {
+  /** Рынки, для которых запрашивалась ставка, в порядке запросов */
+  public readonly calls: string[] = [];
+  /** Ответ по рынку (ключ — condition id в нижнем регистре) */
+  public readonly rates = new Map<string, Result<number, PolymarketAccountStateError>>([
+    [String(MARKET_A).toLowerCase(), Ok(CRYPTO_TAKER_FEE_RATE)],
+    [String(MARKET_B).toLowerCase(), Ok(CRYPTO_TAKER_FEE_RATE)],
+  ]);
+
+  /** {@inheritDoc PolymarketTakerFeeRateResolver.getTakerFeeRate} */
+  public getTakerFeeRate(marketId: MarketId): Result<number, PolymarketAccountStateError> {
+    this.calls.push(String(marketId));
+    return (
+      this.rates.get(String(marketId).toLowerCase()) ??
+      Err(new PolymarketAccountStateError(`taker fee rate is unknown for market ${marketId}`))
+    );
+  }
+}
+
 /** Количество из строки. */
 export function quantity(value: string): Quantity {
   const created = QuantityService.create(value);
@@ -376,16 +410,23 @@ export function readerError(message: string): Result<never, PolymarketAccountSta
  *
  * @param client - Fake-клиент
  * @param reader - Fake-reader
+ * @param takerFeeRates - Fake-резолвер ставки taker-комиссии
  * @returns Готовый адаптер
  */
 export function buildSource(
   client: FakeAccountClient = new FakeAccountClient(),
   reader: FakeBalanceReader = new FakeBalanceReader(),
-): { source: PolymarketAccountVenueStateSource; client: FakeAccountClient; reader: FakeBalanceReader } {
+  takerFeeRates: FakeTakerFeeRates = new FakeTakerFeeRates(),
+): {
+  source: PolymarketAccountVenueStateSource;
+  client: FakeAccountClient;
+  reader: FakeBalanceReader;
+  takerFeeRates: FakeTakerFeeRates;
+} {
   const created = PolymarketAccountVenueStateSource.create(
     { venueId: VENUE, accountId: ACCOUNT, makerAddress: OUR_ADDRESS },
-    { client, balanceReader: reader },
+    { client, balanceReader: reader, takerFeeRates },
   );
   if (!created.ok) throw created.error;
-  return { source: created.value, client, reader };
+  return { source: created.value, client, reader, takerFeeRates };
 }

@@ -70,9 +70,9 @@ decimal.js                     Decimal-арифметика внутри гра�
 ```
 
 **Account plane** (`PolymarketAccountVenueStateSource`,
-`PolymarketRefreshedBalanceReader`, `polymarketAccountMapping` и точка входа
-`account`) — свой закрытый список из десяти импортов, без шин и без
-discovery:
+`PolymarketClobRefreshedBalanceReader`, `PolymarketTakerFeeRateResolver`,
+`polymarketAccountMapping` и точка входа `account`) — свой закрытый список
+из десяти импортов, без шин и без discovery:
 
 ```text
 @polymarket/account-reconciliation   порт IAccountVenueStateSource и его DTO
@@ -272,17 +272,23 @@ import { AssetType } from '@polymarket/client';
 import { updateBalanceAllowance } from '@polymarket/client/actions';
 import {
   PolymarketAccountVenueStateSource,
-  PolymarketRefreshedBalanceReader,
+  PolymarketClobRefreshedBalanceReader,
+  PolymarketStaticTakerFeeRateResolver,
 } from '@polymarket/polymarket-v2/account';
+
+// ставки taker-комиссии рынков scope (crypto up/down — 0.07)
+const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([[conditionId, 0.07]]);
+if (!takerFeeRates.ok) throw takerFeeRates.error;
 
 const source = PolymarketAccountVenueStateSource.create(
   { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: funderAddress },
   {
     client: secureClient,
-    balanceReader: PolymarketRefreshedBalanceReader.fromSdk(secureClient, {
+    balanceReader: PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, {
       updateBalanceAllowance,
       assetTypes: AssetType,
     }),
+    takerFeeRates: takerFeeRates.value,
   },
 );
 ```
@@ -292,13 +298,26 @@ const source = PolymarketAccountVenueStateSource.create(
 - ❌ `listPositions`, сканирование всей истории сделок, предположения о
   стратегии, сборка `Portfolio`, сверка и мутации;
 - ✅ балансы — `updateBalanceAllowance` (обновить CLOB-взгляд и прочитать), а
-  не голый `fetchBalanceAllowance`; отказ — `Err`, никогда не ноль;
+  не голый `fetchBalanceAllowance`; отказ — `Err`, никогда не ноль.
+  `PolymarketClobRefreshedBalanceReader` — refreshed CLOB balance reader:
+  it MUST NOT be treated as independently verified on-chain truth.
+  Authoritative-гарантию даёт внедрённый reader: композиция, которой нужна
+  физическая истина инвентаря, может заменить или обернуть его on-chain
+  верификатором без изменений `PolymarketAccountVenueStateSource`;
 - ✅ сделки рынков scope разбираются ТЕМ ЖЕ `FillMapper`, что и приватный WS:
   **REST и приватный WS дают одну canonical-идентичность `Fill`**;
+- ✅ комиссия TAKER-исполнения — по ставке `PolymarketTakerFeeRateResolver`
+  рынка сделки: REST `feeRateBps` приходит `"0"` и на `Fill.fee` не влияет;
+  отказ резолвера — `Err` прохода;
+- ⚠️ collateral отдаётся в canonical `USDC`, хотя collateral Polymarket
+  CLOB V2 — pUSD: решение о canonical-представлении открыто и обязано быть
+  принято до того, как matcher начнёт менять `Portfolio`;
 - ✅ fail closed: непереводимый статус, противоречивая заявка, неопознанное
   владение maker-заявкой, оборванная пагинация — `Err` всего прохода.
 
-Подробности — `docs/account-venue-state-source.md`.
+Подробности и NEXT / BLOCKERS (время исполнения REST ↔ WS, pUSD/USDC,
+ставка комиссии в приватном WS, on-chain проверка балансов) —
+`docs/account-venue-state-source.md`.
 
 ## Тесты
 

@@ -8,6 +8,7 @@
  * - fail closed ДО запросов (идентичность, дубликаты scope, не-condition-id);
  * - все страницы `listOpenOrders` и `listAccountTrades({ market })`, отказ
  *   любой страницы — `Err` без частичного состояния;
+ * - комиссия TAKER — по ставке резолвера рынка, отказ резолвера — `Err`;
  * - `getOrderState`: `undefined` только на 404, всё остальное — `Err`.
  */
 import { describe, expect, it } from '@jest/globals';
@@ -23,11 +24,13 @@ import {
   FakeAccountClient,
   FakeBalanceReader,
   FakePages,
+  FakeTakerFeeRates,
   MARKET_A,
   MARKET_B,
   NO,
   OTHER_ACCOUNT,
   OUR_ADDRESS,
+  OUR_OWNER,
   TRADE_STATUS,
   VENUE,
   YES,
@@ -87,7 +90,11 @@ describe('контракт и создание', () => {
   });
 
   it('площадка не POLYMARKET или адрес не EVM → отказ создания', () => {
-    const deps = { client: new FakeAccountClient(), balanceReader: new FakeBalanceReader() };
+    const deps = {
+      client: new FakeAccountClient(),
+      balanceReader: new FakeBalanceReader(),
+      takerFeeRates: new FakeTakerFeeRates(),
+    };
     expect(
       PolymarketAccountVenueStateSource.create({ venueId: 'KALSHI' as never, accountId: ACCOUNT, makerAddress: OUR_ADDRESS }, deps).ok,
     ).toBe(false);
@@ -242,6 +249,68 @@ describe('getAccountState: сделки рынков scope', () => {
     client.trades.set(MARKET_A, new FakePages([[clobTrade({ id: 'trade-1' })], [clobTrade({ id: 'trade-1' })]]));
     const state = unwrap(await source.getAccountState(VENUE, ACCOUNT, SCOPE));
     expect(state.recentFills).toHaveLength(1);
+  });
+});
+
+describe('getAccountState: комиссия TAKER — по ставке резолвера', () => {
+  /** Наша MAKER-сделка рынка B: мейкер комиссию не платит. */
+  const makerTradeB = clobTrade({
+    id: 'trade-maker-b',
+    conditionId: MARKET_B,
+    traderSide: 'MAKER',
+    side: 'SELL',
+    makerOrders: [
+      {
+        orderId: '0xour-maker',
+        tokenId: YES_TOKEN_ID,
+        side: 'BUY',
+        price: '0.57',
+        matchedAmount: '10',
+        makerAddress: OUR_ADDRESS,
+        owner: OUR_OWNER,
+      },
+    ],
+  });
+
+  it('ставка запрашивается для каждой TAKER-сделки по её рынку и не запрашивается для MAKER', async () => {
+    const { source, client, takerFeeRates } = buildSource();
+    client.trades.set(MARKET_A, new FakePages([[clobTrade({ id: 'trade-a1' })], [clobTrade({ id: 'trade-a2' })]]));
+    client.trades.set(MARKET_B, new FakePages([[makerTradeB]]));
+
+    const state = unwrap(
+      await source.getAccountState(VENUE, ACCOUNT, { marketIds: [MARKET_A, MARKET_B], assets: [] }),
+    );
+
+    expect(takerFeeRates.calls).toEqual([MARKET_A, MARKET_A]);
+    const fees = state.recentFills.map(({ fill, metadata }) => [String(fill.id), metadata.liquidity, fill.fee.isZero()]);
+    expect(fees).toEqual([
+      ['trade-a1', 'TAKER', false],
+      ['trade-a2', 'TAKER', false],
+      ['trade-maker-b', 'MAKER', true],
+    ]);
+  });
+
+  it('REST feeRateBps "0" не обнуляет комиссию тейкера', async () => {
+    const { source, client } = buildSource();
+    client.trades.set(MARKET_A, new FakePages([[clobTrade({ feeRateBps: '0' })]]));
+    const state = unwrap(await source.getAccountState(VENUE, ACCOUNT, SCOPE));
+    // 10 × 0.07 × 0.57 × 0.43 = 0.17157
+    expect(state.recentFills[0]!.fill.fee.quantity.amount().value().toNumber()).toBeCloseTo(0.17157, 8);
+  });
+
+  it('отказ резолвера → Err всего прохода, без частичного состояния', async () => {
+    const rates = new FakeTakerFeeRates();
+    rates.rates.set(String(MARKET_B).toLowerCase(), readerError('fee schedule unavailable'));
+    const { source, client } = buildSource(new FakeAccountClient(), new FakeBalanceReader(), rates);
+    client.trades.set(MARKET_A, new FakePages([[clobTrade({ id: 'trade-a1' })]]));
+    client.trades.set(MARKET_B, new FakePages([[clobTrade({ id: 'trade-b1', conditionId: MARKET_B })]]));
+
+    const error = failure(
+      await source.getAccountState(VENUE, ACCOUNT, { marketIds: [MARKET_A, MARKET_B], assets: [] }),
+    );
+
+    expect(error.message).toContain(`trades market ${MARKET_B}`);
+    expect(error.message).toContain('fee schedule unavailable');
   });
 });
 

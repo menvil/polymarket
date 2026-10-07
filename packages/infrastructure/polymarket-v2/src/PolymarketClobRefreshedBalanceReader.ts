@@ -1,19 +1,19 @@
 /**
- * Чтение фактических балансов аккаунта Polymarket: collateral и outcome-токены.
+ * Балансы аккаунта Polymarket: порт reader-а и его CLOB-реализация.
  *
  * @remarks
  * ### Граница
  *
- * `AuthoritativeAssetBalance.quantity` — ФАКТИЧЕСКОЕ текущее владение, а не
- * кэш торгового слоя площадки. Поэтому адаптер состояния читает балансы не
- * SDK напрямую, а через {@link PolymarketAuthoritativeBalanceReader}: источник
- * балансов можно усилить (on-chain `balanceOf`, кросс-проверка) или заменить,
- * не меняя ни `PolymarketAccountVenueStateSource`, ни
- * `IAccountVenueStateSource`.
+ * `AuthoritativeAssetBalance.quantity` — ФАКТИЧЕСКОЕ текущее владение.
+ * Адаптер состояния читает балансы не SDK напрямую, а через порт
+ * {@link PolymarketAuthoritativeBalanceReader}: authoritative-гарантию даёт
+ * ПОДСТАВЛЕННЫЙ reader. Его можно усилить (on-chain `balanceOf`,
+ * кросс-проверка) или заменить, не меняя ни `PolymarketAccountVenueStateSource`,
+ * ни `IAccountVenueStateSource`.
  *
- * ### Реализация по умолчанию — обновлённый CLOB-баланс
+ * ### Реализация в этом пакете — обновлённый CLOB-взгляд
  *
- * {@link PolymarketRefreshedBalanceReader} читает через официальный
+ * {@link PolymarketClobRefreshedBalanceReader} читает через официальный
  * `updateBalanceAllowance`, а НЕ `fetchBalanceAllowance`:
  *
  * ```text
@@ -21,16 +21,17 @@
  *                        → GET /balance-allowance          (прочитать его)
  * ```
  *
- * This implementation refreshes the CLOB balance cache before reading.
- * It MUST NOT silently convert transport/schema failures to zero.
- * An optional/stronger on-chain verifier can replace or wrap this reader
- * without changing IAccountVenueStateSource.
+ * This reader is a refreshed CLOB balance reader.
+ * It MUST NOT be treated as independently verified on-chain truth.
+ * A production composition that requires physical inventory truth may
+ * replace/wrap it with an on-chain verifier without changing
+ * PolymarketAccountVenueStateSource.
  *
- * Это обновлённый ВЗГЛЯД CLOB на баланс, а не математическое доказательство
- * on-chain владения: известен legacy-случай, когда токены завершившегося MINT
- * у аккаунта были, а CLOB-баланс их не показывал. Закрывает ли обновление
- * этот случай, проверяется live отдельно; до тех пор обновлённое чтение —
- * рабочий production-кандидат, а не утверждение «CLOB == blockchain».
+ * It MUST NOT silently convert transport/schema failures to zero.
+ *
+ * Известен legacy-случай, когда токены завершившегося MINT у аккаунта были,
+ * а CLOB-баланс их не показывал. Закрывает ли обновление этот случай,
+ * проверяется live отдельно. ERC-20/ERC-1155 RPC здесь не реализован.
  */
 import type { AuthoritativeOutcomeAssetId } from '@polymarket/account-reconciliation';
 import type { BalanceAllowanceResponse } from '@polymarket/bindings/clob';
@@ -46,11 +47,17 @@ import {
 } from './polymarketAccountMapping.js';
 
 /**
- * Источник фактических балансов одного аккаунта.
+ * Источник фактических балансов одного аккаунта — порт адаптера состояния.
  *
  * @remarks
+ * Authoritative-гарантию `assetBalances`/`collateralBalance` даёт ИМЕННО
+ * реализация этого порта, подставленная composition root-ом. Реализация в
+ * этом пакете — {@link PolymarketClobRefreshedBalanceReader} (обновлённый
+ * CLOB-взгляд); композиция, которой нужна физическая правда о владении,
+ * подставляет on-chain verifier или оборачивает им CLOB-reader.
+ *
  * Ожидаемые отказы — `Err`, а не исключения и не ноль. Ноль допустим только
- * тогда, когда площадка корректно сообщила настоящий нулевой баланс.
+ * тогда, когда источник корректно сообщил настоящий нулевой баланс.
  *
  * @example
  * ```typescript
@@ -81,7 +88,7 @@ export interface PolymarketAuthoritativeBalanceReader {
  * @remarks
  * Строковые литералы вместо enum `AssetType` SDK: от SDK пакет берёт только
  * типы, а значения enum передаёт composition root (см.
- * {@link PolymarketRefreshedBalanceReader.fromSdk}).
+ * {@link PolymarketClobRefreshedBalanceReader.fromSdk}).
  */
 export type PolymarketBalanceAllowanceRequest =
   | { readonly assetType: 'COLLATERAL' }
@@ -94,7 +101,7 @@ export type PolymarketBalanceAllowanceRequest =
  * В SDK 0.6.0 `updateBalanceAllowance` — action-функция
  * (`@polymarket/client/actions`), а не метод экземпляра клиента. Порт держит
  * reader независимым от конкретного клиента: в тестах — fake, в рантайме —
- * {@link PolymarketRefreshedBalanceReader.fromSdk}.
+ * {@link PolymarketClobRefreshedBalanceReader.fromSdk}.
  */
 export interface PolymarketBalanceAllowanceRefresher {
   /**
@@ -107,7 +114,7 @@ export interface PolymarketBalanceAllowanceRefresher {
 }
 
 /**
- * Части официального SDK, нужные для {@link PolymarketRefreshedBalanceReader.fromSdk}.
+ * Части официального SDK, нужные для {@link PolymarketClobRefreshedBalanceReader.fromSdk}.
  *
  * @remarks
  * Передаются composition root-ом, который загружает SDK как ESM:
@@ -115,7 +122,7 @@ export interface PolymarketBalanceAllowanceRefresher {
  * ```typescript
  * import { updateBalanceAllowance } from '@polymarket/client/actions';
  * import { AssetType } from '@polymarket/client';
- * PolymarketRefreshedBalanceReader.fromSdk(secureClient, { updateBalanceAllowance, assetTypes: AssetType });
+ * PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, { updateBalanceAllowance, assetTypes: AssetType });
  * ```
  *
  * Пакет сам runtime-код SDK не импортирует — так же, как и остальные его
@@ -135,9 +142,15 @@ export interface PolymarketBalanceAllowanceSdk {
 }
 
 /**
- * Балансы через ОБНОВЛЁННЫЙ CLOB-взгляд официального SDK.
+ * Refreshed CLOB balance reader: балансы через ОБНОВЛЁННЫЙ CLOB-взгляд
+ * официального SDK.
  *
  * @remarks
+ * This reader is a refreshed CLOB balance reader. It MUST NOT be treated as
+ * independently verified on-chain truth: это взгляд CLOB, обновлённый перед
+ * чтением, а не доказательство владения в сети. Композиция, которой нужна
+ * физическая правда, заменяет или оборачивает его on-chain verifier-ом.
+ *
  * - collateral: `updateBalanceAllowance({ assetType: COLLATERAL })`;
  * - outcome-токен: `updateBalanceAllowance({ assetType: CONDITIONAL, tokenId })`
  *   (в SDK 0.6.0 поле запроса называется `tokenId`).
@@ -148,11 +161,11 @@ export interface PolymarketBalanceAllowanceSdk {
  *
  * @example
  * ```typescript
- * const reader = PolymarketRefreshedBalanceReader.fromSdk(secureClient, { updateBalanceAllowance, assetTypes: AssetType });
+ * const reader = PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, { updateBalanceAllowance, assetTypes: AssetType });
  * const collateral = await reader.getCollateralBalance();
  * ```
  */
-export class PolymarketRefreshedBalanceReader implements PolymarketAuthoritativeBalanceReader {
+export class PolymarketClobRefreshedBalanceReader implements PolymarketAuthoritativeBalanceReader {
   /**
    * @param _refresher - Порт обновления balance-allowance
    */
@@ -163,17 +176,17 @@ export class PolymarketRefreshedBalanceReader implements PolymarketAuthoritative
    *
    * @param client - Аутентифицированный клиент (`createSecureClient()` в composition root)
    * @param sdk - `updateBalanceAllowance` и enum `AssetType` официального SDK
-   * @returns Reader, обновляющий CLOB-баланс перед каждым чтением
+   * @returns CLOB-reader, обновляющий взгляд CLOB перед каждым чтением
    *
    * @example
    * ```typescript
    * import { updateBalanceAllowance } from '@polymarket/client/actions';
    * import { AssetType } from '@polymarket/client';
-   * const reader = PolymarketRefreshedBalanceReader.fromSdk(client, { updateBalanceAllowance, assetTypes: AssetType });
+   * const reader = PolymarketClobRefreshedBalanceReader.fromSdk(client, { updateBalanceAllowance, assetTypes: AssetType });
    * ```
    */
-  public static fromSdk(client: BaseSecureClient, sdk: PolymarketBalanceAllowanceSdk): PolymarketRefreshedBalanceReader {
-    return new PolymarketRefreshedBalanceReader({
+  public static fromSdk(client: BaseSecureClient, sdk: PolymarketBalanceAllowanceSdk): PolymarketClobRefreshedBalanceReader {
+    return new PolymarketClobRefreshedBalanceReader({
       updateBalanceAllowance: (request) =>
         sdk.updateBalanceAllowance(
           client,

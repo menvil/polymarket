@@ -1,5 +1,5 @@
 /**
- * `PolymarketRefreshedBalanceReader`: обновлённый CLOB-баланс → canonical
+ * `PolymarketClobRefreshedBalanceReader`: обновлённый CLOB-баланс → canonical
  * `Money`/`Quantity`.
  *
  * @remarks
@@ -13,7 +13,7 @@ import type { BaseSecureClient } from '@polymarket/client';
 import type { UpdateBalanceAllowanceRequest } from '@polymarket/client/actions';
 import { parseAssetId } from '@polymarket/ids';
 import {
-  PolymarketRefreshedBalanceReader,
+  PolymarketClobRefreshedBalanceReader,
   type PolymarketBalanceAllowanceRefresher,
   type PolymarketBalanceAllowanceRequest,
 } from '@polymarket/polymarket-v2/account';
@@ -39,7 +39,7 @@ function respondWith(balance: unknown): () => Promise<BalanceAllowanceResponse> 
 describe('collateral', () => {
   it('updateBalanceAllowance(COLLATERAL) → точные Money в USDC из базовых единиц', async () => {
     const refresher = new FakeRefresher(respondWith('1234567890'));
-    const reader = new PolymarketRefreshedBalanceReader(refresher);
+    const reader = new PolymarketClobRefreshedBalanceReader(refresher);
 
     const collateral = await reader.getCollateralBalance();
 
@@ -49,14 +49,14 @@ describe('collateral', () => {
   });
 
   it('настоящий ноль — ноль, а не отказ', async () => {
-    const reader = new PolymarketRefreshedBalanceReader(new FakeRefresher(respondWith('0')));
+    const reader = new PolymarketClobRefreshedBalanceReader(new FakeRefresher(respondWith('0')));
     const collateral = await reader.getCollateralBalance();
     expect(collateral.ok && collateral.value.isZero()).toBe(true);
   });
 
   it('отказ SDK → Err с исходной причиной, не ноль', async () => {
     const cause = new Error('HTTP 503');
-    const reader = new PolymarketRefreshedBalanceReader(new FakeRefresher(() => Promise.reject(cause)));
+    const reader = new PolymarketClobRefreshedBalanceReader(new FakeRefresher(() => Promise.reject(cause)));
 
     const collateral = await reader.getCollateralBalance();
 
@@ -70,7 +70,7 @@ describe('collateral', () => {
 describe('outcome-токен', () => {
   it('updateBalanceAllowance(CONDITIONAL, tokenId) → точное Quantity', async () => {
     const refresher = new FakeRefresher(respondWith('2500000'));
-    const reader = new PolymarketRefreshedBalanceReader(refresher);
+    const reader = new PolymarketClobRefreshedBalanceReader(refresher);
 
     const balance = await reader.getOutcomeAssetBalance(YES);
 
@@ -79,14 +79,14 @@ describe('outcome-токен', () => {
   });
 
   it('дробные базовые единицы сохраняются точно (1 → 0.000001)', async () => {
-    const reader = new PolymarketRefreshedBalanceReader(new FakeRefresher(respondWith('1')));
+    const reader = new PolymarketClobRefreshedBalanceReader(new FakeRefresher(respondWith('1')));
     const balance = await reader.getOutcomeAssetBalance(YES);
     expect(balance.ok && balance.value.value().toString()).toBe('0.000001');
   });
 
   it('OUTCOME_TOKEN без CLOB token id → Err, без запроса', async () => {
     const refresher = new FakeRefresher(respondWith('1'));
-    const reader = new PolymarketRefreshedBalanceReader(refresher);
+    const reader = new PolymarketClobRefreshedBalanceReader(refresher);
     const onChain = parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x${'a'.repeat(64)}:UP`);
     if (onChain === undefined || onChain.type !== 'OUTCOME_TOKEN') throw new Error('fixture failed');
 
@@ -106,7 +106,7 @@ describe('outcome-токен', () => {
     ['число вместо строки', 5],
     ['переполнение', '9'.repeat(23)],
   ])('невалидный баланс (%s) → Err, не ноль', async (_label, raw) => {
-    const reader = new PolymarketRefreshedBalanceReader(new FakeRefresher(respondWith(raw)));
+    const reader = new PolymarketClobRefreshedBalanceReader(new FakeRefresher(respondWith(raw)));
 
     const balance = await reader.getOutcomeAssetBalance(YES);
     const collateral = await reader.getCollateralBalance();
@@ -124,7 +124,7 @@ describe('fromSdk: привязка к action-функции SDK', () => {
       COLLATERAL: 'COLLATERAL' as UpdateBalanceAllowanceRequest['assetType'],
       CONDITIONAL: 'CONDITIONAL' as UpdateBalanceAllowanceRequest['assetType'],
     };
-    const reader = PolymarketRefreshedBalanceReader.fromSdk(client, {
+    const reader = PolymarketClobRefreshedBalanceReader.fromSdk(client, {
       assetTypes,
       updateBalanceAllowance: (passedClient, request) => {
         calls.push({ client: passedClient, request });

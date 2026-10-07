@@ -25,7 +25,8 @@
  * ```typescript
  * import {
  *   PolymarketAccountVenueStateSource,
- *   PolymarketRefreshedBalanceReader,
+ *   PolymarketClobRefreshedBalanceReader,
+ *   PolymarketStaticTakerFeeRateResolver,
  * } from '@polymarket/polymarket-v2/account';
  * ```
  */
@@ -36,10 +37,14 @@ export {
   type PolymarketSecureAccountClient,
 } from './PolymarketAccountVenueStateSource.js';
 export {
-  PolymarketRefreshedBalanceReader,
+  PolymarketClobRefreshedBalanceReader,
   type PolymarketAuthoritativeBalanceReader,
   type PolymarketBalanceAllowanceRefresher,
   type PolymarketBalanceAllowanceRequest,
   type PolymarketBalanceAllowanceSdk,
-} from './PolymarketRefreshedBalanceReader.js';
+} from './PolymarketClobRefreshedBalanceReader.js';
+export {
+  PolymarketStaticTakerFeeRateResolver,
+  type PolymarketTakerFeeRateResolver,
+} from './PolymarketTakerFeeRateResolver.js';
 export { PolymarketAccountStateError } from './polymarketAccountMapping.js';

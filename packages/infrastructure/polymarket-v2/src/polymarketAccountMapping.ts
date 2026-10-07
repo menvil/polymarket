@@ -30,8 +30,15 @@
 import type { AuthoritativeFillState, AuthoritativeOpenOrderState, AuthoritativeOrderState, AuthoritativeOutcomeAssetId } from '@polymarket/account-reconciliation';
 import type { TradeStatus as VendorTradeStatus } from '@polymarket/bindings';
 import type { ClobTrade, OpenOrder } from '@polymarket/bindings/clob';
-import { FillMapper, findFillFactDifference, type ExecutionMetadata, type TradeStatus } from '@polymarket/fill';
 import {
+  FillMapper,
+  findFillFactDifference,
+  type ExecutionMetadata,
+  type PolymarketTradeEventMappingOptions,
+  type TradeStatus,
+} from '@polymarket/fill';
+import {
+  asMarketId,
   asOrderId,
   asPolymarketCtfToken,
   assetIdToString,
@@ -48,6 +55,7 @@ import {
   type Quantity,
   type Side,
 } from '@polymarket/value-objects';
+import type { PolymarketTakerFeeRateResolver } from './PolymarketTakerFeeRateResolver.js';
 
 /**
  * Отказ перевода или чтения состояния аккаунта Polymarket.
@@ -139,8 +147,16 @@ export function baseUnitsToDecimalString(
  * @returns Деньги в canonical расчётной валюте `USDC` либо отказ
  *
  * @remarks
- * Расчётный актив исполнений Polymarket в репозитории — `USDC`
- * (`Fill.settlementAssetId`), поэтому collateral выражается в нём же.
+ * Collateral выражается в `USDC`, потому что это единственная валюта, которую
+ * сегодня поддерживает canonical `Money`/`Portfolio`, и в ней же
+ * `Fill.settlementAssetId`. Это НЕ утверждение, что физический collateral-токен
+ * площадки — USDC.
+ *
+ * TODO(open architectural decision): current canonical Portfolio supports only
+ * USDC; current Polymarket CLOB V2 collateral is pUSD. Before the state matcher
+ * is allowed to mutate Portfolio, the canonical collateral representation must
+ * explicitly decide whether pUSD is represented as its own currency or
+ * intentionally normalized to a USD-equivalent accounting unit.
  *
  * @example
  * ```typescript
@@ -379,13 +395,16 @@ function parseOrderFacts(order: OpenOrder): Result<OrderFacts, PolymarketAccount
  *
  * @remarks
  * `makerAddress` — НАШ адрес из конфигурации адаптера, а не из ответа: по нему
- * `FillMapper` находит наши maker-заявки в сделке.
+ * `FillMapper` находит наши maker-заявки в сделке. `takerFeeRates` — источник
+ * ставки комиссии тейкера: REST `feeRateBps` для этого непригоден.
  */
 export interface PolymarketTradeContext {
   /** Аккаунт, которому принадлежат исполнения */
   readonly accountId: AccountId;
   /** Наш адрес maker-заявок, в нижнем регистре */
   readonly makerAddress: string;
+  /** Ставка taker-комиссии по рынку сделки */
+  readonly takerFeeRates: PolymarketTakerFeeRateResolver;
 }
 
 /**
@@ -402,11 +421,12 @@ export interface PolymarketTradeContext {
  * id → id                    takerOrderId → taker_order_id
  * traderSide → trader_side   conditionId → market
  * tokenId → asset_id         side, price, size → как есть (строки)
- * feeRateBps → fee_rate_bps  transactionHash → transaction_hash
+ * transactionHash → transaction_hash
+ * feeRateBps → НЕ передаётся (в REST приходит "0"; ставку даёт резолвер)
  * status → canonical (без префикса TRADE_STATUS_)
  * matchedAt (ISO) → timestamp (мс): время исполнения, а не время сообщения
  * makerOrders[] → maker_orders[] (order_id, matched_amount, price, asset_id,
- *                                 side, owner, maker_address, outcome, fee_rate_bps)
+ *                                 side, owner, maker_address, outcome)
  * maker_address → НАШ адрес из конфигурации
  * owner         → НЕ передаётся
  * ```
@@ -415,6 +435,10 @@ export interface PolymarketTradeContext {
  * maker-заявку нашей и по совпадению `owner`, а в cross-outcome сделке
  * верхний уровень описывает тейкера. Владение здесь определяется только
  * адресом аккаунта — тем же для любой его заявки, включая ручные.
+ *
+ * `feeRateBps` (и верхнего уровня, и maker-заявок) намеренно не передаётся:
+ * в REST он приходит `"0"`, и `FillMapper` выбрал бы по нему нулевую
+ * комиссию тейкера. Ставку `mapPolymarketClobTrade` берёт у резолвера.
  *
  * @example
  * ```typescript
@@ -450,7 +474,6 @@ export function polymarketClobTradeToFillMapperInput(
     side: trade.side,
     price: trade.price,
     size: trade.size,
-    fee_rate_bps: trade.feeRateBps,
     status: status.value,
     maker_address: context.makerAddress,
     maker_orders: trade.makerOrders.map((makerOrder) => ({
@@ -462,7 +485,6 @@ export function polymarketClobTradeToFillMapperInput(
       owner: makerOrder.owner,
       maker_address: makerOrder.makerAddress,
       outcome: makerOrder.outcome,
-      fee_rate_bps: makerOrder.feeRateBps,
     })),
     timestamp: String(matchedAt.value.toNumber()),
     transaction_hash: trade.transactionHash,
@@ -473,7 +495,7 @@ export function polymarketClobTradeToFillMapperInput(
  * Сделка аккаунта → authoritative-исполнения через canonical `FillMapper`.
  *
  * @param trade - Сделка из `listAccountTrades`
- * @param context - Аккаунт и наш адрес maker-заявок
+ * @param context - Аккаунт, наш адрес maker-заявок и источник ставки комиссии
  * @returns Исполнения сделки (у multi-maker — несколько) либо отказ
  *
  * @remarks
@@ -481,15 +503,19 @@ export function polymarketClobTradeToFillMapperInput(
  * 2. TAKER-сделка, в которой наш адрес есть и среди maker-заявок, — self-match:
  *    правило `FillId` такой случай не представляет → отказ, а не половина
  *    сделки.
- * 3. REST-форма → `FillMapper.allFromPolymarketTradeEvent` — ТО ЖЕ правило
- *    `FillId`, владения и cross-outcome, что у приватного WS. MAKER-сделка
- *    без нашей maker-заявки — отказ `FillMapper`, а не откат на чужой
- *    верхний уровень.
- * 4. Статус каждого исполнения обязан совпасть с canonical статусом сделки.
+ * 3. TAKER-сделка: ставка комиссии — у `context.takerFeeRates` по рынку
+ *    сделки (`conditionId`). Отказ резолвера — отказ сделки. `feeRateBps` из
+ *    ответа на комиссию не влияет. MAKER-сделка ставку не запрашивает:
+ *    мейкер комиссию не платит.
+ * 4. REST-форма → `FillMapper.allFromPolymarketTradeEvent` с этой ставкой —
+ *    ТО ЖЕ правило `FillId`, владения и cross-outcome, что у приватного WS.
+ *    MAKER-сделка без нашей maker-заявки — отказ `FillMapper`, а не откат на
+ *    чужой верхний уровень.
+ * 5. Статус каждого исполнения обязан совпасть с canonical статусом сделки.
  *
  * @example
  * ```typescript
- * const fills = mapPolymarketClobTrade(trade, { accountId, makerAddress });
+ * const fills = mapPolymarketClobTrade(trade, { accountId, makerAddress, takerFeeRates });
  * ```
  */
 export function mapPolymarketClobTrade(
@@ -509,7 +535,10 @@ export function mapPolymarketClobTrade(
     );
   }
 
-  const mapped = FillMapper.allFromPolymarketTradeEvent(raw.value, context.accountId);
+  const options = takerFeeOptions(trade, context);
+  if (!options.ok) return options;
+
+  const mapped = FillMapper.allFromPolymarketTradeEvent(raw.value, context.accountId, options.value);
   if (!mapped.ok) {
     return Err(new PolymarketAccountStateError(`${label}: ${mapped.error.message}`, { cause: mapped.error }));
   }
@@ -523,6 +552,31 @@ export function mapPolymarketClobTrade(
     fills.push({ fill, metadata: { ...metadata, tradeStatus: metadata.tradeStatus } });
   }
   return Ok(fills);
+}
+
+/**
+ * Ставка taker-комиссии для `FillMapper`: только у TAKER-сделки и только от
+ * резолвера.
+ *
+ * @param trade - Сделка с уже проверенной стороной
+ * @param context - Источник ставки
+ * @returns Опции `FillMapper` либо отказ резолвера
+ */
+function takerFeeOptions(
+  trade: ClobTrade,
+  context: PolymarketTradeContext,
+): Result<PolymarketTradeEventMappingOptions, PolymarketAccountStateError> {
+  if (trade.traderSide !== 'TAKER') return Ok({});
+  const label = `trade ${describe(trade.id)}`;
+  const marketId = typeof trade.conditionId === 'string' ? asMarketId(trade.conditionId) : undefined;
+  if (marketId === undefined) {
+    return Err(new PolymarketAccountStateError(`${label}: invalid market ${describe(trade.conditionId)}`));
+  }
+  const rate = context.takerFeeRates.getTakerFeeRate(marketId);
+  if (!rate.ok) {
+    return Err(new PolymarketAccountStateError(`${label}: ${rate.error.message}`, { cause: rate.error }));
+  }
+  return Ok({ takerFeeRate: rate.value });
 }
 
 /**

@@ -9,6 +9,10 @@
  * user-channel и как его сегодня разбирает `FillEventHandler`; REST-сделка —
  * в camelCase-форме SDK. Общая между ними только сама сделка, а не код
  * построения фикстур: иначе тест проверял бы сам себя.
+ *
+ * REST-сделка несёт `feeRateBps: "0"` — так его реально отдаёт площадка.
+ * Положительную ставку в REST-ответ не подставляем: комиссию тейкера
+ * REST-путь берёт у резолвера ставки, а не из ответа.
  */
 import { describe, expect, it } from '@jest/globals';
 import { FillMapper, findFillFactDifference, type Fill, type TradeStatus } from '@polymarket/fill';
@@ -20,8 +24,11 @@ import {
   mapPolymarketTradeStatus,
   mergeAuthoritativeFills,
 } from '../src/polymarketAccountMapping.js';
+import { Ok } from '@polymarket/result';
 import {
   ACCOUNT,
+  CRYPTO_TAKER_FEE_RATE,
+  FakeTakerFeeRates,
   MARKET_A,
   MATCHED_AT_SECONDS,
   NO_TOKEN_ID,
@@ -36,8 +43,18 @@ import {
   type ClobTradeOverrides,
 } from './helpers/accountFixtures.js';
 
-/** Контекст нашего аккаунта для разбора сделок. */
-const CONTEXT = { accountId: ACCOUNT, makerAddress: OUR_ADDRESS.toLowerCase() };
+/**
+ * Контекст нашего аккаунта для разбора сделок.
+ *
+ * @param takerFeeRates - Резолвер ставки (по умолчанию — crypto-ставка обоих рынков)
+ * @returns Контекст `mapPolymarketClobTrade`
+ */
+function contextWith(takerFeeRates: FakeTakerFeeRates = new FakeTakerFeeRates()) {
+  return { accountId: ACCOUNT, makerAddress: OUR_ADDRESS.toLowerCase(), takerFeeRates };
+}
+
+/** Контекст по умолчанию. */
+const CONTEXT = contextWith();
 
 describe('заявки: статус CLOB + sizeMatched → canonical', () => {
   it.each<[string, string, string, string]>([
@@ -150,7 +167,10 @@ interface Execution {
   readonly ws: Record<string, unknown>;
 }
 
-/** Наша TAKER-покупка 10 YES @ 0.57 с ненулевой ставкой комиссии. */
+/**
+ * Наша TAKER-покупка 10 YES @ 0.57. WS несёт положительный `fee_rate_bps`,
+ * REST — `"0"`, как его отдаёт площадка.
+ */
 const TAKER: Execution = {
   rest: {
     id: 'trade-taker',
@@ -160,7 +180,7 @@ const TAKER: Execution = {
     side: 'BUY',
     price: '0.57',
     size: '10',
-    feeRateBps: '1000',
+    feeRateBps: '0',
     makerOrders: [
       { orderId: '0xother', tokenId: YES_TOKEN_ID, side: 'SELL', price: '0.57', matchedAmount: '10', makerAddress: OTHER_ADDRESS, owner: OTHER_OWNER },
     ],
@@ -392,6 +412,90 @@ describe('P0: REST ClobTrade и приватный WS дают ОДИН canonica
   });
 });
 
+/** Комиссия исполнения в USDC числом. */
+function feeOf(fill: Fill): number {
+  return fill.fee.quantity.amount().value().toNumber();
+}
+
+describe('комиссия TAKER: ставка от резолвера, а не из feeRateBps REST-ответа', () => {
+  it('P0: WS fee_rate_bps > 0 и REST feeRateBps "0" + crypto-ставка резолвера → тот же FillId и тот же факт', () => {
+    expect(TAKER.ws['fee_rate_bps']).toBe('1000');
+    expect(clobTrade(TAKER.rest).feeRateBps).toBe('0');
+
+    const ws = FillMapper.allFromPolymarketTradeEvent(TAKER.ws, ACCOUNT);
+    const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), CONTEXT);
+    if (!ws.ok || !rest.ok) throw new Error('unexpected mapping failure');
+
+    expect(String(rest.value[0]!.fill.id)).toBe(String(ws.value[0]!.fill.id));
+    expect(findFillFactDifference(ws.value[0]!.fill, rest.value[0]!.fill)).toBeUndefined();
+  });
+
+  it('TAKER-исполнение несёт комиссию по формуле size × rate × p × (1 − p)', () => {
+    const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), CONTEXT);
+    if (!rest.ok) throw rest.error;
+    // 10 × 0.07 × 0.57 × 0.43 = 0.17157
+    expect(feeOf(rest.value[0]!.fill)).toBeCloseTo(0.17157, 8);
+  });
+
+  it('feeRateBps ответа на комиссию не влияет: "0", "1000" и "250" дают одну и ту же комиссию', () => {
+    const fees = ['0', '1000', '250'].map((feeRateBps) => {
+      const rest = mapPolymarketClobTrade(clobTrade({ ...TAKER.rest, feeRateBps }), CONTEXT);
+      if (!rest.ok) throw rest.error;
+      return feeOf(rest.value[0]!.fill);
+    });
+    expect(new Set(fees).size).toBe(1);
+    expect(fees[0]).toBeCloseTo(0.17157, 8);
+  });
+
+  it('комиссию задаёт ставка резолвера: другая ставка — другая комиссия, нулевая — без комиссии', () => {
+    const rates = new FakeTakerFeeRates();
+    rates.rates.set(String(MARKET_A).toLowerCase(), Ok(CRYPTO_TAKER_FEE_RATE / 2));
+    const halved = mapPolymarketClobTrade(clobTrade(TAKER.rest), contextWith(rates));
+    if (!halved.ok) throw halved.error;
+    // 10 × 0.035 × 0.57 × 0.43 = 0.085785 → 0.08579 (5 знаков, half-up)
+    expect(feeOf(halved.value[0]!.fill)).toBeCloseTo(0.08579, 8);
+
+    rates.rates.set(String(MARKET_A).toLowerCase(), Ok(0));
+    const free = mapPolymarketClobTrade(clobTrade(TAKER.rest), contextWith(rates));
+    if (!free.ok) throw free.error;
+    expect(free.value[0]!.fill.fee.isZero()).toBe(true);
+  });
+
+  it('ставка запрашивается по рынку TAKER-сделки', () => {
+    const rates = new FakeTakerFeeRates();
+    const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), contextWith(rates));
+    expect(rest.ok).toBe(true);
+    expect(rates.calls).toEqual([MARKET_A]);
+  });
+
+  it.each<[string, Execution]>([
+    ['один наш MAKER', SINGLE_MAKER],
+    ['несколько наших MAKER', MULTI_MAKER],
+    ['cross-outcome MAKER', CROSS_OUTCOME_MAKER],
+  ])('%s: комиссия ноль, ставка не запрашивается', (_label, execution) => {
+    const rates = new FakeTakerFeeRates();
+    const rest = mapPolymarketClobTrade(clobTrade(execution.rest), contextWith(rates));
+    if (!rest.ok) throw rest.error;
+    expect(rest.value.length).toBeGreaterThan(0);
+    for (const { fill } of rest.value) expect(fill.fee.isZero()).toBe(true);
+    expect(rates.calls).toEqual([]);
+  });
+
+  it('multi-maker сохраняет идентичность tradeId:orderId и при резолвере ставки', () => {
+    const rest = mapPolymarketClobTrade(clobTrade(MULTI_MAKER.rest), CONTEXT);
+    if (!rest.ok) throw rest.error;
+    expect(rest.value.map(({ fill }) => String(fill.id))).toEqual(['trade-multi:0xour-1', 'trade-multi:0xour-2']);
+  });
+
+  it('отказ резолвера → Err сделки, а не нулевая комиссия', () => {
+    const rates = new FakeTakerFeeRates();
+    rates.rates.delete(String(MARKET_A).toLowerCase());
+    const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), contextWith(rates));
+    expect(rest.ok).toBe(false);
+    if (!rest.ok) expect(rest.error.message).toContain('taker fee rate is unknown');
+  });
+});
+
 describe('владение сделкой: только наш адрес, без отката на чужой верхний уровень', () => {
   it('MAKER-сделка без нашей maker-записи → Err, даже если owner верхнего уровня совпадает с чужой записью', () => {
     const trade = clobTrade({
@@ -407,7 +511,7 @@ describe('владение сделкой: только наш адрес, бе�
 
   it('адрес сравнивается без учёта регистра', () => {
     const fills = mapPolymarketClobTrade(clobTrade(SINGLE_MAKER.rest), {
-      accountId: ACCOUNT,
+      ...CONTEXT,
       makerAddress: OUR_ADDRESS.toUpperCase().replace('0X', '0x'),
     });
     expect(fills.ok && fills.value.map((fill) => String(fill.fill.orderId))).toEqual(['0xour-maker']);

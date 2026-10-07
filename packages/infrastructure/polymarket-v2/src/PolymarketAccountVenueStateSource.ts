@@ -69,7 +69,8 @@ import {
 } from '@polymarket/ids';
 import { Err, Ok, type Result } from '@polymarket/result';
 import type { Money } from '@polymarket/value-objects';
-import type { PolymarketAuthoritativeBalanceReader } from './PolymarketRefreshedBalanceReader.js';
+import type { PolymarketAuthoritativeBalanceReader } from './PolymarketClobRefreshedBalanceReader.js';
+import type { PolymarketTakerFeeRateResolver } from './PolymarketTakerFeeRateResolver.js';
 import {
   PolymarketAccountStateError,
   mapPolymarketClobTrade,
@@ -121,6 +122,14 @@ export interface PolymarketAccountVenueStateSourceDependencies {
   readonly client: PolymarketSecureAccountClient;
   /** Источник фактических балансов */
   readonly balanceReader: PolymarketAuthoritativeBalanceReader;
+  /**
+   * Ставка taker-комиссии по рынку.
+   *
+   * @remarks
+   * Единственный источник комиссии TAKER-исполнений: `feeRateBps` REST-сделки
+   * приходит `"0"` и на `Fill.fee` не влияет.
+   */
+  readonly takerFeeRates: PolymarketTakerFeeRateResolver;
 }
 
 /** EVM-адрес: `0x` + 40 hex-символов. */
@@ -141,7 +150,11 @@ const CONDITION_ID = /^0x[0-9a-fA-F]{64}$/;
  * ```typescript
  * const source = PolymarketAccountVenueStateSource.create(
  *   { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: funder },
- *   { client: secureClient, balanceReader: PolymarketRefreshedBalanceReader.fromSdk(secureClient, sdk) },
+ *   {
+ *     client: secureClient,
+ *     balanceReader: PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, sdk),
+ *     takerFeeRates, // PolymarketStaticTakerFeeRateResolver.create([[market, 0.07]])
+ *   },
  * );
  * if (source.ok) {
  *   const state = await source.value.getAccountState(venueId, accountId, { marketIds: [market], assets: [up, down] });
@@ -151,7 +164,7 @@ const CONDITION_ID = /^0x[0-9a-fA-F]{64}$/;
 export class PolymarketAccountVenueStateSource implements IAccountVenueStateSource {
   /**
    * @param _config - Идентичность аккаунта, адрес maker-заявок — в нижнем регистре
-   * @param _deps - Клиент и reader балансов
+   * @param _deps - Клиент, reader балансов и ставки taker-комиссии
    */
   private constructor(
     private readonly _config: PolymarketAccountVenueStateSourceConfig,
@@ -162,7 +175,7 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    * Создаёт адаптер для одного аккаунта.
    *
    * @param config - Площадка, аккаунт и адрес maker-заявок
-   * @param deps - Secure-клиент и reader балансов
+   * @param deps - Secure-клиент, reader балансов и ставки taker-комиссии
    * @returns Адаптер либо отказ, если площадка не `POLYMARKET` или адрес не EVM
    *
    * @example
@@ -202,8 +215,10 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    *    `makerAddress` НЕ передаётся: эндпоинт уже ограничен аккаунтом, а
    *    фильтр по maker-адресу, по наблюдению legacy, может скрыть
    *    taker-сделки.
-   * 5. Сделки → canonical-исполнения (`FillMapper`), слияние повторов,
-   *    проверка аккаунта, площадки и рынка каждого исполнения.
+   * 5. Сделки → canonical-исполнения (`FillMapper`); комиссия TAKER — по
+   *    ставке `takerFeeRates` рынка сделки, не по `feeRateBps` ответа; отказ
+   *    резолвера — отказ прохода. Затем слияние повторов, проверка аккаунта,
+   *    площадки и рынка каждого исполнения.
    * 6. Проверка `set(assetBalances.asset) == set(scope.assets)`.
    *
    * @example
@@ -402,7 +417,11 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
   ): Promise<Result<readonly AuthoritativeFillState[], PolymarketAccountStateError>> {
     const stage = `trades market ${marketId}`;
     const fills: AuthoritativeFillState[] = [];
-    const context = { accountId: this._config.accountId, makerAddress: this._config.makerAddress };
+    const context = {
+      accountId: this._config.accountId,
+      makerAddress: this._config.makerAddress,
+      takerFeeRates: this._deps.takerFeeRates,
+    };
     try {
       for await (const page of this._deps.client.listAccountTrades({ market: String(marketId) })) {
         for (const trade of page.items) {

@@ -19,7 +19,7 @@
  *   (Filter/Scorer) здесь запрещён — owner selection живёт НАД портом.
  *
  * - **ACCOUNT PLANE** (`PolymarketAccountVenueStateSource`,
- *   `PolymarketRefreshedBalanceReader`, `polymarketAccountMapping`) —
+ *   `PolymarketClobRefreshedBalanceReader`, `polymarketAccountMapping`) —
  *   request/response-адаптер порта `IAccountVenueStateSource`. Ему
  *   разрешены порт (`@polymarket/account-reconciliation`), canonical
  *   исполнение (`@polymarket/fill`: `FillMapper` — общее с приватным WS
@@ -111,7 +111,8 @@ const DISCOVERY_FILES = new Set([
  */
 const ACCOUNT_FILES = new Set([
   'PolymarketAccountVenueStateSource.ts',
-  'PolymarketRefreshedBalanceReader.ts',
+  'PolymarketClobRefreshedBalanceReader.ts',
+  'PolymarketTakerFeeRateResolver.ts',
   'polymarketAccountMapping.ts',
   // отдельная точка входа `@polymarket/polymarket-v2/account`
   'account.ts',

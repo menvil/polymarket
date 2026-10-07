@@ -219,6 +219,57 @@ describe('FillMapper', () => {
     });
   });
 
+  describe('allFromPolymarketTradeEvent() — takerFeeRate из надёжного источника', () => {
+    // REST-запись сделки приходит с fee_rate_bps "0" (поле не заполняется) —
+    // по нему нельзя решать, была ли комиссия. Ставка рынка передаётся явно.
+    function feeOf(fill: { fee: { quantity: { amount(): { value(): { toNumber(): number } } } } }): number {
+      return fill.fee.quantity.amount().value().toNumber();
+    }
+
+    it('TAKER + takerFeeRate: комиссия по ставке, даже при fee_rate_bps "0"', () => {
+      const result = FillMapper.allFromPolymarketTradeEvent(
+        makeValidTakerEvent({ fee_rate_bps: '0', price: '0.65', size: '10' }),
+        makeAccountId(),
+        { takerFeeRate: 0.07 },
+      );
+      const [only] = unwrap(result);
+      // 10 × 0.07 × 0.65 × 0.35 = 0.15925
+      expect(feeOf(only!.fill)).toBeCloseTo(0.15925, 8);
+    });
+
+    it('TAKER + takerFeeRate совпадает с прежним правилом для fee_rate_bps > 0 при крипто-ставке', () => {
+      const legacy = unwrap(FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent({ fee_rate_bps: '20' }), makeAccountId()));
+      const explicit = unwrap(
+        FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent({ fee_rate_bps: '0' }), makeAccountId(), { takerFeeRate: 0.07 }),
+      );
+      expect(explicit[0]!.fill.fee.equals(legacy[0]!.fill.fee)).toBe(true);
+    });
+
+    it('TAKER + takerFeeRate 0: комиссии нет, даже при fee_rate_bps > 0', () => {
+      const [only] = unwrap(
+        FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent({ fee_rate_bps: '20' }), makeAccountId(), { takerFeeRate: 0 }),
+      );
+      expect(only!.fill.hasFee()).toBe(false);
+    });
+
+    it('MAKER: ставка не применяется — мейкер комиссию не платит', () => {
+      const [only] = unwrap(
+        FillMapper.allFromPolymarketTradeEvent(makeValidMakerEvent(), makeAccountId(), { takerFeeRate: 0.07 }),
+      );
+      expect(only!.fill.hasFee()).toBe(false);
+    });
+
+    it('без options поведение прежнее: fee_rate_bps "0" → комиссии нет', () => {
+      const [only] = unwrap(FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent({ fee_rate_bps: '0' }), makeAccountId()));
+      expect(only!.fill.hasFee()).toBe(false);
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, -0.01])('невалидная ставка %p → Err', (rate) => {
+      const result = FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent(), makeAccountId(), { takerFeeRate: rate });
+      expect(result.ok).toBe(false);
+    });
+  });
+
   describe('fromPolymarketTradeEvent() — MAKER', () => {
     it('парсит валидное MAKER событие — orderId из maker_orders', () => {
       const accountId = makeAccountId();

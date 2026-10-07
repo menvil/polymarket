@@ -420,7 +420,9 @@ Legacy-рантайм API позиций не использовал вовсе:
 | закрывает ли `updateBalanceAllowance` фантомный MINT-случай, или нужна on-chain кросс-проверка `balanceOf` | иначе настоящие токены сведутся к нулю по кэшу |
 | регистр и форма статусов заявки (`LIVE` vs `live` vs префикс), смысл `INVALID` | сейчас принимается только задокументированный верхний регистр, `INVALID` — `Err` |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
-| совпадает ли WS `timestamp` с `match_time` | REST берёт `match time`; иначе один `FillId`, но разный факт |
+| совпадает ли WS `timestamp` с `match_time` | REST берёт `match time`; иначе один `FillId`, но разный факт. Блокер до matcher/runtime wiring |
+| pUSD vs USDC: collateral CLOB V2 — pUSD, canonical `Portfolio` знает только USDC | решить до того, как matcher начнёт менять `Portfolio`: своя валюта или намеренная нормализация в USD-эквивалент |
+| приходит ли WS `fee_rate_bps` положительным у тейкерской сделки | если нет, WS-путь обязан брать ставку у того же резолвера, что и REST |
 
 Закрыто при реализации адаптера:
 
@@ -433,7 +435,15 @@ Legacy-рантайм API позиций не использовал вовсе:
   WS-форму, тот же `FillMapper` (P0-тест REST ↔ WS);
 - в SDK 0.6.0 поле токена — `tokenId` (а не `assetId`), а
   `updateBalanceAllowance` — action-функция `@polymarket/client/actions`, а не
-  метод экземпляра клиента.
+  метод экземпляра клиента;
+- комиссия REST-исполнения: `feeRateBps` в REST приходит `"0"`, поэтому
+  ставку TAKER-сделки даёт `PolymarketTakerFeeRateResolver` по рынку, а
+  `FillMapper` принимает её опцией `takerFeeRate` — тот же `fee`, что у
+  приватного WS;
+- `PolymarketClobRefreshedBalanceReader` — refreshed CLOB balance reader, а
+  не проверенная on-chain истина; композиция, которой нужна физическая
+  истина инвентаря, оборачивает его on-chain верификатором без изменений
+  источника состояния.
 
 ## Связанное
 
