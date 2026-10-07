@@ -229,14 +229,16 @@ CURRENT VENUE STATE > EVENT HISTORY
 | `IAccountReconciliationSource` | **transitional**-контракт текущей сверки: источник отдаёт готовый локальный `Portfolio` |
 | `IAccountVenueStateSource` | **target** production-граница площадки: источник отдаёт факты площадки в пределах текущего торгового контура |
 
-Сегодня новый порт только объявлен: его не вызывает ни `AccountReconciler`,
-ни runtime, реализаций нет. Текущая сверка работает без изменений до
-миграционного шага.
+Production-реализация порта — `PolymarketAccountVenueStateSource` в
+`@polymarket/polymarket-v2/account` (см. `docs/account-venue-state-source.md`
+пакета `polymarket-v2`).
+Сверка порт пока НЕ вызывает: ни `AccountReconciler`, ни runtime. Текущая
+сверка работает без изменений до миграционного шага.
 
 ```text
-текущий MR    граница authoritative-состояния площадки
-следующий MR  PolymarketAccountVenueStateSource на официальном @polymarket/client
-за ним        state matcher + atomic correction planner;
+сделано       граница authoritative-состояния площадки
+сделано       PolymarketAccountVenueStateSource на официальном @polymarket/client
+следующий MR  state matcher + atomic correction planner;
               уход от transitional-модели authoritative-Portfolio
 затем         runtime wiring: STARTUP / PERIODIC / RECONNECT
 ```

@@ -4,7 +4,8 @@
     "outDir": "./dist",
     "types": ["jest", "@jest/globals", "node"],
     "paths": {
-      "@polymarket/polymarket-v2": ["./src/index.ts"]
+      "@polymarket/polymarket-v2": ["./src/index.ts"],
+      "@polymarket/polymarket-v2/account": ["./src/account.ts"]
     }
   },
   "include": ["src/**/*", "__tests__/**/*"],

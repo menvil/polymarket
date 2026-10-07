@@ -8,11 +8,14 @@ Target production-граница `IAccountVenueStateSource`, scope
 модель»). Здесь — **почему** граница устроена так и что из legacy-кода и
 `apps/pnl` обязан знать будущий адаптер.
 
-> Статус: граница объявлена, реализаций нет, сверка её не вызывает.
+> Статус: граница объявлена; production-адаптер
+> `PolymarketAccountVenueStateSource` реализован в `@polymarket/polymarket-v2/account`
+> (`packages/infrastructure/polymarket-v2/docs/account-venue-state-source.md`);
+> сверка его пока не вызывает.
 >
-> - текущий MR — authoritative venue state boundary;
-> - следующий MR — `PolymarketAccountVenueStateSource`;
-> - за ним — state matcher + atomic correction planner;
+> - сделано — authoritative venue state boundary;
+> - сделано — `PolymarketAccountVenueStateSource`;
+> - следующий MR — state matcher + atomic correction planner;
 > - затем — runtime wiring `STARTUP` / `PERIODIC` / `RECONNECT`.
 
 ## Главный принцип: сходимость к текущему состоянию площадки
@@ -231,6 +234,13 @@ Legacy-клиент работал с сырым REST и сам проверял
 чтения любой страницы — `Err` прохода; остановка на границе хвоста — не
 ошибка, а его определение.
 
+**Выбрано в адаптере:** пока порядок account-wide выдачи не задокументирован,
+сделки читаются самым надёжным способом — для КАЖДОГО рынка scope полный
+запрос `listAccountTrades({ market })` со всеми страницами (1–4 маленьких
+запроса), без фильтра `makerAddress`. Для коротких текущих рынков это все
+сделки аккаунта на них — по-прежнему свидетельство текущего контура, а не
+история аккаунта.
+
 ## Опыт `apps/pnl` — справочник, а не зависимость
 
 `apps/pnl` уже ходит в официальный SDK, но его код **не импортируется** в
@@ -404,14 +414,26 @@ Legacy-рантайм API позиций не использовал вовсе:
 
 | вопрос | почему важен |
 | --- | --- |
-| порядок страниц `listAccountTrades`: есть ли безопасный newest-first хвост | выбор между одним хвостом аккаунта и фильтром `market` / окном `after`/`before` |
-| режет ли `makerAddress` taker-сделки в `listAccountTrades` | неполный `recentFills` = невидимые исполнения |
-| `fetchBalanceAllowance(CONDITIONAL)` для токена, которого площадка не знает: ноль или ошибка | «не знает актив» обязано стать `Err`, а не нулём |
+| порядок страниц `listAccountTrades`: есть ли безопасный newest-first хвост | пока выбраны полные запросы по рынкам scope |
+| полнота `listAccountTrades({ market })` без `makerAddress` для TAKER и MAKER | неполный `recentFills` = невидимые исполнения |
+| `updateBalanceAllowance(CONDITIONAL)` для токена, которого площадка не знает: ноль или ошибка | «не знает актив» обязано стать `Err`, а не нулём |
 | закрывает ли `updateBalanceAllowance` фантомный MINT-случай, или нужна on-chain кросс-проверка `balanceOf` | иначе настоящие токены сведутся к нулю по кэшу |
-| `fetchOrder` для неизвестной заявки: как выглядит «не найдено» | `getOrderState` → `undefined`, а не `Err` и не угаданный статус |
+| регистр и форма статусов заявки (`LIVE` vs `live` vs префикс), смысл `INVALID` | сейчас принимается только задокументированный верхний регистр, `INVALID` — `Err` |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
-| `delayed` / `unmatched` у заявок → какой `AuthoritativeOrderStatus` | сейчас fail closed |
-| правило `FillMapper` для camelCase `ClobTrade` | тот же `Fill`, что у WS |
+| совпадает ли WS `timestamp` с `match_time` | REST берёт `match time`; иначе один `FillId`, но разный факт |
+
+Закрыто при реализации адаптера:
+
+- «не найдено» у `fetchOrder` — задокументированный CLOB `404`
+  (`{"error": "Order not found"}`), в SDK — `RequestRejectedError` со
+  `status: 404` → `Ok(undefined)`; всё остальное — `Err`;
+- статусы заявки CLOB задокументированы: `LIVE`, `MATCHED`, `CANCELED`,
+  `CANCELED_MARKET_RESOLVED`, `INVALID`; размеры заявок — уже в shares;
+- правило `FillMapper` для camelCase `ClobTrade` — переименование полей в
+  WS-форму, тот же `FillMapper` (P0-тест REST ↔ WS);
+- в SDK 0.6.0 поле токена — `tokenId` (а не `assetId`), а
+  `updateBalanceAllowance` — action-функция `@polymarket/client/actions`, а не
+  метод экземпляра клиента.
 
 ## Связанное
 
