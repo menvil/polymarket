@@ -1,0 +1,92 @@
+packages/infrastructure/polymarket-v2/__tests__/contour-boundary.test.ts
+  s_f879ac6c3f0f5c::t_b35e9f28804485 21-33,108-115,118-140,207-208,246-259,279,286
+  s_f879ac6c3f0f5c::t_c1be47648f397f 292-306
+  s_f879ac6c3f0f5c::t_fa363826ca0fe9 116-117,264-276
+packages/infrastructure/polymarket-v2/src/polymarketAccountMapping.ts
+  s_f879ac6c3f0f5c::t_f473a7d947f214 195,198,224-233
+  s_f879ac6c3f0f5c::t_6554d7c0b0a462 1-30,32-194,200,202-203,205-206,234-679
+  s_f879ac6c3f0f5c::t_8e0ab823195d04 31,196-197,199,201,204,207-223
+packages/infrastructure/polymarket-v2/__tests__/PolymarketRefreshedBalanceReader.test.ts
+  s_f879ac6c3f0f5c::t_61474511905692 11-12,18,24,28,41,46,77,119-145
+  s_f879ac6c3f0f5c::t_06e169b843c6ac 14,48
+  s_f879ac6c3f0f5c::t_327dcda13ab35c 1-10,13,15-17,20-23,25-27,29-40,42-45,47,49-76,78-118
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 19
+docs/guides/account-venue-state.md
+  s_f879ac6c3f0f5c::t_9c5b2ab66eb27c 12
+  s_f879ac6c3f0f5c::t_81c82111349f78 11,13-14,16-18,237-243,417-419,421,423-436
+packages/application/account-reconciliation/README.md
+  s_f879ac6c3f0f5c::t_9c5b2ab66eb27c 233-234
+  s_f879ac6c3f0f5c::t_2c89d874e47d32 232,235-236,239-241
+packages/infrastructure/polymarket-v2/__tests__/polymarketAccountMapping.test.ts
+  s_f879ac6c3f0f5c::t_4c814c5bfd005e 1-31,33-105,111-115,117-125,131-136,138-452,454-459
+  s_f879ac6c3f0f5c::t_61474511905692 32,106-110,116,126-130,137,453
+packages/infrastructure/polymarket-v2/src/index.ts
+  s_f879ac6c3f0f5c::t_448abc904391cb 25-31
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 32-35
+packages/infrastructure/polymarket-v2/tsconfig.lint.json
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 5-6
+packages/infrastructure/polymarket-v2/src/PolymarketAccountVenueStateSource.ts
+  s_f879ac6c3f0f5c::t_b188cb7a54187c 56-60
+  s_f879ac6c3f0f5c::t_af79557c37f6bd 137-138,318-319,327
+  s_f879ac6c3f0f5c::t_61474511905692 488
+  s_f879ac6c3f0f5c::t_02a4b10cebeb31 1-55,61-136,139-143,145-275,277-316,320-326,328-331,333-472,489-509
+  s_f879ac6c3f0f5c::t_f600e70615c1a1 144,276,473-487
+  s_f879ac6c3f0f5c::t_070e46a851f00e 317,332
+packages/infrastructure/polymarket-v2/__tests__/helpers/accountFixtures.ts
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 45
+  s_f879ac6c3f0f5c::t_e5083c42d70c1a 1-8,13-17,25-44,70-157,160-162,166-169,171-213,215-216,219-223,226,229-242,245,247-248,250-391
+  s_f879ac6c3f0f5c::t_9a58f5a32c97c2 18-24,69
+  s_f879ac6c3f0f5c::t_61474511905692 9-12,46-68,158-159,163-165,170,214,217-218,224-225,227-228,243-244,246,249
+packages/infrastructure/polymarket-v2/src/account.ts
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 1-45
+packages/infrastructure/polymarket-v2/jest.config.ts
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 13
+  s_f879ac6c3f0f5c::t_eece8b8ab0d473 36-42
+packages/infrastructure/polymarket-v2/src/PolymarketRefreshedBalanceReader.ts
+  s_f879ac6c3f0f5c::t_f600e70615c1a1 36,38,79-90,97,104,106-134,151,162,165,170-172,175,177-183,189,206,225,227
+  s_f879ac6c3f0f5c::t_8a4636a27c4a4f 1-35,37,39,41-78,91-96,98-103,105,135-150,152-161,163-164,166-169,173-174,176,184-188,190-205,207-224,226,228,230-234
+  s_f879ac6c3f0f5c::t_a01fc238a62703 40,229
+packages/infrastructure/polymarket-v2/tsconfig.json
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 7-8
+package-lock.json
+  ai_agent 10008,10013
+packages/application/account-reconciliation/src/IAccountVenueStateSource.ts
+  s_f879ac6c3f0f5c::t_2c89d874e47d32 21,23
+  s_f879ac6c3f0f5c::t_9c5b2ab66eb27c 22
+packages/infrastructure/polymarket-v2/tsconfig.build.json
+  s_f879ac6c3f0f5c::t_eece8b8ab0d473 61-66
+packages/infrastructure/polymarket-v2/__tests__/PolymarketAccountVenueStateSource.test.ts
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 20
+  s_f879ac6c3f0f5c::t_902ab5fc2950c9 121
+  s_f879ac6c3f0f5c::t_af79557c37f6bd 125
+  s_f879ac6c3f0f5c::t_533362ea6509e9 1-14,16-19,21-30,32-43,65-120,122-124,126-199,201-229,231-300
+  s_f879ac6c3f0f5c::t_61474511905692 15,31,44-64,200,230
+packages/infrastructure/polymarket-v2/README.md
+  s_f879ac6c3f0f5c::t_5a8080aa766300 3-6,44,72,76-94,96,238-265,270-272,277-301
+  s_f879ac6c3f0f5c::t_c2e40b3578e637 73-75
+  s_f879ac6c3f0f5c::t_9c5b2ab66eb27c 266-269,273-276
+packages/infrastructure/polymarket-v2/docs/account-venue-state-source.md
+  s_f879ac6c3f0f5c::t_ae0fd083cebf7c 1-4,9-216,219-235,237-279
+  s_f879ac6c3f0f5c::t_af79557c37f6bd 217
+  s_f879ac6c3f0f5c::t_9c5b2ab66eb27c 5-8,236
+  s_f879ac6c3f0f5c::t_01bbbf4a68e729 218
+packages/infrastructure/polymarket-v2/package.json
+  s_f879ac6c3f0f5c::t_eece8b8ab0d473 4,51,56
+  s_f879ac6c3f0f5c::t_a8ef276d4a2a75 12-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ccf4a7ad17a9a498fec37dcfc656fbb28bdd96cb",
+  "prompts": {},
+  "sessions": {
+    "s_f879ac6c3f0f5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60a8ea10-4520-4087-86ea-c324b7cb484b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
