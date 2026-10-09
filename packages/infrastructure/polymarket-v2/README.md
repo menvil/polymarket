@@ -276,12 +276,16 @@ import {
   PolymarketStaticTakerFeeRateResolver,
 } from '@polymarket/polymarket-v2/account';
 
+// идентичность — из аутентифицированного клиента: wallet:<secureClient.account.wallet>
+const wallet = parseWalletAddress(secureClient.account.wallet)!;
+const accountId = accountIdFromWallet(wallet);
+
 // ставки taker-комиссии рынков scope (crypto up/down — 0.07)
 const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([[conditionId, 0.07]]);
 if (!takerFeeRates.ok) throw takerFeeRates.error;
 
 const source = PolymarketAccountVenueStateSource.create(
-  { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: funderAddress },
+  { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: wallet },
   {
     client: secureClient,
     balanceReader: PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, {
@@ -313,7 +317,11 @@ const source = PolymarketAccountVenueStateSource.create(
   CLOB V2 — pUSD: решение о canonical-представлении открыто и обязано быть
   принято до того, как matcher начнёт менять `Portfolio`;
 - ✅ fail closed: непереводимый статус, противоречивая заявка, неопознанное
-  владение maker-заявкой, оборванная пагинация — `Err` всего прохода.
+  владение maker-заявкой, оборванная пагинация — `Err` всего прохода;
+- ✅ привязка к аккаунту — при создании: `create()` отказывает, если
+  `client.account.wallet` (идентичность из аутентификации SDK),
+  `balanceReader.boundWallet`, `makerAddress` и `accountId`
+  (`wallet:<кошелёк клиента>`) не описывают один и тот же аккаунт.
 
 Подробности и NEXT / BLOCKERS (время исполнения REST ↔ WS, pUSD/USDC,
 ставка комиссии в приватном WS, on-chain проверка балансов) —

@@ -40,6 +40,22 @@
  * запрос с другой парой `venueId + accountId` — ДО обращения к API.
  * Клиент и credentials создаёт composition root (`createSecureClient()`);
  * адаптер не читает ни `process.env`, ни ключей.
+ *
+ * ### Привязка конфигурации к аккаунту клиента — при создании
+ *
+ * `FillMapper` строит исполнения с `config.accountId`, а балансы читаются
+ * клиентом и reader-ом, — поэтому более поздняя проверка «исполнение
+ * принадлежит аккаунту» расхождение конфигурации с клиентом не увидит.
+ * Доверенная идентичность берётся из самих зависимостей:
+ *
+ * ```text
+ * client.account.wallet        кошелёк, выставленный аутентификацией SDK
+ * balanceReader.boundWallet    кошелёк, балансы которого читает reader
+ * ```
+ *
+ * `create()` отказывает, если они расходятся между собой, если
+ * `makerAddress` — не этот кошелёк или если `accountId` — не
+ * `wallet:<этот кошелёк>`.
  */
 import {
   AccountReconciliationSourceError,
@@ -61,11 +77,14 @@ import type {
 import {
   KnownVenues,
   accountIdEquals,
+  accountIdFromWallet,
   accountIdToString,
+  parseWalletAddress,
   type AccountId,
   type MarketId,
   type OrderId,
   type VenueId,
+  type WalletAddress,
 } from '@polymarket/ids';
 import { Err, Ok, type Result } from '@polymarket/result';
 import type { Money } from '@polymarket/value-objects';
@@ -81,17 +100,28 @@ import {
 } from './polymarketAccountMapping.js';
 
 /**
- * Узкий структурный интерфейс secure-клиента SDK — ровно три чтения.
+ * Узкий структурный интерфейс secure-клиента SDK — идентичность аккаунта и
+ * ровно три чтения.
  *
  * @remarks
  * Настоящий `SecureClient` из `@polymarket/client` ему соответствует
- * (`Paginated<T>` — это `AsyncIterable<Page<T>>`), а тесты подставляют
- * fake без сети. Своего HTTP-клиента нет.
+ * (`account` — `AccountIdentity`, `Paginated<T>` — это
+ * `AsyncIterable<Page<T>>`), а тесты подставляют fake без сети. Своего
+ * HTTP-клиента нет.
  *
  * `updateBalanceAllowance` сюда не входит: балансы читает отдельный
  * {@link PolymarketAuthoritativeBalanceReader}.
  */
 export interface PolymarketSecureAccountClient {
+  /**
+   * Аутентифицированная идентичность клиента (`AccountIdentity` SDK).
+   *
+   * @remarks
+   * `wallet` — «active Polymarket account/funder wallet used for balances,
+   * positions, and execution». Это доверенная привязка клиента к аккаунту:
+   * её выставляет SDK при аутентификации, а не конфигурация адаптера.
+   */
+  readonly account: { readonly wallet: string };
   /** Открытые заявки аккаунта, постранично */
   listOpenOrders(request?: ListOpenOrdersRequest): AsyncIterable<{ readonly items: readonly OpenOrder[] }>;
   /** Одна заявка аккаунта; «не найдено» — `RequestRejectedError` со статусом 404 */
@@ -100,18 +130,31 @@ export interface PolymarketSecureAccountClient {
   listAccountTrades(request?: ListAccountTradesRequest): AsyncIterable<{ readonly items: readonly ClobTrade[] }>;
 }
 
-/** Идентичность аккаунта, к которому привязан secure-клиент. */
+/**
+ * Идентичность аккаунта, к которому привязан secure-клиент.
+ *
+ * @remarks
+ * Это утверждение composition root-а; `create()` проверяет его против
+ * `client.account.wallet` и отказывает при расхождении.
+ */
 export interface PolymarketAccountVenueStateSourceConfig {
   /** Площадка — обязана быть `POLYMARKET` */
   readonly venueId: VenueId;
-  /** Аккаунт, к которому привязаны credentials клиента */
+  /**
+   * Аккаунт, к которому привязаны credentials клиента.
+   *
+   * @remarks
+   * Обязан быть `wallet:<client.account.wallet>`
+   * (`accountIdFromWallet`). Аккаунт другого вида (`VENUE`, `SUBACCOUNT`)
+   * с кошельком клиента не сверить — отказ создания.
+   */
   readonly accountId: AccountId;
   /**
    * EVM-адрес, на который выставляются наши заявки (funder/proxy-кошелёк).
    *
    * @remarks
    * По нему — и только по нему — `FillMapper` находит НАШИ maker-заявки в
-   * сделке. Регистр не важен.
+   * сделке. Обязан совпасть с `client.account.wallet`; регистр не важен.
    */
   readonly makerAddress: string;
 }
@@ -120,7 +163,7 @@ export interface PolymarketAccountVenueStateSourceConfig {
 export interface PolymarketAccountVenueStateSourceDependencies {
   /** Secure-клиент SDK (или совместимый fake) */
   readonly client: PolymarketSecureAccountClient;
-  /** Источник фактических балансов */
+  /** Источник фактических балансов; `boundWallet` обязан совпасть с кошельком клиента */
   readonly balanceReader: PolymarketAuthoritativeBalanceReader;
   /**
    * Ставка taker-комиссии по рынку.
@@ -148,8 +191,9 @@ const CONDITION_ID = /^0x[0-9a-fA-F]{64}$/;
  *
  * @example
  * ```typescript
+ * // accountId = wallet:<secureClient.account.wallet>, makerAddress — тот же кошелёк
  * const source = PolymarketAccountVenueStateSource.create(
- *   { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: funder },
+ *   { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: secureClient.account.wallet },
  *   {
  *     client: secureClient,
  *     balanceReader: PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, sdk),
@@ -176,7 +220,18 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    *
    * @param config - Площадка, аккаунт и адрес maker-заявок
    * @param deps - Secure-клиент, reader балансов и ставки taker-комиссии
-   * @returns Адаптер либо отказ, если площадка не `POLYMARKET` или адрес не EVM
+   * @returns Адаптер либо отказ
+   *
+   * @remarks
+   * Отказ, если:
+   * 1. площадка не `POLYMARKET` или `makerAddress` не EVM-адрес;
+   * 2. `client.account.wallet` не читается или не EVM-адрес;
+   * 3. `balanceReader.boundWallet` — другой кошелёк (reader чужого аккаунта);
+   * 4. `makerAddress` — не кошелёк клиента;
+   * 5. `accountId` — не `wallet:<кошелёк клиента>`.
+   *
+   * Всё это проверяется здесь, а не по ответам API: исполнения получают
+   * `config.accountId` по построению, и расхождение позже уже не видно.
    *
    * @example
    * ```typescript
@@ -193,9 +248,27 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
     if (!EVM_ADDRESS.test(config.makerAddress)) {
       return Err(new PolymarketAccountStateError(`maker address is not an EVM address: ${config.makerAddress}`));
     }
-    return Ok(
-      new PolymarketAccountVenueStateSource({ ...config, makerAddress: config.makerAddress.toLowerCase() }, deps),
-    );
+    const wallet = readBoundWallet(deps);
+    if (!wallet.ok) return wallet;
+
+    const makerAddress = config.makerAddress.toLowerCase();
+    if (makerAddress !== wallet.value) {
+      return Err(
+        new PolymarketAccountStateError(
+          `bound account: maker address ${makerAddress} is not the secure client wallet ${wallet.value}`,
+        ),
+      );
+    }
+    const boundAccountId = accountIdFromWallet(wallet.value);
+    if (!accountIdEquals(config.accountId, boundAccountId)) {
+      return Err(
+        new PolymarketAccountStateError(
+          `bound account: configured account ${accountIdToString(config.accountId)} is not the secure client ` +
+            `account ${accountIdToString(boundAccountId)}`,
+        ),
+      );
+    }
+    return Ok(new PolymarketAccountVenueStateSource({ ...config, makerAddress }, deps));
   }
 
   /**
@@ -459,6 +532,44 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
         }),
       );
   }
+}
+
+/**
+ * Кошелёк, к которому привязаны secure-клиент и reader балансов.
+ *
+ * @param deps - Зависимости адаптера
+ * @returns Кошелёк клиента (нижний регистр) либо отказ
+ *
+ * @remarks
+ * Источник — `client.account.wallet`, выставленный аутентификацией SDK.
+ * Reader обязан быть привязан к тому же кошельку: иначе балансы одного
+ * аккаунта ушли бы в состояние другого. Исключение геттера SDK — отказ, а
+ * не падение.
+ */
+function readBoundWallet(
+  deps: PolymarketAccountVenueStateSourceDependencies,
+): Result<WalletAddress, PolymarketAccountStateError> {
+  let clientWallet: unknown;
+  let readerWallet: unknown;
+  try {
+    clientWallet = deps.client.account.wallet;
+    readerWallet = deps.balanceReader.boundWallet;
+  } catch (error) {
+    return Err(new PolymarketAccountStateError('bound account: dependency did not report its wallet', { cause: error }));
+  }
+  const client = typeof clientWallet === 'string' ? parseWalletAddress(clientWallet) : undefined;
+  if (client === undefined) {
+    return Err(new PolymarketAccountStateError(`bound account: secure client wallet is not an EVM address: ${String(clientWallet)}`));
+  }
+  const reader = typeof readerWallet === 'string' ? parseWalletAddress(readerWallet) : undefined;
+  if (reader !== client) {
+    return Err(
+      new PolymarketAccountStateError(
+        `bound account: balance reader is bound to ${String(readerWallet)}, secure client to ${client}`,
+      ),
+    );
+  }
+  return Ok(client);
 }
 
 /**

@@ -59,6 +59,10 @@ import {
  * Ожидаемые отказы — `Err`, а не исключения и не ноль. Ноль допустим только
  * тогда, когда источник корректно сообщил настоящий нулевой баланс.
  *
+ * Reader обязан назвать кошелёк, балансы которого он читает
+ * (`boundWallet`): адаптер состояния сверяет его с кошельком secure-клиента
+ * при создании и отвергает reader чужого аккаунта.
+ *
  * @example
  * ```typescript
  * const collateral = await reader.getCollateralBalance();
@@ -66,6 +70,16 @@ import {
  * ```
  */
 export interface PolymarketAuthoritativeBalanceReader {
+  /**
+   * Кошелёк Polymarket-аккаунта (funder), балансы которого читает reader.
+   *
+   * @remarks
+   * Берётся из того же источника, что и чтения (для CLOB-reader-а —
+   * `client.account.wallet` аутентифицированного клиента), а не из
+   * конфигурации. Регистр не важен.
+   */
+  readonly boundWallet: string;
+
   /**
    * Текущий collateral аккаунта.
    *
@@ -168,15 +182,20 @@ export interface PolymarketBalanceAllowanceSdk {
 export class PolymarketClobRefreshedBalanceReader implements PolymarketAuthoritativeBalanceReader {
   /**
    * @param _refresher - Порт обновления balance-allowance
+   * @param boundWallet - Кошелёк аккаунта, к которому привязан `_refresher`
    */
-  constructor(private readonly _refresher: PolymarketBalanceAllowanceRefresher) {}
+  constructor(
+    private readonly _refresher: PolymarketBalanceAllowanceRefresher,
+    public readonly boundWallet: string,
+  ) {}
 
   /**
    * Reader поверх готового secure-клиента и action-функции SDK.
    *
    * @param client - Аутентифицированный клиент (`createSecureClient()` в composition root)
    * @param sdk - `updateBalanceAllowance` и enum `AssetType` официального SDK
-   * @returns CLOB-reader, обновляющий взгляд CLOB перед каждым чтением
+   * @returns CLOB-reader, обновляющий взгляд CLOB перед каждым чтением;
+   *   `boundWallet` — `client.account.wallet` того же клиента
    *
    * @example
    * ```typescript
@@ -186,15 +205,18 @@ export class PolymarketClobRefreshedBalanceReader implements PolymarketAuthorita
    * ```
    */
   public static fromSdk(client: BaseSecureClient, sdk: PolymarketBalanceAllowanceSdk): PolymarketClobRefreshedBalanceReader {
-    return new PolymarketClobRefreshedBalanceReader({
-      updateBalanceAllowance: (request) =>
-        sdk.updateBalanceAllowance(
-          client,
-          request.assetType === 'COLLATERAL'
-            ? { assetType: sdk.assetTypes.COLLATERAL }
-            : { assetType: sdk.assetTypes.CONDITIONAL, tokenId: request.tokenId },
-        ),
-    });
+    return new PolymarketClobRefreshedBalanceReader(
+      {
+        updateBalanceAllowance: (request) =>
+          sdk.updateBalanceAllowance(
+            client,
+            request.assetType === 'COLLATERAL'
+              ? { assetType: sdk.assetTypes.COLLATERAL }
+              : { assetType: sdk.assetTypes.CONDITIONAL, tokenId: request.tokenId },
+          ),
+      },
+      client.account.wallet,
+    );
   }
 
   /** {@inheritDoc PolymarketAuthoritativeBalanceReader.getCollateralBalance} */

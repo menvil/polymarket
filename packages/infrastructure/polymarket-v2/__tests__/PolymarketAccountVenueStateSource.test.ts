@@ -5,6 +5,8 @@
  * Сети нет. Проверяется семантика порта `IAccountVenueStateSource`:
  *
  * - полнота scope (`set(assetBalances.asset) == set(scope.assets)`, ноль явно);
+ * - привязка к аккаунту клиента при создании (`client.account.wallet`,
+ *   `balanceReader.boundWallet`, `makerAddress`, `accountId`);
  * - fail closed ДО запросов (идентичность, дубликаты scope, не-condition-id);
  * - все страницы `listOpenOrders` и `listAccountTrades({ market })`, отказ
  *   любой страницы — `Err` без частичного состояния;
@@ -14,7 +16,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { AccountReconciliationSourceError, type IAccountVenueStateSource } from '@polymarket/account-reconciliation';
 import type { SecureClient } from '@polymarket/client';
-import { assetIdToString, unsafeMarketId } from '@polymarket/ids';
+import { KnownVenues, accountIdFromVenue, assetIdToString, unsafeMarketId } from '@polymarket/ids';
 import {
   PolymarketAccountVenueStateSource,
   type PolymarketSecureAccountClient,
@@ -29,6 +31,7 @@ import {
   MARKET_B,
   NO,
   OTHER_ACCOUNT,
+  OTHER_ADDRESS,
   OUR_ADDRESS,
   OUR_OWNER,
   TRADE_STATUS,
@@ -101,6 +104,85 @@ describe('контракт и создание', () => {
     expect(
       PolymarketAccountVenueStateSource.create({ venueId: VENUE, accountId: ACCOUNT, makerAddress: 'not-an-address' }, deps).ok,
     ).toBe(false);
+  });
+});
+
+describe('создание: конфигурация обязана описывать аккаунт, к которому привязан клиент', () => {
+  /** Зависимости с настраиваемыми кошельками клиента и reader-а. */
+  function deps(clientWallet: string = OUR_ADDRESS, readerWallet: string = OUR_ADDRESS) {
+    const client = new FakeAccountClient();
+    client.account = { wallet: clientWallet };
+    const balanceReader = new FakeBalanceReader();
+    balanceReader.boundWallet = readerWallet;
+    return { client, balanceReader, takerFeeRates: new FakeTakerFeeRates() };
+  }
+
+  /** Создание с нашей конфигурацией по умолчанию. */
+  function create(
+    overrides: Partial<{ accountId: typeof ACCOUNT; makerAddress: string }> = {},
+    dependencies = deps(),
+  ) {
+    return PolymarketAccountVenueStateSource.create(
+      { venueId: VENUE, accountId: overrides.accountId ?? ACCOUNT, makerAddress: overrides.makerAddress ?? OUR_ADDRESS },
+      dependencies,
+    );
+  }
+
+  /** Ожидает отказ создания с заданным фрагментом текста и без единого запроса. */
+  function expectRejected(result: ReturnType<typeof create>, dependencies: ReturnType<typeof deps>, fragment: string): void {
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain(fragment);
+    expect(dependencies.client.requestCount).toBe(0);
+    expect(dependencies.balanceReader.calls).toEqual([]);
+  }
+
+  it('кошельки клиента, reader-а, makerAddress и accountId совпадают (регистр не важен) → адаптер', () => {
+    const dependencies = deps(OUR_ADDRESS.toLowerCase(), OUR_ADDRESS.toUpperCase().replace('0X', '0x'));
+    expect(create({}, dependencies).ok).toBe(true);
+  });
+
+  it('accountId другого кошелька, чем у клиента → отказ', () => {
+    const dependencies = deps();
+    expectRejected(
+      create({ accountId: OTHER_ACCOUNT, makerAddress: OUR_ADDRESS }, dependencies),
+      dependencies,
+      'is not the secure client account',
+    );
+  });
+
+  it('клиент привязан к другому кошельку, чем конфигурация (reader — тоже) → отказ', () => {
+    const dependencies = deps(OTHER_ADDRESS, OTHER_ADDRESS);
+    expectRejected(create({}, dependencies), dependencies, 'is not the secure client wallet');
+  });
+
+  it('reader балансов привязан к чужому кошельку → отказ', () => {
+    const dependencies = deps(OUR_ADDRESS, OTHER_ADDRESS);
+    expectRejected(create({}, dependencies), dependencies, 'balance reader is bound to');
+  });
+
+  it('makerAddress — не кошелёк клиента, хотя accountId совпадает → отказ', () => {
+    const dependencies = deps();
+    expectRejected(create({ makerAddress: OTHER_ADDRESS }, dependencies), dependencies, 'is not the secure client wallet');
+  });
+
+  it('accountId не WALLET-вида (VENUE) сверить с кошельком нельзя → отказ', () => {
+    const venueAccount = accountIdFromVenue(KnownVenues.POLYMARKET, 'user-1');
+    if (!venueAccount.ok) throw venueAccount.error;
+    const dependencies = deps();
+    expectRejected(create({ accountId: venueAccount.value }, dependencies), dependencies, 'is not the secure client account');
+  });
+
+  it('клиент не сообщил кошелёк (не EVM-адрес или геттер бросил) → отказ, а не падение', () => {
+    const invalid = deps('not-a-wallet');
+    expectRejected(create({}, invalid), invalid, 'secure client wallet is not an EVM address');
+
+    const throwing = deps();
+    Object.defineProperty(throwing.client, 'account', {
+      get: () => {
+        throw new Error('authentication ended');
+      },
+    });
+    expectRejected(create({}, throwing), throwing, 'dependency did not report its wallet');
   });
 });
 

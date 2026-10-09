@@ -290,6 +290,8 @@ export class FakePages<T> implements AsyncIterable<{ readonly items: readonly T[
 
 /** Fake secure-клиент: заданные страницы и обработчик `fetchOrder`, журнал вызовов. */
 export class FakeAccountClient implements PolymarketSecureAccountClient {
+  /** Идентичность аутентифицированного клиента (по умолчанию — наш кошелёк, смешанный регистр) */
+  public account: { readonly wallet: string } = { wallet: OUR_ADDRESS };
   /** Запросы `listOpenOrders` */
   public readonly openOrderRequests: unknown[] = [];
   /** Запросы `listAccountTrades` */
@@ -330,6 +332,8 @@ export class FakeAccountClient implements PolymarketSecureAccountClient {
 
 /** Fake reader балансов: заданные значения, журнал вызовов. */
 export class FakeBalanceReader implements PolymarketAuthoritativeBalanceReader {
+  /** Кошелёк, к которому привязан reader (по умолчанию — наш) */
+  public boundWallet: string = OUR_ADDRESS;
   /** Вызовы reader-а */
   public readonly calls: string[] = [];
   /** Ответ collateral */

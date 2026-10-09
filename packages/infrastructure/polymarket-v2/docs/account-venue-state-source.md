@@ -55,6 +55,31 @@ flowchart TD
     A --> ST[AuthoritativeAccountState]
 ```
 
+## Создание: конфигурация привязана к аккаунту клиента
+
+`FillMapper` строит исполнения с `config.accountId`, а балансы читают клиент
+и reader. Поэтому поздняя проверка «исполнение принадлежит аккаунту» не
+увидит расхождения конфигурации с клиентом: исполнения получают
+настроенный аккаунт по построению. Привязка проверяется в `create()` — по
+доверенной идентичности самих зависимостей, а не по конфигурации:
+
+```text
+client.account.wallet       кошелёк, выставленный аутентификацией SDK (AccountIdentity.wallet)
+balanceReader.boundWallet   кошелёк, балансы которого читает reader
+                            (CLOB-reader: client.account.wallet того же клиента)
+```
+
+| проверка | отказ |
+| --- | --- |
+| `client.account.wallet` читается и это EVM-адрес | `bound account: secure client wallet is not an EVM address …`, `bound account: dependency did not report its wallet` |
+| `balanceReader.boundWallet` = кошелёк клиента | `bound account: balance reader is bound to …, secure client to …` |
+| `makerAddress` = кошелёк клиента | `bound account: maker address … is not the secure client wallet …` |
+| `accountId` = `wallet:<кошелёк клиента>` (`accountIdFromWallet`) | `bound account: configured account … is not the secure client account …` |
+
+Регистр адресов не важен. `accountId` другого вида (`VENUE`, `SUBACCOUNT`)
+с кошельком клиента не сверить — это тоже отказ (fail closed). Отказ
+создания не делает ни одного запроса к API.
+
 ## Шаги `getAccountState(venueId, accountId, scope)`
 
 1. **Идентичность.** `venueId` и `accountId` (через `accountIdEquals`)
@@ -271,6 +296,7 @@ const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([
 
 | этап | пример текста |
 | --- | --- |
+| создание | `bound account: …` (см. «Создание») |
 | идентичность | `identity: request … does not match configured …` |
 | scope | `scope: duplicate asset …`, `scope: market … is not a Polymarket condition id` |
 | collateral | `balances: collateral: balance refresh failed` |
@@ -289,7 +315,7 @@ Reader, бросивший исключение вместо `Err`, тоже д�
 ```typescript
 import { AssetType, createSecureClient } from '@polymarket/client';
 import { updateBalanceAllowance } from '@polymarket/client/actions';
-import { KnownVenues } from '@polymarket/ids';
+import { KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
 import { POLYMARKET_CRYPTO_TAKER_FEE_RATE } from '@polymarket/fill';
 import {
   PolymarketAccountVenueStateSource,
@@ -298,15 +324,21 @@ import {
 } from '@polymarket/polymarket-v2/account';
 
 const secureClient = await createSecureClient(/* signer, wallet, credentials */);
+// Идентичность — из аутентифицированного клиента, а не из отдельной настройки.
+const wallet = parseWalletAddress(secureClient.account.wallet);
+if (wallet === undefined) throw new Error('secure client wallet is not an EVM address');
+const accountId = accountIdFromWallet(wallet);
+
 const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([
   [conditionId, POLYMARKET_CRYPTO_TAKER_FEE_RATE],
 ]);
 if (!takerFeeRates.ok) throw takerFeeRates.error;
 
 const source = PolymarketAccountVenueStateSource.create(
-  { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: funderAddress },
+  { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: wallet },
   {
     client: secureClient,
+    // reader того же клиента: boundWallet = secureClient.account.wallet
     balanceReader: PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, {
       updateBalanceAllowance,
       assetTypes: AssetType,
@@ -314,7 +346,7 @@ const source = PolymarketAccountVenueStateSource.create(
     takerFeeRates: takerFeeRates.value,
   },
 );
-if (!source.ok) throw source.error;
+if (!source.ok) throw source.error; // в т. ч. «bound account: …»
 
 const state = await source.value.getAccountState(KnownVenues.POLYMARKET, accountId, {
   marketIds: [conditionId],
@@ -369,8 +401,8 @@ USD-equivalent accounting unit.
 
 | файл | что покрывает |
 | --- | --- |
-| `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц, настоящий ноль, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK |
+| `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц, настоящий ноль, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK, `boundWallet` = `client.account.wallet` |
 | `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome), **P0 комиссии: WS `fee_rate_bps > 0` и REST `feeRateBps "0"` + ставка резолвера → тот же `FillId` и факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, требование к времени, владение только по адресу, self-match, слияние повторов |
-| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, балансы scope (ноль явно), отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
+| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, привязка при создании (чужой `accountId`, клиент другого кошелька, reader чужого кошелька, чужой `makerAddress`, `accountId` не WALLET-вида, кошелёк не сообщён — отказ без запросов), балансы scope (ноль явно), отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
 | `PolymarketTakerFeeRateResolver.test.ts` | ставка по рынку без учёта регистра, неизвестный рынок → `Err`, невалидная ставка и повтор рынка → отказ создания |
 | `contour-boundary.test.ts` | закрытый список импортов account plane, `@polymarket/fill` только в нём, из SDK — только `import type` |

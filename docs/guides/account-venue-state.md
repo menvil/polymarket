@@ -440,6 +440,11 @@ Legacy-рантайм API позиций не использовал вовсе:
   ставку TAKER-сделки даёт `PolymarketTakerFeeRateResolver` по рынку, а
   `FillMapper` принимает её опцией `takerFeeRate` — тот же `fee`, что у
   приватного WS;
+- привязка адаптера к аккаунту проверяется при создании, по доверенной
+  идентичности зависимостей: `client.account.wallet` (SDK
+  `AccountIdentity.wallet`) = `balanceReader.boundWallet` = `makerAddress`,
+  `accountId` = `wallet:<этот кошелёк>`. Иначе — отказ: исполнения получают
+  настроенный `accountId` по построению, и позже расхождение не видно;
 - `PolymarketClobRefreshedBalanceReader` — refreshed CLOB balance reader, а
   не проверенная on-chain истина; композиция, которой нужна физическая
   истина инвентаря, оборачивает его on-chain верификатором без изменений
