@@ -1,7 +1,9 @@
 # @polymarket/polymarket-v2
 
-Polymarket V2 ingress boundary: наблюдения Polymarket V2 client/bindings
-`@polymarket/client` → canonical `ExternalMessage` → общий `ExternalMessageBus`.
+Polymarket V2 boundary: наблюдения Polymarket V2 client/bindings
+`@polymarket/client` → canonical `ExternalMessage` → общий `ExternalMessageBus`,
+canonical discovery рынков и authenticated account-state observation для
+сверки аккаунта.
 
 ## 1. Назначение
 
@@ -39,7 +41,7 @@ Payload каждого сообщения — БУКВАЛЬНО объект, �
 Здесь НЕТ конверсии в `OrderBook`/`Trade`/VO/ApplicationEvent — это работа
 `PolymarketSemanticAdapter`, который является подписчиком того же bus.
 
-Границы зависимостей у двух плоскостей пакета РАЗНЫЕ, и обе закреплены
+Границы зависимостей у трёх плоскостей пакета РАЗНЫЕ, и все закреплены
 тестом `__tests__/contour-boundary.test.ts`:
 
 **Data plane** (`PolymarketSource`, `PolymarketExternalMessage`) — ровно
@@ -67,8 +69,31 @@ Payload каждого сообщения — БУКВАЛЬНО объект, �
 decimal.js                     Decimal-арифметика внутри границы VO
 ```
 
+**Account plane** (`PolymarketAccountVenueStateSource`,
+`PolymarketClobRefreshedBalanceReader`, `PolymarketTakerFeeRateResolver`,
+`polymarketAccountMapping` и точка входа `account`) — свой закрытый список
+из десяти импортов, без шин и без discovery:
+
+```text
+@polymarket/account-reconciliation   порт IAccountVenueStateSource и его DTO
+@polymarket/fill                     FillMapper — общее с приватным WS правило FillId
+@polymarket/ids                      AccountId/OrderId/MarketId/AssetId
+@polymarket/value-objects            Money/Quantity/OutcomePrice
+@polymarket/timestamp                время исполнения
+@polymarket/result                   Result
+@polymarket/client                   типы secure-клиента (BaseSecureClient)
+@polymarket/client/actions           типы запросов CLOB-actions
+@polymarket/bindings                 типы enum TradeStatus и брендов SDK
+@polymarket/bindings/clob            типы OpenOrder/ClobTrade/BalanceAllowanceResponse
+```
+
+От SDK account plane берёт только ТИПЫ: runtime-код SDK (ESM-only) в пакете
+не загружается — так же, как в двух других плоскостях. Действие
+`updateBalanceAllowance` и enum `AssetType` передаёт composition root.
+`@polymarket/fill` разрешён ТОЛЬКО этой плоскости.
+
 Списки ПОЛНЫЕ и защищены от расхождения тестом
-`README перечисляет ОБЕ границы полностью`: он читает этот файл и требует,
+`README перечисляет ВСЕ границы полностью`: он читает этот файл и требует,
 чтобы каждый разрешённый специфаер здесь присутствовал. Неполный список
 здесь был бы хуже отсутствующего — читатель полагался бы на него как на
 границу.
@@ -209,6 +234,98 @@ Discovery ничего НЕ публикует в `ExternalMessageBus` — Gamma
 path. Подробности (пагинация, классификатор, кэш событий, стоимость окна,
 маппинг полей) — в `docs/market-discovery-v2.md`; live-проверка —
 `scripts/discovery-smoke.ts`.
+
+## Account-state observation (account plane)
+
+`PolymarketAccountVenueStateSource` — production-адаптер порта
+`IAccountVenueStateSource` из `@polymarket/account-reconciliation` на
+официальном secure-клиенте SDK. Это request/response-порт для сверки:
+
+```text
+AccountVenueStateScope
+        ↓
+PolymarketAccountVenueStateSource
+        ├── refreshed collateral                (весь аккаунт)
+        ├── scoped token balances               (каждый актив scope, ноль явно)
+        ├── account-wide open orders            (все страницы SDK)
+        └── complete trades of scoped markets   (каждый рынок scope, все страницы)
+        ↓
+AuthoritativeAccountState
+```
+
+```text
+PolymarketAccountVenueStateSource
+  НЕ публикует ExternalMessage
+  НЕ публикует ApplicationEvent
+```
+
+Обе шины остаются неизменными: адаптер вызывается сверкой, а не подписан
+на bus. Создание `createSecureClient()`, ключи и `process.env` — забота
+composition root; адаптер принимает готовые зависимости:
+
+Точка входа — отдельная, `@polymarket/polymarket-v2/account`: корень пакета
+account plane НЕ re-экспортирует, чтобы потребители data/control-плоскостей
+не загружали стек приватного состояния аккаунта.
+
+```typescript
+import { AssetType } from '@polymarket/client';
+import { updateBalanceAllowance } from '@polymarket/client/actions';
+import {
+  PolymarketAccountVenueStateSource,
+  PolymarketClobRefreshedBalanceReader,
+  PolymarketStaticTakerFeeRateResolver,
+} from '@polymarket/polymarket-v2/account';
+
+// идентичность — из аутентифицированного клиента: wallet:<secureClient.account.wallet>
+const wallet = parseWalletAddress(secureClient.account.wallet)!;
+const accountId = accountIdFromWallet(wallet);
+
+// ставки taker-комиссии рынков scope (crypto up/down — 0.07)
+const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([[conditionId, 0.07]]);
+if (!takerFeeRates.ok) throw takerFeeRates.error;
+
+const source = PolymarketAccountVenueStateSource.create(
+  { venueId: KnownVenues.POLYMARKET, accountId, makerAddress: wallet },
+  {
+    client: secureClient,
+    balanceReader: PolymarketClobRefreshedBalanceReader.fromSdk(secureClient, {
+      updateBalanceAllowance,
+      assetTypes: AssetType,
+    }),
+    takerFeeRates: takerFeeRates.value,
+  },
+);
+```
+
+Главное:
+
+- ❌ `listPositions`, сканирование всей истории сделок, предположения о
+  стратегии, сборка `Portfolio`, сверка и мутации;
+- ✅ балансы — `updateBalanceAllowance` (обновить CLOB-взгляд и прочитать), а
+  не голый `fetchBalanceAllowance`; отказ — `Err`, никогда не ноль.
+  `PolymarketClobRefreshedBalanceReader` — refreshed CLOB balance reader:
+  it MUST NOT be treated as independently verified on-chain truth.
+  Authoritative-гарантию даёт внедрённый reader: композиция, которой нужна
+  физическая истина инвентаря, может заменить или обернуть его on-chain
+  верификатором без изменений `PolymarketAccountVenueStateSource`;
+- ✅ сделки рынков scope разбираются ТЕМ ЖЕ `FillMapper`, что и приватный WS:
+  **REST и приватный WS дают одну canonical-идентичность `Fill`**;
+- ✅ комиссия TAKER-исполнения — по ставке `PolymarketTakerFeeRateResolver`
+  рынка сделки: REST `feeRateBps` приходит `"0"` и на `Fill.fee` не влияет;
+  отказ резолвера — `Err` прохода;
+- ⚠️ collateral отдаётся в canonical `USDC`, хотя collateral Polymarket
+  CLOB V2 — pUSD: решение о canonical-представлении открыто и обязано быть
+  принято до того, как matcher начнёт менять `Portfolio`;
+- ✅ fail closed: непереводимый статус, противоречивая заявка, неопознанное
+  владение maker-заявкой, оборванная пагинация — `Err` всего прохода;
+- ✅ привязка к аккаунту — при создании: `create()` отказывает, если
+  `client.account.wallet` (идентичность из аутентификации SDK),
+  `balanceReader.boundWallet`, `makerAddress` и `accountId`
+  (`wallet:<кошелёк клиента>`) не описывают один и тот же аккаунт.
+
+Подробности и NEXT / BLOCKERS (время исполнения REST ↔ WS, pUSD/USDC,
+ставка комиссии в приватном WS, on-chain проверка балансов) —
+`docs/account-venue-state-source.md`.
 
 ## Тесты
 

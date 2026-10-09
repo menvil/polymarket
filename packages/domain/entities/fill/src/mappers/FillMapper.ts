@@ -95,7 +95,7 @@ import Decimal from 'decimal.js';
 import { Fill } from '../Fill.js';
 import type { FillSnapshot } from '../FillSnapshot.js';
 import type { ExecutionMetadata, TradeStatus } from '../ExecutionMetadata.js';
-import { calculatePolymarketTakerFee } from '../polymarket-fee.js';
+import { calculatePolymarketTakerFee, calculatePolymarketTakerFeeWithRate } from '../polymarket-fee.js';
 
 /**
  * ID торговой площадки Polymarket по умолчанию
@@ -114,6 +114,29 @@ const VALID_TRADE_STATUSES: ReadonlySet<string> = new Set([
   'RETRYING',
   'FAILED',
 ]);
+
+/**
+ * Необязательные параметры разбора сделки Polymarket.
+ *
+ * @remarks
+ * Сейчас здесь одно поле — ставка taker-комиссии, известная вызывающему из
+ * НАДЁЖНОГО источника (метаданных рынка). Оно нужно REST-пути: в записи
+ * сделки аутентифицированного REST `feeRateBps` приходит `"0"` и не
+ * заполняется (см. `polymarket-fee.ts`), поэтому по нему нельзя решать,
+ * была ли комиссия. Без этого параметра поведение разбора прежнее.
+ */
+export interface PolymarketTradeEventMappingOptions {
+  /**
+   * Ставка taker-комиссии рынка (доля, например `0.07`).
+   *
+   * @remarks
+   * Если задана — комиссия TAKER-исполнения считается по ней
+   * (`calculatePolymarketTakerFeeWithRate`) НЕЗАВИСИМО от `fee_rate_bps`
+   * события. На MAKER-исполнения не влияет: мейкер комиссию не платит.
+   * Неконечное или отрицательное значение — отказ разбора.
+   */
+  readonly takerFeeRate?: number;
+}
 
 /**
  * FillMapper - статический класс-маппер для Fill
@@ -159,9 +182,24 @@ export class FillMapper {
    *
    * @param raw - Сырые данные события (Record<string, unknown>)
    * @param accountId - AccountId пользователя (из сессионного контекста, не из события)
+   * @param options - Необязательно: ставка taker-комиссии из надёжного источника
+   *   ({@link PolymarketTradeEventMappingOptions})
    * @returns Result<Array<{ fill, metadata }>, ValidationError>
    *
    * @remarks
+   * ### Комиссия TAKER
+   *
+   * ```text
+   * MAKER                          fee = 0 (как и раньше)
+   * TAKER + options.takerFeeRate   calculatePolymarketTakerFeeWithRate(size, price, rate)
+   * TAKER без options              прежнее правило: fee_rate_bps > 0 → крипто-ставка
+   * ```
+   *
+   * Параметр нужен REST-пути: там `fee_rate_bps` приходит `"0"` и по нему
+   * нельзя решать, была ли комиссия. Комиссия входит в факт исполнения
+   * (`findFillFactDifference`), поэтому один и тот же тейкерский fill,
+   * разобранный из WS и из REST, обязан получить одну и ту же комиссию.
+   *
    * ### Почему массив:
    * В cross-outcome trades (тейкер продаёт DOWN, мейкеры покупают UP) один WS-event
    * содержит ВСЕ maker_orders трейда. Если у нас 2+ ордеров на одном инструменте,
@@ -195,8 +233,18 @@ export class FillMapper {
    */
   public static allFromPolymarketTradeEvent(
     raw: Record<string, unknown>,
-    accountId: AccountId
+    accountId: AccountId,
+    options: PolymarketTradeEventMappingOptions = {}
   ): Result<Array<{ fill: Fill; metadata: ExecutionMetadata }>, ValidationError> {
+    const { takerFeeRate } = options;
+    if (takerFeeRate !== undefined && (!Number.isFinite(takerFeeRate) || takerFeeRate < 0)) {
+      return Err(
+        new ValidationError('Invalid taker fee rate: must be a finite non-negative number', {
+          context: { field: 'takerFeeRate', value: takerFeeRate },
+        })
+      );
+    }
+
     // Защита от null/примитивов на уровне runtime (TypeScript защищает только на уровне компилятора)
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
       return Err(
@@ -582,9 +630,12 @@ export class FillMapper {
     const size = Quantity.of(sizeDecimal);
 
     // TAKER fee по формуле Polymarket. MAKER fee = 0 (обработан выше, isMaker=true → return).
+    // Ставка из надёжного источника вызывающего важнее fee_rate_bps события.
     const feeRateBpsRaw = raw['fee_rate_bps'];
     let fee = Fee.zero(AssetIdHelpers.USDC);
-    if (feeRateBpsRaw !== undefined && feeRateBpsRaw !== null) {
+    if (takerFeeRate !== undefined) {
+      fee = calculatePolymarketTakerFeeWithRate(size, price, takerFeeRate);
+    } else if (feeRateBpsRaw !== undefined && feeRateBpsRaw !== null) {
       try {
         const feeRateBps = new Decimal(String(feeRateBpsRaw));
         if (feeRateBps.isFinite() && feeRateBps.gt(0)) {

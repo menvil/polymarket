@@ -18,8 +18,9 @@
  * требует от адаптера только то, что площадка действительно сообщает
  * (см. `AuthoritativeAccountState.ts`).
  *
- * Сегодня порт — подготовка: его не вызывает ни `AccountReconciler`, ни
- * runtime, реализаций нет. Существующая сверка работает через
+ * Production-реализация — `PolymarketAccountVenueStateSource` в
+ * `@polymarket/polymarket-v2/account`. Сверка порт пока НЕ вызывает: ни
+ * `AccountReconciler`, ни runtime. Существующая сверка работает через
  * `IAccountReconciliationSource` без изменений до миграционного шага.
  *
  * ### Состояние текущего торгового контура, а не история аккаунта

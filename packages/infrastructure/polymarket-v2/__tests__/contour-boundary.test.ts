@@ -18,9 +18,19 @@
  *   `Market` ДО границы Application. `@polymarket/market-discovery`
  *   (Filter/Scorer) здесь запрещён — owner selection живёт НАД портом.
  *
- * Trading/semantic/exchange-зависимости запрещены ОБЕИМ плоскостям.
- * Тест фиксирует границу по РЕАЛЬНЫМ артефактам: package.json и import-ы
- * исходников (по-файлово).
+ * - **ACCOUNT PLANE** (`PolymarketAccountVenueStateSource`,
+ *   `PolymarketClobRefreshedBalanceReader`, `polymarketAccountMapping`) —
+ *   request/response-адаптер порта `IAccountVenueStateSource`. Ему
+ *   разрешены порт (`@polymarket/account-reconciliation`), canonical
+ *   исполнение (`@polymarket/fill`: `FillMapper` — общее с приватным WS
+ *   правило `FillId`), VO/ids/timestamp и secure-часть SDK. Шины
+ *   (`message-bus`, `external-*`) ему НЕ разрешены: состояние аккаунта не
+ *   публикуется событиями.
+ *
+ * `@polymarket/fill` разрешён ТОЛЬКО account plane: в закрытые списки DATA и
+ * CONTROL плоскостей он не входит. Остальные trading/semantic/exchange-
+ * зависимости запрещены пакету целиком. Тест фиксирует границу по РЕАЛЬНЫМ
+ * артефактам: package.json и import-ы исходников (по-файлово).
  */
 import { describe, it, expect } from '@jest/globals';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -41,7 +51,6 @@ const FORBIDDEN_DEPENDENCIES = [
   '@polymarket/entities',
   // owner selection policy: Discovery не ранжирует рынки по «интересности»
   '@polymarket/market-discovery',
-  '@polymarket/fill',
   '@polymarket/order',
   '@polymarket/portfolio',
   '@polymarket/position',
@@ -94,6 +103,40 @@ const DISCOVERY_FILES = new Set([
   'PolymarketFinalization.ts',
   // index.ts re-экспортирует обе плоскости (контракт пакета)
   'index.ts',
+]);
+
+/**
+ * Файлы ACCOUNT PLANE (authenticated account-state observation) — пути
+ * относительно `src`.
+ */
+const ACCOUNT_FILES = new Set([
+  'PolymarketAccountVenueStateSource.ts',
+  'PolymarketClobRefreshedBalanceReader.ts',
+  'PolymarketTakerFeeRateResolver.ts',
+  'polymarketAccountMapping.ts',
+  // отдельная точка входа `@polymarket/polymarket-v2/account`
+  'account.ts',
+]);
+
+/**
+ * Разрешённые импорты ACCOUNT PLANE — закрытый список.
+ *
+ * @remarks
+ * Порт сверки, canonical исполнение (`FillMapper`), VO/ids/timestamp и
+ * secure-часть SDK (типы CLOB, enum статусов сделки, action
+ * `updateBalanceAllowance`). Ни шин, ни discovery-зависимостей.
+ */
+const ALLOWED_ACCOUNT_IMPORTS = new Set([
+  '@polymarket/account-reconciliation',
+  '@polymarket/bindings',
+  '@polymarket/bindings/clob',
+  '@polymarket/client',
+  '@polymarket/client/actions',
+  '@polymarket/fill',
+  '@polymarket/ids',
+  '@polymarket/result',
+  '@polymarket/timestamp',
+  '@polymarket/value-objects',
 ]);
 
 /** Рекурсивно собирает все .ts-файлы каталога (включая вложенные). */
@@ -162,7 +205,8 @@ describe('dependency graph boundary', () => {
 
   it('DATA PLANE импортирует только Foundation, внешний контур и Polymarket V2 client', () => {
     const sourceFiles = listSourceFiles(SRC_ROOT).filter(
-      (filePath) => !DISCOVERY_FILES.has(srcRelative(filePath)),
+      (filePath) =>
+        !DISCOVERY_FILES.has(srcRelative(filePath)) && !ACCOUNT_FILES.has(srcRelative(filePath)),
     );
     expect(sourceFiles.length).toBeGreaterThan(0);
 
@@ -200,17 +244,65 @@ describe('dependency graph boundary', () => {
     }
   });
 
-  it('README перечисляет ОБЕ границы полностью (документация не расходится с тестом)', () => {
+  it('ACCOUNT PLANE импортирует только порт сверки, canonical Fill, VO и secure-часть SDK', () => {
+    const accountFiles = listSourceFiles(SRC_ROOT).filter((filePath) =>
+      ACCOUNT_FILES.has(srcRelative(filePath)),
+    );
+    expect(accountFiles).toHaveLength(ACCOUNT_FILES.size);
+
+    for (const filePath of accountFiles) {
+      for (const specifier of collectImports(filePath)) {
+        if (specifier.startsWith('.')) {
+          continue;
+        }
+        if (!ALLOWED_ACCOUNT_IMPORTS.has(specifier)) {
+          throw new Error(
+            `Forbidden account-plane import '${specifier}' in ${srcRelative(filePath)}`,
+          );
+        }
+      }
+    }
+  });
+
+  it('корень пакета не тянет account plane: он доступен только через /account', () => {
+    // Иначе каждый потребитель data/control-плоскостей загружал бы весь стек
+    // приватного состояния аккаунта (account-reconciliation → account-state → …).
+    const accountModules = [...ACCOUNT_FILES].map((name) => `./${name.replace(/\.ts$/, '.js')}`);
+    const rootImports = collectImports(join(SRC_ROOT, 'index.ts'));
+    expect(rootImports.filter((specifier) => accountModules.includes(specifier))).toEqual([]);
+
+    const packageJson = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as {
+      exports: Record<string, { import?: string }>;
+    };
+    expect(packageJson.exports['./account']?.import).toBe('./dist/account.js');
+  });
+
+  it('README перечисляет ВСЕ границы полностью (документация не расходится с тестом)', () => {
     // README называет свои списки полными и служит первым, что читает
     // человек про границы пакета. Неполный список там хуже отсутствующего:
     // на него полагаются как на границу. Раз тест — источник истины,
     // расхождение обязан ловить он, а не следующий review.
     const readme = readFileSync(join(PACKAGE_ROOT, 'README.md'), 'utf8');
 
-    const missing = [...ALLOWED_DISCOVERY_IMPORTS].filter(
+    const missing = [...ALLOWED_DISCOVERY_IMPORTS, ...ALLOWED_ACCOUNT_IMPORTS].filter(
       (specifier) => !readme.includes(specifier),
     );
     expect(missing).toEqual([]);
+  });
+
+  it('из SDK исходники берут только типы (import type): runtime-код SDK в пакете не загружается', () => {
+    // SDK — ESM-only; пакет его runtime не грузит ни в одной плоскости.
+    // Действия и enum-значения SDK передаёт composition root (см. README).
+    const sdkValueImport =
+      /(?:import|export)\s+(?!type\b)(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+['"](@polymarket\/(?:client|bindings)[^'"]*)['"]/g;
+    const violations: string[] = [];
+    for (const filePath of listSourceFiles(SRC_ROOT)) {
+      const content = stripComments(readFileSync(filePath, 'utf8'));
+      for (const match of content.matchAll(sdkValueImport)) {
+        violations.push(`${srcRelative(filePath)}: ${match[1]}`);
+      }
+    }
+    expect(violations).toEqual([]);
   });
 
   it('исходники не импортируют internal paths bindings (chunk-модули)', () => {
