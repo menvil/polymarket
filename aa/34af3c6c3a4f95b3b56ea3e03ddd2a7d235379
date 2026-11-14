@@ -1,0 +1,19 @@
+docs/guides/account-venue-state.md
+  s_229ddb4e5aa529::t_ebbaa2e358a619 488-491
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "aa34af3c6c3a4f95b3b56ea3e03ddd2a7d235379",
+  "prompts": {},
+  "sessions": {
+    "s_229ddb4e5aa529": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "953c2e10-8b5e-4c82-8e53-5ebbf8caad72",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
