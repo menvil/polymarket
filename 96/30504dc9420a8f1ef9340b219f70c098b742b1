@@ -1,0 +1,114 @@
+packages/foundation/ids/src/core/AssetId.ts
+  s_229ddb4e5aa529::t_ca13e38586929d 22
+  s_229ddb4e5aa529::t_2ab47e2b4cc968 273-292
+packages/application/account-reconciliation/README.md
+  s_229ddb4e5aa529::t_19defc016fe7e0 244,256-257,261-264
+packages/application/account-reconciliation/__tests__/venueState.types.test.ts
+  s_229ddb4e5aa529::t_84424c3402efe4 133-137,360-371
+packages/application/policy/__tests__/MarketFilter.test.ts
+  s_229ddb4e5aa529::t_5550860524e779 94,97-100,103,192
+docs/guides/account-venue-state.md
+  s_229ddb4e5aa529::t_75e89721fa27e3 548,556-557,563-569
+packages/infrastructure/polymarket-v2/__tests__/PolymarketAccountVenueStateSource.test.ts
+  s_229ddb4e5aa529::t_4e76f42a9292e5 198-199,207-214
+packages/infrastructure/polymarket-v2/src/polymarketAccountMapping.ts
+  s_229ddb4e5aa529::t_4b8c09fde6696f 45,102-105,158,160-161,164-170,172-179,183-184,190
+packages/domain/value-objects/docs/money/architecture.md
+  s_229ddb4e5aa529::t_4c6cf96b7ce127 180,496,498-501,503-504,506-517
+packages/application/account-state/src/errors.ts
+  s_229ddb4e5aa529::t_6f2bce99bf09d4 209-221,242-255,259
+packages/domain/entities/portfolio/__tests__/unit/Portfolio.currency.test.ts
+  s_229ddb4e5aa529::t_b6b1fc04863a61 1-18,20,30-66,79,81-83,89-116,118-119,121-334
+  s_229ddb4e5aa529::t_87acf59a65e5ab 19,21-29,72-77,80,84-88,117
+  s_229ddb4e5aa529::t_54991a9ca45ff0 67-71,78,120
+packages/application/account-state/__tests__/helpers/fixtures.ts
+  s_229ddb4e5aa529::t_079896aaae7f9b 160-161,219-220,241-242
+  s_229ddb4e5aa529::t_602a7506dfe65c 52
+packages/domain/entities/fill/src/polymarket-fee.ts
+  s_229ddb4e5aa529::t_69284ab998ad37 2,14-25,80,84-110,117,141,162,171,173,182
+packages/foundation/ids/docs/types-reference.md
+  s_229ddb4e5aa529::t_7b57a01eefe937 416-422
+packages/foundation/ids/__tests__/core.test.ts
+  s_229ddb4e5aa529::t_ec2590a1aa3c88 28-30
+  s_229ddb4e5aa529::t_d08c9b232a0a91 1516-1548
+packages/foundation/ids/src/core/Currency.ts
+  s_229ddb4e5aa529::t_2ab47e2b4cc968 7-24,32-35,38,72-85,135,143-145,156,164-166,179-180,220-221
+packages/infrastructure/polymarket-v2/docs/account-venue-state-source.md
+  s_229ddb4e5aa529::t_bd8e2da8797c4d 146-167,470,479,482-484,506-508
+packages/application/account-state/__tests__/collateralCurrency.test.ts
+  s_229ddb4e5aa529::t_602a7506dfe65c 1-121
+packages/application/account-state/src/AccountHotState.ts
+  s_229ddb4e5aa529::t_6f2bce99bf09d4 497-499,872-876,960-967,1273-1337
+packages/domain/value-objects/docs/balance/README.md
+  s_229ddb4e5aa529::t_9615b45db9bd2e 79-89
+packages/infrastructure/polymarket-v2/__tests__/helpers/accountFixtures.ts
+  s_229ddb4e5aa529::t_bdce367b4649d3 402-410
+  s_229ddb4e5aa529::t_4e76f42a9292e5 37,39
+packages/domain/value-objects/src/money/facade/MoneyService.ts
+  s_229ddb4e5aa529::t_dc6dbb5e922489 91-95
+packages/domain/entities/fill/src/Fill.ts
+  s_229ddb4e5aa529::t_7f07d91741a5fd 113
+packages/domain/entities/fill/src/mappers/FillMapper.ts
+  s_229ddb4e5aa529::t_276fc2f2661aa5 71-76,117,598,621,645,677
+packages/infrastructure/polymarket-v2/__tests__/polymarketAccountMapping.test.ts
+  s_229ddb4e5aa529::t_88bb46488b5879 462-476,596
+packages/domain/entities/fill/__tests__/unit/FillMapper.test.ts
+  s_229ddb4e5aa529::t_b5790fbe38cd95 121,796-832,860,874,878-926
+packages/application/account-state/docs/account-state.md
+  s_229ddb4e5aa529::t_b94604575d52af 356-382,587,926
+packages/domain/value-objects/src/money/core/Money.ts
+  s_229ddb4e5aa529::t_dc6dbb5e922489 24,39-46,118-119
+packages/infrastructure/polymarket-v2/__tests__/PolymarketClobRefreshedBalanceReader.test.ts
+  s_229ddb4e5aa529::t_4e76f42a9292e5 40,48-49,52,56
+docs/guides/polymarket-collateral-currency.md
+  s_229ddb4e5aa529::t_c591afd6893fbf 1-231
+packages/domain/entities/fill/docs/fill.md
+  s_229ddb4e5aa529::t_a8170fff00e3eb 51,63-65,83-85,88,189-232,236-238
+  s_229ddb4e5aa529::t_a4efd382c70ec0 481-482
+packages/domain/value-objects/docs/money/core.md
+  s_229ddb4e5aa529::t_4c6cf96b7ce127 49-50,127-128,130-136
+packages/domain/entities/fill/__tests__/unit/polymarket-fee.test.ts
+  s_229ddb4e5aa529::t_b5790fbe38cd95 8-9,14,20-21,23,39,43,45,170-193
+packages/application/policy/__tests__/parsePolicyConfig.test.ts
+  s_229ddb4e5aa529::t_5550860524e779 389
+packages/infrastructure/polymarket-v2/src/PolymarketAccountVenueStateSource.ts
+  s_229ddb4e5aa529::t_7d5bf03ba1c8df 77,405-411,422-428
+packages/domain/entities/portfolio/docs/portfolio-entity.md
+  s_229ddb4e5aa529::t_950cad40828fe8 179-248,251,262-263
+packages/domain/entities/fill/src/polymarket-collateral.ts
+  s_229ddb4e5aa529::t_9f64ec4ed2249f 1-79
+packages/domain/entities/portfolio/src/Portfolio.ts
+  s_229ddb4e5aa529::t_86cce17694e78d 1204-1207
+  s_229ddb4e5aa529::t_61e6080b4cecea 126,128,433-438,442,446-448,451,776-791,840-843,1213-1216,1238-1271
+packages/application/handlers/__tests__/FillEventHandler.test.ts
+  s_229ddb4e5aa529::t_294ff39069d56a 8,513-522
+packages/domain/value-objects/__tests__/unit/money/currency-identity.test.ts
+  s_229ddb4e5aa529::t_7f47ebb597137a 1-117,119-121,127-196
+  s_229ddb4e5aa529::t_4cce35b79de0f6 118,122-126
+packages/domain/entities/fill/src/index.ts
+  s_229ddb4e5aa529::t_69284ab998ad37 54-62,65
+packages/domain/entities/fill/src/FillSnapshot.ts
+  s_229ddb4e5aa529::t_7f07d91741a5fd 51
+packages/infrastructure/polymarket-v2/src/PolymarketClobRefreshedBalanceReader.ts
+  s_229ddb4e5aa529::t_7d5bf03ba1c8df 86-93
+packages/infrastructure/polymarket-v2/README.md
+  s_229ddb4e5aa529::t_19defc016fe7e0 326-330,339-342
+packages/foundation/ids/docs/usage-guide.md
+  s_229ddb4e5aa529::t_7b57a01eefe937 387-388,562
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9630504dc9420a8f1ef9340b219f70c098b742b1",
+  "prompts": {},
+  "sessions": {
+    "s_229ddb4e5aa529": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "953c2e10-8b5e-4c82-8e53-5ebbf8caad72",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
