@@ -1,7 +1,7 @@
 {
   "name": "@polymarket/polymarket-v2",
   "version": "0.1.0",
-  "description": "Polymarket V2 ingress boundary - client/bindings observations wrapped as canonical ExternalMessages + canonical market discovery",
+  "description": "Polymarket V2 boundary - client/bindings observations wrapped as canonical ExternalMessages, canonical market discovery and authenticated account-state observation",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./account": {
+      "types": "./dist/account.d.ts",
+      "import": "./dist/account.js"
     }
   },
   "files": [
@@ -44,10 +48,12 @@
   "author": "Ivan Moroz",
   "license": "UNLICENSED",
   "dependencies": {
+    "@polymarket/account-reconciliation": "0.1.0",
     "@polymarket/bindings": "0.6.0",
     "@polymarket/client": "^0.6.0",
     "@polymarket/external-message-bus": "0.1.0",
     "@polymarket/external-messages": "0.1.0",
+    "@polymarket/fill": "0.1.0",
     "@polymarket/ids": "0.1.0",
     "@polymarket/logger": "0.1.0",
     "@polymarket/market": "0.1.0",

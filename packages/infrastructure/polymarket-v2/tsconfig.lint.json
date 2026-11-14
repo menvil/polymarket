@@ -2,7 +2,8 @@
   "extends": "../../../tsconfig.lint.base.json",
   "compilerOptions": {
     "paths": {
-      "@polymarket/polymarket-v2": ["./src/index.ts"]
+      "@polymarket/polymarket-v2": ["./src/index.ts"],
+      "@polymarket/polymarket-v2/account": ["./src/account.ts"]
     }
   },
   "include": ["src/**/*", "__tests__/**/*", "scripts/**/*"],

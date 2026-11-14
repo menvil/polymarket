@@ -22,6 +22,17 @@
  * превращает vendor-каталог в canonical `MarketDiscoverySnapshot`
  * (`@polymarket/ports`) с доменными `Market` внутри. Vendor-объекты
  * границу порта не пересекают.
+ *
+ * ### Account plane: authenticated account-state observation
+ *
+ * `PolymarketAccountVenueStateSource` — третий контур: request/response-
+ * адаптер порта `IAccountVenueStateSource` (`@polymarket/account-reconciliation`)
+ * на secure-клиенте SDK. Он НЕ публикует ни `ExternalMessage`, ни
+ * `ApplicationEvent` — обе шины остаются как были; его вызывает сверка.
+ *
+ * Экспортируется ОТДЕЛЬНОЙ точкой входа `@polymarket/polymarket-v2/account`,
+ * а не отсюда: иначе потребители data/control-плоскостей загружали бы весь
+ * стек приватного состояния аккаунта.
  */
 export type {
   PolymarketExternalMessage,

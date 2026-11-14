@@ -39,6 +39,7 @@ export type { TradeStatusObservation } from './tradeStatus.js';
 export { findFillFactDifference, sameFillFact } from './factIdentity.js';
 export type { FillFactDifference, FillFactField } from './factIdentity.js';
 export { FillMapper } from './mappers/FillMapper.js';
+export type { PolymarketTradeEventMappingOptions } from './mappers/FillMapper.js';
 export type { Liquidity } from './value-objects/Liquidity.js';
 export { ALL_LIQUIDITY, isValidLiquidity } from './value-objects/Liquidity.js';
 export {

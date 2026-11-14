@@ -260,6 +260,41 @@ FillMapper.fromPolymarketTradeEvent(
 fee = size × POLYMARKET_CRYPTO_TAKER_FEE_RATE × price × (1 - price)
 ```
 
+**Ставка из надёжного источника: `allFromPolymarketTradeEvent(raw, accountId, options)`.**
+
+`allFromPolymarketTradeEvent` (все наши исполнения сделки, включая multi-maker)
+принимает необязательные опции:
+
+```typescript
+interface PolymarketTradeEventMappingOptions {
+  /** Ставка taker-комиссии рынка (доля, например 0.07) */
+  readonly takerFeeRate?: number;
+}
+```
+
+| сторона | `takerFeeRate` | комиссия |
+| --- | --- | --- |
+| MAKER | любое | 0 |
+| TAKER | задана | `calculatePolymarketTakerFeeWithRate(size, price, takerFeeRate)`; `fee_rate_bps` события игнорируется |
+| TAKER | не задана | прежнее правило: `fee_rate_bps > 0` → `calculatePolymarketTakerFee` |
+
+Почему так: `fee` входит в canonical факт исполнения (`findFillFactDifference`).
+Аутентифицированный REST (`listAccountTrades`) отдаёт `feeRateBps: "0"` и у
+тейкерской сделки, за которую площадка взяла комиссию. Правило «по
+`fee_rate_bps`» дало бы REST-исполнению нулевую комиссию, а приватному WS —
+положительную: один `FillId`, разный факт. REST-адаптер
+(`@polymarket/polymarket-v2/account`) поэтому обязан передавать ставку,
+полученную по рынку сделки. Приватный WS-путь опцию пока не передаёт, и его
+поведение не изменилось.
+
+Ставка обязана быть конечной и неотрицательной; иначе — `Err(ValidationError)`.
+
+```typescript
+const fills = FillMapper.allFromPolymarketTradeEvent(raw, accountId, {
+  takerFeeRate: POLYMARKET_CRYPTO_TAKER_FEE_RATE,
+});
+```
+
 **Маппинг в ExecutionMetadata:**
 
 - `trader_side` → `liquidity` ('MAKER' | 'TAKER')
