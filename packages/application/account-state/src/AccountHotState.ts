@@ -494,6 +494,9 @@ export class AccountHotState implements AccountHotStateView {
     const portfolioIdentity = validatePortfolioIdentity(venueId, accountId, portfolio);
     if (portfolioIdentity !== undefined) return Err(portfolioIdentity);
 
+    const portfolioCurrency = validatePortfolioCurrency(venueId, accountId, account.portfolio, portfolio);
+    if (portfolioCurrency !== undefined) return Err(portfolioCurrency);
+
     const owner = validateOrderOwner(venueId, accountId, order);
     if (owner !== undefined) return Err(owner);
 
@@ -866,6 +869,11 @@ export class AccountHotState implements AccountHotStateView {
     const portfolioIdentity = validatePortfolioIdentity(venueId, accountId, portfolio);
     if (portfolioIdentity !== undefined) return Err(portfolioIdentity);
 
+    // Сверка исправляет суммы, но не валюту: портфель другой валюты — это
+    // смена collateral аккаунта, а не коррекция, и молча она не проходит.
+    const portfolioCurrency = validatePortfolioCurrency(venueId, accountId, account.portfolio, portfolio);
+    if (portfolioCurrency !== undefined) return Err(portfolioCurrency);
+
     const orders = prepareReconciledOrders(account, correction.orders);
     if (!orders.ok) return orders;
 
@@ -948,6 +956,14 @@ export class AccountHotState implements AccountHotStateView {
 
     const portfolioIdentity = validatePortfolioIdentity(venueId, accountId, portfolio);
     if (portfolioIdentity !== undefined) return Err(portfolioIdentity);
+
+    const portfolioCurrency = validatePortfolioCurrency(venueId, accountId, account.portfolio, portfolio);
+    if (portfolioCurrency !== undefined) return Err(portfolioCurrency);
+
+    // Исполнение в чужой валюте не могло честно дать этот портфель:
+    // `Portfolio.applyFill` его отвергает, значит событие несогласовано.
+    const settlementCurrency = validateFillSettlementCurrency(venueId, accountId, fill, portfolio);
+    if (settlementCurrency !== undefined) return Err(settlementCurrency);
 
     // Значение не используется дальше: инструмент вычисляется на чтении.
     // Проверка остаётся — исполнение, которое нельзя связать с рынком, не
@@ -1252,6 +1268,73 @@ function validatePortfolioIdentity(
   }
 
   return undefined;
+}
+
+/**
+ * Сверяет валюту нового портфеля с валютой аккаунта.
+ *
+ * @param venueId - Площадка владельца
+ * @param accountId - Аккаунт владельца
+ * @param current - Текущий портфель аккаунта (задаёт его валюту)
+ * @param next - Портфель из события
+ * @returns `undefined`, если валюта та же, иначе ошибка
+ *
+ * @remarks
+ * Один аккаунт — один денежный collateral: валюту задал портфель
+ * инициализации, и ни заявка, ни исполнение, ни сверка её не меняют.
+ * pUSD-аккаунт, получивший USDC-портфель, иначе молча стал бы другим
+ * счётом — с теми же цифрами в другом токене.
+ *
+ * @example
+ * ```typescript
+ * const mismatch = validatePortfolioCurrency(venueId, accountId, account.portfolio, portfolio);
+ * if (mismatch !== undefined) return Err(mismatch);
+ * ```
+ */
+function validatePortfolioCurrency(
+  venueId: VenueId,
+  accountId: AccountId,
+  current: Portfolio,
+  next: Portfolio,
+): AccountPortfolioIdentityMismatchError | undefined {
+  const expected = current.balance.currency();
+  const actual = next.balance.currency();
+  if (actual === expected) return undefined;
+  return new AccountPortfolioIdentityMismatchError('balanceCurrency', venueId, accountId, expected, actual);
+}
+
+/**
+ * Сверяет валюту расчёта исполнения с валютой портфеля события.
+ *
+ * @param venueId - Площадка владельца
+ * @param accountId - Аккаунт владельца
+ * @param fill - Исполнение события
+ * @param portfolio - Портфель события
+ * @returns `undefined`, если исполнение рассчитывается в валюте портфеля, иначе ошибка
+ *
+ * @remarks
+ * Экономику здесь не считают, но пару «исполнение + портфель» хранят вместе.
+ * Пара, где `Fill` рассчитан в USDC, а портфель в pUSD, не может быть
+ * результатом `Portfolio.applyFill` (тот её отвергает) — значит, это дефект
+ * producer'а, и в состояние он не попадает.
+ *
+ * @example
+ * ```typescript
+ * const mismatch = validateFillSettlementCurrency(venueId, accountId, fill, portfolio);
+ * if (mismatch !== undefined) return Err(mismatch);
+ * ```
+ */
+function validateFillSettlementCurrency(
+  venueId: VenueId,
+  accountId: AccountId,
+  fill: Fill,
+  portfolio: Portfolio,
+): AccountPortfolioIdentityMismatchError | undefined {
+  const settlement = fill.settlementAssetId;
+  const actual = portfolio.balance.currency();
+  if (settlement.type === 'CURRENCY' && settlement.currency === actual) return undefined;
+  const expected = settlement.type === 'CURRENCY' ? settlement.currency : assetIdToString(settlement);
+  return new AccountPortfolioIdentityMismatchError('balanceCurrency', venueId, accountId, expected, actual);
 }
 
 /**

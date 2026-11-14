@@ -5,17 +5,22 @@
  * Покрывает:
  * - calculatePolymarketTakerFee / calculatePolymarketTakerFeeWithRate (VO-based, Fee VO)
  * - calculatePolymarketTakerFeeNumber (примитивы, graceful zero на невалидном входе — не throw)
- * - Округление до 5 знаков и MIN_FEE_USDC threshold
+ * - Округление до 5 знаков и порог POLYMARKET_MIN_FEE
+ * - Валюта комиссии — collateral Polymarket CLOB V2 (pUSD), а не USDC
  */
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { OutcomePrice, Quantity } from '@polymarket/value-objects';
+import { AssetIdHelpers } from '@polymarket/ids';
 import {
   calculatePolymarketTakerFee,
   calculatePolymarketTakerFeeWithRate,
   calculatePolymarketTakerFeeNumber,
   POLYMARKET_CRYPTO_TAKER_FEE_RATE,
+  POLYMARKET_MIN_FEE,
+  POLYMARKET_MIN_FEE_USDC,
 } from '../../src/polymarket-fee.js';
+import { POLYMARKET_COLLATERAL_ASSET_ID, POLYMARKET_COLLATERAL_CURRENCY } from '../../src/polymarket-collateral.js';
 
 function qty(n: number): Quantity {
   return Quantity.of(new Decimal(n));
@@ -31,12 +36,13 @@ describe('calculatePolymarketTakerFee()', () => {
     expect(fee.quantity.amount().value().toNumber()).toBeCloseTo(0.175, 5);
   });
 
-  it('возвращает Fee VO с активом USDC', () => {
+  it('возвращает Fee VO в collateral площадки — pUSD, а не USDC', () => {
     const fee = calculatePolymarketTakerFee(qty(10), price(0.5));
     expect(fee.asset.type).toBe('CURRENCY');
     if (fee.asset.type === 'CURRENCY') {
-      expect(fee.asset.currency).toBe('USDC');
+      expect(fee.asset.currency).toBe('pUSD');
     }
+    expect(AssetIdHelpers.equals(fee.asset, AssetIdHelpers.USDC)).toBe(false);
   });
 
   it('использует POLYMARKET_CRYPTO_TAKER_FEE_RATE по умолчанию', () => {
@@ -159,5 +165,31 @@ describe('calculatePolymarketTakerFeeNumber()', () => {
         expect(() => calculatePolymarketTakerFeeNumber(size, price, feeRate)).not.toThrow();
       }
     });
+  });
+});
+
+describe('валюта комиссии Polymarket CLOB V2', () => {
+  it('collateral площадки — pUSD: CURRENCY:pUSD, отдельный от USDC актив', () => {
+    expect(POLYMARKET_COLLATERAL_CURRENCY).toBe('pUSD');
+    expect(AssetIdHelpers.equals(POLYMARKET_COLLATERAL_ASSET_ID, AssetIdHelpers.PUSD)).toBe(true);
+    expect(AssetIdHelpers.equals(POLYMARKET_COLLATERAL_ASSET_ID, AssetIdHelpers.USDC)).toBe(false);
+  });
+
+  it.each<[string, () => ReturnType<typeof calculatePolymarketTakerFee>]>([
+    ['ненулевая комиссия', () => calculatePolymarketTakerFeeWithRate(qty(10), price(0.5), 0.07)],
+    ['нулевая ставка', () => calculatePolymarketTakerFeeWithRate(qty(10), price(0.5), 0)],
+    ['ниже порога округления', () => calculatePolymarketTakerFeeWithRate(qty(0.0001), price(0.5), 0.07)],
+  ])('%s → Fee в pUSD (и нулевая тоже)', (_label, make) => {
+    expect(AssetIdHelpers.equals(make().asset, POLYMARKET_COLLATERAL_ASSET_ID)).toBe(true);
+  });
+
+  it('формула от валюты не зависит: 10 × 0.07 × 0.5 × 0.5 = 0.175 pUSD', () => {
+    const fee = calculatePolymarketTakerFeeWithRate(qty(10), price(0.5), 0.07);
+    expect(fee.quantity.amount().value().toString()).toBe('0.175');
+  });
+
+  it('POLYMARKET_MIN_FEE_USDC — устаревшее имя того же порога', () => {
+    expect(POLYMARKET_MIN_FEE_USDC).toBe(POLYMARKET_MIN_FEE);
+    expect(POLYMARKET_MIN_FEE).toBe(0.00001);
   });
 });

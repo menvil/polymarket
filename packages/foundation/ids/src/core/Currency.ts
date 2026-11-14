@@ -4,6 +4,24 @@
  * @remarks
  * ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ для всех валют в системе.
  *
+ * Код валюты — это идентичность ДЕНЕЖНОГО ТОКЕНА, а не единица измерения:
+ *
+ * ```text
+ * USDC   USD Coin — расчётная валюта прежних путей и прочих площадок
+ * pUSD   Polymarket USD — физический collateral Polymarket CLOB V2
+ *        (ERC-20 0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB, Polygon, 6 знаков)
+ * ```
+ *
+ * Обе номинированы в долларах, и pUSD обеспечен USDC, но это РАЗНЫЕ токены:
+ * `Money(100, 'pUSD')` не означает владения 100 USDC и наоборот. Курса между
+ * валютами в домене нет; арифметика и сравнения разных валют — отказ
+ * (`MoneyService`, `BalanceService`), а не неявное приведение.
+ *
+ * Написание кода каноническое и регистрозависимое при разборе
+ * (`isSupportedCurrency`): `'pUSD'` — как символ токена on-chain. Терпимый к
+ * регистру ввод приводится к каноническому написанию через
+ * {@link asSupportedCurrency}.
+ *
  * При добавлении новой валюты:
  * 1. Добавь валюту в этот массив
  * 2. TypeScript автоматически обновит тип SupportedCurrency
@@ -11,18 +29,13 @@
  *
  * @example
  * ```typescript
- * // Текущее состояние:
- * export const SUPPORTED_CURRENCIES = ['USDC'] as const;
- *
- * // Добавление новой валюты (пример):
- * export const SUPPORTED_CURRENCIES = ['USDC', 'USDT', 'EUR'] as const;
- *
- * // Всё автоматически заработает:
- * const currency: SupportedCurrency = 'EUR';  // ✅ Тип обновлён
- * const asset = AssetIdHelpers.fromCurrency('EUR'); // ✅ OK
+ * const currency: SupportedCurrency = 'pUSD';        // ✅
+ * const asset = AssetIdHelpers.fromCurrency('pUSD'); // CURRENCY:pUSD
+ * isSupportedCurrency('PUSD');                        // false — написание каноническое
+ * asSupportedCurrency('PUSD');                        // 'pUSD'
  * ```
  */
-export const SUPPORTED_CURRENCIES = ['USDC'] as const;
+export const SUPPORTED_CURRENCIES = ['USDC', 'pUSD'] as const;
 
 /**
  * Тип для поддерживаемых валют
@@ -55,6 +68,20 @@ export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
  * @internal
  */
 const SUPPORTED_CURRENCIES_SET = new Set<string>(SUPPORTED_CURRENCIES);
+
+/**
+ * Каноническое написание поддерживаемой валюты по её коду в верхнем регистре.
+ *
+ * @remarks
+ * Коды валют не обязаны быть в верхнем регистре (`pUSD`), а терпимый ввод —
+ * обязан находить их: `'pusd'`, `'PUSD'` и `' pUSD '` → `'pUSD'`. Два кода,
+ * различающихся только регистром, в списке недопустимы — карта их не различит.
+ *
+ * @internal
+ */
+const CANONICAL_BY_UPPERCASE = new Map<string, SupportedCurrency>(
+  SUPPORTED_CURRENCIES.map((currency) => [currency.toUpperCase(), currency])
+);
 
 /**
  * Type guard для проверки что строка является поддерживаемой валютой
@@ -105,7 +132,7 @@ export const KnownCurrencies = Object.freeze(
 ) as { readonly [K in SupportedCurrency]: K };
 
 /**
- * Нормализация currency code (uppercase, trimmed)
+ * Нормализация currency code (trimmed, каноническое написание)
  *
  * @param code - Currency code для нормализации
  * @returns Нормализованный currency code, или undefined если входное значение не строка или пустое
@@ -113,7 +140,9 @@ export const KnownCurrencies = Object.freeze(
  * @remarks
  * Приводит currency code к каноническому формату:
  * - Убирает пробелы в начале и конце
- * - Переводит в uppercase
+ * - Поддерживаемую валюту — к её каноническому написанию без учёта регистра
+ *   (`'pusd'` → `'pUSD'`, `'usdc'` → `'USDC'`)
+ * - Неподдерживаемый код — в uppercase (`'eur'` → `'EUR'`)
  * - Возвращает undefined для не-строк и пустых/пробельных строк
  *
  * Поведение согласовано с asSupportedCurrency и currencyEquals:
@@ -124,6 +153,7 @@ export const KnownCurrencies = Object.freeze(
  * ```typescript
  * normalizeCurrency('usdc'); // → 'USDC'
  * normalizeCurrency(' USDC '); // → 'USDC'
+ * normalizeCurrency('PUSD'); // → 'pUSD'
  * normalizeCurrency('UsD c'); // → 'USD C'
  * normalizeCurrency(''); // → undefined
  * normalizeCurrency(42); // → undefined
@@ -131,8 +161,9 @@ export const KnownCurrencies = Object.freeze(
  */
 export function normalizeCurrency(code: unknown): string | undefined {
   if (typeof code !== 'string') return undefined;
-  const normalized = code.trim().toUpperCase();
-  return normalized.length > 0 ? normalized : undefined;
+  const uppercase = code.trim().toUpperCase();
+  if (uppercase.length === 0) return undefined;
+  return CANONICAL_BY_UPPERCASE.get(uppercase) ?? uppercase;
 }
 
 /**
@@ -144,6 +175,8 @@ export function normalizeCurrency(code: unknown): string | undefined {
  * @remarks
  * Выполняет нормализацию и проверку что currency поддерживается системой.
  * Используй для валидации user input перед созданием Money/Balance.
+ *
+ * Возвращает КАНОНИЧЕСКОЕ написание: `asSupportedCurrency('PUSD') === 'pUSD'`.
  *
  * @example
  * ```typescript
@@ -184,6 +217,8 @@ export function asSupportedCurrency(code: unknown): SupportedCurrency | undefine
  * @example
  * ```typescript
  * currencyEquals('USDC', 'usdc'); // → true
+ * currencyEquals('pUSD', 'PUSD'); // → true
+ * currencyEquals('USDC', 'pUSD'); // → false — разные токены
  * currencyEquals('USDC', 'USDT'); // → false
  * currencyEquals(' USDC ', 'USDC'); // → true
  * ```

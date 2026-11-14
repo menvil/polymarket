@@ -51,8 +51,18 @@ export type { PolymarketTradeEventMappingOptions } from './mappers/FillMapper.js
 export type { PolymarketTakerFeeRateResolver } from './PolymarketTakerFeeRateResolver.js';
 export type { Liquidity } from './value-objects/Liquidity.js';
 export { ALL_LIQUIDITY, isValidLiquidity } from './value-objects/Liquidity.js';
+/**
+ * Денежный collateral Polymarket CLOB V2 — pUSD (см. polymarket-collateral.ts).
+ *
+ * @remarks
+ * Единственное объявление валюты денег Polymarket-аккаунта: из него берут
+ * валюту и `FillMapper` (расчёт и комиссия исполнения), и REST-адаптер
+ * collateral-баланса в `@polymarket/polymarket-v2`.
+ */
+export { POLYMARKET_COLLATERAL_ASSET_ID, POLYMARKET_COLLATERAL_CURRENCY } from './polymarket-collateral.js';
 export {
   POLYMARKET_CRYPTO_TAKER_FEE_RATE,
+  POLYMARKET_MIN_FEE,
   POLYMARKET_MIN_FEE_USDC,
   calculatePolymarketTakerFee,
   calculatePolymarketTakerFeeNumber,

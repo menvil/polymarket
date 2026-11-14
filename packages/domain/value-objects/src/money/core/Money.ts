@@ -21,7 +21,7 @@ export type { SupportedCurrency };
  *
  * ## Инварианты (enforced в core)
  *
- * 1. Валюта поддерживается (USDC)
+ * 1. Валюта поддерживается (`SUPPORTED_CURRENCIES`: USDC, pUSD)
  * 2. Сумма finite
  * 3. Сумма не NaN
  * 4. |Сумма| <= MAX_AMOUNT (1e15)
@@ -35,6 +35,14 @@ export type { SupportedCurrency };
  * - Неотрицательность — бизнес-логика
  * - Минимальная сумма — PaymentPolicy
  * - Совпадение валют — MoneyService
+ *
+ * ## Валюта — идентичность токена, а не единица измерения
+ *
+ * `Money.of(100, 'USDC')` и `Money.of(100, 'pUSD')` — РАЗНЫЕ денежные
+ * величины: оба токена номинированы в долларах, но владение одним не
+ * означает владения другим. Курса между валютами нет; `MoneyService`
+ * отвергает арифметику и сравнения разных валют (`CURRENCY_MISMATCH`), а не
+ * приводит их.
  *
  * ## Математика — через MoneyService
  *
@@ -107,7 +115,8 @@ export class Money {
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
    * @param value - Сумма (Decimal)
-   * @param currency - Валюта (default 'USDC')
+   * @param currency - Валюта (default 'USDC' — историческое умолчание: деньги
+   *   Polymarket CLOB V2 обязаны передавать `'pUSD'` явно)
    * @returns Money
    * @throws {MoneyInvariantViolation} Нарушение инвариантов
    *

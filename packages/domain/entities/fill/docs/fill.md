@@ -48,7 +48,7 @@ interface FillParams {
   readonly venueId: VenueId;            // Биржа (POLYMARKET)
   readonly marketId: string;            // ID рынка
   readonly tokenId: AssetId;            // ID outcome токена
-  readonly settlementAssetId: AssetId;  // Расчётная валюта (USDC для Polymarket)
+  readonly settlementAssetId: AssetId;  // Расчётная валюта (CURRENCY:pUSD для Polymarket CLOB V2)
   readonly price: OutcomePrice;                // Цена исполнения
   readonly size: Quantity;              // Объём исполнения
   readonly side: Side;                  // BUY | SELL
@@ -60,7 +60,9 @@ interface FillParams {
 ### Ключевые свойства
 
 - `orderId` всегда обязателен. Нет orderId — нет Fill.
-- `settlementAssetId` определяет расчётную валюту (USDC для Polymarket).
+- `settlementAssetId` определяет расчётную валюту. У Polymarket CLOB V2 это
+  `CURRENCY:pUSD` (`POLYMARKET_COLLATERAL_ASSET_ID`), см. «Деньги исполнения
+  Polymarket — pUSD» ниже.
 - `liquidity` и `venueTradeId` — инфраструктурные метаданные, вынесены в `ExecutionMetadata`.
 
 ## Инварианты
@@ -78,12 +80,12 @@ interface FillParams {
 ```typescript
 // Signed изменения баланса (AssetDelta = { asset: AssetId; amount: SignedQuantity })
 getSignedQuantity(): AssetDelta   // { asset: tokenId, amount: ±size }   токен
-getCashFlow(): AssetDelta         // { asset: USDC, amount: ∓(price×size) }
-getFeeFlow(): AssetDelta          // { asset: USDC, amount: -feeAmount }
-getNetCashFlow(): AssetDelta      // { asset: USDC, amount: cashFlow + feeFlow }
+getCashFlow(): AssetDelta         // { asset: settlementAssetId, amount: ∓(price×size) }
+getFeeFlow(): AssetDelta          // { asset: settlementAssetId, amount: -feeAmount }
+getNetCashFlow(): AssetDelta      // { asset: settlementAssetId, amount: cashFlow + feeFlow }
 
 // Неотрицательная стоимость (AssetQuantity)
-getNotional(): AssetQuantity      // { asset: USDC, amount: price×size }
+getNotional(): AssetQuantity      // { asset: settlementAssetId, amount: price×size }
 
 // Предикаты
 isBuy(): boolean                  // side === 'BUY'
@@ -184,10 +186,56 @@ export const ALL_LIQUIDITY: readonly Liquidity[] = ['MAKER', 'TAKER'];
 export function isValidLiquidity(v: unknown): v is Liquidity;
 ```
 
+## Деньги исполнения Polymarket — pUSD (`polymarket-collateral.ts`)
+
+### Почему
+
+Polymarket CLOB V2 торгует и рассчитывается в **pUSD** (Polymarket USD), а не
+в USDC. Подтверждено тремя источниками:
+
+| источник | что говорит |
+|---|---|
+| SDK `@polymarket/client` 0.6.0, production (chainId 137) | `environment.contracts.collateralToken = 0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` |
+| `docs.polymarket.com/resources/contracts` | «pUSD — CollateralToken Poly v2» — тот же адрес |
+| `docs.polymarket.com/concepts/pusd` | «collateral token used for all trading», 6 decimals, обеспечен USDC |
+| контракт on-chain | `symbol() = "pUSD"`, `name() = "Polymarket USD"`, `decimals() = 6` |
+
+Раньше `FillMapper` рассчитывал любое Polymarket-исполнение в `CURRENCY:USDC`
+— исполнение выглядело расчётом в токене, которого у аккаунта нет.
+
+### Как сейчас
+
+Единственное объявление валюты денег Polymarket-аккаунта:
+
+```typescript
+import { POLYMARKET_COLLATERAL_ASSET_ID, POLYMARKET_COLLATERAL_CURRENCY } from '@polymarket/fill';
+
+POLYMARKET_COLLATERAL_CURRENCY;                  // 'pUSD'
+assetIdToString(POLYMARKET_COLLATERAL_ASSET_ID); // 'CURRENCY:pUSD'
+```
+
+| что | откуда валюта |
+|---|---|
+| `Fill.settlementAssetId` TAKER и MAKER | `POLYMARKET_COLLATERAL_ASSET_ID` (`FillMapper`) |
+| `Fill.fee` (в том числе нулевая) | `POLYMARKET_COLLATERAL_ASSET_ID` (`calculatePolymarketTakerFee*`, `FillMapper`) |
+| REST collateral-баланс | `POLYMARKET_COLLATERAL_CURRENCY` (`collateralFromBaseUnits` в `polymarket-v2`) |
+
+Приватный WS и REST идут через ОДИН `FillMapper`, поэтому актив расчёта у
+одного исполнения один и тот же: `findFillFactDifference(wsFill, restFill)`
+сравнивает и `settlementAssetId`, и актив комиссии. Перевести REST на pUSD и
+оставить WS на USDC невозможно по построению.
+
+Снапшоты хранят актив как есть: старый `CURRENCY:USDC` восстанавливается
+как USDC, `CURRENCY:pUSD` — как pUSD, неизвестная или не канонически
+написанная валюта (`CURRENCY:EUR`, `CURRENCY:PUSD`) — отказ. Скрытой
+миграции нет.
+
 ## polymarket-fee.ts
 
 Формула taker-комиссии Polymarket для crypto-рынков: `fee = size × feeRate × p × (1 - p)`
-(округление до 5 знаков, ROUND_HALF_UP; меньше `POLYMARKET_MIN_FEE_USDC` = 0.00001 → 0).
+(округление до 5 знаков, ROUND_HALF_UP; меньше `POLYMARKET_MIN_FEE` = 0.00001 → 0;
+прежнее имя `POLYMARKET_MIN_FEE_USDC` оставлено как `@deprecated`-синоним).
+`Fee` выражен в pUSD — collateral площадки; формула от валюты не зависит.
 
 ```typescript
 // VO-based (Этап 3 плана миграции) — по ADR Decimal легитимен только внутри
@@ -430,8 +478,8 @@ if (result.ok) {
 Fill → `FillLedgerAdapter.toLedgerEntries(fill)` → `LedgerEntry[]` → `Ledger`
 
 ```
-BUY без комиссии → 2 записи: POSITION_DELTA (+token), CASH_DELTA (-USDC)
-BUY с комиссией  → 3 записи: POSITION_DELTA (+token), CASH_DELTA (-USDC), FEE_DEBIT (-USDC)
+BUY без комиссии → 2 записи: POSITION_DELTA (+token), CASH_DELTA (−settlement)
+BUY с комиссией  → 3 записи: POSITION_DELTA (+token), CASH_DELTA (−settlement), FEE_DEBIT (−settlement)
 ```
 
 ## Связь с Order

@@ -25,6 +25,9 @@ import {
   asOnChainProtocolId,
   AssetIdHelpers,
   AssetIdValidationError,
+  KnownCurrencies,
+  SUPPORTED_CURRENCIES,
+  isSupportedCurrency,
   conditionRefEquals,
   conditionRefToString,
   parseConditionRef,
@@ -1509,6 +1512,39 @@ describe('Core IDs', () => {
       expect(currencyEquals('USDC', 'USDC')).toBe(true);
       expect(currencyEquals(' USDC ', 'USDC')).toBe(true);
       expect(currencyEquals('USDC', 'USDT')).toBe(false);
+    });
+
+    // pUSD — collateral Polymarket CLOB V2: отдельный токен, не другое имя USDC.
+    describe('pUSD', () => {
+      it('поддерживается рядом с USDC; код каноничен и регистрозависим при разборе', () => {
+        expect(SUPPORTED_CURRENCIES).toEqual(['USDC', 'pUSD']);
+        expect(isSupportedCurrency('pUSD')).toBe(true);
+        expect(isSupportedCurrency('PUSD')).toBe(false);
+        expect(isSupportedCurrency('pusd')).toBe(false);
+        expect(KnownCurrencies.pUSD).toBe('pUSD');
+      });
+
+      it('терпимый ввод приводится к каноническому написанию pUSD', () => {
+        expect(normalizeCurrency('PUSD')).toBe('pUSD');
+        expect(normalizeCurrency(' pusd ')).toBe('pUSD');
+        expect(asSupportedCurrency('PUSD')).toBe('pUSD');
+        expect(asSupportedCurrency('pUSD')).toBe('pUSD');
+      });
+
+      it('pUSD и USDC — разные валюты', () => {
+        expect(currencyEquals('pUSD', 'PUSD')).toBe(true);
+        expect(currencyEquals('pUSD', 'USDC')).toBe(false);
+      });
+
+      it('CURRENCY:pUSD — отдельный актив: печать, разбор, сравнение', () => {
+        expect(assetIdToString(AssetIdHelpers.PUSD)).toBe('CURRENCY:pUSD');
+        expect(AssetIdHelpers.equals(AssetIdHelpers.PUSD, AssetIdHelpers.USDC)).toBe(false);
+        expect(AssetIdHelpers.equals(AssetIdHelpers.fromCurrency('pUSD'), AssetIdHelpers.PUSD)).toBe(true);
+        const parsed = parseAssetId('CURRENCY:pUSD');
+        expect(parsed !== undefined && AssetIdHelpers.equals(parsed, AssetIdHelpers.PUSD)).toBe(true);
+        expect(parseAssetId('CURRENCY:PUSD')).toBeUndefined();
+        expect(Object.isFrozen(AssetIdHelpers.PUSD)).toBe(true);
+      });
     });
   });
 

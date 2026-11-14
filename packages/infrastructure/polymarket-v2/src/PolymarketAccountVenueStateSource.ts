@@ -74,7 +74,7 @@ import type {
   ListAccountTradesRequest,
   ListOpenOrdersRequest,
 } from '@polymarket/client/actions';
-import type { PolymarketTakerFeeRateResolver } from '@polymarket/fill';
+import { POLYMARKET_COLLATERAL_CURRENCY, type PolymarketTakerFeeRateResolver } from '@polymarket/fill';
 import {
   KnownVenues,
   accountIdEquals,
@@ -402,6 +402,13 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    *
    * @param scope - Scope запроса
    * @returns Collateral и ровно по одному балансу на актив либо первый отказ
+   *
+   * @remarks
+   * Collateral обязан прийти в валюте collateral площадки — `pUSD`
+   * (`POLYMARKET_COLLATERAL_CURRENCY`). Reader внедряется (его может заменить
+   * on-chain верификатор), и реализация, вернувшая `Money` в USDC, — отказ
+   * прохода, а не collateral «в долларах»: курса pUSD ↔ USDC нет, и сверка не
+   * должна получить чужую валюту под видом своей.
    */
   private async _readBalances(
     scope: AccountVenueStateScope,
@@ -412,6 +419,13 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
       Promise.all(scope.assets.map((asset) => guarded('balances', () => reader.getOutcomeAssetBalance(asset)))),
     ]);
     if (!collateral.ok) return Err(collateral.error);
+    if (collateral.value.currency() !== POLYMARKET_COLLATERAL_CURRENCY) {
+      return Err(
+        new PolymarketAccountStateError(
+          `balances: collateral must be ${POLYMARKET_COLLATERAL_CURRENCY}, reader returned ${collateral.value.currency()}`,
+        ),
+      );
+    }
 
     const balances: AuthoritativeAssetBalance[] = [];
     for (const [index, asset] of scope.assets.entries()) {

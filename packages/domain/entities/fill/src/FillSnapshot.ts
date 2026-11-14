@@ -48,7 +48,7 @@ export interface FillSnapshot {
   readonly marketId: string;
   /** ID токена (актива) — JSON сериализованный AssetId */
   readonly tokenId: string;
-  /** Расчётный актив — JSON сериализованный AssetId (USDC для Polymarket) */
+  /** Расчётный актив — JSON сериализованный AssetId (`CURRENCY:pUSD` для Polymarket CLOB V2; старые снапшоты `CURRENCY:USDC` восстанавливаются как USDC) */
   readonly settlementAssetId: string;
   /** Цена исполнения (строка — сохраняет точность Decimal) */
   readonly price: string;

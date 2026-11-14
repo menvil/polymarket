@@ -83,7 +83,14 @@ export interface PolymarketAuthoritativeBalanceReader {
   /**
    * Текущий collateral аккаунта.
    *
-   * @returns Фактическое collateral-владение либо отказ
+   * @returns Фактическое collateral-владение в pUSD
+   *   (`POLYMARKET_COLLATERAL_CURRENCY`) либо отказ
+   *
+   * @remarks
+   * Валюта — часть контракта: collateral Polymarket CLOB V2 — pUSD, и
+   * `PolymarketAccountVenueStateSource` отвергает `Money` любой другой валюты.
+   * Реализация (в том числе будущий on-chain верификатор) не приводит pUSD к
+   * USDC и не подставляет курс.
    */
   getCollateralBalance(): Promise<Result<Money, PolymarketAccountStateError>>;
 

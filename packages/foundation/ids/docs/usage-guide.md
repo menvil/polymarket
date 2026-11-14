@@ -384,7 +384,8 @@ const accountId: AccountId = accountIdFromWallet(
 const polymarketVenue = sourceToVenue(polymarketQuote.sourceId)!;
 const kalshiVenue = sourceToVenue(kalshiQuote.sourceId)!;
 
-const polymarketBalance = getBalance(accountId, polymarketVenue, AssetIdHelpers.USDC);
+// Деньги Polymarket CLOB V2 — pUSD (AssetIdHelpers.PUSD), а не USDC
+const polymarketBalance = getBalance(accountId, polymarketVenue, AssetIdHelpers.PUSD);
 const kalshiBalance = getBalance(accountId, kalshiVenue, AssetIdHelpers.USDC);
 
 // 4. Arbitrage: покупаем дешевле, продаём дороже
@@ -558,7 +559,7 @@ const hedgingAccount = unwrap(hedgingResult);
 const accounts = [walletAccount, tradingAccount, hedgingAccount];
 
 for (const account of accounts) {
-  const balance = getBalance(account, KnownVenues.POLYMARKET, AssetIdHelpers.USDC);
+  const balance = getBalance(account, KnownVenues.POLYMARKET, AssetIdHelpers.PUSD);
   console.log(`Account ${accountIdToString(account)}: ${balance.amount}`);
 }
 ```

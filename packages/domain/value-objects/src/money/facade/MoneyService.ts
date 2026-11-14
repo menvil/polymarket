@@ -88,6 +88,11 @@ export class MoneyService {
    * - Parse fail (toDecimal error) → InvalidMoneyError(reason: 'INVALID_FORMAT', raw: { field, value })
    * - Invariant fail (MoneyInvariantViolation) → InvalidMoneyError с reason (EXCEEDS_MAX_AMOUNT, NON_FINITE, NAN)
    *
+   * Валюта по умолчанию — `USDC`: историческое умолчание, на которое
+   * опираются старые вызовы и тесты. Деньги другой валюты (например, collateral
+   * Polymarket CLOB V2 — `pUSD`) передают валюту ЯВНО; умолчание никогда не
+   * означает «валюта не важна».
+   *
    * @example
    * ```typescript
    * const result = MoneyService.create(100);

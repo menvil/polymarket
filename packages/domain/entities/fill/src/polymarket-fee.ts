@@ -1,5 +1,5 @@
 /**
- * Расчёт taker-комиссии на Polymarket в USDC-equivalent.
+ * Расчёт taker-комиссии на Polymarket в деньгах collateral площадки (pUSD).
  *
  * @remarks
  * Формула площадки (docs.polymarket.com/trading/fees):
@@ -11,8 +11,18 @@
  * сказано в документации и подтверждено замером: позиции, закрытые
  * мейкерскими филами, дают нулевую разницу с `realizedPnl` площадки.
  *
- * Комиссия считается в USDC (не в токенах), округляется до 5 знаков,
- * всё меньше 0.00001 USDC считается нулём.
+ * Комиссия считается в деньгах (не в токенах), округляется до 5 знаков,
+ * всё меньше 0.00001 считается нулём.
+ *
+ * ### Валюта комиссии
+ *
+ * `Fee` выражен в canonical валюте collateral Polymarket CLOB V2 — `pUSD`
+ * ({@link POLYMARKET_COLLATERAL_ASSET_ID}, см. `polymarket-collateral.ts`):
+ * площадка удерживает комиссию из collateral («BUY fees add to collateral
+ * spend; SELL fees are deducted from proceeds»). Формула и округление от
+ * валюты не зависят; меняется только идентичность денег, в которых она
+ * выражена. Замер ниже сделан до перехода площадки на pUSD — на тех же
+ * долларовых суммах.
  *
  * ### Чем она удерживается
  *
@@ -67,19 +77,44 @@
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
 import { OutcomePrice, Quantity, Fee, AssetQuantity } from '@polymarket/value-objects';
-import { AssetIdHelpers } from '@polymarket/ids';
+import { POLYMARKET_COLLATERAL_ASSET_ID } from './polymarket-collateral.js';
 
 export const POLYMARKET_CRYPTO_TAKER_FEE_RATE = 0.07;
-export const POLYMARKET_MIN_FEE_USDC = 0.00001;
 
-const MIN_FEE_USDC = new Decimal(POLYMARKET_MIN_FEE_USDC);
+/**
+ * Минимальная ненулевая комиссия в деньгах collateral (pUSD): всё меньше — ноль.
+ *
+ * @remarks
+ * Величина — порог округления площадки, а не сумма в конкретном токене.
+ *
+ * @example
+ * ```typescript
+ * POLYMARKET_MIN_FEE; // 0.00001
+ * ```
+ */
+export const POLYMARKET_MIN_FEE = 0.00001;
+
+/**
+ * Прежнее имя {@link POLYMARKET_MIN_FEE}.
+ *
+ * @deprecated Комиссия Polymarket CLOB V2 выражена в pUSD, а не в USDC —
+ *   используйте {@link POLYMARKET_MIN_FEE}. Значение то же.
+ *
+ * @example
+ * ```typescript
+ * POLYMARKET_MIN_FEE_USDC === POLYMARKET_MIN_FEE; // true
+ * ```
+ */
+export const POLYMARKET_MIN_FEE_USDC = POLYMARKET_MIN_FEE;
+
+const MIN_FEE = new Decimal(POLYMARKET_MIN_FEE);
 
 /**
  * Рассчитывает taker fee на Polymarket для crypto-рынков.
  *
  * @param size - Размер ордера (Quantity VO)
  * @param price - Цена исполнения (OutcomePrice VO, диапазон [0.0001, 0.9999])
- * @returns Комиссия как `Fee` VO (валюта USDC). Всегда >= 0.
+ * @returns Комиссия как `Fee` VO (валюта pUSD — collateral площадки). Всегда >= 0.
  *
  * @remarks
  * MAKER fee = 0 — вызывающий код должен проверять trader_side
@@ -103,7 +138,7 @@ export function calculatePolymarketTakerFee(size: Quantity, price: OutcomePrice)
  * @param price - Цена исполнения (OutcomePrice VO)
  * @param feeRate - Ставка комиссии (доля, например 0.07); допускает голый `number`/`Decimal` —
  *   ставка не является отдельным VO в текущем коде, приходит из market metadata как примитив
- * @returns Комиссия как `Fee` VO (валюта USDC). Всегда >= 0.
+ * @returns Комиссия как `Fee` VO (валюта pUSD — collateral площадки). Всегда >= 0.
  *
  * @remarks
  * Используется теми местами, где Polymarket отдаёт категорийный feeRate
@@ -124,7 +159,7 @@ export function calculatePolymarketTakerFeeWithRate(
   const priceDecimal = price.value();
 
   if (sizeDecimal.lte(0) || priceDecimal.lte(0) || priceDecimal.gte(1) || feeRateDecimal.lte(0)) {
-    return Fee.zero(AssetIdHelpers.USDC);
+    return Fee.zero(POLYMARKET_COLLATERAL_ASSET_ID);
   }
 
   const rawFee = sizeDecimal
@@ -133,9 +168,9 @@ export function calculatePolymarketTakerFeeWithRate(
     .mul(new Decimal(1).minus(priceDecimal));
 
   const roundedFee = rawFee.toDecimalPlaces(5, Decimal.ROUND_HALF_UP);
-  const finalFee = roundedFee.gte(MIN_FEE_USDC) ? roundedFee : new Decimal(0);
+  const finalFee = roundedFee.gte(MIN_FEE) ? roundedFee : new Decimal(0);
 
-  return Fee.of(new AssetQuantity(AssetIdHelpers.USDC, Quantity.of(finalFee)));
+  return Fee.of(new AssetQuantity(POLYMARKET_COLLATERAL_ASSET_ID, Quantity.of(finalFee)));
 }
 
 /**
@@ -144,7 +179,7 @@ export function calculatePolymarketTakerFeeWithRate(
  * @param size - Размер ордера
  * @param price - Цена исполнения
  * @param feeRate - Ставка комиссии (по умолчанию `POLYMARKET_CRYPTO_TAKER_FEE_RATE`)
- * @returns Комиссия в USDC как `number`
+ * @returns Комиссия в деньгах collateral (pUSD) как `number`
  *
  * @remarks
  * Сигнатура уже полностью на примитивах — не переводится на VO (см. докблок файла).

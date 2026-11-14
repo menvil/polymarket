@@ -118,7 +118,7 @@ describe('FillMapper', () => {
         expect(fill.size.value().toNumber()).toBeCloseTo(10, 5);
         expect(fill.timestamp.toNumber()).toBe(1700000000000);
         expect(fill.venueId).toBe('POLYMARKET');
-        expect(assetIdToString(fill.settlementAssetId)).toContain('USDC');
+        expect(assetIdToString(fill.settlementAssetId)).toBe('CURRENCY:pUSD');
         expect(metadata.liquidity).toBe('TAKER');
         expect(metadata.tradeStatus).toBe('MATCHED');
       }
@@ -793,6 +793,43 @@ describe('FillMapper', () => {
     });
   });
 
+  describe('allFromPolymarketTradeEvent() — деньги исполнения в collateral площадки (pUSD)', () => {
+    // Polymarket CLOB V2 рассчитывается в pUSD: расчётный актив и комиссия
+    // обязаны быть pUSD, иначе Portfolio(pUSD) отверг бы собственное исполнение.
+    function moneyAssetsOf(raw: Record<string, unknown>, takerFeeRate?: number): string[][] {
+      return unwrap(
+        FillMapper.allFromPolymarketTradeEvent(raw, makeAccountId(), takerFeeRate === undefined ? {} : { takerFeeRate }),
+      ).map(({ fill }) => [assetIdToString(fill.settlementAssetId), assetIdToString(fill.fee.asset)]);
+    }
+
+    it('TAKER с комиссией: settlement и fee — CURRENCY:pUSD', () => {
+      const [entry] = unwrap(FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent(), makeAccountId(), { takerFeeRate: 0.07 }));
+      expect(entry!.fill.fee.isZero()).toBe(false);
+      expect(moneyAssetsOf(makeValidTakerEvent(), 0.07)).toEqual([['CURRENCY:pUSD', 'CURRENCY:pUSD']]);
+    });
+
+    it('TAKER без комиссии (ставка 0): нулевая комиссия тоже в pUSD', () => {
+      expect(moneyAssetsOf(makeValidTakerEvent(), 0)).toEqual([['CURRENCY:pUSD', 'CURRENCY:pUSD']]);
+    });
+
+    it('legacy-путь без takerFeeRate: та же валюта', () => {
+      expect(moneyAssetsOf(makeValidTakerEvent({ fee_rate_bps: '1000' }))).toEqual([['CURRENCY:pUSD', 'CURRENCY:pUSD']]);
+    });
+
+    it('MAKER: settlement и нулевая комиссия — CURRENCY:pUSD', () => {
+      expect(moneyAssetsOf(makeValidMakerEvent())).toEqual([['CURRENCY:pUSD', 'CURRENCY:pUSD']]);
+    });
+
+    it('ни одно исполнение не рассчитывается в USDC', () => {
+      for (const raw of [makeValidTakerEvent(), makeValidMakerEvent()]) {
+        for (const [settlement, fee] of moneyAssetsOf(raw, 0.07)) {
+          expect(settlement).not.toBe('CURRENCY:USDC');
+          expect(fee).not.toBe('CURRENCY:USDC');
+        }
+      }
+    });
+  });
+
   describe('toSnapshot() / fromSnapshot()', () => {
     it('round-trip: Fill → snapshot → Fill сохраняет основные поля', () => {
       const accountId = makeAccountId();
@@ -820,7 +857,7 @@ describe('FillMapper', () => {
           5
         );
         expect(restored.timestamp.value).toBe(original.timestamp.value);
-        expect(assetIdToString(restored.settlementAssetId)).toContain('USDC');
+        expect(assetIdToString(restored.settlementAssetId)).toBe('CURRENCY:pUSD');
         // metadata сохраняется в round-trip
         expect(restoredMeta.liquidity).toBe(originalMeta.liquidity);
         expect(restoredMeta.tradeStatus).toBe(originalMeta.tradeStatus);
@@ -834,9 +871,59 @@ describe('FillMapper', () => {
       );
       const snapshot = FillMapper.toSnapshot(fill, metadata);
 
-      expect(snapshot.settlementAssetId).toContain('USDC');
+      expect(snapshot.settlementAssetId).toBe('CURRENCY:pUSD');
       expect(snapshot.tradeStatus).toBe('MATCHED');
     });
+
+    // Снапшот хранит валюту как есть: без скрытой миграции USDC → pUSD.
+    it.each<[string, string]>([
+      ['старый снапшот USDC восстанавливается как USDC', 'CURRENCY:USDC'],
+      ['снапшот pUSD восстанавливается как pUSD', 'CURRENCY:pUSD'],
+    ])('%s', (_label, asset) => {
+      const restored = FillMapper.fromSnapshot({
+        id: 'fill-currency',
+        orderId: '0x' + 'a'.repeat(64),
+        accountId: 'wallet:0x1234567890abcdef1234567890abcdef12345678',
+        venueId: 'POLYMARKET',
+        marketId: '0x' + 'b'.repeat(64),
+        tokenId: TEST_TOKEN_ID,
+        settlementAssetId: asset,
+        price: '0.65',
+        size: '50',
+        side: 'BUY',
+        timestampMs: 1700000000000,
+        feeAmount: '0.1',
+        feeAsset: asset,
+      });
+      expect(restored.ok).toBe(true);
+      if (restored.ok) {
+        expect(assetIdToString(restored.value.fill.settlementAssetId)).toBe(asset);
+        expect(assetIdToString(restored.value.fill.fee.asset)).toBe(asset);
+        expect(FillMapper.toSnapshot(restored.value.fill, restored.value.metadata).settlementAssetId).toBe(asset);
+      }
+    });
+
+    it.each(['CURRENCY:EUR', 'CURRENCY:PUSD', 'CURRENCY:usdc'])(
+      'снапшот с неизвестной (или не канонически написанной) валютой %s → Err, а не подстановка',
+      (asset) => {
+        const restored = FillMapper.fromSnapshot({
+          id: 'fill-currency',
+          orderId: '0x' + 'a'.repeat(64),
+          accountId: 'wallet:0x1234567890abcdef1234567890abcdef12345678',
+          venueId: 'POLYMARKET',
+          marketId: '0x' + 'b'.repeat(64),
+          tokenId: TEST_TOKEN_ID,
+          settlementAssetId: asset,
+          price: '0.65',
+          size: '50',
+          side: 'BUY',
+          timestampMs: 1700000000000,
+          feeAmount: '0',
+          feeAsset: asset,
+        });
+        expect(restored.ok).toBe(false);
+      },
+    );
 
     it('fromSnapshot() возвращает Err для невалидного fill ID', () => {
       const result = FillMapper.fromSnapshot({

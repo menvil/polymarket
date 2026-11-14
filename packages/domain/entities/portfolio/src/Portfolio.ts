@@ -123,9 +123,9 @@
 import Decimal from 'decimal.js';
 import { Quantity } from '@polymarket/value-objects';
 import { Result, Ok, Err } from '@polymarket/result';
-import type { InstrumentId, AccountId } from '@polymarket/ids';
+import type { InstrumentId, AccountId, SupportedCurrency } from '@polymarket/ids';
 import { InvalidBalanceError } from '@polymarket/errors';
-import { Balance, BalanceService } from '@polymarket/value-objects/balance';
+import { Balance, BalanceService, ValidateCurrencyMatch } from '@polymarket/value-objects/balance';
 import type { Fill } from '@polymarket/fill';
 import { Position, PositionLot } from '@polymarket/position';
 import {
@@ -430,16 +430,25 @@ export class Portfolio {
    * applyDirectDebit(amount) → available = max(0, available - amount)
    * ```
    *
+   * Best-effort касается только СУММЫ, но не валюты: сумма в другой валюте —
+   * `InvalidBalanceError` (`CURRENCY_MISMATCH`) до изменения состояния. Здесь
+   * стоял `Money.of(…, 'USDC')`, то есть списание любой валюты молча
+   * становилось списанием USDC — а у pUSD-портфеля ломало бы инвариант
+   * баланса.
+   *
    * @example
    * ```typescript
    * // fill на отменённый ордер: резервация уже снята
-   * const result = portfolio.applyDirectDebit(Money.of(notional, 'USDC'));
+   * const result = portfolio.applyDirectDebit(Money.of(notional, portfolio.balance.currency()));
    * ```
    */
   public applyDirectDebit(amount: Money): Result<Portfolio, InvalidBalanceError> {
+    const currencyCheck = ValidateCurrencyMatch.check(amount, this.balance.currency());
+    if (!currencyCheck.ok) return Err(currencyCheck.error);
+
     const currentAvailable = this.balance.available().value();
     const newAvailableValue = Decimal.max(new Decimal(0), currentAvailable.minus(amount.value()));
-    const newAvailable = Money.of(newAvailableValue, 'USDC');
+    const newAvailable = Money.of(newAvailableValue, this.balance.currency());
     const balanceResult = BalanceService.updateAvailable(this.balance, newAvailable);
     if (!balanceResult.ok) {
       return Err(balanceResult.error);
@@ -764,6 +773,22 @@ export class Portfolio {
    * Инвариант проверяется на ПОЛНОМ новом наборе (см. {@link _rebalanced}),
    * поэтому промежуточное несогласованное состояние наружу не выходит.
    *
+   * ### Валюта
+   *
+   * Один `Portfolio` — один денежный collateral. Исполнение обязано
+   * рассчитываться в валюте баланса портфеля:
+   *
+   * ```text
+   * Portfolio pUSD + Fill settlement CURRENCY:pUSD  → применяется
+   * Portfolio pUSD + Fill settlement CURRENCY:USDC  → Err до изменения состояния
+   * ```
+   *
+   * Суммы `Fill` (комиссия, нетто-поток) переводятся в `Money` в валюте
+   * портфеля только ПОСЛЕ этой проверки: без неё перевод молча выдал бы
+   * USDC-исполнение за pUSD (или наоборот). Ненулевая комиссия уже в валюте
+   * расчёта — это инвариант `Fill`. `reservedNotional` проверяет
+   * `BalanceService.consumeReserved`.
+   *
    * ### Комиссия
    *
    * Портфель её не считает и не конвертирует. Всё, что нужно, уже выражено
@@ -811,6 +836,11 @@ export class Portfolio {
         },
       ));
     }
+
+    // Валюта расчёта — тоже ДО арифметики: суммы Fill ниже переводятся в
+    // Money валюты портфеля, и без этой проверки перевод был бы подменой.
+    const currencyError = Portfolio._settlementCurrencyError(fill, this.balance.currency());
+    if (currencyError !== undefined) return Err(currencyError);
 
     const instrumentId = assetIdToInstrumentId(fill.tokenId);
     if (instrumentId === undefined) {
@@ -1171,11 +1201,19 @@ export class Portfolio {
    *
    * Вынесено, чтобы {@link applyFill} не собирал баланс сам — агрегат меняет
    * деньги ровно одним способом.
+   *
+   * Сумма в другой валюте — отказ (`CURRENCY_MISMATCH`): здесь стояло
+   * `Money.of(next, balance.currency())` без проверки, то есть списание
+   * USDC-суммы с pUSD-баланса прошло бы как списание pUSD.
    */
   private static _debitAvailable(
     balance: Balance,
     amount: Money,
   ): Result<Balance, InvalidBalanceError> {
+    // Сумма в чужой валюте — отказ, а не списание «той же цифры» в своей.
+    const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
+    if (!currencyCheck.ok) return Err(currencyCheck.error);
+
     const next = balance.available().value().minus(amount.value());
 
     // Fail-closed. Здесь стоял `Decimal.max(0, …)`, то есть нехватка средств
@@ -1195,6 +1233,42 @@ export class Portfolio {
     }
 
     return BalanceService.updateAvailable(balance, Money.of(next, balance.currency()));
+  }
+
+  /**
+   * Проверяет, что исполнение рассчитывается в валюте баланса портфеля.
+   *
+   * @param fill - Применяемое исполнение
+   * @param currency - Валюта баланса портфеля
+   * @returns `undefined`, если валюта та же, иначе ошибка операции
+   *
+   * @remarks
+   * Расчётный актив обязан быть ДЕНЕЖНЫМ (`CURRENCY:*`) и ровно той же
+   * валюты. Курса между валютами в домене нет, поэтому `CURRENCY:USDC` к
+   * pUSD-портфелю не применяется, даже если оба доллара.
+   *
+   * @example
+   * ```typescript
+   * const error = Portfolio._settlementCurrencyError(fill, 'pUSD');
+   * if (error !== undefined) return Err(error);
+   * ```
+   */
+  private static _settlementCurrencyError(
+    fill: Fill,
+    currency: SupportedCurrency,
+  ): PortfolioOperationError | undefined {
+    const asset = fill.settlementAssetId;
+    if (asset.type === 'CURRENCY' && asset.currency === currency) return undefined;
+    return new PortfolioOperationError(
+      `applyFill: fill settles in ${assetIdToString(asset)}, portfolio balance is in ${currency}`,
+      {
+        context: {
+          fillId: String(fill.id),
+          settlementAssetId: assetIdToString(asset),
+          portfolioCurrency: currency,
+        },
+      },
+    );
   }
 
   /**

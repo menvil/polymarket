@@ -386,7 +386,7 @@ describe('parsePolicyConfig: отказы по деньгам', () => {
 
     expect(error.context?.field).toBe('minLiquidity.currency');
     expect(error.context?.value).toBe('EUR');
-    expect(error.context?.allowed).toEqual(['USDC']);
+    expect(error.context?.allowed).toEqual(['USDC', 'pUSD']);
   });
 });
 

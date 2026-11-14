@@ -19,7 +19,7 @@ export { AssetIdValidationError };
  *
  * @remarks
  * Может быть:
- * - Currency (USDC и другие из SupportedCurrency)
+ * - Currency (USDC, pUSD и другие из SupportedCurrency)
  * - OutcomeToken (UP/DOWN токен on-chain рынка)
  *
  * ⚠️ ВАЖНО: OutcomeToken только для on-chain protocols!
@@ -267,6 +267,27 @@ export const AssetId = {
   USDC: deepFreezeAssetId({
     type: 'CURRENCY' as const,
     currency: KnownCurrencies.USDC,
+  }),
+
+  /**
+   * Константа для pUSD currency asset (`CURRENCY:pUSD`)
+   *
+   * @remarks
+   * pUSD (Polymarket USD) — физический collateral Polymarket CLOB V2. Это
+   * отдельный токен, а не другое имя USDC: `AssetIdHelpers.equals(PUSD, USDC)`
+   * — `false`. Защищена через Object.freeze() для гарантии иммутабельности.
+   *
+   * @example
+   * ```typescript
+   * import { AssetIdHelpers, assetIdToString } from '@polymarket/ids';
+   *
+   * assetIdToString(AssetIdHelpers.PUSD);                    // 'CURRENCY:pUSD'
+   * AssetIdHelpers.equals(AssetIdHelpers.PUSD, AssetIdHelpers.USDC); // false
+   * ```
+   */
+  PUSD: deepFreezeAssetId({
+    type: 'CURRENCY' as const,
+    currency: KnownCurrencies.pUSD,
   }),
 
   /**

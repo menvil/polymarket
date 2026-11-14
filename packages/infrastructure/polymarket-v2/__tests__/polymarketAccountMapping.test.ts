@@ -459,6 +459,21 @@ describe('P0: REST ClobTrade и приватный WS дают ОДИН canonica
     ]);
   });
 
+  it.each<[string, Execution]>([
+    ['TAKER', TAKER],
+    ['один наш MAKER', SINGLE_MAKER],
+    ['несколько наших MAKER', MULTI_MAKER],
+    ['cross-outcome MAKER', CROSS_OUTCOME_MAKER],
+  ])('%s: оба пути рассчитываются в одном активе — CURRENCY:pUSD (settlement и комиссия)', (_label, execution) => {
+    // Нельзя перевести REST на pUSD и оставить WS на USDC: актив расчёта
+    // входит в факт, и findFillFactDifference поймал бы расхождение.
+    const { ws, rest } = bothPaths(execution);
+    for (const entry of [...ws, ...rest]) {
+      expect(assetIdToString(entry.fill.settlementAssetId)).toBe('CURRENCY:pUSD');
+      expect(assetIdToString(entry.fill.fee.asset)).toBe('CURRENCY:pUSD');
+    }
+  });
+
   it('TAKER-комиссия считается одинаково обоими путями', () => {
     const { ws, rest } = bothPaths(TAKER);
     expect(rest[0]!.fill.fee.equals(ws[0]!.fill.fee)).toBe(true);
@@ -578,7 +593,7 @@ describe('ACCEPTANCE: одно TAKER-исполнение — один факт 
   });
 });
 
-/** Комиссия исполнения в USDC числом. */
+/** Комиссия исполнения в pUSD числом. */
 function feeOf(fill: Fill): number {
   return fill.fee.quantity.amount().value().toNumber();
 }
