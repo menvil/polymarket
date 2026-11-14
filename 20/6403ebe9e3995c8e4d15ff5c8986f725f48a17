@@ -1,0 +1,43 @@
+packages/application/account-reconciliation/README.md
+  s_229ddb4e5aa529::t_2894fdd604a07c 242-243,592-595
+packages/infrastructure/polymarket-v2/__tests__/polymarketAccountMapping.test.ts
+  s_229ddb4e5aa529::t_0cec3972338b78 15-17,20-21,80-94,103-106,113-114,485-506,539-577
+packages/domain/entities/fill/docs/fill.md
+  s_229ddb4e5aa529::t_cb79128a5e05ab 243-269,272-274,280-284,287-291
+packages/infrastructure/polymarket-v2/README.md
+  s_229ddb4e5aa529::t_2894fdd604a07c 315-320
+docs/guides/account-venue-state.md
+  s_229ddb4e5aa529::t_f0d6fbf5040e47 439-442,445-451,454,467-472,482-489,525-530,547,579-583
+packages/application/handlers/docs/handlers.md
+  s_229ddb4e5aa529::t_5089818b20e66a 34-36,43-50,55-60,62-95
+packages/domain/entities/fill/__tests__/unit/FillMapper.test.ts
+  s_229ddb4e5aa529::t_ccb8f9f57e701c 6
+  s_229ddb4e5aa529::t_2536c22840f556 274,327-413
+packages/infrastructure/polymarket-v2/src/polymarketAccountMapping.ts
+  s_229ddb4e5aa529::t_372ab644f41514 34-35,454-459
+packages/application/handlers/src/FillEventHandler.ts
+  s_229ddb4e5aa529::t_e1931d8e328905 58-60,73-78,416-419,421-423,432-434,443-481
+packages/domain/entities/fill/src/mappers/FillMapper.ts
+  s_229ddb4e5aa529::t_154d85f67d9cfb 62-66,227-231,348,973-974,979-982,985-989,991-996,998-1001,1003-1006,1012-1015,1022-1032,1034,1039-1040,1042-1068
+packages/infrastructure/polymarket-v2/docs/account-venue-state-source.md
+  s_229ddb4e5aa529::t_87355436a48e08 238,245-247,250-261,263-267,272-278,450,483,492
+packages/application/handlers/__tests__/FillEventHandler.test.ts
+  s_229ddb4e5aa529::t_8c28e19fdb5065 698,700
+  s_229ddb4e5aa529::t_54def0dc6bf1dc 91,433,435,625-697,699,701-732
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "206403ebe9e3995c8e4d15ff5c8986f725f48a17",
+  "prompts": {},
+  "sessions": {
+    "s_229ddb4e5aa529": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "953c2e10-8b5e-4c82-8e53-5ebbf8caad72",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
