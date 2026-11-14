@@ -485,7 +485,10 @@ production-путь исполнения на нём больше не стои�
 ### Пример (composition root)
 
 ```typescript
-import { PolymarketStaticTakerFeeRateResolver } from '@polymarket/polymarket-v2/account';
+import {
+  PolymarketAccountVenueStateSource,
+  PolymarketStaticTakerFeeRateResolver,
+} from '@polymarket/polymarket-v2/account';
 import { POLYMARKET_CRYPTO_TAKER_FEE_RATE } from '@polymarket/fill';
 import { FillEventHandler } from '@polymarket/handlers';
 
