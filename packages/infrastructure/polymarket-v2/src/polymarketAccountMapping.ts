@@ -27,6 +27,14 @@
  * политики `FillId`, владения maker-заявкой и cross-outcome здесь нет — только
  * переименование полей, явный перевод статуса и запрет подстановок
  * `FillMapper` для полей нашей стороны сделки (токен, сторона).
+ *
+ * Время и комиссия исполнения — тоже общие с приватным WS:
+ *
+ * ```text
+ * Fill.timestamp  ← match_time (REST matchedAt под тем же именем, что у WS)
+ * Fill.fee TAKER  ← PolymarketTakerFeeRateResolver по рынку (тот же порт,
+ *                   что у FillEventHandler); feeRateBps не участвует
+ * ```
  */
 import type { AuthoritativeFillState, AuthoritativeOpenOrderState, AuthoritativeOrderState, AuthoritativeOutcomeAssetId } from '@polymarket/account-reconciliation';
 import type { TradeStatus as VendorTradeStatus } from '@polymarket/bindings';
@@ -35,6 +43,7 @@ import {
   FillMapper,
   findFillFactDifference,
   type ExecutionMetadata,
+  type PolymarketTakerFeeRateResolver,
   type PolymarketTradeEventMappingOptions,
   type TradeStatus,
 } from '@polymarket/fill';
@@ -56,7 +65,6 @@ import {
   type Quantity,
   type Side,
 } from '@polymarket/value-objects';
-import type { PolymarketTakerFeeRateResolver } from './PolymarketTakerFeeRateResolver.js';
 
 /**
  * Отказ перевода или чтения состояния аккаунта Polymarket.
@@ -425,7 +433,7 @@ export interface PolymarketTradeContext {
  * transactionHash → transaction_hash
  * feeRateBps → НЕ передаётся (в REST приходит "0"; ставку даёт резолвер)
  * status → canonical (без префикса TRADE_STATUS_)
- * matchedAt (ISO) → timestamp (мс): время исполнения, а не время сообщения
+ * matchedAt (ISO) → match_time (мс): время исполнения; timestamp НЕ передаётся
  * makerOrders[] → maker_orders[] (order_id, matched_amount, price, asset_id,
  *                                 side, owner, maker_address, outcome)
  * maker_address → НАШ адрес из конфигурации
@@ -440,6 +448,12 @@ export interface PolymarketTradeContext {
  * `feeRateBps` (и верхнего уровня, и maker-заявок) намеренно не передаётся:
  * в REST он приходит `"0"`, и `FillMapper` выбрал бы по нему нулевую
  * комиссию тейкера. Ставку `mapPolymarketClobTrade` берёт у резолвера.
+ *
+ * `matchedAt` передаётся под именем `match_time` — смысл поля, а не маска:
+ * это время исполнения, и `FillMapper` берёт `Fill.timestamp` именно из
+ * `match_time` (у приватного WS — то же поле). `timestamp` (время
+ * сообщения) у REST-записи нет и не подставляется: `FillMapper` откатился
+ * бы на него, только если бы `match_time` отсутствовал.
  *
  * Перед переименованием проверяются поля, которые `FillMapper` при пропуске
  * восстановил бы сам (сторона и токен тейкера; токен и сторона НАШИХ
@@ -493,7 +507,7 @@ export function polymarketClobTradeToFillMapperInput(
       maker_address: makerOrder.makerAddress,
       outcome: makerOrder.outcome,
     })),
-    timestamp: String(matchedAt.value.toNumber()),
+    match_time: String(matchedAt.value.toNumber()),
     transaction_hash: trade.transactionHash,
   });
 }

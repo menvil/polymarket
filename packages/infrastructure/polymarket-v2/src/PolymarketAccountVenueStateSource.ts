@@ -74,6 +74,7 @@ import type {
   ListAccountTradesRequest,
   ListOpenOrdersRequest,
 } from '@polymarket/client/actions';
+import type { PolymarketTakerFeeRateResolver } from '@polymarket/fill';
 import {
   KnownVenues,
   accountIdEquals,
@@ -89,7 +90,6 @@ import {
 import { Err, Ok, type Result } from '@polymarket/result';
 import type { Money } from '@polymarket/value-objects';
 import type { PolymarketAuthoritativeBalanceReader } from './PolymarketClobRefreshedBalanceReader.js';
-import type { PolymarketTakerFeeRateResolver } from './PolymarketTakerFeeRateResolver.js';
 import {
   PolymarketAccountStateError,
   mapPolymarketClobTrade,

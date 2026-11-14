@@ -40,6 +40,15 @@ export { findFillFactDifference, sameFillFact } from './factIdentity.js';
 export type { FillFactDifference, FillFactField } from './factIdentity.js';
 export { FillMapper } from './mappers/FillMapper.js';
 export type { PolymarketTradeEventMappingOptions } from './mappers/FillMapper.js';
+/**
+ * Порт ставки taker-комиссии рынка (см. PolymarketTakerFeeRateResolver.ts).
+ *
+ * @remarks
+ * Один контракт для приватного WS (`FillEventHandler`) и REST
+ * (`PolymarketAccountVenueStateSource`): комиссия TAKER-исполнения зависит от
+ * политики рынка, а не от `fee_rate_bps` сообщения.
+ */
+export type { PolymarketTakerFeeRateResolver } from './PolymarketTakerFeeRateResolver.js';
 export type { Liquidity } from './value-objects/Liquidity.js';
 export { ALL_LIQUIDITY, isValidLiquidity } from './value-objects/Liquidity.js';
 export {

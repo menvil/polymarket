@@ -238,9 +238,22 @@ Production-реализация порта — `PolymarketAccountVenueStateSourc
 ```text
 сделано       граница authoritative-состояния площадки
 сделано       PolymarketAccountVenueStateSource на официальном @polymarket/client
+сделано       один факт исполнения REST ↔ приватный WS: FillId, время
+              (match_time), ставка комиссии TAKER (общий резолвер)
 следующий MR  state matcher + atomic correction planner;
               уход от transitional-модели authoritative-Portfolio
 затем         runtime wiring: STARTUP / PERIODIC / RECONNECT
+```
+
+Перед matcher-ом, который мутирует `Portfolio`, остаются открытыми:
+
+```text
+CLOSED  ✓ REST/WS FillId
+        ✓ REST/WS execution timestamp
+        ✓ REST/WS taker fee source policy
+OPEN    - pUSD vs canonical collateral representation
+        - CLOB refreshed balance vs physical/on-chain truth
+        - live vendor status/API verification
 ```
 
 ### Только то, что нужно текущему торговому контуру
@@ -566,13 +579,23 @@ WS: MATCHED → локальный fill APPLIED → Position увеличена
 (откат, перестроение или коррекция — решит state matcher); текущее состояние
 площадки побеждает provisional историю событий.
 
-**Та же идентичность `Fill`.** Приватная WS-сделка и свежая REST-сделка
+**Тот же факт `Fill`.** Приватная WS-сделка и свежая REST-сделка
 аккаунта, если это одно исполнение площадки, обязаны дать **один и тот же**
-canonical `FillId`. Правило уже есть (`FillMapper`: taker/maker,
+canonical `Fill`: тот же `FillId` и `findFillFactDifference(wsFill, restFill)
+=== undefined`. Правило идентичности уже есть (`FillMapper`: taker/maker,
 `maker_orders`, `owner`/`makerAddress`, cross-outcome, составной `FillId` при
 нескольких наших maker-заявках) — отдельный упрощённый PnL-style маппер с
-другой политикой идентичности недопустим. Подробности для Polymarket-адаптера
-— в `docs/guides/account-venue-state.md`.
+другой политикой идентичности недопустим. Факт тоже общий:
+
+```text
+Fill.timestamp  = venue execution match_time; timestamp сообщения — только
+                  если match_time отсутствует
+Fill.fee TAKER  = ставка рынка от PolymarketTakerFeeRateResolver
+                  (@polymarket/fill) — один контракт для WS и REST
+receivedAt      = время НАШЕЙ обработки (FILL_RECEIVED), не время исполнения
+```
+
+Подробности для Polymarket-адаптера — в `docs/guides/account-venue-state.md`.
 
 ### `getOrderState` — адресный запрос
 

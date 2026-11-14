@@ -45,6 +45,7 @@
  *   "fee_rate_bps": "0",
  *   "status": "MATCHED",
  *   "owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+ *   "match_time": "1672290700",
  *   "timestamp": "1672290701",
  *   "trader_side": "TAKER",
  *   "transaction_hash": "0xabcdef...",
@@ -56,8 +57,18 @@
  * - `trader_side = "TAKER"`: orderId = `taker_order_id`, side/size/price из верхнего уровня
  * - `trader_side = "MAKER"`: orderId из `maker_orders` (matched by owner UUID), side инвертирован
  *
+ * ### Время исполнения (`Fill.timestamp`):
+ * - `match_time` — момент исполнения на площадке; если поле есть, берётся оно
+ * - `timestamp` — время сообщения/обновления; используется, ТОЛЬКО если
+ *   `match_time` отсутствует (`undefined`/`null`)
+ * - `match_time` есть, но невалиден → отказ, а не откат на `timestamp`
+ *
+ * Так приватный WS (сообщение может прийти позже исполнения) и REST
+ * (`matchedAt`) дают один и тот же факт исполнения.
+ *
  * ### Расчёт комиссии:
- * - TAKER: feeUSDC = round5(C × 0.07 × p × (1-p)) для crypto-рынков
+ * - TAKER + `takerFeeRate` вызывающего: round5(C × rate × p × (1-p))
+ * - TAKER без `takerFeeRate` (legacy): fee_rate_bps > 0 → crypto-ставка 0.07
  * - MAKER: fee = 0 (мейкеры не платят комиссию на Polymarket)
  *
  * @example
@@ -88,7 +99,7 @@ import {
   assetIdToString,
 } from '@polymarket/ids';
 import { OutcomePrice, Quantity, Fee } from '@polymarket/value-objects';
-import { TimestampService } from '@polymarket/timestamp';
+import { TimestampService, type Timestamp } from '@polymarket/timestamp';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- внутренняя Decimal-арифметика/парсинг границы после VO-типизированного публичного API, см. docs/architecture/boundary-contract.md, Решение 1
 import Decimal from 'decimal.js';
@@ -120,10 +131,13 @@ const VALID_TRADE_STATUSES: ReadonlySet<string> = new Set([
  *
  * @remarks
  * Сейчас здесь одно поле — ставка taker-комиссии, известная вызывающему из
- * НАДЁЖНОГО источника (метаданных рынка). Оно нужно REST-пути: в записи
- * сделки аутентифицированного REST `feeRateBps` приходит `"0"` и не
- * заполняется (см. `polymarket-fee.ts`), поэтому по нему нельзя решать,
- * была ли комиссия. Без этого параметра поведение разбора прежнее.
+ * НАДЁЖНОГО источника: порта `PolymarketTakerFeeRateResolver` по рынку
+ * исполнения. Её передают ОБА production-пути — приватный WS
+ * (`FillEventHandler`) и REST (`PolymarketAccountVenueStateSource`): в REST
+ * `feeRateBps` приходит `"0"`, а `fee_rate_bps` WS-события заполнен
+ * случайно, поэтому ни по одному из них нельзя решать, была ли комиссия.
+ * Без этого параметра поведение разбора прежнее (legacy-правило по
+ * `fee_rate_bps`) — для прочих вызывающих и тестов.
  */
 export interface PolymarketTradeEventMappingOptions {
   /**
@@ -195,10 +209,23 @@ export class FillMapper {
    * TAKER без options              прежнее правило: fee_rate_bps > 0 → крипто-ставка
    * ```
    *
-   * Параметр нужен REST-пути: там `fee_rate_bps` приходит `"0"` и по нему
-   * нельзя решать, была ли комиссия. Комиссия входит в факт исполнения
-   * (`findFillFactDifference`), поэтому один и тот же тейкерский fill,
-   * разобранный из WS и из REST, обязан получить одну и ту же комиссию.
+   * Ставку передают оба production-пути (приватный WS и REST), взяв её у
+   * `PolymarketTakerFeeRateResolver` по рынку исполнения: `fee_rate_bps`
+   * ни в REST (`"0"`), ни в WS (заполнен случайно) комиссию не определяет.
+   * Комиссия входит в факт исполнения (`findFillFactDifference`), поэтому
+   * один и тот же тейкерский fill, разобранный из WS и из REST, обязан
+   * получить одну и ту же комиссию.
+   *
+   * ### Время исполнения
+   *
+   * `Fill.timestamp` — момент исполнения на площадке, а не время доставки
+   * сообщения ({@link parsePolymarketExecutionTime}):
+   *
+   * ```text
+   * match_time есть и валиден        → match_time
+   * match_time есть, но невалиден    → Err (без отката на timestamp)
+   * match_time отсутствует / null    → timestamp
+   * ```
    *
    * ### Почему массив:
    * В cross-outcome trades (тейкер продаёт DOWN, мейкеры покупают UP) один WS-event
@@ -215,7 +242,7 @@ export class FillMapper {
    * формат `{tradeId}:{orderId}`. Это гарантирует идемпотентность в ProcessFillUseCase.
    *
    * ### Алгоритм:
-   * 1. Парсим общие поля (id, market, asset_id, timestamp)
+   * 1. Парсим общие поля (id, market, asset_id, время исполнения)
    * 2. TAKER: один fill — orderId из taker_order_id, FillId = tradeId
    * 3. MAKER: N fills — для каждого нашего maker_order по owner UUID или maker_address
    *    - Если один наш ордер → FillId = tradeId (обратная совместимость)
@@ -314,36 +341,9 @@ export class FillMapper {
       );
     }
 
-    // Извлечь timestamp
-    const timestampRaw = raw['timestamp'];
-    if (timestampRaw === undefined || timestampRaw === null) {
-      return Err(
-        new ValidationError('Invalid trade event: missing timestamp', {
-          context: { field: 'timestamp' },
-        })
-      );
-    }
-
-    // Polymarket fill события шлют timestamp в миллисекундах (13 цифр, ~1.7e12).
-    // Для обратной совместимости: если значение < 1e12 — считаем секундами и умножаем на 1000.
-    const timestampRawNum = Number(String(timestampRaw));
-    if (!Number.isFinite(timestampRawNum) || timestampRawNum <= 0) {
-      return Err(
-        new ValidationError('Invalid trade event: timestamp must be a positive number', {
-          context: { field: 'timestamp', value: timestampRaw },
-        })
-      );
-    }
-    const timestampMs = timestampRawNum < 1e12 ? timestampRawNum * 1000 : timestampRawNum;
-
-    const timestampResult = TimestampService.create(timestampMs);
-    if (!timestampResult.ok) {
-      return Err(
-        new ValidationError(`Invalid trade event: ${timestampResult.error.message}`, {
-          context: { field: 'timestamp', value: timestampRaw },
-        })
-      );
-    }
+    // Время исполнения: match_time, а timestamp — только если match_time отсутствует
+    const timestampResult = parsePolymarketExecutionTime(raw);
+    if (!timestampResult.ok) return Err(timestampResult.error);
 
     // Логика TAKER vs MAKER: определяем orderId, side, size, price, и effectiveTokenId.
     // В cross-outcome fills (тейкер DOWN, мы мейкер UP) top-level asset_id = DOWN токен (тейкерский).
@@ -956,6 +956,85 @@ export class FillMapper {
 
     return Ok({ fill: fillResult.value, metadata });
   }
+}
+
+/**
+ * Время исполнения сделки Polymarket → canonical `Timestamp`.
+ *
+ * @param raw - Сделка в форме user-channel события (WS или REST-совместимая)
+ * @returns Момент исполнения либо отказ
+ * @throws Не бросает: отказ возвращается как `Err(ValidationError)`
+ *
+ * @remarks
+ * Единственное место разбора времени исполнения в `FillMapper`.
+ *
+ * ### Какое поле
+ *
+ * ```text
+ * match_time есть (не undefined/null) → match_time; невалиден → Err
+ * match_time отсутствует / null       → timestamp;  невалиден → Err
+ * нет ни того, ни другого             → Err
+ * ```
+ *
+ * `match_time` — момент исполнения на площадке, `timestamp` WS-события —
+ * время сообщения/обновления: оно может быть позже исполнения (повторная
+ * доставка, смена статуса MATCHED → CONFIRMED). `Fill.timestamp` входит в
+ * неизменяемый факт исполнения (`findFillFactDifference`), поэтому время
+ * доставки в него попадать не должно — иначе WS и REST (`matchedAt`) дали бы
+ * один `FillId`, но разные факты.
+ *
+ * Присутствующий, но невалидный `match_time` (пустой, нечисловой, `NaN`,
+ * ноль, отрицательный) — отказ, а НЕ откат на `timestamp`: откат скрыл бы
+ * испорченное authoritative-время исполнения временем доставки.
+ *
+ * ### Секунды или миллисекунды
+ *
+ * Одно правило для обоих полей: значение `< 1e12` — секунды (× 1000), иначе
+ * миллисекунды. Принимаются строка и число; часы (`Date.now()`) не
+ * используются никогда.
+ *
+ * @example
+ * ```typescript
+ * parsePolymarketExecutionTime({ match_time: '1700000000', timestamp: '1700000030' });
+ * // Ok(Timestamp 1700000000000) — время доставки не участвует
+ * parsePolymarketExecutionTime({ match_time: 'garbage', timestamp: '1700000030' });
+ * // Err(ValidationError) — без отката на timestamp
+ * ```
+ *
+ * @internal
+ */
+function parsePolymarketExecutionTime(raw: Record<string, unknown>): Result<Timestamp, ValidationError> {
+  const matchTime = raw['match_time'];
+  const field = matchTime === undefined || matchTime === null ? 'timestamp' : 'match_time';
+  const value = field === 'match_time' ? matchTime : raw['timestamp'];
+  if (value === undefined || value === null) {
+    return Err(
+      new ValidationError('Invalid trade event: missing execution time (match_time or timestamp)', {
+        context: { field: 'match_time' },
+      })
+    );
+  }
+
+  const numeric = typeof value === 'string' || typeof value === 'number' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return Err(
+      new ValidationError(`Invalid trade event: ${field} must be a positive number`, {
+        context: { field, value },
+      })
+    );
+  }
+
+  // Polymarket шлёт и секунды (10 цифр), и миллисекунды (13 цифр, ~1.7e12).
+  const milliseconds = numeric < 1e12 ? numeric * 1000 : numeric;
+  const created = TimestampService.create(milliseconds);
+  if (!created.ok) {
+    return Err(
+      new ValidationError(`Invalid trade event: ${field}: ${created.error.message}`, {
+        context: { field, value },
+      })
+    );
+  }
+  return Ok(created.value);
 }
 
 /**

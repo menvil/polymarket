@@ -410,6 +410,112 @@ Legacy-рантайм API позиций не использовал вовсе:
 токене был адресный CLOB `CONDITIONAL`-баланс — тот самый, у которого
 известен фантомный случай.
 
+## Один факт исполнения: приватный WS ↔ REST
+
+### Проблема
+
+`FillId` у приватного WS и REST уже общий, но неизменяемый факт исполнения
+(`findFillFactDifference`) включает ещё `timestamp` и `fee`. До этого шага
+они расходились у одного и того же исполнения:
+
+```text
+           Fill.timestamp                 Fill.fee TAKER
+WS   было  timestamp СООБЩЕНИЯ            fee_rate_bps > 0 → ставка 0.07
+REST было  matchedAt (время исполнения)   ставка рынка от резолвера
+```
+
+WS-сообщение приходит позже исполнения (повторная доставка, смена статуса
+`MATCHED → CONFIRMED`), а `fee_rate_bps` заполнен случайно (у REST
+`feeRateBps` всегда `"0"`). Итог — один `FillId`, но разный факт: matcher
+увидел бы конфликт неизменяемого факта там, где исполнение одно.
+
+### Решение
+
+Факт зависит от времени исполнения на площадке и политики комиссии рынка, а
+не от времени доставки и не от случайно заполненного поля vendor-payload:
+
+```text
+           Fill.timestamp                     Fill.fee TAKER
+WS + REST  match_time исполнения              ставка рынка от одного
+           (timestamp — только если           PolymarketTakerFeeRateResolver
+            match_time отсутствует)           (@polymarket/fill)
+```
+
+```mermaid
+flowchart LR
+    WS["private WS: match_time T, timestamp T+30s, fee_rate_bps 0"] --> H[FillEventHandler._mapFills]
+    REST["REST ClobTrade: matchedAt T, feeRateBps 0"] --> C["polymarketClobTradeToFillMapperInput: matchedAt → match_time"]
+    H -->|"raw.market (TAKER)"| R[PolymarketTakerFeeRateResolver]
+    C -->|"conditionId (TAKER)"| R
+    R -->|takerFeeRate| FM[FillMapper.allFromPolymarketTradeEvent]
+    H --> FM
+    C --> FM
+    FM --> F["один canonical Fill: timestamp = T, fee = size × rate × p × (1 − p)"]
+```
+
+### Шаги
+
+1. **Время.** `FillMapper` (`parsePolymarketExecutionTime`) берёт
+   `match_time`, если поле есть; присутствующий, но невалидный `match_time` —
+   отказ, без отката на `timestamp`; `timestamp` — только если `match_time`
+   отсутствует (`undefined`/`null`). Значение `< 1e12` — секунды, иначе
+   миллисекунды, для обоих полей одинаково; часов (`Date.now()`) нет.
+2. **REST-форма.** `matchedAt` (ISO) уходит в `FillMapper` под именем
+   `match_time` (мс) — смысл поля, а не маска под время сообщения;
+   `timestamp` у REST-формы не выдумывается.
+3. **Ставка.** Порт `PolymarketTakerFeeRateResolver` объявлен в
+   `@polymarket/fill` (Application не импортирует Infrastructure);
+   реализация `PolymarketStaticTakerFeeRateResolver` — в `polymarket-v2`,
+   тип re-экспортирован из `@polymarket/polymarket-v2/account`.
+4. **Приватный WS.** `FillEventHandler` получает резолвер ОБЯЗАТЕЛЬНОЙ
+   зависимостью; MATCHED и CONFIRMED-fallback разбирают событие одним
+   `_mapFills`. TAKER: `raw.market` → `MarketId` → ставка → `FillMapper`;
+   MAKER: резолвер не вызывается, комиссия 0. Отказ (невалидный рынок, отказ
+   резолвера, невалидная ставка) — ошибка в лог, `FILL_RECEIVED` не
+   публикуется, в кеш ничего не попадает. На `fee_rate_bps` не откатывается.
+5. **REST.** `PolymarketAccountVenueStateSource` спрашивает ставку у того же
+   порта по `conditionId`; поведение не менялось.
+6. **`receivedAt`** у `FILL_RECEIVED` остаётся `clock.now()` — время НАШЕЙ
+   обработки. С `Fill.timestamp` (временем исполнения) его не сводят.
+
+Legacy-правило `FillMapper` без опции `takerFeeRate` (`fee_rate_bps > 0` →
+`0.07`) не удалено — у него есть другие вызывающие, — но ни один
+production-путь исполнения на нём больше не стоит.
+
+### Пример (composition root)
+
+```typescript
+import { PolymarketStaticTakerFeeRateResolver } from '@polymarket/polymarket-v2/account';
+import { POLYMARKET_CRYPTO_TAKER_FEE_RATE } from '@polymarket/fill';
+import { FillEventHandler } from '@polymarket/handlers';
+
+// ОДИН экземпляр — обоим путям исполнения.
+const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([
+  [conditionId, POLYMARKET_CRYPTO_TAKER_FEE_RATE],
+]);
+if (!takerFeeRates.ok) throw takerFeeRates.error;
+
+const fillEvents = new FillEventHandler(eventBus, metadataGenerator, clock, logger, takerFeeRates.value);
+const venueState = PolymarketAccountVenueStateSource.create(config, {
+  client,
+  balanceReader,
+  takerFeeRates: takerFeeRates.value,
+});
+```
+
+### Приёмочный инвариант
+
+Одно TAKER-исполнение: WS `match_time = T`, `timestamp = T + 30 с`,
+`fee_rate_bps = "0"`; REST `matchedAt = T`, `feeRateBps = "0"`; общий
+резолвер `рынок → 0.07`. Тогда `String(wsFill.id) === String(restFill.id)` и
+`findFillFactDifference(wsFill, restFill) === undefined`. Проверяется двумя
+звеньями, не нарушая границ пакетов:
+
+| звено | тест |
+| --- | --- |
+| REST-конвертер + `FillMapper` со ставкой общего настоящего резолвера ↔ WS-событие с той же политикой | `polymarket-v2/__tests__/polymarketAccountMapping.test.ts` (`ACCEPTANCE`) |
+| `FillEventHandler` публикует ровно `FillMapper`-факт со ставкой резолвера; REST-форма той же сделки даёт тот же факт | `handlers/__tests__/FillEventHandler.test.ts` (`acceptance (WS-звено)`) |
+
 ## Открытые вопросы для Polymarket-адаптера
 
 | вопрос | почему важен |
@@ -420,9 +526,20 @@ Legacy-рантайм API позиций не использовал вовсе:
 | закрывает ли `updateBalanceAllowance` фантомный MINT-случай, или нужна on-chain кросс-проверка `balanceOf` | иначе настоящие токены сведутся к нулю по кэшу |
 | регистр и форма статусов заявки (`LIVE` vs `live` vs префикс), смысл `INVALID` | сейчас принимается только задокументированный верхний регистр, `INVALID` — `Err` |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
-| совпадает ли WS `timestamp` с `match_time` | REST берёт `match time`; иначе один `FillId`, но разный факт. Блокер до matcher/runtime wiring |
+| присылает ли WS user-channel `match_time` у каждого trade-события | без него `FillMapper` берёт `timestamp` сообщения, и факт разойдётся с REST |
 | pUSD vs USDC: collateral CLOB V2 — pUSD, canonical `Portfolio` знает только USDC | решить до того, как matcher начнёт менять `Portfolio`: своя валюта или намеренная нормализация в USD-эквивалент |
-| приходит ли WS `fee_rate_bps` положительным у тейкерской сделки | если нет, WS-путь обязан брать ставку у того же резолвера, что и REST |
+| CLOB refreshed balance vs физическая / on-chain истина | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не on-chain |
+
+Блокеры перед matcher-ом, который мутирует `Portfolio`:
+
+```text
+CLOSED  ✓ REST/WS FillId
+        ✓ REST/WS execution timestamp
+        ✓ REST/WS taker fee source policy
+OPEN    - pUSD vs canonical collateral representation
+        - CLOB refreshed balance vs physical/on-chain truth
+        - live vendor status/API verification
+```
 
 Закрыто при реализации адаптера:
 
@@ -436,12 +553,14 @@ Legacy-рантайм API позиций не использовал вовсе:
 - в SDK 0.6.0 поле токена — `tokenId` (а не `assetId`), а
   `updateBalanceAllowance` — action-функция `@polymarket/client/actions`, а не
   метод экземпляра клиента;
-- комиссия REST-исполнения: `feeRateBps` в REST приходит `"0"`, поэтому
-  ставку TAKER-сделки даёт `PolymarketTakerFeeRateResolver` по рынку, а
-  `FillMapper` принимает её опцией `takerFeeRate`. Совпадение `fee` с
-  приватным WS НЕ доказано: WS-путь по-прежнему решает по
-  `fee_rate_bps > 0` со ставкой `0.07`, и общий источник ставки — открытый
-  вопрос из таблицы выше;
+- комиссия исполнения: `feeRateBps` в REST приходит `"0"`, а `fee_rate_bps`
+  WS заполнен случайно, поэтому приватный WS и REST получают ставку
+  TAKER-исполнения через один контракт `PolymarketTakerFeeRateResolver`
+  (`@polymarket/fill`) по рынку, а `FillMapper` принимает её опцией
+  `takerFeeRate` (см. «Один факт исполнения»);
+- время исполнения: canonical `Fill.timestamp` = venue execution
+  `match_time`; `timestamp` — fallback, только когда `match_time` отсутствует
+  (REST передаёт `matchedAt` как `match_time`);
 - привязка адаптера к аккаунту проверяется при создании, по доверенной
   идентичности зависимостей: `client.account.wallet` (SDK
   `AccountIdentity.wallet`) = `balanceReader.boundWallet` = `makerAddress`,
