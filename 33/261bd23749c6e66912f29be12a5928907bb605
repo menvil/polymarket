@@ -1,0 +1,38 @@
+packages/infrastructure/polymarket-v2/__tests__/polymarketAccountMapping.test.ts
+  s_229ddb4e5aa529::t_0e2139acf1252c 539-581
+packages/infrastructure/polymarket-v2/docs/account-venue-state-source.md
+  s_229ddb4e5aa529::t_95bb25af3f2cf1 90-92,220-237,425-426,428
+docs/guides/account-venue-state.md
+  s_229ddb4e5aa529::t_ae68f176cea775 441-444
+packages/infrastructure/polymarket-v2/src/PolymarketAccountVenueStateSource.ts
+  s_229ddb4e5aa529::t_50aec7c1245546 284-285
+  s_229ddb4e5aa529::t_68d01642087116 313-316,319,325
+packages/infrastructure/polymarket-v2/src/polymarketAccountMapping.ts
+  s_229ddb4e5aa529::t_9e020b0c17e212 28-29
+  s_229ddb4e5aa529::t_28eead188dfc21 444-447
+  s_229ddb4e5aa529::t_c30bf5a23bc6b4 472-473
+  s_229ddb4e5aa529::t_bafdbb0d5a01d2 502-547
+  s_229ddb4e5aa529::t_a8b3b9240aa0d2 557-559
+packages/infrastructure/polymarket-v2/__tests__/contour-boundary.test.ts
+  s_229ddb4e5aa529::t_58a5925375bc37 322-323,329-352
+  s_229ddb4e5aa529::t_dc77051505b1bc 166-187
+packages/infrastructure/polymarket-v2/__tests__/PolymarketAccountVenueStateSource.test.ts
+  s_229ddb4e5aa529::t_912f91d132eba1 217,219-231,233-234
+  s_229ddb4e5aa529::t_7c1aceef5b0768 218,232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "33261bd23749c6e66912f29be12a5928907bb605",
+  "prompts": {},
+  "sessions": {
+    "s_229ddb4e5aa529": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "953c2e10-8b5e-4c82-8e53-5ebbf8caad72",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
