@@ -16,6 +16,96 @@
 `IBookRegistry` — порт реестра `Orderbook`-экземпляров (`@polymarket/orderbook`, immutable
 entity) по ключу `(marketId, tokenId)`, которым владеет `BookUpdateHandler`.
 
+## `FillEventHandler`: тот же факт исполнения, что у REST
+
+### Почему
+
+Одно исполнение площадки приходит двумя путями: приватным WS (этот
+обработчик) и REST (`PolymarketAccountVenueStateSource` в
+`@polymarket/polymarket-v2/account`). Сверка сравнивает их canonical
+`findFillFactDifference` — и `Fill.timestamp`, и `Fill.fee` входят в факт.
+Раньше WS-путь брал `timestamp` СООБЩЕНИЯ (может быть позже исполнения) и
+угадывал комиссию по `fee_rate_bps > 0`; REST — `matchedAt` и ставку рынка.
+Один `FillId`, разный факт.
+
+### Как сейчас
+
+```text
+Fill.timestamp  ← время исполнения площадки: match_time → legacy matchtime;
+                  без обоих — ОТКАЗ, даже при валидном timestamp сообщения;
+                  присутствующее, но битое поле → отказ без отката
+Fill.fee TAKER  ← ставка PolymarketTakerFeeRateResolver по raw.market
+Fill.fee MAKER  ← 0, резолвер не вызывается
+fee_rate_bps    ← только диагностика в raw/логах
+receivedAt      ← clock.now(): время НАШЕЙ обработки, не время исполнения
+```
+
+Официальная схема user-channel Polymarket принимает оба vendor-поля времени
+исполнения — `match_time` и legacy `matchtime` (SDK: `matchedAt =
+match_time ?? matchtime`). Generic `FillMapper` ради обратной совместимости
+откатывается на `timestamp`, если нет обоих. Этот production-путь — нет:
+`Fill.timestamp` — неизменяемый факт исполнения на площадке, а `timestamp`
+события — время сообщения/обновления. Взять его — значит создать ложный факт:
+тот же `FillId`, что у REST (`matchedAt = T`), но со временем `T + 30 с`.
+
+Шаги разбора (`_mapFills` — единственное место, которое вызывает
+`FillMapper.allFromPolymarketTradeEvent`; через него идут и MATCHED, и
+CONFIRMED-fallback):
+
+1. `_requireVenueExecutionTime`: в событии есть `match_time` или `matchtime`
+   (не `undefined`/`null`)? Нет — отказ ДО `FillMapper` и до резолвера.
+   Здесь проверяется только присутствие: значение разбирает `FillMapper`
+   (`parsePolymarketExecutionTime`), разбор времени живёт в одном месте.
+2. `trader_side !== 'TAKER'` → опции `{}` (MAKER комиссию не платит).
+3. TAKER: `raw.market` → `asMarketId` (тот же `MarketId`, что `FillMapper`
+   положит в `Fill.marketId`) → `takerFeeRates.getTakerFeeRate(marketId)`.
+4. `FillMapper.allFromPolymarketTradeEvent(raw, accountId, { takerFeeRate })`:
+   `Fill.timestamp` = `match_time`, иначе `matchtime`; битое присутствующее
+   поле — отказ без отката.
+5. Любой отказ (нет времени исполнения, битое время, невалидный рынок, отказ
+   резолвера, невалидная ставка, битое событие) —
+   `logger.error('Failed to parse fill event', …)`, `FILL_RECEIVED` не
+   публикуется, в `_pendingFills` ничего не попадает. Отката ни на
+   `timestamp` сообщения, ни на `fee_rate_bps` нет.
+
+```mermaid
+flowchart TD
+    E[WS trade: MATCHED или CONFIRMED-fallback] --> T{match_time или matchtime есть?}
+    T -->|нет| X[error в лог, нет FILL_RECEIVED, нет кеша]
+    T -->|да| S{trader_side}
+    S -->|MAKER| M["FillMapper(raw, {})"]
+    S -->|TAKER| R["резолвер по raw.market"]
+    R -->|Err| X
+    R -->|Ok rate| F["FillMapper(raw, { takerFeeRate })"]
+    M --> P{Ok?}
+    F --> P
+    P -->|нет| X
+    P -->|да| O[кеш + FILL_RECEIVED]
+```
+
+Пример: событие с одним legacy-полем.
+
+```typescript
+await handler.handle({ ...trade, matchtime: '1672290700', timestamp: '1672290730' }, accountId);
+// FILL_RECEIVED: fill.timestamp = 1672290700000, receivedAt = clock.now()
+
+await handler.handle({ ...trade, timestamp: '1672290730' }, accountId); // ни match_time, ни matchtime
+// FILL_RECEIVED нет; logger.error('Failed to parse fill event',
+//   { error: 'Invalid trade event: missing venue execution time (match_time or matchtime)', … })
+```
+
+Нормальный поток MATCHED → CONFIRMED берёт на CONFIRMED закешированные fills
+и ставку повторно не запрашивает.
+
+Резолвер — ОБЯЗАТЕЛЬНАЯ зависимость конструктора: необязательный вернул бы
+часть WS-исполнений к угадыванию комиссии. Интерфейс — из `@polymarket/fill`
+(не из Infrastructure); реализацию (`PolymarketStaticTakerFeeRateResolver`)
+даёт composition root, ТОТ ЖЕ экземпляр, что и REST-адаптеру:
+
+```typescript
+const handler = new FillEventHandler(eventBus, metadataGenerator, clock, logger, takerFeeRates);
+```
+
 ## `IEventBus.publish()` → `Result` (Этап 6 плана миграции)
 
 Все 8 сайтов `.publish()` в пакете проверяют `Result` явно и логируют на `Err`, вместо

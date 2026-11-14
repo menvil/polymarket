@@ -76,7 +76,8 @@ decimal.js                     Decimal-арифметика внутри гра�
 
 ```text
 @polymarket/account-reconciliation   порт IAccountVenueStateSource и его DTO
-@polymarket/fill                     FillMapper — общее с приватным WS правило FillId
+@polymarket/fill                     FillMapper (общее с приватным WS правило FillId) и порт
+                                     PolymarketTakerFeeRateResolver
 @polymarket/ids                      AccountId/OrderId/MarketId/AssetId
 @polymarket/value-objects            Money/Quantity/OutcomePrice
 @polymarket/timestamp                время исполнения
@@ -309,10 +310,19 @@ const source = PolymarketAccountVenueStateSource.create(
   физическая истина инвентаря, может заменить или обернуть его on-chain
   верификатором без изменений `PolymarketAccountVenueStateSource`;
 - ✅ сделки рынков scope разбираются ТЕМ ЖЕ `FillMapper`, что и приватный WS:
-  **REST и приватный WS дают одну canonical-идентичность `Fill`**;
+  **одно исполнение площадки даёт один canonical `Fill` обоими путями**
+  (`findFillFactDifference(wsFill, restFill) === undefined`);
+- ✅ время исполнения: REST `matchedAt` уходит в `FillMapper` под именем
+  `match_time`; canonical время приватного WS — `match_time` → legacy
+  `matchtime` (официальная схема user-channel принимает оба). Generic
+  `FillMapper` без обоих откатывается на `timestamp`; production
+  `FillEventHandler` — нет: одного `timestamp` сообщения ему мало, событие
+  отвергается;
 - ✅ комиссия TAKER-исполнения — по ставке `PolymarketTakerFeeRateResolver`
-  рынка сделки: REST `feeRateBps` приходит `"0"` и на `Fill.fee` не влияет;
-  отказ резолвера — `Err` прохода;
+  рынка сделки: REST `feeRateBps` (`"0"`) и WS `fee_rate_bps` на `Fill.fee` не
+  влияют; интерфейс порта — один, в `@polymarket/fill`, его же получает
+  `FillEventHandler`; отсюда — реализация `PolymarketStaticTakerFeeRateResolver`
+  и re-export типа; отказ резолвера — `Err` прохода;
 - ⚠️ collateral отдаётся в canonical `USDC`, хотя collateral Polymarket
   CLOB V2 — pUSD: решение о canonical-представлении открыто и обязано быть
   принято до того, как matcher начнёт менять `Portfolio`;
@@ -323,9 +333,9 @@ const source = PolymarketAccountVenueStateSource.create(
   `balanceReader.boundWallet`, `makerAddress` и `accountId`
   (`wallet:<кошелёк клиента>`) не описывают один и тот же аккаунт.
 
-Подробности и NEXT / BLOCKERS (время исполнения REST ↔ WS, pUSD/USDC,
-ставка комиссии в приватном WS, on-chain проверка балансов) —
-`docs/account-venue-state-source.md`.
+Подробности и NEXT / BLOCKERS (закрыто: `FillId`, время исполнения и
+источник ставки комиссии REST ↔ WS; открыто: pUSD/USDC, on-chain проверка
+балансов, live-проверка API) — `docs/account-venue-state-source.md`.
 
 ## Тесты
 

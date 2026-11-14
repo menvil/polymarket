@@ -49,6 +49,33 @@
  * Уровень 1 защищает от дублирования в нормальном flow (MATCHED→CONFIRMED).
  * Уровень 2 защищает от дублирования при аномальных сценариях (рестарт, race).
  *
+ * ### Факт исполнения — тот же, что у REST:
+ * Одно исполнение площадки, пришедшее приватным WS и REST-ом
+ * (`PolymarketAccountVenueStateSource`), обязано дать ОДИН canonical `Fill`
+ * (`findFillFactDifference(wsFill, restFill) === undefined`). Поэтому:
+ *
+ * ```text
+ * Fill.timestamp  ← время исполнения площадки: match_time → legacy matchtime;
+ *                   без обоих событие ОТВЕРГАЕТСЯ (timestamp сообщения — не
+ *                   время исполнения, даже если валиден)
+ * Fill.fee TAKER  ← PolymarketTakerFeeRateResolver по raw.market — тот же
+ *                   порт, что у REST; fee_rate_bps события НЕ участвует
+ * Fill.fee MAKER  ← 0, резолвер не вызывается
+ * receivedAt      ← clock.now(): время НАШЕЙ обработки, не время исполнения
+ * ```
+ *
+ * Все исполнения обработчик разбирает в одном месте — `_mapFills` (и MATCHED,
+ * и CONFIRMED-fallback). Резолвер обязателен: необязательный вернул бы часть
+ * WS-исполнений к угадыванию комиссии по `fee_rate_bps`. Отказ резолвера
+ * (неизвестный рынок) — отказ разбора: ошибка в лог, `FILL_RECEIVED` не
+ * публикуется, в кеш ничего не попадает.
+ *
+ * Официальная схема user-channel принимает оба vendor-поля времени
+ * исполнения — `match_time` и legacy `matchtime` (SDK: `matchedAt =
+ * match_time ?? matchtime`). Generic `FillMapper` ради обратной совместимости
+ * откатывается на `timestamp`, если нет обоих; этот production-путь — нет:
+ * сделка без времени исполнения отвергается так же, как отказ резолвера.
+ *
  * ### Ответственность:
  * - НЕ обновляет Portfolio (это задача ProcessFillUseCase через FillOrchestrator)
  * - Кеш pending fills — in-memory, живёт до CONFIRMED/FAILED или рестарта бота
@@ -56,7 +83,7 @@
  *
  * @example
  * ```typescript
- * const handler = new FillEventHandler(eventBus, metadataGenerator, clock, logger);
+ * const handler = new FillEventHandler(eventBus, metadataGenerator, clock, logger, takerFeeRates);
  *
  * wsEmitter.onUserFill(async (dto) => {
  *   await handler.handle(dto as Record<string, unknown>, accountId);
@@ -66,9 +93,15 @@
 import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 import type { AccountId } from '@polymarket/ids';
-import { asFillId, asOrderId } from '@polymarket/ids';
-import type { Fill } from '@polymarket/fill';
+import { asFillId, asMarketId, asOrderId } from '@polymarket/ids';
+import type {
+  Fill,
+  PolymarketTakerFeeRateResolver,
+  PolymarketTradeEventMappingOptions,
+} from '@polymarket/fill';
 import { FillMapper } from '@polymarket/fill';
+import { ValidationError } from '@polymarket/errors';
+import { Err, Ok, type Result } from '@polymarket/result';
 import { TimestampService } from '@polymarket/timestamp';
 import type { IEventBus } from '@polymarket/event-bus';
 import type { MessageMetadataGenerator } from '@polymarket/messages';
@@ -116,12 +149,23 @@ export class FillEventHandler {
    *   (fill-события контура — root: первичная реакция на внешнее WS-наблюдение)
    * @param _clock - Источник времени (receivedAt)
    * @param _logger - Logger
+   * @param _takerFeeRates - Ставка taker-комиссии по рынку исполнения. ОБЯЗАТЕЛЬНА:
+   *   тот же порт (`@polymarket/fill`), что у REST-адаптера, — иначе комиссия
+   *   одного исполнения разошлась бы между WS и REST
+   *
+   * @throws Не бросает
+   *
+   * @example
+   * ```typescript
+   * const handler = new FillEventHandler(eventBus, metadataGenerator, clock, logger, takerFeeRates);
+   * ```
    */
   constructor(
     private readonly _eventBus: IEventBus,
     private readonly _metadataGenerator: MessageMetadataGenerator,
     private readonly _clock: IClock,
     private readonly _logger: ILogger,
+    private readonly _takerFeeRates: PolymarketTakerFeeRateResolver,
   ) {}
 
   /**
@@ -185,7 +229,7 @@ export class FillEventHandler {
     accountId: AccountId,
     rawId: string,
   ): Promise<void> {
-    const result = FillMapper.allFromPolymarketTradeEvent(raw, accountId);
+    const result = this._mapFills(raw, accountId);
     if (!result.ok) {
       this._logger.error('Failed to parse fill event', {
         error: result.error.message,
@@ -194,7 +238,7 @@ export class FillEventHandler {
       return;
     }
 
-    const fills = result.value.map((r) => r.fill);
+    const fills = result.value;
 
     // Кешируем для потенциального FAILED отката
     this._pendingFills.set(rawId, fills);
@@ -258,7 +302,8 @@ export class FillEventHandler {
    * Fill уже опубликован при MATCHED. Очищаем _pendingFills — откат больше не нужен.
    *
    * ### Fallback (MATCHED пропущен, например рестарт бота):
-   * Парсим fill из raw и публикуем FILL_RECEIVED.
+   * Парсим fill из raw (`_mapFills` — та же политика времени и комиссии, что
+   * у MATCHED) и публикуем FILL_RECEIVED.
    * ProcessFillUseCase idempotency guard (`begin()`/`markApplied()`) предотвращает двойную обработку.
    */
   private async _handleConfirmedFill(
@@ -308,7 +353,7 @@ export class FillEventHandler {
     if (fills) {
       this._pendingFills.delete(rawId);
     } else {
-      const result = FillMapper.allFromPolymarketTradeEvent(raw, accountId);
+      const result = this._mapFills(raw, accountId);
       if (!result.ok) {
         this._logger.error('Failed to parse fill event', {
           error: result.error.message,
@@ -317,7 +362,7 @@ export class FillEventHandler {
         });
         return;
       }
-      fills = result.value.map((r) => r.fill);
+      fills = result.value;
     }
 
     const tsResult = TimestampService.fromDate(this._clock.now());
@@ -353,6 +398,141 @@ export class FillEventHandler {
     }
 
     this._publishedRawIds.add(rawId);
+  }
+
+  /**
+   * Разбирает исполнения приватного WS-события.
+   *
+   * @param raw - Raw fill-событие user-channel
+   * @param accountId - AccountId пользователя
+   * @returns Исполнения события (>1 при multi-maker) либо отказ разбора
+   * @throws Не бросает: отказ возвращается как `Err`
+   *
+   * @remarks
+   * ЕДИНСТВЕННОЕ место обработчика, которое вызывает
+   * `FillMapper.allFromPolymarketTradeEvent`: MATCHED и CONFIRMED-fallback
+   * идут через него, поэтому политика комиссии и времени у них одна.
+   *
+   * 1. Время исполнения обязано быть в событии —
+   *    {@link FillEventHandler._requireVenueExecutionTime}: `match_time` или
+   *    `matchtime`; одного `timestamp` сообщения недостаточно.
+   * 2. Опции разбора — {@link FillEventHandler._takerFeeOptions}: ставка
+   *    TAKER-исполнения от резолвера, у MAKER — без ставки.
+   * 3. `FillMapper` с этими опциями: `Fill.timestamp` — `match_time`, иначе
+   *    `matchtime` (невалидное присутствующее поле — отказ), комиссия TAKER —
+   *    по ставке резолвера, `fee_rate_bps` не участвует.
+   *
+   * @example
+   * ```typescript
+   * const fills = this._mapFills(raw, accountId);
+   * if (!fills.ok) this._logger.error('Failed to parse fill event', { error: fills.error.message });
+   * ```
+   */
+  private _mapFills(raw: Record<string, unknown>, accountId: AccountId): Result<Fill[], Error> {
+    const executionTime = this._requireVenueExecutionTime(raw);
+    if (!executionTime.ok) return executionTime;
+
+    const options = this._takerFeeOptions(raw);
+    if (!options.ok) return options;
+
+    const mapped = FillMapper.allFromPolymarketTradeEvent(raw, accountId, options.value);
+    if (!mapped.ok) return Err(mapped.error);
+    return Ok(mapped.value.map(({ fill }) => fill));
+  }
+
+  /**
+   * Проверяет, что приватная сделка несёт время исполнения площадки.
+   *
+   * @param raw - Raw fill-событие user-channel
+   * @returns `Ok`, если есть `match_time` или `matchtime`; иначе отказ
+   * @throws Не бросает: отказ возвращается как `Err(ValidationError)`
+   *
+   * @remarks
+   * ```text
+   * match_time есть (не undefined/null)   → Ok (значение разберёт FillMapper)
+   * match_time нет, matchtime есть        → Ok (legacy vendor-имя)
+   * нет обоих                             → Err — даже при валидном timestamp
+   * ```
+   *
+   * `Fill.timestamp` — неизменяемый факт исполнения на площадке, `timestamp`
+   * события — время сообщения/обновления. Generic `FillMapper` откатывается на
+   * него ради обратной совместимости, но для приватного production-пути это
+   * был бы ложный факт: тот же `FillId`, что у REST (`matchedAt`), с другим
+   * временем. Поэтому проверка стоит ДО `FillMapper`.
+   *
+   * Здесь проверяется только присутствие. Корректность значения (число,
+   * секунды/миллисекунды, присутствующее, но невалидное поле — отказ без
+   * отката) — забота `FillMapper`, чтобы разбор времени жил в одном месте.
+   *
+   * @example
+   * ```typescript
+   * this._requireVenueExecutionTime({ matchtime: '1672290700', timestamp: '1672290730' }); // Ok
+   * this._requireVenueExecutionTime({ timestamp: '1672290730' }); // Err
+   * ```
+   */
+  private _requireVenueExecutionTime(raw: Record<string, unknown>): Result<void, ValidationError> {
+    const present = (value: unknown): boolean => value !== undefined && value !== null;
+    if (present(raw['match_time']) || present(raw['matchtime'])) return Ok(undefined);
+
+    return Err(
+      new ValidationError('Invalid trade event: missing venue execution time (match_time or matchtime)', {
+        context: { field: 'match_time', value: raw['match_time'] },
+      }),
+    );
+  }
+
+  /**
+   * Ставка taker-комиссии для `FillMapper`: только у TAKER-исполнения и только
+   * от резолвера.
+   *
+   * @param raw - Raw fill-событие user-channel
+   * @returns Опции `FillMapper` либо отказ (невалидный рынок, отказ резолвера)
+   * @throws Не бросает: отказ возвращается как `Err`
+   *
+   * @remarks
+   * ```text
+   * trader_side = MAKER   → {}  (резолвер не вызывается, комиссия мейкера 0)
+   * trader_side = TAKER   → market → MarketId → резолвер → { takerFeeRate }
+   * иное                  → {}  (FillMapper сам отвергнет trader_side)
+   * ```
+   *
+   * Ставка ищется по `raw.market` — condition id, который уже несёт само
+   * исполнение и который `FillMapper` кладёт в `Fill.marketId` (тот же
+   * `asMarketId`, без нормализации). Не по токену, не по заявке и не по
+   * «текущему активному рынку»; ставки по умолчанию нет.
+   *
+   * Отказа на `fee_rate_bps` нет и быть не должно: поле остаётся в raw и логах
+   * как диагностика, но комиссию не определяет — один и тот же TAKER-факт при
+   * `"0"`, `"250"` и `"1000"`. Невалидную ставку (NaN, < 0) отвергает
+   * `FillMapper`.
+   *
+   * @example
+   * ```typescript
+   * const options = this._takerFeeOptions(raw); // Ok({ takerFeeRate: 0.07 })
+   * ```
+   */
+  private _takerFeeOptions(raw: Record<string, unknown>): Result<PolymarketTradeEventMappingOptions, Error> {
+    if (raw['trader_side'] !== 'TAKER') return Ok({});
+
+    const marketRaw = raw['market'];
+    const marketId = typeof marketRaw === 'string' ? asMarketId(marketRaw) : undefined;
+    if (marketId === undefined) {
+      return Err(
+        new ValidationError('Invalid trade event: missing or invalid market for taker fee rate', {
+          context: { field: 'market', value: marketRaw },
+        }),
+      );
+    }
+
+    const rate = this._takerFeeRates.getTakerFeeRate(marketId);
+    if (!rate.ok) {
+      return Err(
+        new ValidationError(`Invalid trade event: taker fee rate unavailable: ${rate.error.message}`, {
+          context: { field: 'market', value: marketRaw },
+        }),
+      );
+    }
+    return Ok({ takerFeeRate: rate.value });
   }
 
   /**

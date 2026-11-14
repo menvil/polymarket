@@ -43,8 +43,14 @@ export {
   type PolymarketBalanceAllowanceRequest,
   type PolymarketBalanceAllowanceSdk,
 } from './PolymarketClobRefreshedBalanceReader.js';
-export {
-  PolymarketStaticTakerFeeRateResolver,
-  type PolymarketTakerFeeRateResolver,
-} from './PolymarketTakerFeeRateResolver.js';
+export { PolymarketStaticTakerFeeRateResolver } from './PolymarketTakerFeeRateResolver.js';
+/**
+ * Порт ставки taker-комиссии — re-export ТИПА из `@polymarket/fill`.
+ *
+ * @remarks
+ * Декларация одна — в `@polymarket/fill`, рядом с `FillMapper`: её же
+ * получает приватный WS-обработчик в Application. Re-export сохраняет
+ * прежний импорт для composition root.
+ */
+export type { PolymarketTakerFeeRateResolver } from '@polymarket/fill';
 export { PolymarketAccountStateError } from './polymarketAccountMapping.js';

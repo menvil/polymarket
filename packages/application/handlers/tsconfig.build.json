@@ -24,6 +24,8 @@
   ],
   "references": [
     { "path": "../../foundation/timestamp/tsconfig.build.json" },
+    { "path": "../../foundation/errors/tsconfig.build.json" },
+    { "path": "../../foundation/result/tsconfig.build.json" },
     {
       "path": "../../foundation/logger/tsconfig.build.json"
     },

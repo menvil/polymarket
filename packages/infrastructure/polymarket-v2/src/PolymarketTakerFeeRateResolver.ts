@@ -1,21 +1,30 @@
 /**
- * Ставка taker-комиссии рынка — источник `Fill.fee` для REST-сделок.
+ * Ставка taker-комиссии рынка — реализация общего порта
+ * `PolymarketTakerFeeRateResolver` (`@polymarket/fill`).
  *
  * @remarks
- * ### Почему не `ClobTrade.feeRateBps`
+ * ### Почему не `feeRateBps` / `fee_rate_bps`
  *
  * В записи сделки аутентифицированного REST `feeRateBps` приходит `"0"` —
  * поле не заполняется (см. `polymarket-fee.ts` в `@polymarket/fill` и
- * `apps/pnl` `TradesFetcher`). Решать по нему, была ли комиссия, значит
- * получить нулевую комиссию у тейкерской сделки, за которую площадка
- * комиссию взяла. А `fee` входит в факт исполнения (`findFillFactDifference`):
- * одна и та же сделка из WS и из REST с разной комиссией — это конфликт
- * неизменяемого факта, а не «уточнение».
+ * `apps/pnl` `TradesFetcher`), а `fee_rate_bps` приватного WS заполнен
+ * случайно. Решать по ним, была ли комиссия, значит получить разную комиссию
+ * у одного исполнения. А `fee` входит в факт исполнения
+ * (`findFillFactDifference`): одна и та же сделка из WS и из REST с разной
+ * комиссией — это конфликт неизменяемого факта, а не «уточнение».
  *
- * Поэтому ставку для REST-сделки даёт этот порт — по рынку сделки, — а
+ * Поэтому ставку для TAKER-исполнения даёт порт — по рынку исполнения, — а
  * `FillMapper` считает по ней комиссию тейкера
  * (`calculatePolymarketTakerFeeWithRate`). Мейкер комиссию не платит, и для
- * MAKER-сделок порт не вызывается.
+ * MAKER-исполнений порт не вызывается.
+ *
+ * ### Один контракт, одна декларация
+ *
+ * Интерфейс объявлен в `@polymarket/fill`: его же получает приватный
+ * WS-обработчик (`FillEventHandler` в Application), которому импорт
+ * Infrastructure запрещён. Здесь — только реализация; точка входа
+ * `@polymarket/polymarket-v2/account` re-экспортирует тип для composition
+ * root.
  *
  * ### Откуда ставка
  *
@@ -23,31 +32,10 @@
  * `CRYPTO_UP_DOWN` — `POLYMARKET_CRYPTO_TAKER_FEE_RATE` (`@polymarket/fill`).
  * Рынок, ставка которого неизвестна, — отказ, а не нулевая ставка.
  */
+import type { PolymarketTakerFeeRateResolver } from '@polymarket/fill';
 import type { MarketId } from '@polymarket/ids';
 import { Err, Ok, type Result } from '@polymarket/result';
 import { PolymarketAccountStateError } from './polymarketAccountMapping.js';
-
-/**
- * Ставка taker-комиссии по рынку.
- *
- * @remarks
- * Синхронный: ставка — знание о рынке, а не запрос к площадке. Неизвестный
- * рынок — `Err`; адаптер состояния превращает его в отказ всего прохода.
- *
- * @example
- * ```typescript
- * const rate = resolver.getTakerFeeRate(marketId); // Ok(0.07)
- * ```
- */
-export interface PolymarketTakerFeeRateResolver {
-  /**
-   * Ставка taker-комиссии рынка.
-   *
-   * @param marketId - Condition id рынка сделки
-   * @returns Доля (например `0.07`) либо отказ
-   */
-  getTakerFeeRate(marketId: MarketId): Result<number, PolymarketAccountStateError>;
-}
 
 /**
  * Ставки из заранее известного набора рынков.
@@ -56,6 +44,11 @@ export interface PolymarketTakerFeeRateResolver {
  * Composition root собирает набор из тех же рынков, что попадают в scope
  * сверки. Ключ — condition id без учёта регистра. Ставка обязана быть
  * конечной и неотрицательной; рынок вне набора — отказ.
+ *
+ * Один и тот же экземпляр composition root передаёт обоим production-путям
+ * исполнения — `FillEventHandler` (приватный WS) и
+ * `PolymarketAccountVenueStateSource` (REST): тогда TAKER-исполнение
+ * получает одну комиссию, каким бы путём оно ни пришло.
  *
  * @example
  * ```typescript

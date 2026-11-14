@@ -232,12 +232,63 @@ FillMapper.fromPolymarketTradeEvent(
   "fee_rate_bps": "20",
   "status": "MATCHED",
   "owner": "9180014b-...",
+  "match_time": "1672290700",
   "timestamp": "1672290701",
   "trader_side": "TAKER",
   "transaction_hash": "0xabcdef...",
   "maker_orders": [{ "order_id": "0xff...", "matched_amount": "10", "price": "0.57", "owner": "uuid" }]
 }
 ```
+
+**Время исполнения (`Fill.timestamp`) — время исполнения площадки, а не время
+сообщения.** Официальная схема user-channel Polymarket принимает ОБА
+vendor-поля времени исполнения — `match_time` и legacy `matchtime`; SDK
+нормализует их как `matchedAt = match_time ?? matchtime`. `FillMapper` идёт в
+том же порядке и только потом — к `timestamp`:
+
+| `match_time` | `matchtime` | `Fill.timestamp` |
+| --- | --- | --- |
+| есть и валиден | любой | `match_time` |
+| есть, но невалиден (пустой, нечисловой, `NaN`, ≤ 0, не строка/число) | любой | `Err(ValidationError)` — БЕЗ отката на `matchtime` и `timestamp` |
+| отсутствует (`undefined`) или `null` | есть и валиден | `matchtime` |
+| отсутствует или `null` | есть, но невалиден | `Err(ValidationError)` — БЕЗ отката на `timestamp` |
+| отсутствует или `null` | отсутствует или `null` | `timestamp` (тот же разбор; нет и его — `Err`) |
+
+```mermaid
+flowchart TD
+    A{match_time есть?} -->|да| AV{валиден?}
+    AV -->|да| R1[Fill.timestamp = match_time]
+    AV -->|нет| E1[Err — без отката]
+    A -->|нет / null| B{matchtime есть?}
+    B -->|да| BV{валиден?}
+    BV -->|да| R2[Fill.timestamp = matchtime]
+    BV -->|нет| E2[Err — без отката]
+    B -->|нет / null| C{timestamp есть?}
+    C -->|да| R3["Fill.timestamp = timestamp<br/>(только generic-маппер)"]
+    C -->|нет| E3[Err: missing execution time]
+```
+
+Значение `< 1e12` — секунды (× 1000), иначе миллисекунды; правило одно для
+всех трёх полей, часы не используются. Выбор поля — одна функция
+`parsePolymarketExecutionTime`, разбор выбранного значения — одна
+`parseExecutionTimestamp`.
+
+Почему так: `timestamp` WS-события — время СООБЩЕНИЯ/обновления, оно может
+быть позже исполнения (повторная доставка, `MATCHED → CONFIRMED`). А
+`Fill.timestamp` входит в неизменяемый факт (`findFillFactDifference`): с
+временем доставки одно исполнение дало бы из WS и из REST (`matchedAt`) один
+`FillId`, но разный факт. Событие с одним `matchtime` — тоже событие с
+известным временем исполнения: без поддержки legacy-имени маппер взял бы
+`timestamp = T + 30 с` при REST `matchedAt = T`. Первое присутствующее поле
+времени исполнения — authoritative попытка: откат при испорченном значении
+скрыл бы испорченное время исполнения другим полем — поэтому отказ.
+REST-адаптер передаёт `matchedAt` под именем `match_time`.
+
+Откат на `timestamp` остаётся в generic-маппере только ради обратной
+совместимости (прочие вызывающие, исторические записи). Приватный
+production-путь строже: `FillEventHandler` отвергает сделку без `match_time`
+и `matchtime` ещё до `FillMapper` — одного `timestamp` сообщения ему мало
+(см. `packages/application/handlers/docs/handlers.md`).
 
 **Логика TAKER vs MAKER:**
 
@@ -280,14 +331,41 @@ interface PolymarketTradeEventMappingOptions {
 
 Почему так: `fee` входит в canonical факт исполнения (`findFillFactDifference`).
 Аутентифицированный REST (`listAccountTrades`) отдаёт `feeRateBps: "0"` и у
-тейкерской сделки, за которую площадка взяла комиссию. Правило «по
-`fee_rate_bps`» дало бы REST-исполнению нулевую комиссию, а приватному WS —
-положительную: один `FillId`, разный факт. REST-адаптер
-(`@polymarket/polymarket-v2/account`) поэтому обязан передавать ставку,
-полученную по рынку сделки. Приватный WS-путь опцию пока не передаёт, и его
-поведение не изменилось.
+тейкерской сделки, за которую площадка взяла комиссию, а `fee_rate_bps`
+приватного WS заполнен случайно. Правило «по `fee_rate_bps`» давало одному
+исполнению разную комиссию: один `FillId`, разный факт. Поэтому ОБА
+production-пути передают ставку, полученную по рынку исполнения:
+
+| путь | откуда ставка | `fee_rate_bps` / `feeRateBps` |
+| --- | --- | --- |
+| приватный WS (`FillEventHandler`, `@polymarket/handlers`) | `PolymarketTakerFeeRateResolver` по `raw.market`, только TAKER | диагностика, на комиссию не влияет |
+| REST (`PolymarketAccountVenueStateSource`, `@polymarket/polymarket-v2/account`) | тот же порт по `conditionId`, только TAKER | не передаётся в `FillMapper` |
 
 Ставка обязана быть конечной и неотрицательной; иначе — `Err(ValidationError)`.
+Legacy-правило без опции остаётся для прочих вызывающих и тестов.
+
+### Порт `PolymarketTakerFeeRateResolver`
+
+Контракт ставки объявлен здесь, в `@polymarket/fill`, рядом с `FillMapper` и
+`polymarket-fee`: приватный WS-обработчик живёт в Application и не может
+импортировать Infrastructure, где лежит реализация.
+
+```typescript
+export interface PolymarketTakerFeeRateResolver {
+  /** condition id исполнения → ставка ДОЛЕЙ (0.07, не bps); неизвестный рынок → Err */
+  getTakerFeeRate(marketId: MarketId): Result<number, Error>;
+}
+```
+
+```text
+@polymarket/fill            PolymarketTakerFeeRateResolver (единственная декларация)
+  ↑ import type                     ↑ implements
+@polymarket/handlers        @polymarket/polymarket-v2
+FillEventHandler (WS)       PolymarketStaticTakerFeeRateResolver; /account re-export типа
+```
+
+Ставки по умолчанию нет: неизвестный рынок — отказ разбора исполнения, а не
+«0» и не глобальная `0.07`.
 
 ```typescript
 const fills = FillMapper.allFromPolymarketTradeEvent(raw, accountId, {
@@ -331,7 +409,8 @@ const result = FillMapper.fromPolymarketTradeEvent({
   side: 'BUY',
   fee_rate_bps: '20',
   status: 'MATCHED',
-  timestamp: '1700000000',
+  match_time: '1700000000',   // момент исполнения → fill.timestamp
+  timestamp: '1700000005',    // время сообщения — не участвует, раз есть match_time
   trader_side: 'TAKER',
   transaction_hash: '0xabc...',
 }, accountId);
@@ -339,7 +418,8 @@ const result = FillMapper.fromPolymarketTradeEvent({
 if (result.ok) {
   const { fill, metadata } = result.value;
   console.log(fill.getCashFlow().amount.toNumber()); // -32.5 (price × size = 0.65 × 50)
-  console.log(fill.hasFee());                        // true (50 × 0.072 × 0.65 × 0.35 ≈ 0.819)
+  console.log(fill.hasFee());                        // true (50 × 0.07 × 0.65 × 0.35 ≈ 0.79625)
+  console.log(fill.timestamp.toNumber());            // 1700000000000 (match_time)
   console.log(metadata.liquidity);                   // 'TAKER'
   console.log(metadata.tradeStatus);                 // 'MATCHED'
 }

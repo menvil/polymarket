@@ -6,25 +6,43 @@
  * P0-регрессия: одна и та же сделка площадки, пришедшая приватным WS и
  * REST-ом (`listAccountTrades`), обязана дать один и тот же canonical `Fill`.
  * WS-событие здесь написано ВРУЧНУЮ в snake_case — так, как его отдаёт
- * user-channel и как его сегодня разбирает `FillEventHandler`; REST-сделка —
- * в camelCase-форме SDK. Общая между ними только сама сделка, а не код
- * построения фикстур: иначе тест проверял бы сам себя.
+ * user-channel; REST-сделка — в camelCase-форме SDK. Общая между ними только
+ * сама сделка, а не код построения фикстур: иначе тест проверял бы сам себя.
  *
- * REST-сделка несёт `feeRateBps: "0"` — так его реально отдаёт площадка.
- * Положительную ставку в REST-ответ не подставляем: комиссию тейкера
- * REST-путь берёт у резолвера ставки, а не из ответа.
+ * WS-события намеренно «неудобные»: `timestamp` сообщения на 30 с позже
+ * `match_time`, `fee_rate_bps` TAKER-а — `"0"`. REST-сделка несёт
+ * `feeRateBps: "0"` — так его реально отдаёт площадка. Факт обязан от этого
+ * не зависеть: время — `match_time`, а без него legacy `matchtime`
+ * (официальная схема user-channel принимает оба), комиссия — общий резолвер
+ * по рынку.
+ *
+ * WS-путь здесь — та же политика, что у `FillEventHandler._mapFills`
+ * (время исполнения обязательно, ставка TAKER-а по `raw.market` →
+ * `FillMapper`): сам обработчик живёт в
+ * Application, и импортировать его отсюда граница пакета запрещает. Что
+ * обработчик публикует ровно этот fill, проверяет второе звено —
+ * `packages/application/handlers/__tests__/FillEventHandler.test.ts`.
  */
 import { describe, expect, it } from '@jest/globals';
-import { FillMapper, findFillFactDifference, type Fill, type TradeStatus } from '@polymarket/fill';
-import { assetIdToString } from '@polymarket/ids';
+import {
+  FillMapper,
+  findFillFactDifference,
+  type ExecutionMetadata,
+  type Fill,
+  type PolymarketTakerFeeRateResolver,
+  type TradeStatus,
+} from '@polymarket/fill';
+import { asMarketId, assetIdToString, type AccountId } from '@polymarket/ids';
+import { PolymarketStaticTakerFeeRateResolver } from '@polymarket/polymarket-v2/account';
 import {
   mapPolymarketClobTrade,
   mapPolymarketOpenOrder,
   mapPolymarketOrderState,
   mapPolymarketTradeStatus,
   mergeAuthoritativeFills,
+  polymarketClobTradeToFillMapperInput,
 } from '../src/polymarketAccountMapping.js';
-import { Ok } from '@polymarket/result';
+import { Err, Ok, type Result } from '@polymarket/result';
 import {
   ACCOUNT,
   CRYPTO_TAKER_FEE_RATE,
@@ -49,12 +67,58 @@ import {
  * @param takerFeeRates - Резолвер ставки (по умолчанию — crypto-ставка обоих рынков)
  * @returns Контекст `mapPolymarketClobTrade`
  */
-function contextWith(takerFeeRates: FakeTakerFeeRates = new FakeTakerFeeRates()) {
+function contextWith(takerFeeRates: PolymarketTakerFeeRateResolver = new FakeTakerFeeRates()) {
   return { accountId: ACCOUNT, makerAddress: OUR_ADDRESS.toLowerCase(), takerFeeRates };
 }
 
 /** Контекст по умолчанию. */
 const CONTEXT = contextWith();
+
+/** Время доставки WS-сообщения: на 30 с позже исполнения. */
+const WS_MESSAGE_SECONDS = MATCHED_AT_SECONDS + 30;
+
+/**
+ * То же WS-событие, но время исполнения — только в legacy-поле `matchtime`.
+ *
+ * @param raw - WS user-channel событие с `match_time`
+ * @returns Событие без `match_time`, с `matchtime` = исполнение и прежним `timestamp`
+ *
+ * @remarks
+ * Официальная схема user-channel принимает оба имени; SDK нормализует их как
+ * `matchedAt = match_time ?? matchtime`.
+ */
+function withLegacyMatchTime(raw: Record<string, unknown>): Record<string, unknown> {
+  const { match_time: _matchTime, ...rest } = raw;
+  return { ...rest, matchtime: String(MATCHED_AT_SECONDS) };
+}
+
+/**
+ * Приватный WS-путь: политика `FillEventHandler._mapFills`.
+ *
+ * @param raw - WS user-channel событие
+ * @param takerFeeRates - Резолвер ставки (тот же, что у REST-пути)
+ * @returns Исполнения события либо отказ
+ *
+ * @remarks
+ * Без `match_time` и `matchtime` — отказ (одного `timestamp` сообщения
+ * обработчику недостаточно). TAKER: ставка по `raw.market` у резолвера →
+ * `FillMapper` с `takerFeeRate`; MAKER: без ставки. `fee_rate_bps` события не
+ * участвует.
+ */
+function wsFills(
+  raw: Record<string, unknown>,
+  takerFeeRates: PolymarketTakerFeeRateResolver = new FakeTakerFeeRates(),
+  account: AccountId = ACCOUNT,
+): Result<{ fill: Fill; metadata: ExecutionMetadata }[], Error> {
+  const present = (value: unknown): boolean => value !== undefined && value !== null;
+  if (!present(raw['match_time']) && !present(raw['matchtime'])) return Err(new Error('missing venue execution time'));
+  if (raw['trader_side'] !== 'TAKER') return FillMapper.allFromPolymarketTradeEvent(raw, account, {});
+  const marketId = typeof raw['market'] === 'string' ? asMarketId(raw['market']) : undefined;
+  if (marketId === undefined) return Err(new Error('invalid market'));
+  const rate = takerFeeRates.getTakerFeeRate(marketId);
+  if (!rate.ok) return rate;
+  return FillMapper.allFromPolymarketTradeEvent(raw, account, { takerFeeRate: rate.value });
+}
 
 describe('заявки: статус CLOB + sizeMatched → canonical', () => {
   it.each<[string, string, string, string]>([
@@ -168,8 +232,8 @@ interface Execution {
 }
 
 /**
- * Наша TAKER-покупка 10 YES @ 0.57. WS несёт положительный `fee_rate_bps`,
- * REST — `"0"`, как его отдаёт площадка.
+ * Наша TAKER-покупка 10 YES @ 0.57. И WS, и REST несут нулевой
+ * `fee_rate_bps`/`feeRateBps`: комиссию задаёт резолвер по рынку.
  */
 const TAKER: Execution = {
   rest: {
@@ -196,7 +260,7 @@ const TAKER: Execution = {
     side: 'BUY',
     price: '0.57',
     size: '10',
-    fee_rate_bps: '1000',
+    fee_rate_bps: '0',
     status: 'MATCHED',
     owner: OUR_OWNER,
     maker_address: OUR_ADDRESS,
@@ -204,7 +268,7 @@ const TAKER: Execution = {
       { order_id: '0xother', asset_id: YES_TOKEN_ID, side: 'SELL', price: '0.57', matched_amount: '10', maker_address: OTHER_ADDRESS, owner: OTHER_OWNER },
     ],
     match_time: String(MATCHED_AT_SECONDS),
-    timestamp: String(MATCHED_AT_SECONDS),
+    timestamp: String(WS_MESSAGE_SECONDS),
     transaction_hash: '0xdeadbeef',
   },
 };
@@ -244,7 +308,7 @@ const SINGLE_MAKER: Execution = {
       { order_id: '0xother-maker', asset_id: YES_TOKEN_ID, side: 'BUY', price: '0.43', matched_amount: '3', maker_address: OTHER_ADDRESS, owner: OTHER_OWNER },
     ],
     match_time: String(MATCHED_AT_SECONDS),
-    timestamp: String(MATCHED_AT_SECONDS),
+    timestamp: String(WS_MESSAGE_SECONDS),
     transaction_hash: '0xdeadbeef',
   },
 };
@@ -284,7 +348,7 @@ const MULTI_MAKER: Execution = {
       { order_id: '0xour-2', asset_id: YES_TOKEN_ID, side: 'BUY', price: '0.44', matched_amount: '3', maker_address: OUR_ADDRESS, owner: OUR_OWNER },
     ],
     match_time: String(MATCHED_AT_SECONDS),
-    timestamp: String(MATCHED_AT_SECONDS),
+    timestamp: String(WS_MESSAGE_SECONDS),
     transaction_hash: '0xdeadbeef',
   },
 };
@@ -326,7 +390,7 @@ const CROSS_OUTCOME_MAKER: Execution = {
       { order_id: '0xour-no', asset_id: NO_TOKEN_ID, side: 'BUY', price: '0.4', matched_amount: '10', maker_address: OUR_ADDRESS, owner: OUR_OWNER, outcome: 'No' },
     ],
     match_time: String(MATCHED_AT_SECONDS),
-    timestamp: String(MATCHED_AT_SECONDS),
+    timestamp: String(WS_MESSAGE_SECONDS),
     transaction_hash: '0xdeadbeef',
   },
 };
@@ -338,7 +402,7 @@ const CROSS_OUTCOME_MAKER: Execution = {
  * @returns Исполнения WS-пути и REST-пути
  */
 function bothPaths(execution: Execution): { ws: { fill: Fill; liquidity?: string }[]; rest: { fill: Fill; liquidity?: string }[] } {
-  const ws = FillMapper.allFromPolymarketTradeEvent(execution.ws, ACCOUNT);
+  const ws = wsFills(execution.ws);
   if (!ws.ok) throw ws.error;
   const rest = mapPolymarketClobTrade(clobTrade(execution.rest), CONTEXT);
   if (!rest.ok) throw rest.error;
@@ -401,14 +465,116 @@ describe('P0: REST ClobTrade и приватный WS дают ОДИН canonica
     expect(rest[0]!.fill.fee.isZero()).toBe(false);
   });
 
-  it('время исполнения — match time: WS-путь обязан брать в timestamp именно его', () => {
-    // Если WS-адаптер подставит время СООБЩЕНИЯ (более позднее), факт
-    // разойдётся по timestamp — это требование к приватному WS-пути.
-    const delayedWs = { ...TAKER.ws, timestamp: String(MATCHED_AT_SECONDS + 30) };
-    const ws = FillMapper.allFromPolymarketTradeEvent(delayedWs, ACCOUNT);
-    const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), CONTEXT);
-    if (!ws.ok || !rest.ok) throw new Error('unexpected mapping failure');
-    expect(findFillFactDifference(ws.value[0]!.fill, rest.value[0]!.fill)?.field).toBe('timestamp');
+  it.each<[string, Execution]>([
+    ['TAKER', TAKER],
+    ['один наш MAKER', SINGLE_MAKER],
+    ['несколько наших MAKER', MULTI_MAKER],
+    ['cross-outcome MAKER', CROSS_OUTCOME_MAKER],
+  ])('%s: WS-сообщение на 30 с позже исполнения → тот же факт, Fill.timestamp = match_time', (_label, execution) => {
+    expect(execution.ws['timestamp']).toBe(String(WS_MESSAGE_SECONDS));
+    expect(execution.ws['match_time']).toBe(String(MATCHED_AT_SECONDS));
+
+    const { ws, rest } = bothPaths(execution);
+    for (const [index, entry] of rest.entries()) {
+      expect(ws[index]!.fill.timestamp.toNumber()).toBe(MATCHED_AT_SECONDS * 1000);
+      expect(entry.fill.timestamp.toNumber()).toBe(MATCHED_AT_SECONDS * 1000);
+      expect(findFillFactDifference(ws[index]!.fill, entry.fill)).toBeUndefined();
+    }
+  });
+
+  it.each<[string, Execution]>([
+    ['TAKER', TAKER],
+    ['один наш MAKER', SINGLE_MAKER],
+    ['несколько наших MAKER', MULTI_MAKER],
+    ['cross-outcome MAKER', CROSS_OUTCOME_MAKER],
+  ])('%s: match_time нет, legacy matchtime T, timestamp T + 30 с → тот же факт, что у REST matchedAt T', (_label, execution) => {
+    const legacy = withLegacyMatchTime(execution.ws);
+    expect('match_time' in legacy).toBe(false);
+    expect(legacy['timestamp']).toBe(String(WS_MESSAGE_SECONDS));
+
+    const ws = wsFills(legacy);
+    const rest = mapPolymarketClobTrade(clobTrade(execution.rest), CONTEXT);
+    if (!ws.ok) throw ws.error;
+    if (!rest.ok) throw rest.error;
+
+    expect(ws.value.map(({ fill }) => String(fill.id))).toEqual(rest.value.map(({ fill }) => String(fill.id)));
+    for (const [index, entry] of rest.value.entries()) {
+      expect(ws.value[index]!.fill.timestamp.toNumber()).toBe(MATCHED_AT_SECONDS * 1000);
+      expect(findFillFactDifference(ws.value[index]!.fill, entry.fill)).toBeUndefined();
+    }
+  });
+
+  it('REST matchedAt уходит в FillMapper под именем match_time (мс), timestamp сообщения не выдумывается', () => {
+    const raw = polymarketClobTradeToFillMapperInput(clobTrade(TAKER.rest), { makerAddress: OUR_ADDRESS.toLowerCase() });
+    if (!raw.ok) throw raw.error;
+    expect(raw.value['match_time']).toBe(String(MATCHED_AT_SECONDS * 1000));
+    expect('timestamp' in raw.value).toBe(false);
+  });
+});
+
+describe('ACCEPTANCE: одно TAKER-исполнение — один факт обоими production-путями', () => {
+  it('WS: match_time T, timestamp T+30 c, fee_rate_bps "0"; REST: matchedAt T, feeRateBps "0"; общий резолвер A → 0.07', () => {
+    // Самый неприятный реальный случай: время доставки позже исполнения, и
+    // ни одно vendor-поле комиссии не заполнено. Резолвер — настоящий, один
+    // экземпляр на оба пути, как его раздаёт composition root.
+    const shared = PolymarketStaticTakerFeeRateResolver.create([[MARKET_A, CRYPTO_TAKER_FEE_RATE]]);
+    if (!shared.ok) throw shared.error;
+    const wsEvent = { ...TAKER.ws, match_time: String(MATCHED_AT_SECONDS), timestamp: String(WS_MESSAGE_SECONDS), fee_rate_bps: '0' };
+    const restTrade = clobTrade({ ...TAKER.rest, feeRateBps: '0' });
+    expect(restTrade.matchedAt).toBe(new Date(MATCHED_AT_SECONDS * 1000).toISOString());
+
+    const ws = wsFills(wsEvent, shared.value);
+    const rest = mapPolymarketClobTrade(restTrade, contextWith(shared.value));
+    if (!ws.ok) throw ws.error;
+    if (!rest.ok) throw rest.error;
+    const [wsFill] = ws.value;
+    const [restFill] = rest.value;
+
+    expect(String(wsFill!.fill.id)).toBe(String(restFill!.fill.id));
+    expect(findFillFactDifference(wsFill!.fill, restFill!.fill)).toBeUndefined();
+    // Факт не вырожден: комиссия есть, время — исполнения, а не доставки.
+    expect(restFill!.fill.fee.isZero()).toBe(false);
+    expect(restFill!.fill.timestamp.toNumber()).toBe(MATCHED_AT_SECONDS * 1000);
+  });
+
+  it('WS: match_time НЕТ, legacy matchtime T, timestamp T+30 c, fee_rate_bps "0"; REST: matchedAt T, feeRateBps "0"; общий резолвер A → 0.07', () => {
+    // Та же сделка, но user-channel прислал время исполнения под legacy-именем.
+    // Без matchtime в разборе WS взял бы timestamp сообщения (T + 30 с): тот
+    // же FillId, другой факт.
+    const shared = PolymarketStaticTakerFeeRateResolver.create([[MARKET_A, CRYPTO_TAKER_FEE_RATE]]);
+    if (!shared.ok) throw shared.error;
+    const wsEvent = withLegacyMatchTime({ ...TAKER.ws, timestamp: String(WS_MESSAGE_SECONDS), fee_rate_bps: '0' });
+    const restTrade = clobTrade({ ...TAKER.rest, feeRateBps: '0' });
+    expect(restTrade.matchedAt).toBe(new Date(MATCHED_AT_SECONDS * 1000).toISOString());
+
+    const ws = wsFills(wsEvent, shared.value);
+    const rest = mapPolymarketClobTrade(restTrade, contextWith(shared.value));
+    if (!ws.ok) throw ws.error;
+    if (!rest.ok) throw rest.error;
+    const [wsFill] = ws.value;
+    const [restFill] = rest.value;
+
+    expect(String(wsFill!.fill.id)).toBe(String(restFill!.fill.id));
+    expect(findFillFactDifference(wsFill!.fill, restFill!.fill)).toBeUndefined();
+    expect(restFill!.fill.fee.isZero()).toBe(false);
+    expect(wsFill!.fill.timestamp.toNumber()).toBe(MATCHED_AT_SECONDS * 1000);
+  });
+
+  it('MAKER: match_time НЕТ, legacy matchtime T, timestamp T+30 c → тот же факт, что у REST matchedAt T; комиссия 0', () => {
+    const shared = PolymarketStaticTakerFeeRateResolver.create([[MARKET_A, CRYPTO_TAKER_FEE_RATE]]);
+    if (!shared.ok) throw shared.error;
+
+    const ws = wsFills(withLegacyMatchTime(SINGLE_MAKER.ws), shared.value);
+    const rest = mapPolymarketClobTrade(clobTrade(SINGLE_MAKER.rest), contextWith(shared.value));
+    if (!ws.ok) throw ws.error;
+    if (!rest.ok) throw rest.error;
+    const [wsFill] = ws.value;
+    const [restFill] = rest.value;
+
+    expect(String(wsFill!.fill.id)).toBe(String(restFill!.fill.id));
+    expect(findFillFactDifference(wsFill!.fill, restFill!.fill)).toBeUndefined();
+    expect(restFill!.fill.fee.isZero()).toBe(true);
+    expect(wsFill!.fill.timestamp.toNumber()).toBe(MATCHED_AT_SECONDS * 1000);
   });
 });
 
@@ -418,17 +584,19 @@ function feeOf(fill: Fill): number {
 }
 
 describe('комиссия TAKER: ставка от резолвера, а не из feeRateBps REST-ответа', () => {
-  it('P0: WS fee_rate_bps > 0 и REST feeRateBps "0" + crypto-ставка резолвера → тот же FillId и тот же факт', () => {
-    expect(TAKER.ws['fee_rate_bps']).toBe('1000');
-    expect(clobTrade(TAKER.rest).feeRateBps).toBe('0');
+  it.each(['0', '1000', '250'])(
+    'P0: WS fee_rate_bps %p и REST feeRateBps "0" + одна ставка резолвера → тот же FillId и тот же факт',
+    (feeRateBps) => {
+      expect(clobTrade(TAKER.rest).feeRateBps).toBe('0');
 
-    const ws = FillMapper.allFromPolymarketTradeEvent(TAKER.ws, ACCOUNT);
-    const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), CONTEXT);
-    if (!ws.ok || !rest.ok) throw new Error('unexpected mapping failure');
+      const ws = wsFills({ ...TAKER.ws, fee_rate_bps: feeRateBps });
+      const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), CONTEXT);
+      if (!ws.ok || !rest.ok) throw new Error('unexpected mapping failure');
 
-    expect(String(rest.value[0]!.fill.id)).toBe(String(ws.value[0]!.fill.id));
-    expect(findFillFactDifference(ws.value[0]!.fill, rest.value[0]!.fill)).toBeUndefined();
-  });
+      expect(String(rest.value[0]!.fill.id)).toBe(String(ws.value[0]!.fill.id));
+      expect(findFillFactDifference(ws.value[0]!.fill, rest.value[0]!.fill)).toBeUndefined();
+    },
+  );
 
   it('TAKER-исполнение несёт комиссию по формуле size × rate × p × (1 − p)', () => {
     const rest = mapPolymarketClobTrade(clobTrade(TAKER.rest), CONTEXT);

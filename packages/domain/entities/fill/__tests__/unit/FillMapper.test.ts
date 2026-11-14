@@ -3,6 +3,7 @@
  */
 
 import { FillMapper } from '../../src/mappers/FillMapper';
+import { findFillFactDifference } from '../../src/factIdentity';
 import {
   AssetIdHelpers,
   assetIdToString,
@@ -267,6 +268,161 @@ describe('FillMapper', () => {
     it.each([Number.NaN, Number.POSITIVE_INFINITY, -0.01])('невалидная ставка %p → Err', (rate) => {
       const result = FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent(), makeAccountId(), { takerFeeRate: rate });
       expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('allFromPolymarketTradeEvent() — время исполнения: match_time → matchtime, timestamp только при их отсутствии', () => {
+    // timestamp WS-события — время СООБЩЕНИЯ: оно бывает позже исполнения.
+    // Fill.timestamp входит в факт исполнения и обязан быть моментом матчинга.
+    function timestampsOf(raw: Record<string, unknown>): number[] {
+      return unwrap(FillMapper.allFromPolymarketTradeEvent(raw, makeAccountId())).map(({ fill }) => fill.timestamp.toNumber());
+    }
+
+    it.each<[string, (overrides: Record<string, unknown>) => Record<string, unknown>]>([
+      ['TAKER', makeValidTakerEvent],
+      ['MAKER', makeValidMakerEvent],
+    ])('%s: match_time побеждает более поздний timestamp сообщения', (_label, make) => {
+      expect(timestampsOf(make({ match_time: '1700000000', timestamp: '1700000030' }))).toEqual([1700000000000]);
+    });
+
+    it.each<[string, unknown]>([
+      ['отсутствует', undefined],
+      ['null', null],
+    ])('match_time %s → берётся timestamp', (_label, matchTime) => {
+      expect(timestampsOf(makeValidTakerEvent({ match_time: matchTime, timestamp: '1700000030' }))).toEqual([1700000030000]);
+    });
+
+    it.each<[string, unknown]>([
+      ['мусор', 'garbage'],
+      ['пустая строка', ''],
+      ['пробелы', '   '],
+      ['NaN', 'NaN'],
+      ['ноль', '0'],
+      ['отрицательное', '-1700000000'],
+      ['бесконечность', 'Infinity'],
+      ['не строка и не число', true],
+      ['объект', { seconds: 1700000000 }],
+    ])('match_time присутствует, но невалиден (%s) → Err, БЕЗ отката на валидный timestamp', (_label, matchTime) => {
+      for (const make of [makeValidTakerEvent, makeValidMakerEvent]) {
+        const result = FillMapper.allFromPolymarketTradeEvent(
+          make({ match_time: matchTime, timestamp: '1700000030' }),
+          makeAccountId(),
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.message).toContain('match_time');
+      }
+    });
+
+    it('match_time в миллисекундах берётся как есть, в секундах — × 1000; число принимается наравне со строкой', () => {
+      expect(timestampsOf(makeValidTakerEvent({ match_time: '1700000000123', timestamp: '1700000030' }))).toEqual([1700000000123]);
+      expect(timestampsOf(makeValidTakerEvent({ match_time: 1700000000, timestamp: '1700000030' }))).toEqual([1700000000000]);
+      expect(timestampsOf(makeValidTakerEvent({ match_time: 1700000000123 }))).toEqual([1700000000123]);
+    });
+
+    it('то же правило секунд/миллисекунд у timestamp-отката', () => {
+      expect(timestampsOf(makeValidTakerEvent({ timestamp: '1700000030123' }))).toEqual([1700000030123]);
+      expect(timestampsOf(makeValidTakerEvent({ timestamp: 1700000030 }))).toEqual([1700000030000]);
+    });
+
+    // Официальная схема user-channel принимает и legacy-имя `matchtime`;
+    // SDK: matchedAt = match_time ?? matchtime. Это тоже время исполнения.
+    describe('legacy vendor-поле matchtime', () => {
+      it.each<[string, (overrides: Record<string, unknown>) => Record<string, unknown>]>([
+        ['TAKER', makeValidTakerEvent],
+        ['MAKER', makeValidMakerEvent],
+      ])('%s: match_time нет, matchtime T, timestamp T + 30 с → Fill.timestamp = matchtime, а не время сообщения', (_label, make) => {
+        expect(timestampsOf(make({ match_time: undefined, matchtime: '1672290700', timestamp: '1672290730' }))).toEqual([
+          1672290700000,
+        ]);
+      });
+
+      it('match_time null, matchtime есть → matchtime', () => {
+        expect(timestampsOf(makeValidTakerEvent({ match_time: null, matchtime: '1672290700', timestamp: '1672290730' }))).toEqual([
+          1672290700000,
+        ]);
+      });
+
+      it('match_time побеждает matchtime и timestamp', () => {
+        expect(
+          timestampsOf(makeValidTakerEvent({ match_time: '1672290700', matchtime: '1672290650', timestamp: '1672290730' })),
+        ).toEqual([1672290700000]);
+      });
+
+      it.each<[string, unknown]>([
+        ['мусор', 'garbage'],
+        ['пустая строка', ''],
+        ['ноль', '0'],
+        ['отрицательное', '-1672290700'],
+      ])('match_time невалиден (%s) → Err, БЕЗ отката ни на валидный matchtime, ни на timestamp', (_label, matchTime) => {
+        const result = FillMapper.allFromPolymarketTradeEvent(
+          makeValidTakerEvent({ match_time: matchTime, matchtime: '1672290700', timestamp: '1672290730' }),
+          makeAccountId(),
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('match_time');
+          expect(result.error.message).not.toContain('matchtime');
+        }
+      });
+
+      it.each<[string, unknown]>([
+        ['мусор', 'garbage'],
+        ['пустая строка', ''],
+        ['NaN', 'NaN'],
+        ['ноль', '0'],
+        ['не строка и не число', false],
+      ])('match_time нет, matchtime невалиден (%s) → Err, БЕЗ отката на валидный timestamp', (_label, legacyMatchTime) => {
+        for (const make of [makeValidTakerEvent, makeValidMakerEvent]) {
+          const result = FillMapper.allFromPolymarketTradeEvent(
+            make({ match_time: undefined, matchtime: legacyMatchTime, timestamp: '1672290730' }),
+            makeAccountId(),
+          );
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('matchtime');
+        }
+      });
+
+      it('то же правило секунд/миллисекунд: matchtime в мс берётся как есть, числом — наравне со строкой', () => {
+        expect(timestampsOf(makeValidTakerEvent({ match_time: undefined, matchtime: '1672290700123' }))).toEqual([1672290700123]);
+        expect(timestampsOf(makeValidTakerEvent({ match_time: undefined, matchtime: 1672290700 }))).toEqual([1672290700000]);
+      });
+
+      it('обратная совместимость generic-маппера: нет ни match_time, ни matchtime → по-прежнему timestamp', () => {
+        expect(timestampsOf(makeValidTakerEvent({ match_time: undefined, matchtime: undefined, timestamp: '1672290730' }))).toEqual([
+          1672290730000,
+        ]);
+        expect(timestampsOf(makeValidTakerEvent({ match_time: null, matchtime: null, timestamp: '1672290730' }))).toEqual([
+          1672290730000,
+        ]);
+      });
+
+      it('один и тот же факт при match_time T и при legacy matchtime T', () => {
+        const viaMatchTime = unwrap(
+          FillMapper.allFromPolymarketTradeEvent(makeValidTakerEvent({ match_time: '1672290700', timestamp: '1672290730' }), makeAccountId()),
+        );
+        const viaLegacy = unwrap(
+          FillMapper.allFromPolymarketTradeEvent(
+            makeValidTakerEvent({ match_time: undefined, matchtime: '1672290700', timestamp: '1672290730' }),
+            makeAccountId(),
+          ),
+        );
+        expect(findFillFactDifference(viaMatchTime[0]!.fill, viaLegacy[0]!.fill)).toBeUndefined();
+      });
+    });
+
+    it('нет ни match_time, ни matchtime, ни timestamp → Err', () => {
+      const result = FillMapper.allFromPolymarketTradeEvent(
+        makeValidTakerEvent({ match_time: undefined, timestamp: undefined }),
+        makeAccountId(),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('missing execution time');
+    });
+
+    it('один и тот же match_time при разных timestamp сообщений → один и тот же Fill.timestamp', () => {
+      const early = timestampsOf(makeValidTakerEvent({ match_time: '1700000000', timestamp: '1700000001' }));
+      const late = timestampsOf(makeValidTakerEvent({ match_time: '1700000000', timestamp: '1700000999' }));
+      expect(late).toEqual(early);
     });
   });
 
