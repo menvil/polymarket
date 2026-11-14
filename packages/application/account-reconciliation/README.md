@@ -239,7 +239,8 @@ Production-реализация порта — `PolymarketAccountVenueStateSourc
 сделано       граница authoritative-состояния площадки
 сделано       PolymarketAccountVenueStateSource на официальном @polymarket/client
 сделано       один факт исполнения REST ↔ приватный WS: FillId, время
-              (match_time), ставка комиссии TAKER (общий резолвер)
+              (match_time → legacy matchtime), ставка комиссии TAKER
+              (общий резолвер)
 следующий MR  state matcher + atomic correction planner;
               уход от transitional-модели authoritative-Portfolio
 затем         runtime wiring: STARTUP / PERIODIC / RECONNECT
@@ -588,8 +589,10 @@ canonical `Fill`: тот же `FillId` и `findFillFactDifference(wsFill, restFi
 другой политикой идентичности недопустим. Факт тоже общий:
 
 ```text
-Fill.timestamp  = venue execution match_time; timestamp сообщения — только
-                  если match_time отсутствует
+Fill.timestamp  = venue execution time: match_time → legacy matchtime;
+                  приватный WS без обоих — отказ (timestamp сообщения —
+                  не время исполнения); generic FillMapper без обоих —
+                  timestamp (обратная совместимость)
 Fill.fee TAKER  = ставка рынка от PolymarketTakerFeeRateResolver
                   (@polymarket/fill) — один контракт для WS и REST
 receivedAt      = время НАШЕЙ обработки (FILL_RECEIVED), не время исполнения

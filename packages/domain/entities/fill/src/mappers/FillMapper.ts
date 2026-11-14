@@ -59,9 +59,11 @@
  *
  * ### Время исполнения (`Fill.timestamp`):
  * - `match_time` — момент исполнения на площадке; если поле есть, берётся оно
- * - `timestamp` — время сообщения/обновления; используется, ТОЛЬКО если
- *   `match_time` отсутствует (`undefined`/`null`)
- * - `match_time` есть, но невалиден → отказ, а не откат на `timestamp`
+ * - `matchtime` — legacy-имя того же поля (официальная схема user-channel
+ *   принимает оба); берётся, если `match_time` отсутствует (`undefined`/`null`)
+ * - `timestamp` — время сообщения/обновления; используется, ТОЛЬКО если нет
+ *   ни `match_time`, ни `matchtime` (обратная совместимость generic-маппера)
+ * - первое присутствующее поле невалидно → отказ, а не переход к следующему
  *
  * Так приватный WS (сообщение может прийти позже исполнения) и REST
  * (`matchedAt`) дают один и тот же факт исполнения.
@@ -222,9 +224,11 @@ export class FillMapper {
    * сообщения ({@link parsePolymarketExecutionTime}):
    *
    * ```text
-   * match_time есть и валиден        → match_time
-   * match_time есть, но невалиден    → Err (без отката на timestamp)
-   * match_time отсутствует / null    → timestamp
+   * match_time есть и валиден                → match_time
+   * match_time есть, но невалиден            → Err (без отката дальше)
+   * match_time нет, matchtime есть и валиден → matchtime (legacy vendor-имя)
+   * match_time нет, matchtime невалиден      → Err (без отката на timestamp)
+   * нет ни match_time, ни matchtime          → timestamp
    * ```
    *
    * ### Почему массив:
@@ -341,7 +345,7 @@ export class FillMapper {
       );
     }
 
-    // Время исполнения: match_time, а timestamp — только если match_time отсутствует
+    // Время исполнения: match_time → matchtime, а timestamp — только если нет обоих
     const timestampResult = parsePolymarketExecutionTime(raw);
     if (!timestampResult.ok) return Err(timestampResult.error);
 
@@ -966,55 +970,102 @@ export class FillMapper {
  * @throws Не бросает: отказ возвращается как `Err(ValidationError)`
  *
  * @remarks
- * Единственное место разбора времени исполнения в `FillMapper`.
+ * Единственное место выбора поля времени исполнения в `FillMapper`; разбор
+ * выбранного значения — {@link parseExecutionTimestamp}.
  *
  * ### Какое поле
  *
  * ```text
- * match_time есть (не undefined/null) → match_time; невалиден → Err
- * match_time отсутствует / null       → timestamp;  невалиден → Err
- * нет ни того, ни другого             → Err
+ * match_time есть (не undefined/null)        → match_time; невалиден → Err
+ * match_time нет, matchtime есть             → matchtime;  невалиден → Err
+ * нет ни match_time, ни matchtime            → timestamp;  невалиден → Err
+ * нет ни одного                              → Err
  * ```
  *
- * `match_time` — момент исполнения на площадке, `timestamp` WS-события —
- * время сообщения/обновления: оно может быть позже исполнения (повторная
- * доставка, смена статуса MATCHED → CONFIRMED). `Fill.timestamp` входит в
- * неизменяемый факт исполнения (`findFillFactDifference`), поэтому время
- * доставки в него попадать не должно — иначе WS и REST (`matchedAt`) дали бы
- * один `FillId`, но разные факты.
+ * Официальная схема user-channel Polymarket принимает ОБА vendor-поля
+ * времени исполнения — `match_time` и legacy `matchtime`; SDK нормализует их
+ * как `matchedAt = match_time ?? matchtime`. Порядок здесь тот же: сделка,
+ * пришедшая с одним `matchtime`, — тоже сделка с известным временем
+ * исполнения, и откат на `timestamp` дал бы ей время доставки.
  *
- * Присутствующий, но невалидный `match_time` (пустой, нечисловой, `NaN`,
- * ноль, отрицательный) — отказ, а НЕ откат на `timestamp`: откат скрыл бы
- * испорченное authoritative-время исполнения временем доставки.
+ * `match_time`/`matchtime` — момент исполнения на площадке, `timestamp`
+ * WS-события — время сообщения/обновления: оно может быть позже исполнения
+ * (повторная доставка, смена статуса MATCHED → CONFIRMED). `Fill.timestamp`
+ * входит в неизменяемый факт исполнения (`findFillFactDifference`), поэтому
+ * время доставки в него попадать не должно — иначе WS и REST (`matchedAt`)
+ * дали бы один `FillId`, но разные факты.
  *
- * ### Секунды или миллисекунды
+ * Первое присутствующее поле времени исполнения — authoritative попытка.
+ * Невалидное значение (пустое, нечисловое, `NaN`, ноль, отрицательное) — отказ,
+ * а НЕ переход к следующему полю: откат скрыл бы испорченное время исполнения
+ * другим полем или временем доставки.
  *
- * Одно правило для обоих полей: значение `< 1e12` — секунды (× 1000), иначе
- * миллисекунды. Принимаются строка и число; часы (`Date.now()`) не
- * используются никогда.
+ * Откат на `timestamp` остаётся только ради обратной совместимости
+ * generic-маппера (прочие вызывающие, исторические записи). Приватный
+ * production-путь (`FillEventHandler`) строже: сделку без `match_time` и
+ * `matchtime` он отвергает до вызова `FillMapper`.
  *
  * @example
  * ```typescript
  * parsePolymarketExecutionTime({ match_time: '1700000000', timestamp: '1700000030' });
  * // Ok(Timestamp 1700000000000) — время доставки не участвует
- * parsePolymarketExecutionTime({ match_time: 'garbage', timestamp: '1700000030' });
- * // Err(ValidationError) — без отката на timestamp
+ * parsePolymarketExecutionTime({ matchtime: '1700000000', timestamp: '1700000030' });
+ * // Ok(Timestamp 1700000000000) — legacy-поле, тоже время исполнения
+ * parsePolymarketExecutionTime({ match_time: 'garbage', matchtime: '1700000000' });
+ * // Err(ValidationError) — без отката на matchtime и timestamp
  * ```
  *
  * @internal
  */
 function parsePolymarketExecutionTime(raw: Record<string, unknown>): Result<Timestamp, ValidationError> {
   const matchTime = raw['match_time'];
-  const field = matchTime === undefined || matchTime === null ? 'timestamp' : 'match_time';
-  const value = field === 'match_time' ? matchTime : raw['timestamp'];
-  if (value === undefined || value === null) {
+  if (matchTime !== undefined && matchTime !== null) {
+    return parseExecutionTimestamp(matchTime, 'match_time');
+  }
+
+  const legacyMatchTime = raw['matchtime'];
+  if (legacyMatchTime !== undefined && legacyMatchTime !== null) {
+    return parseExecutionTimestamp(legacyMatchTime, 'matchtime');
+  }
+
+  const messageTime = raw['timestamp'];
+  if (messageTime === undefined || messageTime === null) {
     return Err(
-      new ValidationError('Invalid trade event: missing execution time (match_time or timestamp)', {
+      new ValidationError('Invalid trade event: missing execution time (match_time, matchtime or timestamp)', {
         context: { field: 'match_time' },
       })
     );
   }
+  return parseExecutionTimestamp(messageTime, 'timestamp');
+}
 
+/**
+ * Значение выбранного поля времени исполнения → canonical `Timestamp`.
+ *
+ * @param value - Присутствующее (не `undefined`/`null`) значение поля
+ * @param field - Имя поля — для текста ошибки и контекста
+ * @returns Момент времени либо отказ
+ * @throws Не бросает: отказ возвращается как `Err(ValidationError)`
+ *
+ * @remarks
+ * Одно правило для всех полей: принимаются строка и число, значение
+ * `< 1e12` — секунды (× 1000), иначе миллисекунды. Нечисловое, нечисловая
+ * строка, `NaN`, бесконечность, ноль и отрицательное — отказ. Часы
+ * (`Date.now()`) не используются никогда.
+ *
+ * @example
+ * ```typescript
+ * parseExecutionTimestamp('1700000000', 'matchtime');    // Ok(Timestamp 1700000000000)
+ * parseExecutionTimestamp('1700000000000', 'match_time'); // Ok(Timestamp 1700000000000)
+ * parseExecutionTimestamp('garbage', 'match_time');      // Err(ValidationError)
+ * ```
+ *
+ * @internal
+ */
+function parseExecutionTimestamp(
+  value: unknown,
+  field: 'match_time' | 'matchtime' | 'timestamp'
+): Result<Timestamp, ValidationError> {
   const numeric = typeof value === 'string' || typeof value === 'number' ? Number(value) : Number.NaN;
   if (!Number.isFinite(numeric) || numeric <= 0) {
     return Err(

@@ -240,25 +240,55 @@ FillMapper.fromPolymarketTradeEvent(
 }
 ```
 
-**Время исполнения (`Fill.timestamp`) — `match_time`, а не время сообщения.**
+**Время исполнения (`Fill.timestamp`) — время исполнения площадки, а не время
+сообщения.** Официальная схема user-channel Polymarket принимает ОБА
+vendor-поля времени исполнения — `match_time` и legacy `matchtime`; SDK
+нормализует их как `matchedAt = match_time ?? matchtime`. `FillMapper` идёт в
+том же порядке и только потом — к `timestamp`:
 
-| `match_time` | `Fill.timestamp` |
-| --- | --- |
-| есть и валиден | `match_time` |
-| есть, но невалиден (пустой, нечисловой, `NaN`, ≤ 0, не строка/число) | `Err(ValidationError)` — БЕЗ отката на `timestamp` |
-| отсутствует (`undefined`) или `null` | `timestamp` (тот же разбор; нет и его — `Err`) |
+| `match_time` | `matchtime` | `Fill.timestamp` |
+| --- | --- | --- |
+| есть и валиден | любой | `match_time` |
+| есть, но невалиден (пустой, нечисловой, `NaN`, ≤ 0, не строка/число) | любой | `Err(ValidationError)` — БЕЗ отката на `matchtime` и `timestamp` |
+| отсутствует (`undefined`) или `null` | есть и валиден | `matchtime` |
+| отсутствует или `null` | есть, но невалиден | `Err(ValidationError)` — БЕЗ отката на `timestamp` |
+| отсутствует или `null` | отсутствует или `null` | `timestamp` (тот же разбор; нет и его — `Err`) |
+
+```mermaid
+flowchart TD
+    A{match_time есть?} -->|да| AV{валиден?}
+    AV -->|да| R1[Fill.timestamp = match_time]
+    AV -->|нет| E1[Err — без отката]
+    A -->|нет / null| B{matchtime есть?}
+    B -->|да| BV{валиден?}
+    BV -->|да| R2[Fill.timestamp = matchtime]
+    BV -->|нет| E2[Err — без отката]
+    B -->|нет / null| C{timestamp есть?}
+    C -->|да| R3["Fill.timestamp = timestamp<br/>(только generic-маппер)"]
+    C -->|нет| E3[Err: missing execution time]
+```
 
 Значение `< 1e12` — секунды (× 1000), иначе миллисекунды; правило одно для
-обоих полей, часы не используются. Разбор — в одной функции
-`parsePolymarketExecutionTime`.
+всех трёх полей, часы не используются. Выбор поля — одна функция
+`parsePolymarketExecutionTime`, разбор выбранного значения — одна
+`parseExecutionTimestamp`.
 
 Почему так: `timestamp` WS-события — время СООБЩЕНИЯ/обновления, оно может
 быть позже исполнения (повторная доставка, `MATCHED → CONFIRMED`). А
 `Fill.timestamp` входит в неизменяемый факт (`findFillFactDifference`): с
 временем доставки одно исполнение дало бы из WS и из REST (`matchedAt`) один
-`FillId`, но разный факт. Откат на `timestamp` при испорченном `match_time`
-скрыл бы испорченное authoritative-время исполнения — поэтому отказ.
+`FillId`, но разный факт. Событие с одним `matchtime` — тоже событие с
+известным временем исполнения: без поддержки legacy-имени маппер взял бы
+`timestamp = T + 30 с` при REST `matchedAt = T`. Первое присутствующее поле
+времени исполнения — authoritative попытка: откат при испорченном значении
+скрыл бы испорченное время исполнения другим полем — поэтому отказ.
 REST-адаптер передаёт `matchedAt` под именем `match_time`.
+
+Откат на `timestamp` остаётся в generic-маппере только ради обратной
+совместимости (прочие вызывающие, исторические записи). Приватный
+production-путь строже: `FillEventHandler` отвергает сделку без `match_time`
+и `matchtime` ещё до `FillMapper` — одного `timestamp` сообщения ему мало
+(см. `packages/application/handlers/docs/handlers.md`).
 
 **Логика TAKER vs MAKER:**
 

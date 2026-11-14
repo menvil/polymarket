@@ -235,28 +235,47 @@ TAKER tokenId не CTF-токен    parseAssetId примет CURRENCY:…  Err
 не строится, и их дефект не должен ронять наш проход. В приватном WS-пути
 (`FillEventHandler`) эти подстановки `FillMapper` пока остаются.
 
-### Время исполнения: `match_time`, не время сообщения
+### Время исполнения: `match_time` → `matchtime`, не время сообщения
 
 `Fill.timestamp` входит в canonical факт исполнения
 (`findFillFactDifference`). Если в него попадёт время ДОСТАВКИ, одна сделка
 из WS и из REST даст один `FillId`, но разный факт: WS-сообщение приходит
 позже исполнения (повторная доставка, смена статуса `MATCHED → CONFIRMED`).
 
-Правило одно, в `FillMapper` (`parsePolymarketExecutionTime`), для обоих
-путей:
+Официальная схема user-channel Polymarket принимает ОБА vendor-поля времени
+исполнения — `match_time` и legacy `matchtime`; SDK нормализует их как
+`matchedAt = match_time ?? matchtime`. Реальное WS-событие может прийти так:
 
 ```text
+matchtime = T          ← время исполнения
+timestamp = T + 30 с   ← время сообщения
+match_time             ← нет
+```
+
+Если бы разбор знал только `match_time`, он взял бы `timestamp = T + 30 с`,
+а REST (`matchedAt = T`) — `T`. Поэтому правило — в `FillMapper`
+(`parsePolymarketExecutionTime`), одно для обоих путей:
+
+```text
+canonical время исполнения приватного WS: match_time → legacy matchtime
+
 match_time есть (не undefined/null) → Fill.timestamp = match_time
-match_time есть, но невалиден       → Err (БЕЗ отката на timestamp)
-match_time отсутствует / null       → Fill.timestamp = timestamp
+match_time есть, но невалиден       → Err (БЕЗ отката на matchtime и timestamp)
+match_time нет, matchtime есть      → Fill.timestamp = matchtime
+match_time нет, matchtime невалиден → Err (БЕЗ отката на timestamp)
+нет обоих                           → generic FillMapper: timestamp
+                                      FillEventHandler: Err ещё до FillMapper
 значение < 1e12                     → секунды (× 1000), иначе миллисекунды
 ```
 
 REST передаёт `matchedAt` под именем `match_time` — смысл поля, а не маска
-под время сообщения; `timestamp` у REST-формы нет. Приватный WS присылает
-оба поля, и `timestamp` сообщения теперь не участвует. Испорченный
-`match_time` — отказ: откат на `timestamp` скрыл бы испорченное
-authoritative-время исполнения временем доставки.
+под время сообщения; `timestamp` у REST-формы нет. Приватный WS
+(`FillEventHandler`) требует `match_time` или `matchtime`: одного
+`timestamp` сообщения ему мало, даже валидного, — это был бы ложный факт
+исполнения. Откат на `timestamp` остаётся только в generic `FillMapper` ради
+обратной совместимости прочих вызывающих. Испорченное присутствующее поле
+времени исполнения — отказ: откат скрыл бы испорченное authoritative-время
+другим полем или временем доставки.
 
 `FILL_RECEIVED.payload.receivedAt` — другое время: момент НАШЕЙ обработки
 (`clock.now()` в `FillEventHandler`). С `Fill.timestamp` их не сводят.
@@ -428,7 +447,7 @@ const state = await source.value.getAccountState(KnownVenues.POLYMARKET, account
 | было блокером | решение |
 | --- | --- |
 | REST ↔ WS `FillId` | общий `FillMapper`, владение только по нашему адресу |
-| REST `matchedAt` ↔ WS execution timestamp | canonical `Fill.timestamp` = `match_time` исполнения; `timestamp` — только если `match_time` отсутствует |
+| REST `matchedAt` ↔ WS execution timestamp | canonical время исполнения приватного WS: `match_time` → legacy `matchtime`; `FillEventHandler` без обоих — отказ; generic `FillMapper` без обоих — `timestamp` (обратная совместимость) |
 | источник ставки комиссии в приватном WS | приватный WS и REST получают ставку TAKER-исполнения через один контракт `PolymarketTakerFeeRateResolver` (`@polymarket/fill`) |
 
 Открыто:
@@ -461,7 +480,7 @@ USD-equivalent accounting unit.
 | регистр и форма статусов `/data/order(s)` (`LIVE` vs `live` vs префикс) | сейчас принимается только задокументированный верхний регистр |
 | смысл `INVALID`; статус истёкшей GTD-заявки | сейчас `Err` |
 | `TRADE_STATUS_MATCHED_NOT_BROADCASTED` | сейчас `Err` |
-| присылает ли WS user-channel `match_time` у каждого trade-события | без него `FillMapper` берёт `timestamp` сообщения — факт разойдётся с REST |
+| присылает ли WS user-channel `match_time` или `matchtime` у каждого trade-события | без обоих `FillEventHandler` отвергает событие (fail closed) — исполнение придёт только REST-сверкой |
 | ставка taker-комиссии рынков scope (fee schedule) | набор `PolymarketStaticTakerFeeRateResolver` |
 | полнота `listAccountTrades({ market })` без `makerAddress` для TAKER и MAKER | полнота `recentFills` |
 
@@ -470,7 +489,7 @@ USD-equivalent accounting unit.
 | файл | что покрывает |
 | --- | --- |
 | `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц, настоящий ноль, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK, `boundWallet` = `client.account.wallet` |
-| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome; WS-сообщение на 30 с позже `match_time`), **ACCEPTANCE: одно TAKER-исполнение (WS `timestamp` T+30 с, `fee_rate_bps "0"`; REST `matchedAt` T, `feeRateBps "0"`; общий настоящий резолвер) → тот же `FillId` и факт**, **P0 комиссии: WS `fee_rate_bps` `"0"`/`"1000"`/`"250"` и REST `feeRateBps "0"` + одна ставка резолвера → тот же факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, REST `matchedAt` → `match_time` без `timestamp`, владение только по адресу, self-match, отказ вместо подстановок `FillMapper` (токен и сторона нашей maker-записи, сторона и токен тейкера; чужие записи не проверяются), слияние повторов |
+| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome; WS-сообщение на 30 с позже `match_time`; то же — когда время исполнения только в legacy `matchtime`), **ACCEPTANCE: одно TAKER-исполнение (WS `timestamp` T+30 с, `fee_rate_bps "0"`; REST `matchedAt` T, `feeRateBps "0"`; общий настоящий резолвер) → тот же `FillId` и факт — и с `match_time`, и с одним legacy `matchtime`; то же для MAKER с `matchtime`**, **P0 комиссии: WS `fee_rate_bps` `"0"`/`"1000"`/`"250"` и REST `feeRateBps "0"` + одна ставка резолвера → тот же факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, REST `matchedAt` → `match_time` без `timestamp`, владение только по адресу, self-match, отказ вместо подстановок `FillMapper` (токен и сторона нашей maker-записи, сторона и токен тейкера; чужие записи не проверяются), слияние повторов |
 | `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, привязка при создании (чужой `accountId`, клиент другого кошелька, reader чужого кошелька, чужой `makerAddress`, `accountId` не WALLET-вида, кошелёк не сообщён — отказ без запросов), балансы scope (ноль явно), правка scope вызывающим во время прохода не сдвигает балансы, отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
 | `PolymarketTakerFeeRateResolver.test.ts` | ставка по рынку без учёта регистра, неизвестный рынок → `Err`, невалидная ставка и повтор рынка → отказ создания |
 | `contour-boundary.test.ts` | закрытый список импортов account plane, `@polymarket/fill` только в нём, из SDK — только `import type` (распознаватель ловит value-import, `export *`, side-effect и динамический `import()` — проверено фикстурами) |

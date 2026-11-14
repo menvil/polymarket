@@ -312,9 +312,12 @@ const source = PolymarketAccountVenueStateSource.create(
 - ✅ сделки рынков scope разбираются ТЕМ ЖЕ `FillMapper`, что и приватный WS:
   **одно исполнение площадки даёт один canonical `Fill` обоими путями**
   (`findFillFactDifference(wsFill, restFill) === undefined`);
-- ✅ время исполнения — `match_time`: REST `matchedAt` уходит в `FillMapper`
-  под этим именем, у WS `timestamp` сообщения используется, только если
-  `match_time` отсутствует;
+- ✅ время исполнения: REST `matchedAt` уходит в `FillMapper` под именем
+  `match_time`; canonical время приватного WS — `match_time` → legacy
+  `matchtime` (официальная схема user-channel принимает оба). Generic
+  `FillMapper` без обоих откатывается на `timestamp`; production
+  `FillEventHandler` — нет: одного `timestamp` сообщения ему мало, событие
+  отвергается;
 - ✅ комиссия TAKER-исполнения — по ставке `PolymarketTakerFeeRateResolver`
   рынка сделки: REST `feeRateBps` (`"0"`) и WS `fee_rate_bps` на `Fill.fee` не
   влияют; интерфейс порта — один, в `@polymarket/fill`, его же получает

@@ -55,8 +55,9 @@
  * (`findFillFactDifference(wsFill, restFill) === undefined`). Поэтому:
  *
  * ```text
- * Fill.timestamp  ← match_time исполнения (FillMapper); timestamp сообщения —
- *                   только если match_time отсутствует
+ * Fill.timestamp  ← время исполнения площадки: match_time → legacy matchtime;
+ *                   без обоих событие ОТВЕРГАЕТСЯ (timestamp сообщения — не
+ *                   время исполнения, даже если валиден)
  * Fill.fee TAKER  ← PolymarketTakerFeeRateResolver по raw.market — тот же
  *                   порт, что у REST; fee_rate_bps события НЕ участвует
  * Fill.fee MAKER  ← 0, резолвер не вызывается
@@ -68,6 +69,12 @@
  * WS-исполнений к угадыванию комиссии по `fee_rate_bps`. Отказ резолвера
  * (неизвестный рынок) — отказ разбора: ошибка в лог, `FILL_RECEIVED` не
  * публикуется, в кеш ничего не попадает.
+ *
+ * Официальная схема user-channel принимает оба vendor-поля времени
+ * исполнения — `match_time` и legacy `matchtime` (SDK: `matchedAt =
+ * match_time ?? matchtime`). Generic `FillMapper` ради обратной совместимости
+ * откатывается на `timestamp`, если нет обоих; этот production-путь — нет:
+ * сделка без времени исполнения отвергается так же, как отказ резолвера.
  *
  * ### Ответственность:
  * - НЕ обновляет Portfolio (это задача ProcessFillUseCase через FillOrchestrator)
@@ -406,10 +413,14 @@ export class FillEventHandler {
    * `FillMapper.allFromPolymarketTradeEvent`: MATCHED и CONFIRMED-fallback
    * идут через него, поэтому политика комиссии и времени у них одна.
    *
-   * 1. Опции разбора — {@link FillEventHandler._takerFeeOptions}: ставка
+   * 1. Время исполнения обязано быть в событии —
+   *    {@link FillEventHandler._requireVenueExecutionTime}: `match_time` или
+   *    `matchtime`; одного `timestamp` сообщения недостаточно.
+   * 2. Опции разбора — {@link FillEventHandler._takerFeeOptions}: ставка
    *    TAKER-исполнения от резолвера, у MAKER — без ставки.
-   * 2. `FillMapper` с этими опциями: `Fill.timestamp` — `match_time`,
-   *    комиссия TAKER — по ставке резолвера, `fee_rate_bps` не участвует.
+   * 3. `FillMapper` с этими опциями: `Fill.timestamp` — `match_time`, иначе
+   *    `matchtime` (невалидное присутствующее поле — отказ), комиссия TAKER —
+   *    по ставке резолвера, `fee_rate_bps` не участвует.
    *
    * @example
    * ```typescript
@@ -418,12 +429,56 @@ export class FillEventHandler {
    * ```
    */
   private _mapFills(raw: Record<string, unknown>, accountId: AccountId): Result<Fill[], Error> {
+    const executionTime = this._requireVenueExecutionTime(raw);
+    if (!executionTime.ok) return executionTime;
+
     const options = this._takerFeeOptions(raw);
     if (!options.ok) return options;
 
     const mapped = FillMapper.allFromPolymarketTradeEvent(raw, accountId, options.value);
     if (!mapped.ok) return Err(mapped.error);
     return Ok(mapped.value.map(({ fill }) => fill));
+  }
+
+  /**
+   * Проверяет, что приватная сделка несёт время исполнения площадки.
+   *
+   * @param raw - Raw fill-событие user-channel
+   * @returns `Ok`, если есть `match_time` или `matchtime`; иначе отказ
+   * @throws Не бросает: отказ возвращается как `Err(ValidationError)`
+   *
+   * @remarks
+   * ```text
+   * match_time есть (не undefined/null)   → Ok (значение разберёт FillMapper)
+   * match_time нет, matchtime есть        → Ok (legacy vendor-имя)
+   * нет обоих                             → Err — даже при валидном timestamp
+   * ```
+   *
+   * `Fill.timestamp` — неизменяемый факт исполнения на площадке, `timestamp`
+   * события — время сообщения/обновления. Generic `FillMapper` откатывается на
+   * него ради обратной совместимости, но для приватного production-пути это
+   * был бы ложный факт: тот же `FillId`, что у REST (`matchedAt`), с другим
+   * временем. Поэтому проверка стоит ДО `FillMapper`.
+   *
+   * Здесь проверяется только присутствие. Корректность значения (число,
+   * секунды/миллисекунды, присутствующее, но невалидное поле — отказ без
+   * отката) — забота `FillMapper`, чтобы разбор времени жил в одном месте.
+   *
+   * @example
+   * ```typescript
+   * this._requireVenueExecutionTime({ matchtime: '1672290700', timestamp: '1672290730' }); // Ok
+   * this._requireVenueExecutionTime({ timestamp: '1672290730' }); // Err
+   * ```
+   */
+  private _requireVenueExecutionTime(raw: Record<string, unknown>): Result<void, ValidationError> {
+    const present = (value: unknown): boolean => value !== undefined && value !== null;
+    if (present(raw['match_time']) || present(raw['matchtime'])) return Ok(undefined);
+
+    return Err(
+      new ValidationError('Invalid trade event: missing venue execution time (match_time or matchtime)', {
+        context: { field: 'match_time', value: raw['match_time'] },
+      }),
+    );
   }
 
   /**

@@ -31,7 +31,8 @@
  * Время и комиссия исполнения — тоже общие с приватным WS:
  *
  * ```text
- * Fill.timestamp  ← match_time (REST matchedAt под тем же именем, что у WS)
+ * Fill.timestamp  ← match_time (REST matchedAt под каноническим именем; WS
+ *                   присылает match_time или legacy matchtime)
  * Fill.fee TAKER  ← PolymarketTakerFeeRateResolver по рынку (тот же порт,
  *                   что у FillEventHandler); feeRateBps не участвует
  * ```
@@ -450,10 +451,12 @@ export interface PolymarketTradeContext {
  * комиссию тейкера. Ставку `mapPolymarketClobTrade` берёт у резолвера.
  *
  * `matchedAt` передаётся под именем `match_time` — смысл поля, а не маска:
- * это время исполнения, и `FillMapper` берёт `Fill.timestamp` именно из
- * `match_time` (у приватного WS — то же поле). `timestamp` (время
- * сообщения) у REST-записи нет и не подставляется: `FillMapper` откатился
- * бы на него, только если бы `match_time` отсутствовал.
+ * это время исполнения, и `FillMapper` берёт `Fill.timestamp` прежде всего
+ * из `match_time` (у приватного WS — то же поле либо его legacy-имя
+ * `matchtime`, SDK: `matchedAt = match_time ?? matchtime`). `timestamp`
+ * (время сообщения) у REST-записи нет и не подставляется: `FillMapper`
+ * откатился бы на него, только если бы не было ни `match_time`, ни
+ * `matchtime`.
  *
  * Перед переименованием проверяются поля, которые `FillMapper` при пропуске
  * восстановил бы сам (сторона и токен тейкера; токен и сторона НАШИХ

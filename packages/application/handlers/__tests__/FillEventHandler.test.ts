@@ -88,7 +88,7 @@ function makeValidRaw(): Record<string, unknown> {
     fee_rate_bps: '0',           // диагностика: комиссию TAKER задаёт резолвер по market
     status: 'MATCHED',
     match_time: '1672290700',    // Unix секунды: момент исполнения → Fill.timestamp
-    timestamp: '1672290701',     // время СООБЩЕНИЯ: используется, только если нет match_time
+    timestamp: '1672290701',     // время СООБЩЕНИЯ: в Fill.timestamp не попадает никогда
     transaction_hash: '0xdeadbeef',
     maker_orders: [],
   };
@@ -430,9 +430,9 @@ describe('FillEventHandler', () => {
     );
   });
 
-  // ── Факт исполнения: время — match_time, комиссия TAKER — резолвер ───────
+  // ── Факт исполнения: время — match_time/matchtime, комиссия TAKER — резолвер
 
-  describe('факт исполнения: тот же, что у REST (время — match_time, комиссия — резолвер)', () => {
+  describe('факт исполнения: тот же, что у REST (время — match_time/matchtime, комиссия — резолвер)', () => {
     /** Payload-ы опубликованных событий данного типа, в порядке публикации. */
     function published(type: string): Array<Record<string, unknown>> {
       const calls = (eventBus.publish as ReturnType<typeof jest.fn>).mock.calls as Array<[{ type: string; payload: Record<string, unknown> }]>;
@@ -620,6 +620,116 @@ describe('FillEventHandler', () => {
       const [payload] = published('FILL_RECEIVED');
       expect((payload!['fill'] as Fill).timestamp.toNumber()).toBe(T * 1000);
       expect((payload!['receivedAt'] as Timestamp).toNumber()).toBe(new Date('2024-01-01T00:00:00.000Z').getTime());
+    });
+
+    // ── Время исполнения: match_time → legacy matchtime; без них — отказ ──
+
+    /** WS-событие без `match_time`: время исполнения только в legacy `matchtime`. */
+    function withLegacyMatchTime(raw: Record<string, unknown>, matchtime: unknown): Record<string, unknown> {
+      const { match_time: _matchTime, ...rest } = raw;
+      return { ...rest, matchtime };
+    }
+
+    it('MATCHED: match_time нет, matchtime T, timestamp T + 30 с → FILL_RECEIVED, Fill.timestamp = T', async () => {
+      const T = 1672290700;
+      await handler.handle(withLegacyMatchTime({ ...makeValidRaw(), timestamp: String(T + 30) }, String(T)), ACCOUNT_ID);
+
+      const [fill] = receivedFills();
+      expect(fill).toBeDefined();
+      expect(fill!.timestamp.toNumber()).toBe(T * 1000);
+    });
+
+    it.each<[string, Record<string, unknown>]>([
+      ['оба отсутствуют', { match_time: undefined, matchtime: undefined }],
+      ['оба null', { match_time: null, matchtime: null }],
+    ])('MATCHED без времени исполнения (%s) при валидном timestamp → нет FILL_RECEIVED, нет кеша, ошибка в лог', async (_label, executionTime) => {
+      await handler.handle({ ...makeValidRaw(), ...executionTime, timestamp: '1672290730' }, ACCOUNT_ID);
+
+      expect(eventBus.publish).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to parse fill event',
+        expect.objectContaining({ rawId: 'fill-001', error: expect.stringContaining('missing venue execution time') }),
+      );
+      // Отказ до FillMapper и до резолвера.
+      expect(takerFeeRates.calls).toEqual([]);
+
+      // Ничего не закешировано: FAILED того же трейда уходит без fills для отката.
+      await handler.handle({ ...makeValidRaw(), status: 'FAILED' }, ACCOUNT_ID);
+      const [failed] = published('FILL_FAILED');
+      expect(failed).toBeDefined();
+      expect(failed!['fills']).toBeUndefined();
+    });
+
+    it('MAKER без времени исполнения → тоже отказ: правило не зависит от стороны', async () => {
+      const { match_time: _matchTime, ...maker } = makeMakerRaw(1);
+
+      await handler.handle(maker, ACCOUNT_ID);
+
+      expect(eventBus.publish).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to parse fill event',
+        expect.objectContaining({ error: expect.stringContaining('missing venue execution time') }),
+      );
+    });
+
+    it('match_time нет, matchtime невалиден → отказ, на валидный timestamp не откатывается', async () => {
+      await handler.handle(withLegacyMatchTime({ ...makeValidRaw(), timestamp: '1672290730' }, 'garbage'), ACCOUNT_ID);
+
+      expect(eventBus.publish).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to parse fill event',
+        expect.objectContaining({ error: expect.stringContaining('matchtime') }),
+      );
+    });
+
+    it('CONFIRMED-fallback: matchtime T, timestamp T + 30 с → fallback-fill с Fill.timestamp = T', async () => {
+      const T = 1672290700;
+      await handler.handle(
+        withLegacyMatchTime({ ...makeValidRaw(), status: 'CONFIRMED', timestamp: String(T + 30) }, String(T)),
+        ACCOUNT_ID,
+      );
+
+      const [fallback] = receivedFills();
+      expect(fallback).toBeDefined();
+      expect(fallback!.timestamp.toNumber()).toBe(T * 1000);
+    });
+
+    it('CONFIRMED-fallback без match_time и matchtime → нет FILL_RECEIVED', async () => {
+      const { match_time: _matchTime, ...confirmed } = makeValidRaw();
+
+      await handler.handle({ ...confirmed, status: 'CONFIRMED', timestamp: '1672290730' }, ACCOUNT_ID);
+
+      expect(eventBus.publish).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to parse fill event',
+        expect.objectContaining({ status: 'CONFIRMED', error: expect.stringContaining('missing venue execution time') }),
+      );
+    });
+
+    it.each<[string, () => Record<string, unknown>]>([
+      ['TAKER', () => ({ ...makeValidRaw(), fee_rate_bps: '0' })],
+      ['MAKER', () => makeMakerRaw(1)],
+    ])('acceptance (WS-звено, %s): legacy matchtime T + timestamp T + 30 с = REST-форма той же сделки', async (_label, make) => {
+      // Реальная форма user-channel: только legacy matchtime, сообщение на 30 с
+      // позже исполнения. REST-форма — matchedAt → match_time (мс), без
+      // timestamp и fee_rate_bps. Второе звено (настоящий REST-конвертер) — в
+      // polymarket-v2/__tests__/polymarketAccountMapping.test.ts.
+      const T = 1672290700;
+      const ws = withLegacyMatchTime({ ...make(), timestamp: String(T + 30) }, String(T));
+      const { timestamp: _messageTime, fee_rate_bps: _feeRateBps, matchtime: _legacy, ...withoutMessageFields } = ws;
+      const restShaped = { ...withoutMessageFields, match_time: String(T * 1000) };
+
+      await handler.handle(ws, ACCOUNT_ID);
+      const wsFills = receivedFills();
+      const options = ws['trader_side'] === 'TAKER' ? { takerFeeRate: CRYPTO_TAKER_FEE_RATE } : {};
+      const viaRestShape = FillMapper.allFromPolymarketTradeEvent(restShaped, ACCOUNT_ID, options);
+      if (!viaRestShape.ok) throw viaRestShape.error;
+      const restFills = viaRestShape.value.map(({ fill }) => fill);
+
+      expect(wsFills).toHaveLength(1);
+      expect(wsFills.map((fill) => String(fill.id))).toEqual(restFills.map((fill) => String(fill.id)));
+      expect(findFillFactDifference(wsFills[0]!, restFills[0]!)).toBeUndefined();
+      expect(wsFills[0]!.timestamp.toNumber()).toBe(T * 1000);
     });
 
     it('acceptance (WS-звено): опубликованный fill = FillMapper со ставкой того же резолвера и с REST-формой той же сделки', async () => {

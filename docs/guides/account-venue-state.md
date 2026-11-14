@@ -436,14 +436,22 @@ WS-сообщение приходит позже исполнения (повт
 
 ```text
            Fill.timestamp                     Fill.fee TAKER
-WS + REST  match_time исполнения              ставка рынка от одного
-           (timestamp — только если           PolymarketTakerFeeRateResolver
-            match_time отсутствует)           (@polymarket/fill)
+WS + REST  время исполнения площадки:         ставка рынка от одного
+           match_time → legacy matchtime      PolymarketTakerFeeRateResolver
+           (приватный WS без обоих —          (@polymarket/fill)
+            отказ, не timestamp)
 ```
+
+Официальная схема user-channel Polymarket принимает ОБА vendor-поля времени
+исполнения — `match_time` и legacy `matchtime`; SDK нормализует их как
+`matchedAt = match_time ?? matchtime`. Реальное WS-событие может нести
+`matchtime = T`, `timestamp = T + 30 с` и не нести `match_time` вовсе: если
+разбор знает только `match_time`, он возьмёт время сообщения — тот же
+`FillId`, что у REST (`matchedAt = T`), другой факт.
 
 ```mermaid
 flowchart LR
-    WS["private WS: match_time T, timestamp T+30s, fee_rate_bps 0"] --> H[FillEventHandler._mapFills]
+    WS["private WS: match_time или matchtime T, timestamp T+30s, fee_rate_bps 0"] --> H[FillEventHandler._mapFills]
     REST["REST ClobTrade: matchedAt T, feeRateBps 0"] --> C["polymarketClobTradeToFillMapperInput: matchedAt → match_time"]
     H -->|"raw.market (TAKER)"| R[PolymarketTakerFeeRateResolver]
     C -->|"conditionId (TAKER)"| R
@@ -456,10 +464,12 @@ flowchart LR
 ### Шаги
 
 1. **Время.** `FillMapper` (`parsePolymarketExecutionTime`) берёт
-   `match_time`, если поле есть; присутствующий, но невалидный `match_time` —
-   отказ, без отката на `timestamp`; `timestamp` — только если `match_time`
-   отсутствует (`undefined`/`null`). Значение `< 1e12` — секунды, иначе
-   миллисекунды, для обоих полей одинаково; часов (`Date.now()`) нет.
+   `match_time`, если поле есть; иначе legacy `matchtime`; иначе — только в
+   generic-маппере, ради обратной совместимости — `timestamp`. Первое
+   присутствующее поле времени исполнения — authoritative попытка: его
+   невалидное значение — отказ, без отката на следующее поле. Значение
+   `< 1e12` — секунды, иначе миллисекунды, для всех полей одинаково; часов
+   (`Date.now()`) нет.
 2. **REST-форма.** `matchedAt` (ISO) уходит в `FillMapper` под именем
    `match_time` (мс) — смысл поля, а не маска под время сообщения;
    `timestamp` у REST-формы не выдумывается.
@@ -469,10 +479,14 @@ flowchart LR
    тип re-экспортирован из `@polymarket/polymarket-v2/account`.
 4. **Приватный WS.** `FillEventHandler` получает резолвер ОБЯЗАТЕЛЬНОЙ
    зависимостью; MATCHED и CONFIRMED-fallback разбирают событие одним
-   `_mapFills`. TAKER: `raw.market` → `MarketId` → ставка → `FillMapper`;
-   MAKER: резолвер не вызывается, комиссия 0. Отказ (невалидный рынок, отказ
-   резолвера, невалидная ставка) — ошибка в лог, `FILL_RECEIVED` не
-   публикуется, в кеш ничего не попадает. На `fee_rate_bps` не откатывается.
+   `_mapFills`. Сначала — время исполнения: нет ни `match_time`, ни
+   `matchtime` — отказ ДО `FillMapper`, даже при валидном `timestamp`
+   (время сообщения — не факт исполнения). TAKER: `raw.market` → `MarketId` →
+   ставка → `FillMapper`; MAKER: резолвер не вызывается, комиссия 0. Отказ
+   (нет или битое время исполнения, невалидный рынок, отказ резолвера,
+   невалидная ставка) — ошибка в лог, `FILL_RECEIVED` не публикуется, в кеш
+   ничего не попадает. Ни на `timestamp`, ни на `fee_rate_bps` не
+   откатывается.
 5. **REST.** `PolymarketAccountVenueStateSource` спрашивает ставку у того же
    порта по `conditionId`; поведение не менялось.
 6. **`receivedAt`** у `FILL_RECEIVED` остаётся `clock.now()` — время НАШЕЙ
@@ -508,11 +522,12 @@ const venueState = PolymarketAccountVenueStateSource.create(config, {
 
 ### Приёмочный инвариант
 
-Одно TAKER-исполнение: WS `match_time = T`, `timestamp = T + 30 с`,
-`fee_rate_bps = "0"`; REST `matchedAt = T`, `feeRateBps = "0"`; общий
-резолвер `рынок → 0.07`. Тогда `String(wsFill.id) === String(restFill.id)` и
-`findFillFactDifference(wsFill, restFill) === undefined`. Проверяется двумя
-звеньями, не нарушая границ пакетов:
+Одно TAKER-исполнение: WS `match_time = T` (или `match_time` нет, а legacy
+`matchtime = T`), `timestamp = T + 30 с`, `fee_rate_bps = "0"`; REST
+`matchedAt = T`, `feeRateBps = "0"`; общий резолвер `рынок → 0.07`. Тогда
+`String(wsFill.id) === String(restFill.id)` и
+`findFillFactDifference(wsFill, restFill) === undefined`. То же для MAKER с
+`matchtime`. Проверяется двумя звеньями, не нарушая границ пакетов:
 
 | звено | тест |
 | --- | --- |
@@ -529,7 +544,7 @@ const venueState = PolymarketAccountVenueStateSource.create(config, {
 | закрывает ли `updateBalanceAllowance` фантомный MINT-случай, или нужна on-chain кросс-проверка `balanceOf` | иначе настоящие токены сведутся к нулю по кэшу |
 | регистр и форма статусов заявки (`LIVE` vs `live` vs префикс), смысл `INVALID` | сейчас принимается только задокументированный верхний регистр, `INVALID` — `Err` |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
-| присылает ли WS user-channel `match_time` у каждого trade-события | без него `FillMapper` берёт `timestamp` сообщения, и факт разойдётся с REST |
+| присылает ли WS user-channel `match_time` или `matchtime` у каждого trade-события | без обоих `FillEventHandler` отвергает событие (fail closed), исполнение увидит только REST-сверка |
 | pUSD vs USDC: collateral CLOB V2 — pUSD, canonical `Portfolio` знает только USDC | решить до того, как matcher начнёт менять `Portfolio`: своя валюта или намеренная нормализация в USD-эквивалент |
 | CLOB refreshed balance vs физическая / on-chain истина | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не on-chain |
 
@@ -561,9 +576,11 @@ OPEN    - pUSD vs canonical collateral representation
   TAKER-исполнения через один контракт `PolymarketTakerFeeRateResolver`
   (`@polymarket/fill`) по рынку, а `FillMapper` принимает её опцией
   `takerFeeRate` (см. «Один факт исполнения»);
-- время исполнения: canonical `Fill.timestamp` = venue execution
-  `match_time`; `timestamp` — fallback, только когда `match_time` отсутствует
-  (REST передаёт `matchedAt` как `match_time`);
+- время исполнения: canonical время приватного WS — `match_time` → legacy
+  `matchtime` (официальная схема user-channel принимает оба); generic
+  `FillMapper` без обоих откатывается на `timestamp`, production
+  `FillEventHandler` — нет, событие отвергается; REST передаёт `matchedAt` как
+  `match_time`;
 - привязка адаптера к аккаунту проверяется при создании, по доверенной
   идентичности зависимостей: `client.account.wallet` (SDK
   `AccountIdentity.wallet`) = `balanceReader.boundWallet` = `makerAddress`,
