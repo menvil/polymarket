@@ -25,7 +25,8 @@
  * REST `ClobTrade` переводится в ту же snake_case-форму, что и WS-событие, и
  * разбирается ТЕМ ЖЕ `FillMapper.allFromPolymarketTradeEvent`. Отдельной
  * политики `FillId`, владения maker-заявкой и cross-outcome здесь нет — только
- * переименование полей и явный перевод статуса.
+ * переименование полей, явный перевод статуса и запрет подстановок
+ * `FillMapper` для полей нашей стороны сделки (токен, сторона).
  */
 import type { AuthoritativeFillState, AuthoritativeOpenOrderState, AuthoritativeOrderState, AuthoritativeOutcomeAssetId } from '@polymarket/account-reconciliation';
 import type { TradeStatus as VendorTradeStatus } from '@polymarket/bindings';
@@ -440,6 +441,10 @@ export interface PolymarketTradeContext {
  * в REST он приходит `"0"`, и `FillMapper` выбрал бы по нему нулевую
  * комиссию тейкера. Ставку `mapPolymarketClobTrade` берёт у резолвера.
  *
+ * Перед переименованием проверяются поля, которые `FillMapper` при пропуске
+ * восстановил бы сам (сторона и токен тейкера; токен и сторона НАШИХ
+ * maker-записей), — неоднозначное значение даёт отказ, а не подстановку.
+ *
  * @example
  * ```typescript
  * const raw = polymarketClobTradeToFillMapperInput(trade, { makerAddress: '0xabc…' });
@@ -464,6 +469,8 @@ export function polymarketClobTradeToFillMapperInput(
   if (!Array.isArray(trade.makerOrders)) {
     return Err(new PolymarketAccountStateError(`${label}: maker orders are missing`));
   }
+  const ownFields = checkOwnExecutionFields(trade, context.makerAddress);
+  if (ownFields !== undefined) return Err(new PolymarketAccountStateError(`${label}: ${ownFields}`));
 
   return Ok({
     id: trade.id,
@@ -492,6 +499,53 @@ export function polymarketClobTradeToFillMapperInput(
 }
 
 /**
+ * Проверяет поля НАШЕЙ стороны сделки, которые `FillMapper` иначе молча
+ * восстановил бы сам.
+ *
+ * @param trade - Сделка с уже проверенными `traderSide` и `makerOrders`
+ * @param makerAddress - Наш адрес maker-заявок
+ * @returns Описание проблемы либо `undefined`
+ *
+ * @remarks
+ * `FillMapper` терпим к неполным WS-событиям и подставляет пропуски сам:
+ *
+ * ```text
+ * TAKER: side не BUY/SELL             → сторона выводится из maker_orders[0]
+ * TAKER: asset_id не outcome-токен    → parseAssetId примет и CURRENCY:…
+ * MAKER: asset_id нашей записи плохой → берётся asset_id тейкера
+ * MAKER: side нашей записи плохой     → инверсия стороны тейкера
+ * ```
+ *
+ * Для authoritative-состояния любая такая подстановка — выдуманный факт: в
+ * cross-outcome BUY/BUY инверсия даёт SELL, а токен тейкера — чужой актив.
+ * Поэтому здесь эти поля обязаны быть однозначными, иначе отказ. Чужие
+ * maker-записи не проверяются: исполнений из них не строится.
+ *
+ * @example
+ * ```typescript
+ * const problem = checkOwnExecutionFields(trade, makerAddress);
+ * if (problem !== undefined) return Err(new PolymarketAccountStateError(problem));
+ * ```
+ */
+function checkOwnExecutionFields(trade: ClobTrade, makerAddress: string): string | undefined {
+  if (trade.traderSide === 'TAKER') {
+    const asset = outcomeAssetFrom(trade.tokenId);
+    if (!asset.ok) return `taker ${asset.error.message}`;
+    const side = sideFrom(trade.side);
+    return side.ok ? undefined : `taker ${side.error.message}`;
+  }
+  for (const makerOrder of trade.makerOrders) {
+    if (!sameAddress(makerOrder.makerAddress, makerAddress)) continue;
+    const label = `our maker order ${describe(makerOrder.orderId)}`;
+    const asset = outcomeAssetFrom(makerOrder.tokenId);
+    if (!asset.ok) return `${label}: ${asset.error.message}`;
+    const side = sideFrom(makerOrder.side);
+    if (!side.ok) return `${label}: ${side.error.message}`;
+  }
+  return undefined;
+}
+
+/**
  * Сделка аккаунта → authoritative-исполнения через canonical `FillMapper`.
  *
  * @param trade - Сделка из `listAccountTrades`
@@ -500,6 +554,9 @@ export function polymarketClobTradeToFillMapperInput(
  *
  * @remarks
  * 1. Статус → canonical (неизвестный — отказ, сделка не выбрасывается).
+ *    Сторона и токен нашей стороны сделки — строго `BUY`/`SELL` и outcome-
+ *    токен: подстановки `FillMapper` (токен тейкера, инверсия стороны) здесь
+ *    запрещены.
  * 2. TAKER-сделка, в которой наш адрес есть и среди maker-заявок, — self-match:
  *    правило `FillId` такой случай не представляет → отказ, а не половина
  *    сделки.

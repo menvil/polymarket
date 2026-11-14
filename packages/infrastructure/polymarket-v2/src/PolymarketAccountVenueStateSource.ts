@@ -281,6 +281,8 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    *
    * @remarks
    * 1. Идентичность и scope (дубликаты, не-condition-id рынки) — до любых запросов.
+   *    Scope копируется: все этапы работают с одним снимком, даже если
+   *    вызывающий меняет свои массивы, пока проход идёт.
    * 2. Collateral и баланс КАЖДОГО актива scope — параллельно, через reader.
    * 3. Все страницы `listOpenOrders()` без фильтра — весь аккаунт.
    * 4. Для каждого рынка scope — все страницы `listAccountTrades({ market })`,
@@ -308,16 +310,19 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
     const fail = this._failure('getAccountState', venueId, accountId);
     const identity = this._checkIdentity(venueId, accountId);
     if (identity !== undefined) return fail(identity);
-    const scopeProblem = checkScope(scope);
+    // Своя копия: массивы вызывающего читаются и после await, и его правка
+    // во время прохода сдвинула бы балансы на чужие активы.
+    const ownScope: AccountVenueStateScope = { marketIds: [...scope.marketIds], assets: [...scope.assets] };
+    const scopeProblem = checkScope(ownScope);
     if (scopeProblem !== undefined) return fail(scopeProblem);
 
-    const balances = await this._readBalances(scope);
+    const balances = await this._readBalances(ownScope);
     if (!balances.ok) return fail(balances.error);
 
     const openOrders = await this._readOpenOrders();
     if (!openOrders.ok) return fail(openOrders.error);
 
-    const recentFills = await this._readTrades(scope);
+    const recentFills = await this._readTrades(ownScope);
     if (!recentFills.ok) return fail(recentFills.error);
 
     return Ok({

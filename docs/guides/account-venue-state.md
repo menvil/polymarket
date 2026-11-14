@@ -438,8 +438,10 @@ Legacy-рантайм API позиций не использовал вовсе:
   метод экземпляра клиента;
 - комиссия REST-исполнения: `feeRateBps` в REST приходит `"0"`, поэтому
   ставку TAKER-сделки даёт `PolymarketTakerFeeRateResolver` по рынку, а
-  `FillMapper` принимает её опцией `takerFeeRate` — тот же `fee`, что у
-  приватного WS;
+  `FillMapper` принимает её опцией `takerFeeRate`. Совпадение `fee` с
+  приватным WS НЕ доказано: WS-путь по-прежнему решает по
+  `fee_rate_bps > 0` со ставкой `0.07`, и общий источник ставки — открытый
+  вопрос из таблицы выше;
 - привязка адаптера к аккаунту проверяется при создании, по доверенной
   идентичности зависимостей: `client.account.wallet` (SDK
   `AccountIdentity.wallet`) = `balanceReader.boundWallet` = `makerAddress`,

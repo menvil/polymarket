@@ -87,7 +87,9 @@ balanceReader.boundWallet   кошелёк, балансы которого чи
 2. **Scope.** Дубликат актива или рынка, рынок не в форме condition id —
    `Err` до запросов. Scope — множество; молчаливый dedupe скрыл бы ошибку
    вызывающего, а не-condition-id дал бы пустую выборку сделок, неотличимую
-   от «сделок не было».
+   от «сделок не было». Scope копируется до проверки: массивы вызывающего
+   читаются и после `await`, и их правка во время прохода сдвинула бы
+   балансы на чужие активы.
 3. **Балансы** — параллельно через `PolymarketAuthoritativeBalanceReader`:
    collateral и КАЖДЫЙ актив scope. Результат — ровно по записи на актив,
    ноль явно.
@@ -214,6 +216,24 @@ MAKER, несколько наших заявок  FillId = `${tradeId}:${orderI
 сделка без нашей maker-записи — `Err`, а не откат на чужой верхний уровень.
 TAKER-сделка, где наш адрес есть и среди maker-записей (self-match), — `Err`:
 правило `FillId` такой случай не представляет.
+
+**Поля нашей стороны сделки — без подстановок `FillMapper`.** `FillMapper`
+терпим к неполным WS-событиям и восстанавливает пропуски сам. Для
+authoritative-состояния каждая такая подстановка — выдуманный факт, поэтому
+адаптер проверяет эти поля ДО `FillMapper` и отказывает:
+
+```text
+поле                          подстановка FillMapper          адаптер
+TAKER side не BUY/SELL        вывод из maker_orders[0]        Err
+TAKER tokenId не CTF-токен    parseAssetId примет CURRENCY:…  Err
+НАША maker-запись: tokenId    asset_id тейкера (чужой актив)  Err
+НАША maker-запись: side       инверсия стороны тейкера        Err
+```
+
+В cross-outcome BUY/BUY инверсия дала бы SELL, а токен тейкера — актив,
+которого у нас нет. Чужие maker-записи не проверяются: исполнений из них
+не строится, и их дефект не должен ронять наш проход. Приватный WS-путь
+(`FillEventHandler`) этим MR не меняется.
 
 **Время исполнения — `match time`.** `timestamp` входит в canonical факт
 исполнения (`findFillFactDifference`), поэтому REST берёт `matchedAt`.
@@ -402,7 +422,7 @@ USD-equivalent accounting unit.
 | файл | что покрывает |
 | --- | --- |
 | `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц, настоящий ноль, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK, `boundWallet` = `client.account.wallet` |
-| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome), **P0 комиссии: WS `fee_rate_bps > 0` и REST `feeRateBps "0"` + ставка резолвера → тот же `FillId` и факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, требование к времени, владение только по адресу, self-match, слияние повторов |
-| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, привязка при создании (чужой `accountId`, клиент другого кошелька, reader чужого кошелька, чужой `makerAddress`, `accountId` не WALLET-вида, кошелёк не сообщён — отказ без запросов), балансы scope (ноль явно), отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
+| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome), **P0 комиссии: WS `fee_rate_bps > 0` и REST `feeRateBps "0"` + ставка резолвера → тот же `FillId` и факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, требование к времени, владение только по адресу, self-match, отказ вместо подстановок `FillMapper` (токен и сторона нашей maker-записи, сторона и токен тейкера; чужие записи не проверяются), слияние повторов |
+| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, привязка при создании (чужой `accountId`, клиент другого кошелька, reader чужого кошелька, чужой `makerAddress`, `accountId` не WALLET-вида, кошелёк не сообщён — отказ без запросов), балансы scope (ноль явно), правка scope вызывающим во время прохода не сдвигает балансы, отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
 | `PolymarketTakerFeeRateResolver.test.ts` | ставка по рынку без учёта регистра, неизвестный рынок → `Err`, невалидная ставка и повтор рынка → отказ создания |
-| `contour-boundary.test.ts` | закрытый список импортов account plane, `@polymarket/fill` только в нём, из SDK — только `import type` |
+| `contour-boundary.test.ts` | закрытый список импортов account plane, `@polymarket/fill` только в нём, из SDK — только `import type` (распознаватель ловит value-import, `export *`, side-effect и динамический `import()` — проверено фикстурами) |

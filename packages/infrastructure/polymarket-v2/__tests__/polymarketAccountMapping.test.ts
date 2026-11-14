@@ -536,6 +536,49 @@ describe('владение сделкой: только наш адрес, бе�
   });
 });
 
+describe('поля нашей стороны сделки: отказ вместо подстановок FillMapper', () => {
+  /** Cross-outcome MAKER-сделка, где наша запись изменена точечно. */
+  function crossOutcomeWithOurRecord(changes: { tokenId?: string; side?: string }) {
+    const [ours] = CROSS_OUTCOME_MAKER.rest.makerOrders ?? [];
+    if (ours === undefined) throw new Error('fixture has no maker record');
+    return clobTrade({ ...CROSS_OUTCOME_MAKER.rest, makerOrders: [{ ...ours, ...changes }] });
+  }
+
+  it('невалидный токен нашей maker-записи → Err, а не исполнение по токену тейкера', () => {
+    // FillMapper сам по себе откатился бы на asset_id верхнего уровня (YES тейкера).
+    const fills = mapPolymarketClobTrade(crossOutcomeWithOurRecord({ tokenId: 'not-a-token' }), CONTEXT);
+    expect(fills.ok).toBe(false);
+    if (!fills.ok) expect(fills.error.message).toContain('our maker order "0xour-no": invalid token id');
+  });
+
+  it('неизвестная сторона нашей maker-записи → Err, а не инверсия стороны тейкера', () => {
+    // В cross-outcome BUY/BUY инверсия дала бы выдуманный SELL.
+    for (const side of ['buy', '', 'HOLD']) {
+      const fills = mapPolymarketClobTrade(crossOutcomeWithOurRecord({ side }), CONTEXT);
+      expect([side, fills.ok]).toEqual([side, false]);
+    }
+  });
+
+  it('чужие maker-записи не проверяются: исполнений из них не строится', () => {
+    const [ours] = CROSS_OUTCOME_MAKER.rest.makerOrders ?? [];
+    if (ours === undefined) throw new Error('fixture has no maker record');
+    const foreign = { orderId: '0xforeign', tokenId: 'garbage', side: '?', price: '0.4', matchedAmount: '1', makerAddress: OTHER_ADDRESS, owner: OTHER_OWNER };
+    const fills = mapPolymarketClobTrade(clobTrade({ ...CROSS_OUTCOME_MAKER.rest, makerOrders: [foreign, ours] }), CONTEXT);
+    expect(fills.ok && fills.value.map((entry) => String(entry.fill.orderId))).toEqual(['0xour-no']);
+  });
+
+  it('TAKER: сторона не BUY/SELL → Err, а не вывод из maker_orders[0]', () => {
+    for (const side of ['', 'buy']) {
+      expect([side, mapPolymarketClobTrade(clobTrade({ ...TAKER.rest, side }), CONTEXT).ok]).toEqual([side, false]);
+    }
+  });
+
+  it('TAKER: токен — не outcome-токен (например CURRENCY:USDC) → Err', () => {
+    const fills = mapPolymarketClobTrade(clobTrade({ ...TAKER.rest, tokenId: 'CURRENCY:USDC' }), CONTEXT);
+    expect(fills.ok).toBe(false);
+  });
+});
+
 describe('слияние повторов', () => {
   it('тот же факт и те же метаданные — одна запись', () => {
     const once = mapPolymarketClobTrade(clobTrade(TAKER.rest), CONTEXT);

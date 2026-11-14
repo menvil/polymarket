@@ -163,6 +163,29 @@ function stripComments(content: string): string {
 }
 
 /**
+ * Runtime-загрузка SDK в любой форме.
+ *
+ * @remarks
+ * Совпадают: value-import и re-export (`import { x }`, `import * as x`,
+ * default, `import x, { y }`, `export { x }`, `export *`), side-effect
+ * `import '…'` и динамический `import('…')`. `import type`/`export type` не
+ * совпадают. Type-position `import('…')` тоже совпадёт — сознательный fail
+ * closed: типы SDK пакет пишет только через `import type`.
+ */
+const SDK_RUNTIME_IMPORT =
+  /(?:import|export)\s+(?!type\b)(?:(?:\w+\s*,\s*)?(?:\{[^}]*\}|\*\s+as\s+\w+)|\*|\w+)\s+from\s+['"](@polymarket\/(?:client|bindings)[^'"]*)['"]|import\s+['"](@polymarket\/(?:client|bindings)[^'"]*)['"]|import\s*\(\s*['"](@polymarket\/(?:client|bindings)[^'"]*)['"]\s*\)/g;
+
+/**
+ * Specifier-ы SDK, которые текст загружает в runtime.
+ *
+ * @param content - Исходник без комментариев
+ * @returns Specifier каждого совпадения {@link SDK_RUNTIME_IMPORT}
+ */
+function sdkRuntimeImports(content: string): string[] {
+  return [...content.matchAll(SDK_RUNTIME_IMPORT)].map((match) => match[1] ?? match[2] ?? match[3] ?? '');
+}
+
+/**
  * Собирает все import-specifiers файла: `import/export ... from '...'`,
  * side-effect `import '...'` и dynamic `import('...')` (без комментариев).
  */
@@ -293,16 +316,40 @@ describe('dependency graph boundary', () => {
   it('из SDK исходники берут только типы (import type): runtime-код SDK в пакете не загружается', () => {
     // SDK — ESM-only; пакет его runtime не грузит ни в одной плоскости.
     // Действия и enum-значения SDK передаёт composition root (см. README).
-    const sdkValueImport =
-      /(?:import|export)\s+(?!type\b)(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+['"](@polymarket\/(?:client|bindings)[^'"]*)['"]/g;
     const violations: string[] = [];
     for (const filePath of listSourceFiles(SRC_ROOT)) {
       const content = stripComments(readFileSync(filePath, 'utf8'));
-      for (const match of content.matchAll(sdkValueImport)) {
-        violations.push(`${srcRelative(filePath)}: ${match[1]}`);
+      for (const specifier of sdkRuntimeImports(content)) {
+        violations.push(`${srcRelative(filePath)}: ${specifier}`);
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('распознаватель runtime-импорта SDK ловит каждую форму загрузки и пропускает import type', () => {
+    // Иначе проверка выше молча пропустила бы форму, которую не знает.
+    const loading = [
+      "import { createSecureClient } from '@polymarket/client';",
+      "import * as sdk from '@polymarket/client';",
+      "import client from '@polymarket/client';",
+      "import client, { AssetType } from '@polymarket/client';",
+      "export { AssetType } from '@polymarket/bindings/clob';",
+      "export * from '@polymarket/bindings';",
+      "import '@polymarket/client';",
+      "const sdk = await import('@polymarket/client/actions');",
+    ];
+    for (const source of loading) {
+      expect([source, sdkRuntimeImports(source)]).toEqual([source, [expect.stringMatching(/^@polymarket\/(client|bindings)/)]]);
+    }
+
+    const typeOnly = [
+      "import type { ClobTrade } from '@polymarket/bindings/clob';",
+      "export type { OpenOrder } from '@polymarket/bindings/clob';",
+      "import { Err } from '@polymarket/result';",
+    ];
+    for (const source of typeOnly) {
+      expect([source, sdkRuntimeImports(source)]).toEqual([source, []]);
+    }
   });
 
   it('исходники не импортируют internal paths bindings (chunk-модули)', () => {

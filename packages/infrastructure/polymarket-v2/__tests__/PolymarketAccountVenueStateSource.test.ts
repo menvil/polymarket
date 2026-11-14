@@ -214,6 +214,24 @@ describe('getAccountState: балансы', () => {
     expect(failure(await assetDown.source.getAccountState(VENUE, ACCOUNT, SCOPE)).message).toContain('balances');
   });
 
+  it('правка массивов scope вызывающим во время прохода не сдвигает балансы на чужие активы', async () => {
+    const { source, client, reader } = buildSource();
+    reader.balances.set(YES_TOKEN_ID, { ok: true, value: quantity('5') });
+    const scope = { marketIds: [MARKET_A], assets: [YES, NO] };
+
+    // Чтения уже запущены синхронно; дальше проход читает scope после await.
+    const pending = source.getAccountState(VENUE, ACCOUNT, scope);
+    scope.assets.reverse();
+    scope.marketIds.push(MARKET_B);
+    const state = unwrap(await pending);
+
+    expect(state.assetBalances.map((balance) => [assetIdToString(balance.asset), balance.quantity.value().toString()])).toEqual([
+      [assetIdToString(YES), '5'],
+      [assetIdToString(NO), '0'],
+    ]);
+    expect(client.tradeRequests).toEqual([{ market: String(MARKET_A) }]);
+  });
+
   it('reader, бросивший исключение вместо Err, — тоже Err', async () => {
     const { source, reader } = buildSource();
     reader.getCollateralBalance = () => Promise.reject(new Error('bug'));
