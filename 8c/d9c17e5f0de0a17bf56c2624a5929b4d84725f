@@ -1,0 +1,52 @@
+packages/application/account-state/src/AccountHotState.ts
+  s_229ddb4e5aa529::t_2b180ae652915c 880,1121-1122,1140-1145,1150,1193-1194
+packages/application/ports/src/index.ts
+  s_229ddb4e5aa529::t_1d7fe0bc5f1bd9 135
+packages/application/policy/src/PolicyConfig.ts
+  s_229ddb4e5aa529::t_5176fd74839a5e 61
+packages/application/policy/src/PolymarketPolicy.ts
+  s_229ddb4e5aa529::t_5176fd74839a5e 104-108
+packages/application/ports/docs/ports.md
+  s_229ddb4e5aa529::t_f2b98f76625ca8 103-115
+packages/application/policy/src/parsePolicyConfig.ts
+  s_229ddb4e5aa529::t_5176fd74839a5e 619-620
+packages/application/policy/src/MarketFilter.ts
+  s_229ddb4e5aa529::t_5176fd74839a5e 401-405
+packages/application/account-state/__tests__/collateralCurrency.test.ts
+  s_229ddb4e5aa529::t_b7ccbd676589a9 111-139,150-160
+packages/application/policy/__tests__/createPolicy.test.ts
+  s_229ddb4e5aa529::t_5e2670f0dbc884 16,192-205
+packages/application/ports/src/IMarketDiscoveryService.ts
+  s_229ddb4e5aa529::t_1d7fe0bc5f1bd9 41-42,46-70,87,90-92
+docs/guides/polymarket-collateral-currency.md
+  s_229ddb4e5aa529::t_05bb38d171120f 45-46,55-61,117,119-126,183-207,230-231,271-273
+packages/application/policy/__tests__/parsePolicyConfig.test.ts
+  s_229ddb4e5aa529::t_5e2670f0dbc884 391-407
+packages/application/policy/src/createPolicy.ts
+  s_229ddb4e5aa529::t_4a0cd8513eddd0 56,100-139,307-309,339
+packages/infrastructure/polymarket-v2/__tests__/PolymarketMarketDiscovery.test.ts
+  s_229ddb4e5aa529::t_5e2670f0dbc884 239,241-243,245,248-249
+  s_229ddb4e5aa529::t_38114f86eeafc2 17,235-238,240,244,246-247
+packages/infrastructure/polymarket-v2/src/PolymarketMarketDiscovery.ts
+  s_229ddb4e5aa529::t_1788958186d294 86,1138-1141,1145,1155
+packages/application/policy/docs/market-filter.md
+  s_229ddb4e5aa529::t_5176fd74839a5e 105-110
+packages/application/policy/docs/policy-config.md
+  s_229ddb4e5aa529::t_5176fd74839a5e 93,122,130-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8cd9c17e5f0de0a17bf56c2624a5929b4d84725f",
+  "prompts": {},
+  "sessions": {
+    "s_229ddb4e5aa529": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "953c2e10-8b5e-4c82-8e53-5ebbf8caad72",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
