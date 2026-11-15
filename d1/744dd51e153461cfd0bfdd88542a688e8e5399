@@ -1,0 +1,9 @@
+docs/guides/polymarket-collateral-currency.md
+  ai_agent 259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d1744dd51e153461cfd0bfdd88542a688e8e5399",
+  "prompts": {}
+}
