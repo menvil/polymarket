@@ -83,7 +83,7 @@ import type {
   MarketDiscoveryRefreshOptions,
   MarketDiscoverySnapshot,
 } from '@polymarket/ports';
-import { marketUniverseKey } from '@polymarket/ports';
+import { MARKET_LIQUIDITY_CURRENCY, marketUniverseKey } from '@polymarket/ports';
 import type { InstrumentId, MarketId } from '@polymarket/ids';
 import { KnownVenues } from '@polymarket/ids';
 import { Market, MarketState } from '@polymarket/market';
@@ -1135,10 +1135,14 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
    * (существующая семантика V2), отсутствующий спред — как `undefined`:
    * «неизвестен» и «нулевой» — разные утверждения, и подменять первое
    * вторым значило бы пропускать рынок сквозь фильтр спреда.
+   *
+   * Ликвидность строится в `MARKET_LIQUIDITY_CURRENCY` контракта порта, а не
+   * в collateral аккаунта (pUSD): это долларовая статистика рынка, и с
+   * порогом policy она сравнивается в одной объявленной валюте.
    */
   private _toMetrics(vendorMarket: VendorMarket, marketIdLog: string): MarketDiscoveryMetrics {
     const liquidityRaw = vendorMarket.metrics.liquidity ?? vendorMarket.metrics.liquidityNum ?? '0';
-    const liquidityResult = MoneyService.create(liquidityRaw, 'USDC');
+    const liquidityResult = MoneyService.create(liquidityRaw, MARKET_LIQUIDITY_CURRENCY);
     if (!liquidityResult.ok) {
       this._logger.debug('Cannot parse liquidity as Money, defaulting to 0', {
         marketId: marketIdLog,
@@ -1148,7 +1152,7 @@ export class PolymarketMarketDiscovery implements IMarketDiscoveryService {
     }
     const liquidity = liquidityResult.ok
       ? liquidityResult.value
-      : Money.of(new Decimal(0), 'USDC');
+      : Money.of(new Decimal(0), MARKET_LIQUIDITY_CURRENCY);
 
     let spread: Ratio | undefined;
     if (vendorMarket.prices.spread !== null && vendorMarket.prices.spread !== undefined) {

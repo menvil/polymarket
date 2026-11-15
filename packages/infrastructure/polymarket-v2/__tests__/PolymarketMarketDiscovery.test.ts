@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PolymarketMarketDiscovery } from '../src/index.js';
 import type { PolymarketMarketDiscoveryConfig } from '../src/index.js';
+import { MARKET_LIQUIDITY_CURRENCY } from '@polymarket/ports';
 import { CapturingLogger } from './helpers/fakes.js';
 import {
   CONDITION_ID_BTC,
@@ -229,6 +230,21 @@ describe('canonical mapping: vendor Market → Domain Market (TEST 1)', () => {
 
     expect(metrics.liquidity.value().toNumber()).toBe(0);
     expect(metrics.spread).toBeUndefined();
+  });
+
+  it.each([
+    ['объявленная', '15000'],
+    ['отсутствующая (ноль)', null],
+  ])('ликвидность %s — в MARKET_LIQUIDITY_CURRENCY контракта, а не в collateral аккаунта (pUSD)', async (_name, liquidity) => {
+    const { client, discovery } = createHarness();
+    client.pages = [[createSdkMarket({ liquidity })]];
+    registerEvent(client, '99001', 10);
+
+    await discovery.refresh();
+    const currency = discovery.getSnapshot().entries[0]!.metrics.liquidity.currency();
+
+    expect(currency).toBe(MARKET_LIQUIDITY_CURRENCY);
+    expect(currency).toBe('USDC');
   });
 
   it('передаёт server-side narrowing в listMarkets (closed/order/ascending/endDateMin/pageSize)', async () => {

@@ -90,7 +90,7 @@ interface PolymarketPolicyConfig {
 | `family` | значение `MarketFamily`, регистр значим | `isValidMarketFamily` |
 | `assets[i]` | тикер (`"btc"`) | `asCryptoAssetId` — **safe**, не `unsafe*` |
 | `durations[i]` | `<число><m\|h>`: `5m`, `15m`, `30m`, `1h`, `4h` | regex → мс → `asMarketDuration` |
-| `minLiquidity` | `{ amount, currency }` | `isSupportedCurrency` → `MoneyService.create` |
+| `minLiquidity` | `{ amount, currency }`, валюта = `MARKET_LIQUIDITY_CURRENCY` (`USDC`) | `isSupportedCurrency` → `MoneyService.create` → `createPolymarketPolicy` (сопоставимость валюты) |
 | `minSpread` | десятичная **дробь**: `"0.02"` = 2 % | `RatioService.fromDecimal` |
 | `effectiveFrom/Until` | ISO-8601 | `TimestampService.fromISO` |
 
@@ -119,12 +119,35 @@ assets[1] = ""                 → field: 'assets[1]'
 durations[0] = "five"          → field: 'durations[0]', expected: '<number><m|h>'
 family = "CRYPTO"              → field: 'family', allowed: MARKET_FAMILY_VALUES
 minLiquidity.currency = "EUR"  → field: 'minLiquidity.currency', allowed: SUPPORTED_CURRENCIES
+minLiquidity.currency = "pUSD" → field: 'minLiquidity.currency', allowed: [MARKET_LIQUIDITY_CURRENCY]
 effectiveFrom = "tomorrow"     → field: 'effectiveFrom', expected: ISO-8601
 marketTypes[0] = "futures"     → поле + список допустимых
 ```
 
 Сообщение «policy невалидна» оставило бы читателю ровно ту задачу поиска,
 ради устранения которой граница и создана.
+
+### Валюта порога ликвидности
+
+`pUSD` — поддержанная валюта (collateral Polymarket CLOB V2), поэтому
+`isSupportedCurrency` её пропускает. Но ликвидность discovery — долларовая
+статистика рынка в `MARKET_LIQUIDITY_CURRENCY` (`USDC`, объявлена в
+`@polymarket/ports` рядом с `MarketDiscoveryMetrics`). Порог в `pUSD`
+несопоставим с ней: `MarketFilter` получил бы `CURRENCY_MISMATCH` на каждом
+рынке и отклонил бы весь universe, а policy считалась бы корректной.
+
+Поэтому `createPolymarketPolicy` отвергает такой порог при сборке — и для
+конфигурации, и для policy, собранной в коде. Конвертации нет:
+
+```typescript
+parsePolicyConfig({
+  kind: 'POLYMARKET',
+  family: 'CRYPTO_UP_DOWN',
+  minLiquidity: { amount: 1000, currency: 'pUSD' },
+});
+// → PolicyValidationError('Policy minLiquidity currency must match market liquidity currency',
+//   { field: 'minLiquidity.currency', value: 'pUSD', allowed: ['USDC'] })
+```
 
 ### Неизвестный `kind`
 

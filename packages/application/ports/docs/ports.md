@@ -100,6 +100,19 @@ instrumentId: InstrumentId`, `DecisionEntry.strategyId: StrategyId`, `OrderEntry
 «нулевой» противоположны. `marketUniverseKey(venueId, marketId)` — единое правило
 идентичности рынка для дедупликации discovery и lookup `MarketUniverse`.
 
+`liquidity` всегда выражена в `MARKET_LIQUIDITY_CURRENCY` (`'USDC'`) — константе рядом с
+контрактом, одной на обе стороны. Producer (`PolymarketMarketDiscovery`) строит ликвидность
+в ней, owner policy принимает порог `minLiquidity` только в ней (`createPolymarketPolicy`
+отвергает другой). Это долларовая статистика рынка, а не деньги аккаунта, поэтому она НЕ
+следует за collateral (`pUSD` у Polymarket CLOB V2): порог в `pUSD` был бы несопоставим и
+молча отклонил бы весь universe.
+
+```typescript
+import { MARKET_LIQUIDITY_CURRENCY } from '@polymarket/ports';
+
+const liquidity = MoneyService.create(gammaLiquidity, MARKET_LIQUIDITY_CURRENCY);
+```
+
 Порт НЕ ранжирует рынки: ключевые слова, минимальная ликвидность/спред, предпочтения по
 активу и длительности, top-N — owner policy НАД портом (Policy-MR).
 

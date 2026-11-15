@@ -132,7 +132,7 @@ export type {
   MarketDiscoveryDiagnostics,
   MarketDiscoveryInvalidBreakdown,
 } from './IMarketDiscoveryService.js';
-export { marketUniverseKey } from './IMarketDiscoveryService.js';
+export { MARKET_LIQUIDITY_CURRENCY, marketUniverseKey } from './IMarketDiscoveryService.js';
 /** Реэкспорт LEGACY-кандидата discovery (вход Filter/Scorer до Policy-MR). */
 export type { DiscoveredMarket } from './DiscoveredMarket.js';
 /** Реэкспорт порта синхронного чтения ордеров (см. `IOrderStateStore.ts`). */

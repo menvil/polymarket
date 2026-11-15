@@ -108,6 +108,35 @@ describe('валюта аккаунта не подменяется', () => {
     expect(account?.portfolio.balance.currency()).toBe('pUSD');
   });
 
+  it('сверка с новым USDC-исполнением у pUSD-аккаунта → отказ, НОЛЬ мутаций', async () => {
+    // Портфель коррекции в pUSD проходит проверку валюты, но исполнение
+    // рассчитано в USDC: через сверку оно не может войти как CONFIRMED.
+    const { bus, view, events, accountId } = await pusdAccount();
+    const before = view.getAccount(VENUE, accountId);
+    const version = before?.version ?? -1;
+    const usdcFill = makeFill({ accountId, id: 'fill-usdc' });
+    const okFill = pusdFill(accountId, { id: 'fill-pusd' });
+    events.observeAt(2_000);
+
+    const error = await publishErr(
+      bus,
+      events.reconciled({
+        accountId,
+        expectedAccountVersion: version,
+        portfolio: portfolio({ accountId, currency: 'pUSD', available: 8_000 }),
+        fills: [okFill, usdcFill],
+      }),
+    );
+
+    expect(error).toBeInstanceOf(AccountPortfolioIdentityMismatchError);
+    expect(error).toMatchObject({ field: 'balanceCurrency', expected: 'USDC', actual: 'pUSD' });
+    const account = view.getAccount(VENUE, accountId);
+    expect(account?.version).toBe(version);
+    expect(account?.portfolio).toBe(before?.portfolio);
+    expect(account?.getFill(okFill.id)).toBeUndefined();
+    expect(account?.getFill(usdcFill.id)).toBeUndefined();
+  });
+
   it('сверка в той же валюте применяется', async () => {
     const { bus, view, events, accountId } = await pusdAccount();
     const version = view.getAccount(VENUE, accountId)?.version ?? -1;
@@ -117,5 +146,17 @@ describe('валюта аккаунта не подменяется', () => {
       events.reconciled({ accountId, expectedAccountVersion: version, portfolio: portfolio({ accountId, currency: 'pUSD', available: 8_000 }) }),
     );
     expect(view.getAccount(VENUE, accountId)?.portfolio.balance.available().value().toNumber()).toBe(8_000);
+  });
+
+  it('сверка с pUSD-исполнением у pUSD-аккаунта применяется как CONFIRMED', async () => {
+    const { bus, view, events, accountId } = await pusdAccount();
+    const version = view.getAccount(VENUE, accountId)?.version ?? -1;
+    const fill = pusdFill(accountId, { id: 'fill-pusd' });
+    events.observeAt(2_000);
+    await publishOk(
+      bus,
+      events.reconciled({ accountId, expectedAccountVersion: version, portfolio: portfolio({ accountId, currency: 'pUSD', available: 8_000 }), fills: [fill] }),
+    );
+    expect(view.getAccount(VENUE, accountId)?.getFill(fill.id)?.status).toBe('CONFIRMED');
   });
 });

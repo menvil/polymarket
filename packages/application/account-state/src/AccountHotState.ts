@@ -877,7 +877,7 @@ export class AccountHotState implements AccountHotStateView {
     const orders = prepareReconciledOrders(account, correction.orders);
     if (!orders.ok) return orders;
 
-    const fills = prepareReconciledFills(account, correction.fills, at);
+    const fills = prepareReconciledFills(account, correction.fills, portfolio, at);
     if (!fills.ok) return fills;
 
     const portfolioChanged = !samePortfolioState(account.portfolio, portfolio);
@@ -1118,6 +1118,8 @@ function prepareReconciledOrders(
  *
  * @param account - Аккаунт, к которому применяется коррекция
  * @param fills - Исполнения, существование которых подтвердил источник
+ * @param portfolio - Authoritative-портфель коррекции (его валюта уже сверена
+ *   с валютой аккаунта)
  * @param at - `metadata.createdAt` коррекции
  * @returns Записи для записи (новые и перешедшие в CONFIRMED) либо первая ошибка
  *
@@ -1135,10 +1137,17 @@ function prepareReconciledOrders(
  *
  * Переход вычисляет тот же `classifyFillTransition`, что и у live
  * `FILL_CONFIRMED`: у двух входов в `CONFIRMED` одно правило.
+ *
+ * Валюта расчёта каждого исполнения сверяется с валютой портфеля коррекции
+ * тем же `validateFillSettlementCurrency`, что и у live `FILL_APPLIED`/
+ * `FILL_REVERTED`, и до различения «новое / известное»: иначе USDC-исполнение
+ * вошло бы в pUSD-аккаунт как `CONFIRMED` через сверку, в обход инварианта
+ * валюты, который live-путь соблюдает.
  */
 function prepareReconciledFills(
   account: AccountRuntimeState,
   fills: readonly Fill[],
+  portfolio: Portfolio,
   at: Timestamp,
 ): Result<readonly AccountFillRecord[], AccountStateError> {
   const { venueId, accountId } = account;
@@ -1180,6 +1189,9 @@ function prepareReconciledFills(
         ),
       );
     }
+
+    const settlementCurrency = validateFillSettlementCurrency(venueId, accountId, fill, portfolio);
+    if (settlementCurrency !== undefined) return Err(settlementCurrency);
 
     const stored = account.getFill(fill.id);
     if (stored === undefined) {

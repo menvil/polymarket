@@ -398,6 +398,11 @@ export class MarketFilter {
    *   сопоставить с порогом, не считается удовлетворяющей порогу. Ошибка
    *   односторонняя и безопасная: потребитель получает меньше рынков, а не
    *   рынок с непроверенным условием.
+   *
+   * Порог в чужой валюте сюда не доходит: `createPolymarketPolicy` принимает
+   * `minLiquidity` только в `MARKET_LIQUIDITY_CURRENCY`. Ветка остаётся
+   * защитой от producer'а discovery, нарушившего контракт
+   * `MarketDiscoveryMetrics` (ликвидность не в объявленной валюте).
    */
   private _passesLiquiditySelector(entry: MarketDiscoveryEntry, policy: PolymarketPolicy): boolean {
     const minLiquidity = policy.minLiquidity;

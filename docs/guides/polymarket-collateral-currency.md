@@ -42,7 +42,8 @@ USDC-исполнение как pUSD.
 
 ```mermaid
 flowchart LR
-    C["physical collateral<br/>pUSD (ERC-20, 6 decimals)"] --> R["collateralFromBaseUnits<br/>Money(…, pUSD)"]
+    C["physical collateral<br/>pUSD (ERC-20, 6 decimals)"] -.->|не читается напрямую| B["CLOB balance-allowance<br/>(refreshed, base units)<br/>наблюдение CLOB, не on-chain"]
+    B --> R["collateralFromBaseUnits<br/>Money(…, pUSD)"]
     R --> S["AuthoritativeAccountState.collateralBalance<br/>Money(pUSD)"]
     W[private WS trade] --> FM["FillMapper<br/>settlement / fee = CURRENCY:pUSD"]
     T[REST ClobTrade] --> FM
@@ -50,6 +51,13 @@ flowchart LR
     S --> M["Account Reconciliation<br/>pUSD ↔ pUSD"]
     P --> M
 ```
+
+Вход `collateralFromBaseUnits` — **refreshed-баланс CLOB** (`balance-allowance`
+с `COLLATERAL`), а не независимо проверенный on-chain `balanceOf`. Пунктир на
+схеме — именно этот разрыв: валюта у наблюдения правильная (pUSD), но его
+источник — представление площадки о физическом остатке, и сверка с on-chain
+остаётся открытым вопросом (см. «Открытые вопросы для on-chain balance
+verification»).
 
 Три запрета:
 
@@ -106,8 +114,16 @@ export const POLYMARKET_COLLATERAL_ASSET_ID: AssetId = AssetIdHelpers.PUSD;    /
 | `Balance` core | `available.currency == reserved.currency` | `BalanceInvariantViolation` |
 | `BalanceService` | `reserve`, `unfreezeReserved`, `consumeReserved`, `credit`, `updateAvailable` только в валюте баланса | `InvalidBalanceError` (`CURRENCY_MISMATCH`) |
 | `Portfolio` | все денежные операции и `applyFill` — в валюте баланса; проверка ДО изменения состояния | `InvalidBalanceError` / `PortfolioOperationError` |
-| `AccountHotState` | валюта портфеля аккаунта не меняется; `Fill` рассчитан в валюте портфеля события | `AccountPortfolioIdentityMismatchError` (`balanceCurrency`) |
+| `AccountHotState` | валюта портфеля аккаунта не меняется; `Fill` рассчитан в валюте портфеля события — и в live `FILL_APPLIED`/`FILL_REVERTED`, и в каждом исполнении сверки (`TRADING_ACCOUNT_RECONCILED`) | `AccountPortfolioIdentityMismatchError` (`balanceCurrency`) |
 | `PolymarketAccountVenueStateSource` | collateral от reader-а — только pUSD | `PolymarketAccountStateError` (`balances: collateral must be pUSD…`) |
+| `createPolymarketPolicy` | порог `minLiquidity` — только в `MARKET_LIQUIDITY_CURRENCY` (USDC) | `PolicyValidationError` (`minLiquidity.currency`) |
+
+Сверка — отдельный вход в `CONFIRMED`, минуя `Portfolio.applyFill`. Поэтому
+`prepareReconciledFills` сверяет валюту расчёта каждого исполнения с валютой
+портфеля коррекции тем же `validateFillSettlementCurrency`, что и live-путь:
+иначе pUSD-портфель коррекции с USDC-исполнением внутри прошёл бы проверку
+портфеля, а исполнение вошло бы в pUSD-аккаунт как `CONFIRMED`. Отказ — до
+любых мутаций (портфель, записи исполнений и версии не меняются).
 
 ### Что исправлено в `Portfolio`
 
@@ -164,6 +180,31 @@ findFillFactDifference(wsFill, restFill) === undefined
 `AccountHotState` не даёт сверке подменить его валюту. Перевод аккаунта на
 pUSD — явная переинициализация, а не побочный эффект.
 
+### Старое USDC-исполнение против REST-записи в pUSD
+
+Вопрос: что будет, если исполнение, записанное в USDC до этого MR, встретит
+REST-запись с тем же `FillId`, которую `FillMapper` теперь строит в pUSD?
+`findFillFactDifference` увидит разный `settlementAssetId`, и сверка вернёт
+`AccountFillIdentityConflictError`.
+
+**Почему в текущем рантайме этого не происходит.** Хранилища исполнений нет:
+
+- `AccountHotState` живёт в памяти процесса и строится заново из
+  `TRADING_ACCOUNT_INITIALIZED` при каждом старте;
+- каждый `Fill` в нём построен в том же процессе тем же `FillMapper`, то есть
+  уже в pUSD;
+- `FillMapper.fromSnapshot` вне пакета `@polymarket/fill` не вызывается —
+  восстановить USDC-исполнение из снимка просто некому.
+
+**Решение, когда появится персистентность.** Конфликт идентичности —
+правильный, громкий исход, а не дефект: USDC-запись о pUSD-сделке —
+неверный факт, и молча «перекрасить» её в pUSD (или REST-запись в USDC)
+значило бы ввести ту самую неявную конвертацию, которую этот MR запрещает.
+Будущее хранилище обязано выбрать явно — переинициализацию аккаунта из
+venue state или однократную миграцию записей с журналом. Исполнения до
+перехода на V2 (до 2026-04-28) — отдельный случай: они рассчитаны в USDC.e и
+не должны попадать в scope сверки текущих рынков.
+
 ## Инвентаризация жёстко заданного USDC
 
 Не все строки `'USDC'` заменены механически — каждое место отнесено к одной
@@ -186,8 +227,8 @@ Polymarket-аккаунта; там была неверная валюта, те
 | --- | --- |
 | `Portfolio.applyDirectDebit` — `Money.of(…, 'USDC')` | исправлено: валюта баланса + проверка |
 | `Money.of` / `MoneyService.create` — умолчание `'USDC'` | оставлено и задокументировано; на нём ≈430 тестовых вызовов и `apps/pnl/src/core/vo.ts`; деньги Polymarket передают валюту явно |
-| `PolymarketMarketDiscovery` — ликвидность Gamma в `USDC` | оставлено: это рыночная статистика в долларах, не деньги аккаунта; сравнивается с `minLiquidity` policy той же валюты |
-| policy (`PolicyConfig`, `parsePolicyConfig`, `MarketScorer`) | оставлено; список допустимых валют теперь `['USDC', 'pUSD']` |
+| `PolymarketMarketDiscovery` — ликвидность Gamma в `USDC` | оставлено: это рыночная статистика в долларах, не деньги аккаунта. Валюта вынесена в одно объявление `MARKET_LIQUIDITY_CURRENCY` (`@polymarket/ports`, контракт `MarketDiscoveryMetrics`) |
+| policy (`PolicyConfig`, `parsePolicyConfig`, `MarketScorer`) | `minLiquidity` принимается только в `MARKET_LIQUIDITY_CURRENCY`: `pUSD` теперь поддержанная валюта, и порог в ней несопоставим с ликвидностью — `MarketFilter` отклонил бы им каждый рынок без ошибки. `createPolymarketPolicy` отвергает такой порог при сборке (`PolicyValidationError`, поле `minLiquidity.currency`) |
 | `ReservationKind = 'USDC' \| 'TOKENS'` (`ports`, `in-memory`) | оставлено: метка денежной резервации в формате записи, `Money` из неё никто не строит; переименование — смена формата хранения |
 | `ICurrentBalanceProvider.getUsdcBalance` | оставлено: порт без реализаций |
 | `AssetQuantity.usdc()`, `AssetQuantityService.createUsdc()` | оставлено: generic-хелперы USDC, Polymarket ими не пользуется |
@@ -227,5 +268,7 @@ On-chain reader в этот MR не входит. Что обязан решит
 | `@polymarket/fill` | `polymarket-fee.test.ts`, `FillMapper.test.ts` | `Fee` и settlement в pUSD (TAKER, MAKER, нулевая комиссия, legacy-путь), снимки USDC/pUSD восстанавливаются как есть, неизвестная валюта → `Err` |
 | `@polymarket/polymarket-v2` | `PolymarketClobRefreshedBalanceReader.test.ts`, `PolymarketAccountVenueStateSource.test.ts`, `polymarketAccountMapping.test.ts` | базовые единицы → pUSD, ноль → `Money(0, pUSD)`, невалидные единицы → `Err`, reader с USDC → `Err`, REST и WS — один актив расчёта (TAKER, MAKER, multi-MAKER, cross-outcome) |
 | `@polymarket/handlers` | `FillEventHandler.test.ts` | WS-исполнение TAKER/MAKER рассчитывается в pUSD |
-| `@polymarket/account-state` | `collateralCurrency.test.ts` | pUSD-портфель принимается; `balanceCurrency` в исполнении, заявке и сверке |
+| `@polymarket/account-state` | `collateralCurrency.test.ts` | pUSD-портфель принимается; `balanceCurrency` в исполнении, заявке и сверке; USDC-исполнение внутри pUSD-сверки → отказ, ноль мутаций; pUSD-исполнение сверки → `CONFIRMED` |
+| `@polymarket/policy` | `createPolicy.test.ts`, `parsePolicyConfig.test.ts` | `minLiquidity` в pUSD отвергается при сборке и при загрузке конфигурации |
+| `@polymarket/polymarket-v2` | `PolymarketMarketDiscovery.test.ts` | ликвидность (объявленная и нулевая) — в `MARKET_LIQUIDITY_CURRENCY` |
 | `@polymarket/account-reconciliation` | `venueState.types.test.ts` | `collateralBalance` переносит валюту как есть |

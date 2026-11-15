@@ -238,10 +238,12 @@ const balance = Balance.of(
   accountId,
   venueId,
 );
-const portfolio = Portfolio.create({ id, accountId, balance });
+const created = Portfolio.create({ id, accountId, balance });
+if (!created.ok) throw created.error;
+const portfolio = created.value;
 
-portfolio.reserveForOrder(Money.of(new Decimal(20), 'pUSD')); // Ok
-portfolio.reserveForOrder(Money.of(new Decimal(20), 'USDC')); // Err(CURRENCY_MISMATCH)
+portfolio.reserveForOrder(Money.of(new Decimal(20), 'pUSD')); // Ok(Portfolio)
+portfolio.reserveForOrder(Money.of(new Decimal(20), 'USDC')); // Err(CURRENCY_MISMATCH), portfolio не изменён
 ```
 
 Подробно: `docs/guides/polymarket-collateral-currency.md`.
