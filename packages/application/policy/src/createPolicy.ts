@@ -53,6 +53,7 @@
 import { ValidationError } from '@polymarket/errors';
 import type { CryptoAssetId } from '@polymarket/ids';
 import type { MarketDuration } from '@polymarket/market';
+import { MARKET_LIQUIDITY_CURRENCY } from '@polymarket/ports';
 import { areKeywordsEquivalent } from './keywordMatching.js';
 import type { PolicyWindow } from './PolicyWindow.js';
 import { CEX_POLICY_MARKET_TYPE_VALUES, isCexPolicyMarketType } from './CexPolicy.js';
@@ -91,6 +92,46 @@ function assertValidWindow(window: PolicyWindow): void {
       context: {
         effectiveFrom: effectiveFrom.toISO(),
         effectiveUntil: effectiveUntil.toISO(),
+      },
+    });
+  }
+}
+
+/**
+ * Проверяет, что порог ликвидности сопоставим с ликвидностью discovery.
+ *
+ * @param input - Желаемая policy
+ * @throws {PolicyValidationError} Если валюта `minLiquidity` отличается от
+ *   `MARKET_LIQUIDITY_CURRENCY`
+ *
+ * @internal
+ * @remarks
+ * Discovery выражает ликвидность только в `MARKET_LIQUIDITY_CURRENCY`
+ * (контракт `MarketDiscoveryMetrics`). Порог в другой поддерживаемой валюте
+ * (например, `pUSD`) несравним с ней: `MarketFilter` получил бы
+ * `CURRENCY_MISMATCH` на каждом рынке и отклонил бы весь universe, а policy
+ * при этом считалась бы корректной. Такая ошибка всегда конфигурационная,
+ * поэтому ловится при сборке policy, а не молча при отборе. Конвертации нет:
+ * разные токены не превращаются друг в друга даже для сравнения.
+ *
+ * @example
+ * ```typescript
+ * assertComparableLiquidityThreshold({ ...policy, minLiquidity: Money.of(new Decimal(1000), 'pUSD') });
+ * // → PolicyValidationError
+ * ```
+ */
+function assertComparableLiquidityThreshold(input: PolymarketPolicy): void {
+  const minLiquidity = input.minLiquidity;
+  if (minLiquidity === undefined) {
+    return;
+  }
+  const currency = minLiquidity.currency();
+  if (currency !== MARKET_LIQUIDITY_CURRENCY) {
+    throw new PolicyValidationError('Policy minLiquidity currency must match market liquidity currency', {
+      context: {
+        field: 'minLiquidity.currency',
+        value: currency,
+        allowed: [MARKET_LIQUIDITY_CURRENCY],
       },
     });
   }
@@ -263,8 +304,9 @@ function normalizeTitle(
  * @param input - Желаемая policy (входные массивы не мутируются)
  * @returns Замороженная policy с нормализованными селекторами
  * @throws {PolicyValidationError} При противоречивом окне, мусорных ключевых
- *   словах либо невыполнимых текстовых селекторах (одно слово в `required` и
- *   `excluded`; весь `anyOf` внутри `excluded`)
+ *   словах, невыполнимых текстовых селекторах (одно слово в `required` и
+ *   `excluded`; весь `anyOf` внутри `excluded`) либо пороге `minLiquidity`
+ *   не в `MARKET_LIQUIDITY_CURRENCY`
  *
  * @remarks
  * Пустые списки `assets`/`durations` схлопываются в `undefined` — это одно и
@@ -294,6 +336,7 @@ function normalizeTitle(
  */
 export function createPolymarketPolicy(input: PolymarketPolicy): PolymarketPolicy {
   assertValidWindow(input);
+  assertComparableLiquidityThreshold(input);
 
   const assets: readonly CryptoAssetId[] | undefined =
     input.assets === undefined || input.assets.length === 0

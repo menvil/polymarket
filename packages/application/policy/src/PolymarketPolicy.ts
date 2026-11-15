@@ -101,6 +101,11 @@ export interface PolymarketPolicy extends PolicyWindow {
    * Сравнивается с `entry.metrics.liquidity`, то есть с НАБЛЮДЕНИЕМ рядом с
    * рынком, а не с полем самого рынка: ликвидность меняется каждую минуту и
    * в identity рынка не входит.
+   *
+   * Валюта — только `MARKET_LIQUIDITY_CURRENCY` (`@polymarket/ports`): в ней
+   * discovery выражает ликвидность. Порог в другой валюте (например, `pUSD` —
+   * collateral аккаунта, а не единица рыночной статистики) несопоставим и
+   * отвергается `createPolymarketPolicy`.
    */
   readonly minLiquidity?: Money;
   /** Минимальный спред (отсутствует — ограничения нет). */

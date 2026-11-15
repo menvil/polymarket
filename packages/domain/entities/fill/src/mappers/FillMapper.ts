@@ -68,6 +68,12 @@
  * Так приватный WS (сообщение может прийти позже исполнения) и REST
  * (`matchedAt`) дают один и тот же факт исполнения.
  *
+ * ### Деньги исполнения — collateral площадки (pUSD):
+ * `settlementAssetId` и актив комиссии — `CURRENCY:pUSD`
+ * (`POLYMARKET_COLLATERAL_ASSET_ID`): Polymarket CLOB V2 рассчитывается в
+ * pUSD, а не в USDC. Валюта общая для приватного WS и REST — оба пути идут
+ * через этот маппер, поэтому факт исполнения у них один.
+ *
  * ### Расчёт комиссии:
  * - TAKER + `takerFeeRate` вызывающего: round5(C × rate × p × (1-p))
  * - TAKER без `takerFeeRate` (legacy): fee_rate_bps > 0 → crypto-ставка 0.07
@@ -96,7 +102,6 @@ import {
   parseAssetId,
   parseAccountId,
   asVenueTradeId,
-  AssetIdHelpers,
   accountIdToString,
   assetIdToString,
 } from '@polymarket/ids';
@@ -109,6 +114,7 @@ import { Fill } from '../Fill.js';
 import type { FillSnapshot } from '../FillSnapshot.js';
 import type { ExecutionMetadata, TradeStatus } from '../ExecutionMetadata.js';
 import { calculatePolymarketTakerFee, calculatePolymarketTakerFeeWithRate } from '../polymarket-fee.js';
+import { POLYMARKET_COLLATERAL_ASSET_ID } from '../polymarket-collateral.js';
 
 /**
  * ID торговой площадки Polymarket по умолчанию
@@ -589,7 +595,7 @@ export class FillMapper {
 
         // MAKER fee = 0 на Polymarket. Комиссию платит только TAKER.
         // fee_rate_bps в WS event — это taker fee rate, к мейкерам не применяется.
-        const fee = Fee.of(new AssetQuantity(AssetIdHelpers.USDC, Quantity.of(new Decimal(0))));
+        const fee = Fee.of(new AssetQuantity(POLYMARKET_COLLATERAL_ASSET_ID, Quantity.of(new Decimal(0))));
 
         // FillId: при одном нашем ордере — оригинальный tradeId (обратная совместимость).
         // При нескольких — `{tradeId}:{orderId}` для уникальности в idempotency guard.
@@ -612,7 +618,7 @@ export class FillMapper {
           venueId,
           marketId: marketIdParsed,
           tokenId: makerTokenId,
-          settlementAssetId: AssetIdHelpers.USDC,
+          settlementAssetId: POLYMARKET_COLLATERAL_ASSET_ID,
           price: makerPrice,
           size: makerSize,
           side: makerSide,
@@ -636,7 +642,7 @@ export class FillMapper {
     // TAKER fee по формуле Polymarket. MAKER fee = 0 (обработан выше, isMaker=true → return).
     // Ставка из надёжного источника вызывающего важнее fee_rate_bps события.
     const feeRateBpsRaw = raw['fee_rate_bps'];
-    let fee = Fee.zero(AssetIdHelpers.USDC);
+    let fee = Fee.zero(POLYMARKET_COLLATERAL_ASSET_ID);
     if (takerFeeRate !== undefined) {
       fee = calculatePolymarketTakerFeeWithRate(size, price, takerFeeRate);
     } else if (feeRateBpsRaw !== undefined && feeRateBpsRaw !== null) {
@@ -668,7 +674,7 @@ export class FillMapper {
       venueId,
       marketId: marketIdParsed,
       tokenId: effectiveTokenId,
-      settlementAssetId: AssetIdHelpers.USDC,
+      settlementAssetId: POLYMARKET_COLLATERAL_ASSET_ID,
       price,
       size,
       side,

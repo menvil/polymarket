@@ -177,7 +177,7 @@ Money имеет **4 слоя** по аналогии с OutcomePrice и Quantit
 
 **Инварианты:**
 
-1. **Поддерживаемая валюта**: `currency in SUPPORTED_CURRENCIES` (сейчас только 'USDC')
+1. **Поддерживаемая валюта**: `currency in SUPPORTED_CURRENCIES` (`'USDC'`, `'pUSD'`)
 2. **Not NaN**: `!amount.isNaN()`
 3. **Finite**: `amount.isFinite()`
 4. **Не превышает MAX**: `|amount| <= 1e15`
@@ -493,16 +493,28 @@ JavaScript `Number.MAX_SAFE_INTEGER = 9007199254740991 ≈ 9e15`.
 - Денежная сумма БЕЗ валюты бессмысленна
 - `100` что? Доллары? Евро? Биткоины?
 
-**Default = 'USDC'**:
+**Default = 'USDC'** — историческое умолчание:
 
-- Polymarket использует только USDC
-- Удобство: `MoneyService.create(100)` вместо `MoneyService.create(100, 'USDC')`
-- Явность: можно указать валюту при необходимости
+- Появилось, когда валюта в системе была одна
+- На нём держатся старые вызовы и сотни тестов, поэтому умолчание сохранено
+- Деньги Polymarket CLOB V2 (`pUSD`) создаются ТОЛЬКО с явной валютой —
+  `POLYMARKET_COLLATERAL_CURRENCY` из `@polymarket/fill`
 
-**В будущем:**
+**Валюта — идентичность токена, а не единица измерения.** `pUSD` (Polymarket
+USD) — collateral Polymarket CLOB V2; он обеспечен USDC, но это другой токен:
 
-- Если добавим другие валюты (EUR, BTC), default можно убрать
-- Текущий API будет backward compatible
+```text
+Money(100, 'pUSD') + Money(20, 'pUSD') → Ok(120 pUSD)
+Money(100, 'USDC') + Money(20, 'USDC') → Ok(120 USDC)
+Money(100, 'pUSD') + Money(20, 'USDC') → Err(CURRENCY_MISMATCH)
+```
+
+Курса между валютами в домене нет; сравнения и операции баланса разных валют
+— тоже отказ. Подробно: `docs/guides/polymarket-collateral-currency.md`.
+
+**В будущем:** умолчание можно убрать отдельным механическим MR (≈430
+тестовых вызовов `MoneyService.create(x)`/`Money.of(x)` без валюты и один
+production-вызов в `apps/pnl`).
 
 ---
 

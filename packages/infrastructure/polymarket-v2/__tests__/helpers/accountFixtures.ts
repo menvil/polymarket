@@ -34,7 +34,9 @@ import {
   type AccountId,
   type MarketId,
   type OrderId,
+  type SupportedCurrency,
 } from '@polymarket/ids';
+import { POLYMARKET_COLLATERAL_CURRENCY } from '@polymarket/fill';
 import { Err, Ok, type Result } from '@polymarket/result';
 import { MoneyService, QuantityService, type Money, type Quantity } from '@polymarket/value-objects';
 import {
@@ -397,9 +399,15 @@ export function quantity(value: string): Quantity {
   return created.value;
 }
 
-/** USDC из строки. */
-export function money(value: string): Money {
-  const created = MoneyService.create(value, 'USDC');
+/**
+ * Деньги из строки — по умолчанию в pUSD, collateral Polymarket CLOB V2.
+ *
+ * @param value - Сумма
+ * @param currency - Валюта (USDC — только для проверок отказа чужой валюты)
+ * @returns `Money`
+ */
+export function money(value: string, currency: SupportedCurrency = POLYMARKET_COLLATERAL_CURRENCY): Money {
+  const created = MoneyService.create(value, currency);
   if (!created.ok) throw created.error;
   return created.value;
 }

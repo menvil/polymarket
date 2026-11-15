@@ -413,6 +413,13 @@ const usdc = AssetIdHelpers.USDC;
 const usdcExplicit = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
 // → { type: 'CURRENCY', currency: 'USDC' }
 
+// pUSD — collateral Polymarket CLOB V2: ОТДЕЛЬНЫЙ токен, не другое имя USDC
+const pusd = AssetIdHelpers.PUSD;
+// → { type: 'CURRENCY', currency: 'pUSD' }, строка 'CURRENCY:pUSD'
+AssetIdHelpers.equals(pusd, AssetIdHelpers.USDC);  // → false
+// Код каноничен: parseAssetId('CURRENCY:PUSD') → undefined,
+// asSupportedCurrency('PUSD') → 'pUSD'
+
 // Outcome token asset — fromOutcomeToken возвращает Result (не бросает исключений)
 const onChainRef: OnChainConditionRef = {
   kind: 'ONCHAIN',

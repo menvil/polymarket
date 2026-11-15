@@ -143,10 +143,28 @@ Authoritative здесь — порт `PolymarketAuthoritativeBalanceReader` и
 undefined / NaN / "-5" / "1.5" / "1e6" / " 5" / 23+ цифр → Err
 ```
 
-Collateral выражен в canonical `USDC`, потому что это единственная валюта
-canonical `Money`/`Portfolio` и `Fill.settlementAssetId`. Это НЕ утверждение,
-что collateral-токен площадки — USDC: collateral Polymarket CLOB V2 — pUSD.
-Решение не принято — см. [NEXT / BLOCKERS](#next--blockers).
+### Collateral — pUSD, отдельная canonical валюта
+
+`COLLATERAL` у Polymarket CLOB V2 — это **pUSD** (Polymarket USD), а не USDC:
+
+| источник | что подтверждает |
+| --- | --- |
+| SDK `@polymarket/client` 0.6.0, production (chainId 137) | `environment.contracts.collateralToken = 0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` |
+| `docs.polymarket.com/resources/contracts` | «pUSD — CollateralToken Poly v2», тот же адрес |
+| `docs.polymarket.com/migrate/polymarket-v2/api-integrations` | «`COLLATERAL` selects pUSD» для `balance-allowance` |
+| `docs.polymarket.com/concepts/pusd` | collateral всей торговли, 6 decimals, обеспечен USDC |
+| контракт on-chain (Polygon) | `symbol() = "pUSD"`, `name() = "Polymarket USD"`, `decimals() = 6` |
+
+Поэтому `collateralFromBaseUnits` создаёт `Money` в canonical валюте `pUSD`
+(`POLYMARKET_COLLATERAL_CURRENCY` из `@polymarket/fill` — того же
+объявления, из которого `FillMapper` берёт валюту расчёта исполнений), без
+какого-либо курса pUSD ↔ USDC. Шесть знаков базовых единиц совпадают с
+`decimals()` контракта.
+
+Reader внедряется, и его может заменить on-chain верификатор. Поэтому
+`getAccountState` проверяет валюту collateral от reader-а: `Money` не в
+`pUSD` — отказ прохода (`balances: collateral must be pUSD, reader returned
+USDC`), а не доллары «примерно те же».
 
 ## Заявки: статус CLOB + `sizeMatched`
 
@@ -449,24 +467,21 @@ const state = await source.value.getAccountState(KnownVenues.POLYMARKET, account
 | REST ↔ WS `FillId` | общий `FillMapper`, владение только по нашему адресу |
 | REST `matchedAt` ↔ WS execution timestamp | canonical время исполнения приватного WS: `match_time` → legacy `matchtime`; `FillEventHandler` без обоих — отказ; generic `FillMapper` без обоих — `timestamp` (обратная совместимость) |
 | источник ставки комиссии в приватном WS | приватный WS и REST получают ставку TAKER-исполнения через один контракт `PolymarketTakerFeeRateResolver` (`@polymarket/fill`) |
+| pUSD vs canonical collateral | `pUSD` — отдельная canonical валюта; collateral-баланс, расчёт и комиссия исполнений Polymarket — в pUSD; смешение с USDC отвергают `MoneyService`, `BalanceService`, `Portfolio` и `AccountHotState` (см. `docs/guides/polymarket-collateral-currency.md`) |
 
 Открыто:
 
 | блокер | почему | до чего |
 | --- | --- | --- |
-| pUSD vs canonical collateral (см. ниже) | collateral площадки — pUSD, canonical `Portfolio` знает только USDC | matcher мутирует `Portfolio` |
 | CLOB refreshed balance ≠ физическая / on-chain истина | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не проверенный on-chain | композиция, которой нужна физическая истина инвентаря |
 | live-проверка статусов и API площадки | см. [Проверить live](#проверить-live) | matcher / runtime wiring |
 
-Open architectural decision (pUSD/USDC):
+Решение по pUSD/USDC (закрыто):
 
 ```text
-Current canonical Portfolio supports only USDC.
-Current Polymarket CLOB V2 collateral is pUSD.
-Before state matcher is allowed to mutate Portfolio, the canonical
-collateral representation must explicitly decide whether pUSD is
-represented as its own currency or intentionally normalized to a
-USD-equivalent accounting unit.
+pUSD is its own canonical currency.
+Polymarket physical collateral pUSD → Money(pUSD) → Portfolio.balance → reconciliation.
+No implicit pUSD ↔ USDC conversion, no 1:1 rate in the domain.
 ```
 
 Вне этого MR: on-chain reader, matcher, `CorrectionPlan`, коррекция
@@ -488,8 +503,8 @@ USD-equivalent accounting unit.
 
 | файл | что покрывает |
 | --- | --- |
-| `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц, настоящий ноль, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK, `boundWallet` = `client.account.wallet` |
-| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome; WS-сообщение на 30 с позже `match_time`; то же — когда время исполнения только в legacy `matchtime`), **ACCEPTANCE: одно TAKER-исполнение (WS `timestamp` T+30 с, `fee_rate_bps "0"`; REST `matchedAt` T, `feeRateBps "0"`; общий настоящий резолвер) → тот же `FillId` и факт — и с `match_time`, и с одним legacy `matchtime`; то же для MAKER с `matchtime`**, **P0 комиссии: WS `fee_rate_bps` `"0"`/`"1000"`/`"250"` и REST `feeRateBps "0"` + одна ставка резолвера → тот же факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, REST `matchedAt` → `match_time` без `timestamp`, владение только по адресу, self-match, отказ вместо подстановок `FillMapper` (токен и сторона нашей maker-записи, сторона и токен тейкера; чужие записи не проверяются), слияние повторов |
-| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, привязка при создании (чужой `accountId`, клиент другого кошелька, reader чужого кошелька, чужой `makerAddress`, `accountId` не WALLET-вида, кошелёк не сообщён — отказ без запросов), балансы scope (ноль явно), правка scope вызывающим во время прохода не сдвигает балансы, отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
+| `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц в `Money` pUSD, настоящий ноль — `Money(0, pUSD)`, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK, `boundWallet` = `client.account.wallet` |
+| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome; WS-сообщение на 30 с позже `match_time`; то же — когда время исполнения только в legacy `matchtime`), **ACCEPTANCE: одно TAKER-исполнение (WS `timestamp` T+30 с, `fee_rate_bps "0"`; REST `matchedAt` T, `feeRateBps "0"`; общий настоящий резолвер) → тот же `FillId` и факт — и с `match_time`, и с одним legacy `matchtime`; то же для MAKER с `matchtime`**, **P0 комиссии: WS `fee_rate_bps` `"0"`/`"1000"`/`"250"` и REST `feeRateBps "0"` + одна ставка резолвера → тот же факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, REST `matchedAt` → `match_time` без `timestamp`, оба пути рассчитываются в `CURRENCY:pUSD` (settlement и комиссия; TAKER, MAKER, multi-MAKER, cross-outcome), владение только по адресу, self-match, отказ вместо подстановок `FillMapper` (токен и сторона нашей maker-записи, сторона и токен тейкера; чужие записи не проверяются), слияние повторов |
+| `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, `collateralBalance` в pUSD, reader вернул USDC → `Err` прохода, привязка при создании (чужой `accountId`, клиент другого кошелька, reader чужого кошелька, чужой `makerAddress`, `accountId` не WALLET-вида, кошелёк не сообщён — отказ без запросов), балансы scope (ноль явно), правка scope вызывающим во время прохода не сдвигает балансы, отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
 | `PolymarketTakerFeeRateResolver.test.ts` | ставка по рынку без учёта регистра, неизвестный рынок → `Err`, невалидная ставка и повтор рынка → отказ создания |
 | `contour-boundary.test.ts` | закрытый список импортов account plane, `@polymarket/fill` только в нём, из SDK — только `import type` (распознаватель ловит value-import, `export *`, side-effect и динамический `import()` — проверено фикстурами) |

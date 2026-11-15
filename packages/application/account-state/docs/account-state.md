@@ -353,6 +353,39 @@ WALLET      venue не задан вовсе    → проверять нече�
 встроенной площадки у WALLET-аккаунта — норма. Venue namespace ему задаёт
 payload.
 
+### Валюта денег аккаунта (`balanceCurrency`)
+
+У аккаунта один денежный collateral. Его валюту задаёт портфель
+инициализации (`pUSD` у Polymarket CLOB V2, `USDC` у прежних путей), и
+дальше она не меняется:
+
+```text
+событие с портфелем (заявка, исполнение, сверка)  balance.currency == валюта аккаунта
+событие исполнения                                fill.settlementAssetId == CURRENCY:<валюта портфеля>
+каждое исполнение сверки                          fill.settlementAssetId == CURRENCY:<валюта портфеля коррекции>
+```
+
+Иначе — `AccountPortfolioIdentityMismatchError` с полем `balanceCurrency`
+(`expected` — чего требует аккаунт или исполнение, `actual` — валюта портфеля
+события), до любой мутации. Почему здесь, а не только в `Portfolio`:
+
+- состояние экономику не считает, но ХРАНИТ пару «исполнение + портфель»;
+  пара USDC-исполнение + pUSD-портфель не может быть результатом
+  `Portfolio.applyFill` (тот её отвергает) — значит, это дефект producer'а;
+- курса pUSD ↔ USDC нет, поэтому портфель другой валюты — не обновление, а
+  другой счёт. Сверка исправляет суммы, но не валюту: смена collateral
+  аккаунта не проходит молча, скрытых миграций нет.
+- сверка — второй вход в `CONFIRMED`, минуя `Portfolio.applyFill`. Поэтому
+  `prepareReconciledFills` проверяет валюту каждого исполнения тем же
+  `validateFillSettlementCurrency`, что и live-путь, и до различения
+  «новое / известное»: иначе pUSD-портфель коррекции с USDC-исполнением
+  прошёл бы проверку портфеля, а исполнение вошло бы как `CONFIRMED`.
+
+```typescript
+const error = await publishErr(bus, events.fillApplied({ fill: usdcFill, portfolio: pusdPortfolio }));
+// AccountPortfolioIdentityMismatchError { field: 'balanceCurrency', expected: 'USDC', actual: 'pUSD' }
+```
+
 ## Validation-first, mutation-second
 
 Жёсткий инвариант каждого обработчика:
@@ -557,9 +590,10 @@ sequenceDiagram
 ```text
 1. аккаунт существует                      иначе AccountNotInitializedError
 2. CAS: version === expectedAccountVersion иначе AccountReconciliationVersionConflictError
-3. портфель — этого аккаунта на этой площадке
+3. портфель — этого аккаунта на этой площадке и в валюте аккаунта
 4. каждая заявка:   владелец, инструмент, неизменяемая идентичность, без повторов
-5. каждое исполнение: владелец, площадка, инструмент, факт, переход, без повторов
+5. каждое исполнение: владелец, площадка, инструмент, валюта расчёта = валюта портфеля,
+                      факт, переход, без повторов
         ↓   до этого места НИ ОДНОЙ записи в Map
 6. ничего не изменилось → Ok, версии и lastMutationAt не трогаются
 7. иначе ОДИН commit(PendingMutation) → account.version += 1, global += 1
@@ -896,6 +930,7 @@ objects, и структурная заглушка проверяла бы не
 | `reconciliationBatch.test.ts` | коррекция: CAS (применение/конфликт/CAS до содержимого), атомарность снимка, одна версия на коррекцию, no-op, неизвестный аккаунт, чужой портфель, повтор записи |
 | `reconciliationOrders.test.ts` | коррекция заявок: вставка, no-op, замена состояния, конфликты идентичности (table-driven), чужой владелец, неразрешимый инструмент, история не удаляется |
 | `reconciliationFills.test.ts` | коррекция исполнений: новое сразу `CONFIRMED`, `APPLIED → CONFIRMED` с исходным `appliedAt`, no-op, `REVERTED` → `Err`, конфликты факта, venue-ось сохраняется, чужой аккаунт/площадка |
+| `collateralCurrency.test.ts` | pUSD-портфель принимается (инициализация, заявка, исполнение), прежний USDC-путь не изменился; `balanceCurrency`: USDC-исполнение у pUSD-портфеля, смена валюты портфеля в исполнении, заявке и сверке → отказ без мутаций; USDC-исполнение внутри pUSD-сверки → отказ, ноль мутаций; pUSD-исполнение сверки → `CONFIRMED` |
 
 Сравнение заявок и исполнений живёт в своих доменных пакетах и там же
 тестируется: `@polymarket/order` → `orderIdentity.test.ts`,

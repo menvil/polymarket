@@ -386,6 +386,23 @@ describe('parsePolicyConfig: отказы по деньгам', () => {
 
     expect(error.context?.field).toBe('minLiquidity.currency');
     expect(error.context?.value).toBe('EUR');
+    expect(error.context?.allowed).toEqual(['USDC', 'pUSD']);
+  });
+
+  it('поддержанная, но несопоставимая с ликвидностью валюта (pUSD) отвергается при загрузке', () => {
+    // pUSD — валюта денег аккаунта, а ликвидность discovery — USDC-статистика:
+    // такой порог отклонил бы весь universe без единой ошибки.
+    const error = captureError(() =>
+      parsePolicyConfig({
+        kind: 'POLYMARKET',
+        family: 'CRYPTO_UP_DOWN',
+        minLiquidity: { amount: 1000, currency: 'pUSD' },
+      }),
+    );
+
+    expect(error).toBeInstanceOf(PolicyValidationError);
+    expect(error.context?.field).toBe('minLiquidity.currency');
+    expect(error.context?.value).toBe('pUSD');
     expect(error.context?.allowed).toEqual(['USDC']);
   });
 });

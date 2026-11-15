@@ -195,11 +195,23 @@ describe('getAccountState: балансы', () => {
     const state = unwrap(await source.getAccountState(VENUE, ACCOUNT, SCOPE));
 
     expect(state.collateralBalance.value().toString()).toBe('1000.5');
+    // Контракт сверки получает валюту как есть: collateral — pUSD.
+    expect(state.collateralBalance.currency()).toBe('pUSD');
     expect(state.assetBalances.map((balance) => [assetIdToString(balance.asset), balance.quantity.value().toString()])).toEqual([
       [assetIdToString(YES), '5'],
       [assetIdToString(NO), '0'],
     ]);
     expect(reader.calls.sort()).toEqual(['collateral', assetIdToString(NO), assetIdToString(YES)].sort());
+  });
+
+  it('reader вернул collateral в USDC → Err прохода: чужая валюта не выдаётся за pUSD', async () => {
+    const { source, reader } = buildSource();
+    reader.collateral = { ok: true, value: money('1000.5', 'USDC') };
+
+    const error = failure(await source.getAccountState(VENUE, ACCOUNT, SCOPE));
+
+    expect(error.operation).toBe('getAccountState');
+    expect(error.message).toContain('balances: collateral must be pUSD, reader returned USDC');
   });
 
   it('отказ collateral или баланса актива → Err всего прохода с этапом', async () => {

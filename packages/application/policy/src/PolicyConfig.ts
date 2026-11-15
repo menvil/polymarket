@@ -58,7 +58,7 @@
  * | `family`        | значение `MarketFamily`, например `'CRYPTO_UP_DOWN'` |
  * | `assets`        | тикер базового актива, например `'btc'`       |
  * | `durations`     | `<число><m\|h>`, например `'5m'`, `'1h'`      |
- * | `minLiquidity`  | `{ amount, currency }`, валюта из `SUPPORTED_CURRENCIES` |
+ * | `minLiquidity`  | `{ amount, currency }`, валюта = `MARKET_LIQUIDITY_CURRENCY` (`'USDC'`) |
  * | `minSpread`     | десятичная ДРОБЬ, `'0.02'` = 2 %              |
  * | `effectiveFrom` | ISO-8601, например `'2026-09-01T18:00:00Z'`   |
  *

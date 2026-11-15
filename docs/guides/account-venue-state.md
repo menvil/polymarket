@@ -545,8 +545,7 @@ const venueState = PolymarketAccountVenueStateSource.create(config, {
 | регистр и форма статусов заявки (`LIVE` vs `live` vs префикс), смысл `INVALID` | сейчас принимается только задокументированный верхний регистр, `INVALID` — `Err` |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
 | присылает ли WS user-channel `match_time` или `matchtime` у каждого trade-события | без обоих `FillEventHandler` отвергает событие (fail closed), исполнение увидит только REST-сверка |
-| pUSD vs USDC: collateral CLOB V2 — pUSD, canonical `Portfolio` знает только USDC | решить до того, как matcher начнёт менять `Portfolio`: своя валюта или намеренная нормализация в USD-эквивалент |
-| CLOB refreshed balance vs физическая / on-chain истина | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не on-chain |
+| CLOB refreshed balance vs физическая / on-chain истина | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не on-chain; вопросы on-chain проверки pUSD — в `docs/guides/polymarket-collateral-currency.md` |
 
 Блокеры перед matcher-ом, который мутирует `Portfolio`:
 
@@ -554,12 +553,20 @@ const venueState = PolymarketAccountVenueStateSource.create(config, {
 CLOSED  ✓ REST/WS FillId
         ✓ REST/WS execution timestamp
         ✓ REST/WS taker fee source policy
-OPEN    - pUSD vs canonical collateral representation
-        - CLOB refreshed balance vs physical/on-chain truth
+        ✓ pUSD vs canonical collateral representation
+OPEN    - CLOB refreshed balance vs physical/on-chain truth
         - live vendor status/API verification
 ```
 
 Закрыто при реализации адаптера:
+
+- collateral Polymarket CLOB V2 — **pUSD**, отдельная canonical валюта
+  (подтверждено SDK, официальной страницей контрактов и самим контрактом:
+  `symbol() = "pUSD"`, `decimals() = 6`). Collateral-баланс, расчёт и
+  комиссия исполнений — в pUSD из одного объявления
+  `POLYMARKET_COLLATERAL_CURRENCY`/`POLYMARKET_COLLATERAL_ASSET_ID`
+  (`@polymarket/fill`); курса pUSD ↔ USDC нет — см.
+  `docs/guides/polymarket-collateral-currency.md`;
 
 - «не найдено» у `fetchOrder` — задокументированный CLOB `404`
   (`{"error": "Order not found"}`), в SDK — `RequestRejectedError` со

@@ -49,6 +49,7 @@ import {
   type MarketId,
   type OrderId,
   type StrategyId,
+  type SupportedCurrency,
   type VenueId,
 } from '@polymarket/ids';
 import { Fill } from '@polymarket/fill';
@@ -156,8 +157,8 @@ export const DOWN_TOKEN: AssetId = token('20000000000000000000000000000000000000
  * `value-objects`/`math` запрещён контрактом границ (ADR, Решение 1), и в
  * фикстурах это правило действует ровно так же, как в продакшн-коде.
  */
-export function money(value: number): Money {
-  return must(MoneyService.create(value, 'USDC'));
+export function money(value: number, currency: SupportedCurrency = 'USDC'): Money {
+  return must(MoneyService.create(value, currency));
 }
 
 /**
@@ -215,6 +216,8 @@ export interface PortfolioOverrides {
   readonly available?: number;
   /** Зарезервированные средства */
   readonly reserved?: number;
+  /** Валюта денежного collateral (по умолчанию USDC) */
+  readonly currency?: SupportedCurrency;
   /** Позиция в портфеле; токенный баланс под неё собирается автоматически */
   readonly position?: Position;
   /** Идентификатор портфеля */
@@ -235,8 +238,8 @@ export interface PortfolioOverrides {
 export function portfolio(overrides: PortfolioOverrides = {}): Portfolio {
   const accountId = overrides.accountId ?? walletAccount();
   const balance = Balance.of(
-    money(overrides.available ?? 10_000),
-    money(overrides.reserved ?? 0),
+    money(overrides.available ?? 10_000, overrides.currency),
+    money(overrides.reserved ?? 0, overrides.currency),
     overrides.balanceAccountId ?? accountId,
     overrides.balanceVenueId ?? VENUE,
   );

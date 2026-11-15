@@ -176,9 +176,81 @@ packages/domain/entities/portfolio/
 
 ---
 
+## Валюта портфеля: один денежный collateral
+
+### Проблема
+
+`Portfolio` знал только `USDC`, а collateral Polymarket CLOB V2 — `pUSD`
+(Polymarket USD). Деньги аккаунта выражались в USDC как временный
+компромисс, и в двух местах агрегат молча переписывал валюту:
+
+- `applyDirectDebit` строил результат как `Money.of(…, 'USDC')`;
+- `applyFill` переводил комиссию и нетто-поток `Fill` в `Money` валюты
+  портфеля, не сверив `fill.settlementAssetId`, — USDC-исполнение прошло бы
+  у pUSD-портфеля как pUSD.
+
+### Решение
+
+Один `Portfolio` — один денежный collateral. Валюта задаётся балансом, и
+каждая денежная операция обязана быть в ней же:
+
+```text
+Portfolio
+└── Balance
+    ├── available: Money(pUSD)
+    └── reserved:  Money(pUSD)      инвариант: available.currency == reserved.currency
+```
+
+| Операция | В валюте портфеля | В другой валюте |
+|---|---|---|
+| `reserveForOrder` / `releaseReservation` | Ok | `InvalidBalanceError` (`CURRENCY_MISMATCH`) |
+| `applyDebit` / `applyCredit` | Ok | `InvalidBalanceError` |
+| `applyDirectDebit` | Ok (best-effort по сумме) | `InvalidBalanceError` |
+| `applyFill` (settlement `CURRENCY:<валюта>`) | Ok | `PortfolioOperationError` |
+
+Шаги `applyFill`:
+
+1. Владелец и площадка исполнения.
+2. **Валюта расчёта**: `fill.settlementAssetId` — `CURRENCY` той же валюты,
+   что и баланс. Иначе отказ — ДО любой арифметики.
+3. Только после этого суммы `Fill` (комиссия, нетто-поток) переводятся в
+   `Money` валюты портфеля. Ненулевая комиссия уже в валюте расчёта
+   (инвариант `Fill`), `reservedNotional` проверяет `consumeReserved`.
+
+```mermaid
+flowchart TD
+    F[applyFill] --> O{fill.accountId / venueId свои?}
+    O -->|нет| E1[Err]
+    O -->|да| C{settlement = CURRENCY:валюта портфеля?}
+    C -->|нет| E2["Err: fill settles in CURRENCY:USDC, portfolio balance is in pUSD"]
+    C -->|да| M[суммы Fill → Money валюты портфеля → баланс, позиция, токены]
+```
+
+Мультивалютного портфеля нет, курса тоже. Старые портфели не мигрируются:
+USDC-портфель остаётся USDC и не принимает pUSD-исполнения Polymarket.
+
+```typescript
+import { POLYMARKET_COLLATERAL_CURRENCY } from '@polymarket/fill';
+
+const balance = Balance.of(
+  Money.of(new Decimal(100), POLYMARKET_COLLATERAL_CURRENCY),
+  Money.ZERO.pUSD,
+  accountId,
+  venueId,
+);
+const created = Portfolio.create({ id, accountId, balance });
+if (!created.ok) throw created.error;
+const portfolio = created.value;
+
+portfolio.reserveForOrder(Money.of(new Decimal(20), 'pUSD')); // Ok(Portfolio)
+portfolio.reserveForOrder(Money.of(new Decimal(20), 'USDC')); // Err(CURRENCY_MISMATCH), portfolio не изменён
+```
+
+Подробно: `docs/guides/polymarket-collateral-currency.md`.
+
 ## Жизненный цикл баланса
 
-### USDC (BUY ордера)
+### Деньги (BUY ордера) — в валюте баланса (USDC или pUSD)
 
 ```
 reserveForOrder(amount)    →  available -= amount, reserved += amount
@@ -189,8 +261,8 @@ applyCredit(amount)        →  available += amount (зачисление при
 
 | Метод | Сценарий использования |
 |-------|----------------------|
-| `reserveForOrder(amount)` | Размещение BUY ордера — заморозить USDC |
-| `releaseReservation(amount)` | Отмена BUY ордера — вернуть USDC |
+| `reserveForOrder(amount)` | Размещение BUY ордера — заморозить деньги |
+| `releaseReservation(amount)` | Отмена BUY ордера — вернуть деньги |
 | `applyDebit(amount)` | BUY fill — списать из reserved |
 | `applyCredit(amount)` | SELL fill — зачислить выручку |
 

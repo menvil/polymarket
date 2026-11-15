@@ -5,7 +5,7 @@ import type { IEventBus } from '@polymarket/event-bus';
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 import type { AccountId, MarketId } from '@polymarket/ids';
-import { accountIdFromWallet, parseWalletAddress, unsafeRunId } from '@polymarket/ids';
+import { accountIdFromWallet, assetIdToString, parseWalletAddress, unsafeRunId } from '@polymarket/ids';
 import {
   FillMapper,
   calculatePolymarketTakerFeeWithRate,
@@ -508,6 +508,18 @@ describe('FillEventHandler', () => {
       // 100 × 0.07 × 0.65 × 0.35 = 1.5925
       expect(feeOf(fill!)).toBeCloseTo(1.5925, 8);
       expect(takerFeeRates.calls).toEqual([MARKET]);
+    });
+
+    it.each<[string, () => Record<string, unknown>]>([
+      ['TAKER', () => makeValidRaw()],
+      ['MAKER', () => makeMakerRaw(1)],
+    ])('%s: опубликованное исполнение рассчитывается в collateral площадки — CURRENCY:pUSD, как у REST', async (_label, make) => {
+      await handler.handle(make(), ACCOUNT_ID);
+
+      const fills = receivedFills();
+      expect(fills).toHaveLength(1);
+      expect(assetIdToString(fills[0]!.settlementAssetId)).toBe('CURRENCY:pUSD');
+      expect(assetIdToString(fills[0]!.fee.asset)).toBe('CURRENCY:pUSD');
     });
 
     it('fee_rate_bps "0", "1000" и "250" при одной ставке резолвера → один и тот же TAKER-факт', async () => {

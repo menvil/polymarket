@@ -206,8 +206,19 @@ export class AccountIdentityMismatchError extends TradingError {
   }
 }
 
-/** Поле портфеля, которое разошлось с идентичностью аккаунта. */
-export type AccountPortfolioIdentityField = 'accountId' | 'balanceAccountId' | 'balanceVenueId';
+/**
+ * Поле портфеля, которое разошлось с идентичностью аккаунта.
+ *
+ * @remarks
+ * `balanceCurrency` — валюта денежного collateral портфеля: у аккаунта она
+ * одна (`pUSD` у Polymarket CLOB V2), и ни новый портфель, ни применяемое
+ * исполнение не вправе её подменить.
+ */
+export type AccountPortfolioIdentityField =
+  | 'accountId'
+  | 'balanceAccountId'
+  | 'balanceVenueId'
+  | 'balanceCurrency';
 
 /**
  * Портфель принадлежит не тому аккаунту, к которому его применяют.
@@ -228,9 +239,24 @@ export type AccountPortfolioIdentityField = 'accountId' | 'balanceAccountId' | '
  * `accountId + venueId`, и агрегат с правильным владельцем может нести баланс
  * чужой площадки.
  *
+ * ### Валюта баланса (`balanceCurrency`)
+ *
+ * Один аккаунт — один денежный collateral. Валюта задаётся портфелем при
+ * инициализации аккаунта и дальше не меняется:
+ *
+ * ```text
+ * новый портфель (заявка, исполнение, сверка)   валюта = валюта аккаунта
+ * применяемое исполнение                        settlement = валюта портфеля
+ * ```
+ *
+ * `expected` — валюта, которой требует аккаунт или исполнение, `actual` —
+ * валюта баланса портфеля. Курса pUSD ↔ USDC нет, поэтому смена валюты —
+ * не обновление, а другой портфель; скрытой миграции здесь не бывает.
+ *
  * @example
  * ```typescript
  * throw new AccountPortfolioIdentityMismatchError('balanceVenueId', venueId, accountId, 'POLYMARKET', 'KALSHI');
+ * throw new AccountPortfolioIdentityMismatchError('balanceCurrency', venueId, accountId, 'pUSD', 'USDC');
  * ```
  */
 export class AccountPortfolioIdentityMismatchError extends TradingError {

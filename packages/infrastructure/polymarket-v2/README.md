@@ -323,9 +323,11 @@ const source = PolymarketAccountVenueStateSource.create(
   влияют; интерфейс порта — один, в `@polymarket/fill`, его же получает
   `FillEventHandler`; отсюда — реализация `PolymarketStaticTakerFeeRateResolver`
   и re-export типа; отказ резолвера — `Err` прохода;
-- ⚠️ collateral отдаётся в canonical `USDC`, хотя collateral Polymarket
-  CLOB V2 — pUSD: решение о canonical-представлении открыто и обязано быть
-  принято до того, как matcher начнёт менять `Portfolio`;
+- ✅ collateral — в canonical валюте `pUSD` (collateral Polymarket CLOB V2,
+  подтверждено SDK, документацией и контрактом: `decimals() = 6`), а не в
+  USDC; валюту берут из одного объявления `POLYMARKET_COLLATERAL_CURRENCY`
+  (`@polymarket/fill`) и баланс, и `FillMapper`; reader, вернувший не pUSD, —
+  `Err` прохода; курса pUSD ↔ USDC нет;
 - ✅ fail closed: непереводимый статус, противоречивая заявка, неопознанное
   владение maker-заявкой, оборванная пагинация — `Err` всего прохода;
 - ✅ привязка к аккаунту — при создании: `create()` отказывает, если
@@ -334,8 +336,10 @@ const source = PolymarketAccountVenueStateSource.create(
   (`wallet:<кошелёк клиента>`) не описывают один и тот же аккаунт.
 
 Подробности и NEXT / BLOCKERS (закрыто: `FillId`, время исполнения и
-источник ставки комиссии REST ↔ WS; открыто: pUSD/USDC, on-chain проверка
-балансов, live-проверка API) — `docs/account-venue-state-source.md`.
+источник ставки комиссии REST ↔ WS, pUSD как canonical collateral; открыто:
+on-chain проверка балансов, live-проверка API) —
+`docs/account-venue-state-source.md` и
+`docs/guides/polymarket-collateral-currency.md`.
 
 ## Тесты
 

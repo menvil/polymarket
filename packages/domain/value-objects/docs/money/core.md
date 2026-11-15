@@ -46,8 +46,8 @@ export class Money {
 ### Константы класса
 
 ```typescript
-// Поддерживаемые валюты
-public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(['USDC']);
+// Поддерживаемые валюты — из @polymarket/ids: ['USDC', 'pUSD']
+public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(SUPPORTED_CURRENCIES);
 
 // Максимальная абсолютная сумма
 public static readonly MAX_AMOUNT = new Decimal('1e15');
@@ -124,9 +124,16 @@ if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
 }
 ```
 
-**Текущие поддерживаемые валюты:** `['USDC']`
+**Текущие поддерживаемые валюты:** `['USDC', 'pUSD']` — единый список
+`SUPPORTED_CURRENCIES` в `@polymarket/ids`.
 
-**В будущем:** можно добавить EUR, BTC, etc.
+`'pUSD'` — collateral Polymarket CLOB V2 (Polymarket USD, ERC-20
+`0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`, 6 знаков). Это ОТДЕЛЬНАЯ
+валюта: `Money(100, 'pUSD')` не равен и не сравним с `Money(100, 'USDC')`.
+Код каноничен и регистрозависим при разборе (`'PUSD'` — неизвестная
+валюта); терпимый ввод приводит к канону `asSupportedCurrency('PUSD') → 'pUSD'`.
+
+**В будущем:** другие валюты добавляются той же правкой одного списка.
 
 ---
 

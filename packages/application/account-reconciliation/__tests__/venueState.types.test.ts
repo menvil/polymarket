@@ -130,6 +130,11 @@ function usdc(value: number): Money {
   return must(MoneyService.create(value, 'USDC'));
 }
 
+/** pUSD (collateral Polymarket CLOB V2) из числа. */
+function pusd(value: number): Money {
+  return must(MoneyService.create(value, 'pUSD'));
+}
+
 /**
  * Состояние заявки площадки с согласованным исполнением.
  *
@@ -350,6 +355,20 @@ describe('assetBalances: ровно активы scope, ноль — явно', 
     expect(empty.value.collateralBalance.value().toString()).toBe('1000');
     expect(empty.value.openOrders).toHaveLength(1);
     expect(empty.value.assetBalances).toEqual([]);
+  });
+
+  it.each<[string, () => Money, string]>([
+    ['pUSD (collateral Polymarket CLOB V2)', () => pusd(1_000), 'pUSD'],
+    ['USDC (прежние источники)', () => usdc(1_000), 'USDC'],
+  ])('collateralBalance переносит валюту как есть: %s', async (_label, make, currency) => {
+    // Контракт не нормализует валюту: pUSD не превращается в USDC по дороге
+    // к сверке, и наоборот. Курса между ними нет.
+    const source = new InMemoryVenueStateSource(venueFacts({ collateral: make() }));
+
+    const state = await source.getAccountState(VENUE, walletAccount(), { marketIds: [], assets: [] });
+    if (!state.ok) throw state.error;
+    expect(state.value.collateralBalance.currency()).toBe(currency);
+    expect(state.value.collateralBalance.value().toString()).toBe('1000');
   });
 
   it('SELL вне scope видна в openOrders, но её актива нет в assetBalances — источник scope не расширяет', async () => {

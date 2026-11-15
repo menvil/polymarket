@@ -42,6 +42,7 @@ import type { TradeStatus as VendorTradeStatus } from '@polymarket/bindings';
 import type { ClobTrade, OpenOrder } from '@polymarket/bindings/clob';
 import {
   FillMapper,
+  POLYMARKET_COLLATERAL_CURRENCY,
   findFillFactDifference,
   type ExecutionMetadata,
   type PolymarketTakerFeeRateResolver,
@@ -98,7 +99,10 @@ export class PolymarketAccountStateError extends Error {
  * @remarks
  * И collateral, и outcome-токены Polymarket считаются в базовых единицах с
  * шестью знаками (legacy `PolymarketBalanceRestClient` делил оба на 1e6).
- * Размеры заявок и сделок CLOB, напротив, уже нормализованы в shares.
+ * Для collateral это подтверждено контрактом: pUSD
+ * (`0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`) отвечает `decimals() = 6`,
+ * и так же его описывает документация Polymarket. Размеры заявок и сделок
+ * CLOB, напротив, уже нормализованы в shares.
  */
 export const POLYMARKET_BALANCE_DECIMALS = 6;
 
@@ -151,32 +155,39 @@ export function baseUnitsToDecimalString(
 }
 
 /**
- * Collateral-баланс в базовых единицах → canonical `Money`.
+ * Collateral-баланс в базовых единицах → canonical `Money` в pUSD.
  *
- * @param raw - Значение `balance`
- * @returns Деньги в canonical расчётной валюте `USDC` либо отказ
+ * @param raw - Значение `balance` ответа `balance-allowance` с `COLLATERAL`
+ * @returns Деньги в валюте collateral Polymarket CLOB V2 (`pUSD`) либо отказ
  *
  * @remarks
- * Collateral выражается в `USDC`, потому что это единственная валюта, которую
- * сегодня поддерживает canonical `Money`/`Portfolio`, и в ней же
- * `Fill.settlementAssetId`. Это НЕ утверждение, что физический collateral-токен
- * площадки — USDC.
+ * `COLLATERAL` у CLOB V2 — это pUSD (Polymarket USD), а не USDC: так говорят
+ * SDK (`environment.contracts.collateralToken`), документация («`COLLATERAL`
+ * selects pUSD») и сам контракт (`symbol() = "pUSD"`, `decimals() = 6`).
+ * Поэтому деньги создаются в canonical валюте `pUSD`
+ * (`POLYMARKET_COLLATERAL_CURRENCY` из `@polymarket/fill` — того же
+ * объявления, из которого `FillMapper` берёт валюту расчёта исполнений), без
+ * какого-либо курса pUSD ↔ USDC.
  *
- * TODO(open architectural decision): current canonical Portfolio supports only
- * USDC; current Polymarket CLOB V2 collateral is pUSD. Before the state matcher
- * is allowed to mutate Portfolio, the canonical collateral representation must
- * explicitly decide whether pUSD is represented as its own currency or
- * intentionally normalized to a USD-equivalent accounting unit.
+ * Раньше здесь создавался `Money(…, 'USDC')` как временный компромисс: тогда
+ * collateral аккаунта выглядел бы владением USDC, которого у аккаунта нет.
+ *
+ * ```text
+ * '1000000'   → Ok(Money 1 pUSD)
+ * '0'         → Ok(Money 0 pUSD)   — настоящий нулевой баланс
+ * '-1', '1.5', '', undefined, > 22 цифр → Err
+ * ```
  *
  * @example
  * ```typescript
- * collateralFromBaseUnits('1000000'); // Ok(Money 1 USDC)
+ * collateralFromBaseUnits('1000000'); // Ok(Money 1 pUSD)
+ * collateralFromBaseUnits('0');       // Ok(Money 0 pUSD)
  * ```
  */
 export function collateralFromBaseUnits(raw: unknown): Result<Money, PolymarketAccountStateError> {
   const decimal = baseUnitsToDecimalString(raw, 'collateral balance');
   if (!decimal.ok) return decimal;
-  const money = MoneyService.create(decimal.value, 'USDC');
+  const money = MoneyService.create(decimal.value, POLYMARKET_COLLATERAL_CURRENCY);
   if (!money.ok) {
     return Err(new PolymarketAccountStateError(`collateral balance: ${money.error.message}`, { cause: money.error }));
   }

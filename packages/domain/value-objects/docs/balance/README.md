@@ -76,6 +76,17 @@ Balance гарантирует соблюдение бизнес-правил:
 2. ✅ **reserved >= 0** — зарезервированные средства не могут быть отрицательными
 3. ✅ **Единая валюта** — available и reserved должны быть в одной валюте
 
+Валюта баланса — идентичность денежного токена. Баланс в `pUSD` (collateral
+Polymarket CLOB V2) и баланс в `USDC` — разные счета: `reserve`,
+`unfreezeReserved`, `consumeReserved`, `credit` и `updateAvailable` с суммой
+другой валюты возвращают `InvalidBalanceError` (`CURRENCY_MISMATCH`), баланс
+не меняется. Неявного приведения pUSD ↔ USDC нет.
+
+```typescript
+const pusd = BalanceService.create(Money.of(new Decimal(100), 'pUSD'), Money.ZERO.pUSD, accountId, venueId);
+// reserve 20 pUSD → Ok;  reserve 20 USDC → Err(CURRENCY_MISMATCH)
+```
+
 ### Операции (Facade Layer)
 
 Все операции возвращают `Result<Balance, InvalidBalanceError>`:

@@ -38,9 +38,35 @@
  * активу/длительности, top-N) принадлежит owner policy НАД портом.
  */
 import type { Market } from '@polymarket/market';
-import type { MarketId, VenueId } from '@polymarket/ids';
+import { KnownCurrencies } from '@polymarket/ids';
+import type { MarketId, SupportedCurrency, VenueId } from '@polymarket/ids';
 import type { Timestamp } from '@polymarket/timestamp';
 import type { Money, Ratio } from '@polymarket/value-objects';
+
+/**
+ * Валюта, в которой discovery выражает ликвидность рынка
+ * ({@link MarketDiscoveryMetrics.liquidity}).
+ *
+ * @remarks
+ * Ликвидность — рыночная статистика площадки в долларовой номинации
+ * (Gamma отдаёт её числом без токена), а не деньги аккаунта. Поэтому она
+ * НЕ следует за collateral аккаунта (pUSD у Polymarket CLOB V2) и остаётся
+ * исторической `USDC`-номинацией.
+ *
+ * Объявление одно на обе стороны контракта: producer (discovery) строит
+ * `liquidity` в этой валюте, потребитель (owner policy) принимает порог
+ * `minLiquidity` только в ней. Порог в другой валюте несопоставим с
+ * ликвидностью — `MarketFilter` отклонил бы им КАЖДЫЙ рынок без единой
+ * ошибки, поэтому такая policy отвергается при сборке. Конвертации между
+ * валютами здесь нет и не будет: это сравнение статистики с порогом, а не
+ * денежная операция.
+ *
+ * @example
+ * ```typescript
+ * const liquidity = MoneyService.create(gammaLiquidity, MARKET_LIQUIDITY_CURRENCY);
+ * ```
+ */
+export const MARKET_LIQUIDITY_CURRENCY: SupportedCurrency = KnownCurrencies.USDC;
 
 /**
  * Быстро меняющиеся наблюдения площадки по обнаруженному рынку.
@@ -58,9 +84,12 @@ import type { Money, Ratio } from '@polymarket/value-objects';
  */
 export interface MarketDiscoveryMetrics {
   /**
-   * Ликвидность рынка (USDC notional).
+   * Ликвидность рынка (notional в {@link MARKET_LIQUIDITY_CURRENCY}).
    *
    * @remarks
+   * Всегда в {@link MARKET_LIQUIDITY_CURRENCY} — producer обязан строить её
+   * в этой валюте, потребитель вправе на это полагаться.
+   *
    * Отсутствующее значение площадки трактуется как `Money.of(0, 'USDC')` —
    * существующая семантика V2 («ликвидность не объявлена» = «нулевая для
    * целей отбора»). Выводить ликвидность из других полей запрещено.

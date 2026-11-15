@@ -241,6 +241,7 @@ Production-реализация порта — `PolymarketAccountVenueStateSourc
 сделано       один факт исполнения REST ↔ приватный WS: FillId, время
               (match_time → legacy matchtime), ставка комиссии TAKER
               (общий резолвер)
+сделано       canonical collateral Polymarket — pUSD, отдельная валюта
 следующий MR  state matcher + atomic correction planner;
               уход от transitional-модели authoritative-Portfolio
 затем         runtime wiring: STARTUP / PERIODIC / RECONNECT
@@ -252,10 +253,15 @@ Production-реализация порта — `PolymarketAccountVenueStateSourc
 CLOSED  ✓ REST/WS FillId
         ✓ REST/WS execution timestamp
         ✓ REST/WS taker fee source policy
-OPEN    - pUSD vs canonical collateral representation
-        - CLOB refreshed balance vs physical/on-chain truth
+        ✓ pUSD vs canonical collateral representation (pUSD — своя валюта)
+OPEN    - CLOB refreshed balance vs physical/on-chain truth
         - live vendor status/API verification
 ```
+
+`AuthoritativeAccountState.collateralBalance` — `Money` в валюте collateral
+площадки, как её отдал источник (у Polymarket — `pUSD`). Контракт валюту не
+нормализует: matcher сравнивает её с балансом `Portfolio` той же валюты, а
+расхождение валют — отказ (`MoneyService`/`BalanceService`), не курс.
 
 ### Только то, что нужно текущему торговому контуру
 

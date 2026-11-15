@@ -13,6 +13,7 @@ import type { Timestamp } from '@polymarket/timestamp';
 import { unsafeCryptoAssetId } from '@polymarket/ids';
 import { asMarketDuration } from '@polymarket/market';
 import { MoneyService } from '@polymarket/value-objects';
+import { MARKET_LIQUIDITY_CURRENCY } from '@polymarket/ports';
 import {
   PolicyValidationError,
   createCexPolicy,
@@ -187,6 +188,21 @@ describe('createPolymarketPolicy: отказы', () => {
         title: { excluded: ['   ', ''] },
       }),
     ).toThrow(PolicyValidationError);
+  });
+
+  it('порог ликвидности в pUSD отвергается: ликвидность discovery выражена в USDC', () => {
+    // Иначе MarketFilter молча отклонил бы им КАЖДЫЙ рынок (CURRENCY_MISMATCH).
+    const created = MoneyService.create(1000, 'pUSD');
+    if (!created.ok) throw new Error('bad fixture money');
+
+    const error = captureError(() =>
+      createPolymarketPolicy({ kind: 'POLYMARKET', family: 'CRYPTO_UP_DOWN', minLiquidity: created.value }),
+    );
+
+    expect(error.message).toBe('Policy minLiquidity currency must match market liquidity currency');
+    expect(error.context?.field).toBe('minLiquidity.currency');
+    expect(error.context?.value).toBe('pUSD');
+    expect(error.context?.allowed).toEqual([MARKET_LIQUIDITY_CURRENCY]);
   });
 });
 

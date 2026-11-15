@@ -110,7 +110,7 @@ export interface FillParams {
   readonly marketId: MarketId;
   /** ID токена (актива исполнения) */
   readonly tokenId: AssetId;
-  /** Расчётный актив (USDC для Polymarket) */
+  /** Расчётный актив (pUSD для Polymarket CLOB V2 — POLYMARKET_COLLATERAL_ASSET_ID) */
   readonly settlementAssetId: AssetId;
   /** Цена исполнения (OutcomePrice VO гарантирует > 0) */
   readonly price: OutcomePrice;

@@ -37,7 +37,7 @@ function respondWith(balance: unknown): () => Promise<BalanceAllowanceResponse> 
 }
 
 describe('collateral', () => {
-  it('updateBalanceAllowance(COLLATERAL) → точные Money в USDC из базовых единиц', async () => {
+  it('updateBalanceAllowance(COLLATERAL) → точные Money в pUSD из базовых единиц (6 знаков)', async () => {
     const refresher = new FakeRefresher(respondWith('1234567890'));
     const reader = new PolymarketClobRefreshedBalanceReader(refresher, OUR_ADDRESS);
 
@@ -45,13 +45,15 @@ describe('collateral', () => {
 
     expect(refresher.requests).toEqual([{ assetType: 'COLLATERAL' }]);
     expect(collateral.ok && collateral.value.value().toString()).toBe('1234.56789');
-    expect(collateral.ok && collateral.value.currency()).toBe('USDC');
+    // collateral Polymarket CLOB V2 — pUSD, а не USDC: курса между ними нет.
+    expect(collateral.ok && collateral.value.currency()).toBe('pUSD');
   });
 
-  it('настоящий ноль — ноль, а не отказ', async () => {
+  it('настоящий ноль — Money(0, pUSD), а не отказ', async () => {
     const reader = new PolymarketClobRefreshedBalanceReader(new FakeRefresher(respondWith('0')), OUR_ADDRESS);
     const collateral = await reader.getCollateralBalance();
     expect(collateral.ok && collateral.value.isZero()).toBe(true);
+    expect(collateral.ok && collateral.value.currency()).toBe('pUSD');
   });
 
   it('отказ SDK → Err с исходной причиной, не ноль', async () => {
