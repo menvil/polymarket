@@ -2,9 +2,35 @@
  * Балансы аккаунта Polymarket: порт reader-а и его CLOB-реализация.
  *
  * @remarks
+ * ### Что означает ответ `balance-allowance` (проверено)
+ *
+ * ```text
+ * balance     ПОЛНОЕ владение адреса аккаунта токеном (pUSD или outcome-токен),
+ *             ВКЛЮЧАЯ то, что стоит под открытыми заявками; НЕ доступный остаток
+ * allowances  словарь «spender-контракт → разрешение на списание»; это
+ *             одобрение, а не владение — reader его не читает
+ * ```
+ *
+ * Основания (подробно — `docs/guides/polymarket-clob-balance-semantics.md`):
+ *
+ * - OpenAPI CLOB: `balance` — «Balance amount in fixed-math with 6 decimals»,
+ *   `allowances` — «Map of spender addresses to allowance amounts»; адрес —
+ *   «determined from the API key authentication and signature type»;
+ * - обновление «forces an update of the balance and allowances by fetching
+ *   fresh data from the blockchain» — то есть баланс токена на адресе;
+ * - Order Lifecycle: `maxOrderSize = balance − Σ(openOrderSize − filledAmount)`,
+ *   а подпись заявки работает «without taking custody of your funds»: открытая
+ *   заявка средства с адреса не снимает, поэтому вычитать её из `balance`
+ *   приходится самой площадке — `balance` их ещё содержит.
+ *
+ * Следствие для сверки: `balance` сравнивается с `available + reserved`
+ * локального учёта, а НЕ с `available`; резервацию под открытые заявки к нему
+ * не прибавляют и из него повторно не вычитают.
+ *
  * ### Граница
  *
- * `AuthoritativeAssetBalance.quantity` — ФАКТИЧЕСКОЕ текущее владение.
+ * `AuthoritativeAssetBalance.quantity` — ПОЛНОЕ текущее владение по данным
+ * площадки.
  * Адаптер состояния читает балансы не SDK напрямую, а через порт
  * {@link PolymarketAuthoritativeBalanceReader}: authoritative-гарантию даёт
  * ПОДСТАВЛЕННЫЙ reader. Его можно усилить (on-chain `balanceOf`,
@@ -20,6 +46,11 @@
  * updateBalanceAllowance = GET /balance-allowance/update   (обновить взгляд CLOB)
  *                        → GET /balance-allowance          (прочитать его)
  * ```
+ *
+ * SDK 0.6.0 дожидается ответа обновления (тело отбрасывается, отказ — исключение)
+ * и только потом читает баланс: для вызывающего это последовательно. Гарантии
+ * свежести сверх «данные взяты из блокчейна в момент обновления» площадка не
+ * документирует: ни номера блока, ни связи с ещё не замайненными сделками.
  *
  * This reader is a refreshed CLOB balance reader.
  * It MUST NOT be treated as independently verified on-chain truth.
@@ -83,10 +114,15 @@ export interface PolymarketAuthoritativeBalanceReader {
   /**
    * Текущий collateral аккаунта.
    *
-   * @returns Фактическое collateral-владение в pUSD
-   *   (`POLYMARKET_COLLATERAL_CURRENCY`) либо отказ
+   * @returns Полное collateral-владение адреса в pUSD
+   *   (`POLYMARKET_COLLATERAL_CURRENCY`) — вместе с суммами под открытыми BUY —
+   *   либо отказ
    *
    * @remarks
+   * Это не доступный к трате остаток: открытые BUY-заявки pUSD с адреса не
+   * снимают, и `balance` их ещё содержит. Разделение на `available`/`reserved`
+   * — работа matcher-а по открытым заявкам.
+   *
    * Валюта — часть контракта: collateral Polymarket CLOB V2 — pUSD, и
    * `PolymarketAccountVenueStateSource` отвергает `Money` любой другой валюты.
    * Реализация (в том числе будущий on-chain верификатор) не приводит pUSD к
@@ -98,7 +134,12 @@ export interface PolymarketAuthoritativeBalanceReader {
    * Текущий баланс одного outcome-токена.
    *
    * @param asset - Outcome-актив
-   * @returns Фактическое количество (ноль — явно) либо отказ
+   * @returns Полное количество токена на адресе — вместе с токенами под
+   *   открытыми SELL — (ноль — явно) либо отказ
+   *
+   * @remarks
+   * Не «сколько CLOB позволит продать»: открытые SELL-заявки токены с адреса
+   * не снимают. Отсутствующий или непонятный ответ — отказ, а не ноль.
    */
   getOutcomeAssetBalance(asset: AuthoritativeOutcomeAssetId): Promise<Result<Quantity, PolymarketAccountStateError>>;
 }
@@ -130,6 +171,11 @@ export interface PolymarketBalanceAllowanceRefresher {
    *
    * @param request - Тип актива и, для outcome-токена, его `tokenId`
    * @returns Ответ `balance-allowance` (нужен только `balance`)
+   *
+   * @remarks
+   * `allowances` (разрешения spender-контрактам) в ответе есть, но reader их
+   * не использует: одобрение списания — не владение, и баланс от него не
+   * зависит.
    */
   updateBalanceAllowance(request: PolymarketBalanceAllowanceRequest): Promise<Pick<BalanceAllowanceResponse, 'balance'>>;
 }

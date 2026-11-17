@@ -118,6 +118,30 @@ describe('outcome-токен', () => {
   });
 });
 
+describe('allowances — одобрение, а не владение', () => {
+  /** Ответ SDK с балансом и разрешениями spender-контрактам. */
+  function respondWithAllowances(balance: string, allowance: string): () => Promise<BalanceAllowanceResponse> {
+    return () =>
+      Promise.resolve({
+        balance,
+        allowances: { '0x1111111111111111111111111111111111111111': BigInt(allowance) },
+      } as unknown as BalanceAllowanceResponse);
+  }
+
+  it.each<[string, string, string, string]>([
+    ['огромное разрешение не создаёт владения', '0', '1000000000000000000', '0'],
+    ['нулевое разрешение не обнуляет владение', '5000000', '0', '5'],
+  ])('%s: результат — только balance', async (_label, balance, allowance, expected) => {
+    const reader = new PolymarketClobRefreshedBalanceReader(new FakeRefresher(respondWithAllowances(balance, allowance)), OUR_ADDRESS);
+
+    const collateral = await reader.getCollateralBalance();
+    const token = await reader.getOutcomeAssetBalance(YES);
+
+    expect(collateral.ok && collateral.value.value().toString()).toBe(expected);
+    expect(token.ok && token.value.value().toString()).toBe(expected);
+  });
+});
+
 describe('fromSdk: привязка к action-функции SDK', () => {
   it('передаёт тот же клиент и enum-значения AssetType SDK; reader обновляет баланс перед чтением', async () => {
     const client = { tag: 'secure-client', account: { wallet: OUR_ADDRESS } } as unknown as BaseSecureClient;

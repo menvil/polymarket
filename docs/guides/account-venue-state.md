@@ -150,11 +150,15 @@ Transitional-порт текущей сверки `IAccountReconciliationSource`
 пагинации, ненужная scoped-рантайму. Он может оставаться аналитическим или
 справочным источником, но не основой сверки инвентаря.
 
-### CLOB-баланс — кэш, а `assetBalances` — фактическое владение
+### CLOB-баланс: обновлять перед чтением; это полное владение
 
-Контракт требует от `assetBalances` **фактическое** текущее владение, а не
-представление торгового слоя о том, что сейчас можно продать. У CLOB это
-разные вещи:
+Архитектурное решение: первичный источник состояния аккаунта — CLOB API,
+независимой on-chain проверки на этом этапе нет. Контракт требует от
+`assetBalances` и `collateralBalance` **полное** текущее владение — вместе с
+тем, что стоит под открытыми заявками, — а не «что сейчас можно продать».
+Ответ `balance-allowance` именно таков (проверено по OpenAPI и Order
+Lifecycle, см. `docs/guides/polymarket-clob-balance-semantics.md`), но
+кэш CLOB без обновления может отставать:
 
 - `fetchBalanceAllowance` — это `GET /balance-allowance`: CLOB отдаёт свой
   взгляд на баланс;
@@ -167,13 +171,14 @@ Transitional-порт текущей сверки `IAccountReconciliationSource`
 Отсюда требования к адаптеру:
 
 ```text
-минимум          читать баланс через updateBalanceAllowance (refresh → read),
+обязательно      читать баланс через updateBalanceAllowance (refresh → read),
                  а не голый fetchBalanceAllowance
-кросс-проверка   кандидат — on-chain ERC-1155 balanceOf кошелька в контракте
-                 conditional tokens; в SDK 0.6.0 такого чтения нет (известен
-                 только адрес контракта), понадобится RPC — решает MR адаптера
-расхождение      источники не сходятся или подтверждения нет → Err прохода,
+кросс-проверка   on-chain balanceOf на этом этапе не делается (решение: CLOB —
+                 первичный источник)
+отказ            обновление не удалось или ответ непонятен → Err прохода,
                  НЕ ноль и НЕ меньшее из значений
+семантика        balance — полное владение; резервацию под открытые заявки к
+                 нему не прибавляют и повторно не вычитают
 ```
 
 Свести настоящие токены к нулю по необновлённому кэшу — ровно та ошибка,
@@ -545,7 +550,7 @@ const venueState = PolymarketAccountVenueStateSource.create(config, {
 | регистр и форма статусов заявки (`LIVE` vs `live` vs префикс), смысл `INVALID` | сейчас принимается только задокументированный верхний регистр, `INVALID` — `Err` |
 | `MATCHED_NOT_BROADCASTED` → какой `TradeStatus` и нужен ли он | сейчас fail closed |
 | присылает ли WS user-channel `match_time` или `matchtime` у каждого trade-события | без обоих `FillEventHandler` отвергает событие (fail closed), исполнение увидит только REST-сверка |
-| CLOB refreshed balance vs физическая / on-chain истина | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не on-chain; вопросы on-chain проверки pUSD — в `docs/guides/polymarket-collateral-currency.md` |
+| свежесть после `updateBalanceAllowance`, момент изменения баланса (MINED или CONFIRMED), окно сделок в полёте | правило matcher-а; см. `docs/guides/polymarket-clob-balance-semantics.md` |
 
 Блокеры перед matcher-ом, который мутирует `Portfolio`:
 
@@ -554,8 +559,10 @@ CLOSED  ✓ REST/WS FillId
         ✓ REST/WS execution timestamp
         ✓ REST/WS taker fee source policy
         ✓ pUSD vs canonical collateral representation
-OPEN    - CLOB refreshed balance vs physical/on-chain truth
-        - live vendor status/API verification
+        ✓ CLOB balance semantics: полное владение, без двойного учёта
+DECIDED   CLOB API — первичный источник; on-chain проверки нет
+OPEN    - live vendor status/API verification
+        - окно сделок в полёте (MATCHED → MINED) — правило matcher-а
 ```
 
 Закрыто при реализации адаптера:
@@ -594,9 +601,13 @@ OPEN    - CLOB refreshed balance vs physical/on-chain truth
   `accountId` = `wallet:<этот кошелёк>`. Иначе — отказ: исполнения получают
   настроенный `accountId` по построению, и позже расхождение не видно;
 - `PolymarketClobRefreshedBalanceReader` — refreshed CLOB balance reader, а
-  не проверенная on-chain истина; композиция, которой нужна физическая
-  истина инвентаря, оборачивает его on-chain верификатором без изменений
-  источника состояния.
+  не проверенная on-chain истина; по решению «CLOB — первичный источник»
+  этого достаточно. Порт reader-а позволяет позже обернуть его
+  верификатором без изменений источника состояния;
+- `balance` — полное владение адреса, включая то, что под открытыми
+  заявками; `allowances` — разрешения, не владение; заявки `/data/orders`
+  ограничены API-ключом, поэтому каждая проверяется на `maker_address` =
+  кошелёк аккаунта (см. `docs/guides/polymarket-clob-balance-semantics.md`).
 
 ## Связанное
 

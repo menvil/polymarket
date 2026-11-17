@@ -98,11 +98,17 @@ export class PolymarketAccountStateError extends Error {
  *
  * @remarks
  * И collateral, и outcome-токены Polymarket считаются в базовых единицах с
- * шестью знаками (legacy `PolymarketBalanceRestClient` делил оба на 1e6).
- * Для collateral это подтверждено контрактом: pUSD
- * (`0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`) отвечает `decimals() = 6`,
- * и так же его описывает документация Polymarket. Размеры заявок и сделок
- * CLOB, напротив, уже нормализованы в shares.
+ * шестью знаками. Основания:
+ *
+ * - OpenAPI CLOB: `BalanceAllowanceResponse.balance` — «Balance amount in
+ *   fixed-math with 6 decimals»; схема одна для `COLLATERAL` и `CONDITIONAL`;
+ * - для collateral — контракт: pUSD
+ *   (`0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`) отвечает `decimals() = 6`;
+ * - legacy `PolymarketBalanceRestClient` делил оба на 1e6.
+ *
+ * У ERC-1155 outcome-токена своего `decimals()` нет — для него основание
+ * только документация. Размеры заявок и сделок CLOB, напротив, уже
+ * нормализованы в shares («Already normalized; do not divide by 1e6»).
  */
 export const POLYMARKET_BALANCE_DECIMALS = 6;
 
@@ -362,6 +368,51 @@ export function mapPolymarketOpenOrder(
     return Err(new PolymarketAccountStateError(`open order ${order.id}: derived non-live status ${status}`));
   }
   return Ok({ ...state.value, status });
+}
+
+/**
+ * Проверяет, что заявка выставлена кошельком аккаунта (funder), балансы
+ * которого читает адаптер.
+ *
+ * @param order - Заявка из `listOpenOrders`/`fetchOrder`
+ * @param makerAddress - Кошелёк аккаунта (`client.account.wallet`, регистр не важен)
+ * @returns `Ok`, если `maker_address` заявки — этот кошелёк, иначе отказ
+ *
+ * @remarks
+ * `GET /data/orders` отдаёт заявки «аутентифицированного пользователя» —
+ * владельца API-ключа (`owner`), а не адреса: один API-ключ подписанта может
+ * выставлять заявки от разных funder-кошельков (EOA и proxy/Safe — разные
+ * `signature_type`), а builder-клиент видит ещё и атрибутированные ему
+ * заявки. `balance-allowance` же читает баланс ОДНОГО адреса — выведенного из
+ * API-ключа и `signature_type`, то есть кошелька аккаунта.
+ *
+ * Заявка с другим `maker_address` резервирует деньги или токены ДРУГОГО
+ * кошелька. Посчитать её резервацией этого аккаунта — завысить `reserved` и
+ * занизить `available` (двойной учёт чужих обязательств). Молча выбросить её
+ * — скрыть, что API-ключ обслуживает больше одного кошелька. Поэтому отказ:
+ * источник не угадывает, чья это заявка.
+ *
+ * ```text
+ * maker_address == кошелёк аккаунта (без учёта регистра)  → Ok
+ * другой адрес, пусто, не строка                            → Err
+ * ```
+ *
+ * @example
+ * ```typescript
+ * const maker = checkPolymarketOrderMaker(order, makerAddress);
+ * if (!maker.ok) return maker;
+ * ```
+ */
+export function checkPolymarketOrderMaker(
+  order: OpenOrder,
+  makerAddress: string,
+): Result<void, PolymarketAccountStateError> {
+  if (sameAddress(order.makerAddress, makerAddress)) return Ok(undefined);
+  return Err(
+    new PolymarketAccountStateError(
+      `order ${describe(order.id)}: maker ${describe(order.makerAddress)} is not the account wallet ${makerAddress}`,
+    ),
+  );
 }
 
 /** Неизменяемые факты заявки без статуса. */

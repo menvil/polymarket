@@ -92,9 +92,12 @@ balanceReader.boundWallet   кошелёк, балансы которого чи
    балансы на чужие активы.
 3. **Балансы** — параллельно через `PolymarketAuthoritativeBalanceReader`:
    collateral и КАЖДЫЙ актив scope. Результат — ровно по записи на актив,
-   ноль явно.
-4. **Открытые заявки** — `listOpenOrders()` без фильтра, все страницы
-   последовательно. Каждая — `LIVE`; иначе `Err`. Повтор `orderId` — `Err`.
+   ноль явно. Это ПОЛНОЕ владение (вместе с тем, что под открытыми
+   заявками), а не доступный остаток.
+4. **Открытые заявки** — `listOpenOrders()` без фильтра по рынку, все
+   страницы последовательно. Каждая — `LIVE`; иначе `Err`. Повтор `orderId` —
+   `Err`. `maker_address` каждой — кошелёк аккаунта; иначе `Err`
+   (`checkPolymarketOrderMaker`: эндпоинт ограничен API-ключом, а не адресом).
 5. **Сделки** — для каждого рынка scope `listAccountTrades({ market })`, все
    страницы; рынки параллельно. Фильтр `makerAddress` НЕ передаётся:
    эндпоинт уже ограничен аккаунтом, а legacy наблюдал, что maker-фильтр
@@ -111,6 +114,15 @@ balanceReader.boundWallet   кошелёк, балансы которого чи
 текущего торгового контура, а не история аккаунта.
 
 ## Балансы: обновлённый CLOB-взгляд
+
+**`balance` — полное владение адреса токеном, включая то, что стоит под
+открытыми заявками; `allowances` — разрешения spender-контрактам, не
+владение.** Доказательства, примеры и окно «сделок в полёте» —
+`docs/guides/polymarket-clob-balance-semantics.md`. Matcher сравнивает
+`balance` с `available + reserved`, а резервацию выводит из `openOrders`.
+
+Первичный источник состояния аккаунта — CLOB API (архитектурное решение);
+независимой on-chain проверки нет.
 
 `PolymarketClobRefreshedBalanceReader` читает через `updateBalanceAllowance`, а
 не `fetchBalanceAllowance`:
@@ -397,11 +409,11 @@ const takerFeeRates = PolymarketStaticTakerFeeRateResolver.create([
 | scope | `scope: duplicate asset …`, `scope: market … is not a Polymarket condition id` |
 | collateral | `balances: collateral: balance refresh failed` |
 | баланс актива | `balances: token 1000…: balance refresh failed`, `balances: token 1000…: outcome token balance: expected non-negative integer base units, got "-5"` |
-| открытые заявки | `open orders pagination failed`, `open orders: open order …: …` |
+| открытые заявки | `open orders pagination failed`, `open orders: open order …: …`, `open orders: order 0x… returned twice`, `open orders: order "0x…": maker "0x…" is not the account wallet 0x…` |
 | сделки рынка | `trades market 0x…: pagination failed`, `trades market 0x…: trade …: …` |
 | ставка комиссии | `trades market 0x…: trade …: taker fee rate is unknown for market 0x…` |
 | исполнения | `trades: fill … belongs to market … outside scope` |
-| заявка | `order lookup …: request failed`, `order lookup …: venue returned order …` |
+| заявка | `order lookup …: request failed`, `order lookup …: venue returned order …`, `order lookup …: order "…": maker "0x…" is not the account wallet 0x…` |
 
 Reader, бросивший исключение вместо `Err`, тоже даёт `Err` с причиной —
 дефект не превращается ни в ноль, ни в падение прохода без контекста.
@@ -468,13 +480,15 @@ const state = await source.value.getAccountState(KnownVenues.POLYMARKET, account
 | REST `matchedAt` ↔ WS execution timestamp | canonical время исполнения приватного WS: `match_time` → legacy `matchtime`; `FillEventHandler` без обоих — отказ; generic `FillMapper` без обоих — `timestamp` (обратная совместимость) |
 | источник ставки комиссии в приватном WS | приватный WS и REST получают ставку TAKER-исполнения через один контракт `PolymarketTakerFeeRateResolver` (`@polymarket/fill`) |
 | pUSD vs canonical collateral | `pUSD` — отдельная canonical валюта; collateral-баланс, расчёт и комиссия исполнений Polymarket — в pUSD; смешение с USDC отвергают `MoneyService`, `BalanceService`, `Portfolio` и `AccountHotState` (см. `docs/guides/polymarket-collateral-currency.md`) |
+| семантика балансов CLOB (total или available) | `balance` — полное владение с тем, что под открытыми заявками; заявки привязаны к кошельку аккаунта; двойного учёта нет (см. `docs/guides/polymarket-clob-balance-semantics.md`) |
+| CLOB refreshed balance ≠ on-chain истина | решение: первичный источник — CLOB API; on-chain reader-а не будет на этом этапе |
 
 Открыто:
 
 | блокер | почему | до чего |
 | --- | --- | --- |
-| CLOB refreshed balance ≠ физическая / on-chain истина | `PolymarketClobRefreshedBalanceReader` — обновлённый CLOB-взгляд, не проверенный on-chain | композиция, которой нужна физическая истина инвентаря |
 | live-проверка статусов и API площадки | см. [Проверить live](#проверить-live) | matcher / runtime wiring |
+| окно сделок в полёте (MATCHED → MINED) | сумма исполненной, но не замайненной сделки не видна ни в балансе, ни в резервации | правило matcher-а |
 
 Решение по pUSD/USDC (закрыто):
 
@@ -498,13 +512,17 @@ No implicit pUSD ↔ USDC conversion, no 1:1 rate in the domain.
 | присылает ли WS user-channel `match_time` или `matchtime` у каждого trade-события | без обоих `FillEventHandler` отвергает событие (fail closed) — исполнение придёт только REST-сверкой |
 | ставка taker-комиссии рынков scope (fee schedule) | набор `PolymarketStaticTakerFeeRateResolver` |
 | полнота `listAccountTrades({ market })` без `makerAddress` для TAKER и MAKER | полнота `recentFills` |
+| меняется ли `balance` при MINED или при CONFIRMED; учитывает ли кэш CLOB сделки в полёте | правило окна «в полёте» в matcher-е |
+| конец пагинации `/data/orders`: `"LTE="` (SDK) или пустой курсор (OpenAPI) | при расхождении — `Err` «returned twice», не двойной учёт |
+| отменяет ли CLOB заявки, когда баланс упал ниже резерва | как matcher трактует резерв больше баланса |
 
 ## Тесты
 
 | файл | что покрывает |
 | --- | --- |
-| `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц в `Money` pUSD, настоящий ноль — `Money(0, pUSD)`, отказ SDK и невалидные значения → `Err`, `fromSdk` передаёт клиент и enum SDK, `boundWallet` = `client.account.wallet` |
-| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome; WS-сообщение на 30 с позже `match_time`; то же — когда время исполнения только в legacy `matchtime`), **ACCEPTANCE: одно TAKER-исполнение (WS `timestamp` T+30 с, `fee_rate_bps "0"`; REST `matchedAt` T, `feeRateBps "0"`; общий настоящий резолвер) → тот же `FillId` и факт — и с `match_time`, и с одним legacy `matchtime`; то же для MAKER с `matchtime`**, **P0 комиссии: WS `fee_rate_bps` `"0"`/`"1000"`/`"250"` и REST `feeRateBps "0"` + одна ставка резолвера → тот же факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, REST `matchedAt` → `match_time` без `timestamp`, оба пути рассчитываются в `CURRENCY:pUSD` (settlement и комиссия; TAKER, MAKER, multi-MAKER, cross-outcome), владение только по адресу, self-match, отказ вместо подстановок `FillMapper` (токен и сторона нашей maker-записи, сторона и токен тейкера; чужие записи не проверяются), слияние повторов |
+| `PolymarketClobRefreshedBalanceReader.test.ts` | точный перевод базовых единиц в `Money` pUSD, настоящий ноль — `Money(0, pUSD)`, отказ SDK и невалидные значения → `Err`, `allowances` на результат не влияют, `fromSdk` передаёт клиент и enum SDK, `boundWallet` = `client.account.wallet` |
+| `clobBalanceSemantics.test.ts` | семантика балансов и заявок по ролям: что проверяет источник (форматы, валюта, ноль явно, полнота scope, кошелёк заявки, повтор страницы, инварианты заявки), что выводит только matcher (резервации из полного баланса), что требует свежего прохода (сделка или отмена между чтениями, резерв больше баланса — не `Err`) |
+| `polymarketAccountMapping.test.ts` | таблица статусов заявок, список открытых только `LIVE`, `checkPolymarketOrderMaker` (тот же кошелёк в другом регистре; чужой, пустой, не строка → `Err`), таблица статусов сделок, **P0: REST и WS → один canonical `Fill`** (TAKER, один MAKER, multi-MAKER, cross-outcome; WS-сообщение на 30 с позже `match_time`; то же — когда время исполнения только в legacy `matchtime`), **ACCEPTANCE: одно TAKER-исполнение (WS `timestamp` T+30 с, `fee_rate_bps "0"`; REST `matchedAt` T, `feeRateBps "0"`; общий настоящий резолвер) → тот же `FillId` и факт — и с `match_time`, и с одним legacy `matchtime`; то же для MAKER с `matchtime`**, **P0 комиссии: WS `fee_rate_bps` `"0"`/`"1000"`/`"250"` и REST `feeRateBps "0"` + одна ставка резолвера → тот же факт**, `feeRateBps` ответа на комиссию не влияет, MAKER без комиссии и без запроса ставки, отказ резолвера → `Err`, REST `matchedAt` → `match_time` без `timestamp`, оба пути рассчитываются в `CURRENCY:pUSD` (settlement и комиссия; TAKER, MAKER, multi-MAKER, cross-outcome), владение только по адресу, self-match, отказ вместо подстановок `FillMapper` (токен и сторона нашей maker-записи, сторона и токен тейкера; чужие записи не проверяются), слияние повторов |
 | `PolymarketAccountVenueStateSource.test.ts` | совместимость с `SecureClient`, `collateralBalance` в pUSD, reader вернул USDC → `Err` прохода, привязка при создании (чужой `accountId`, клиент другого кошелька, reader чужого кошелька, чужой `makerAddress`, `accountId` не WALLET-вида, кошелёк не сообщён — отказ без запросов), балансы scope (ноль явно), правка scope вызывающим во время прохода не сдвигает балансы, отказ до запросов, пагинация заявок и сделок со сбоем на странице N, сделки рынка вне scope, ставка запрашивается для каждой TAKER-сделки по её рынку, отказ резолвера → `Err` прохода, `getOrderState` (статусы, 404, 500, 401, транспорт, чужой id) |
 | `PolymarketTakerFeeRateResolver.test.ts` | ставка по рынку без учёта регистра, неизвестный рынок → `Err`, невалидная ставка и повтор рынка → отказ создания |
 | `contour-boundary.test.ts` | закрытый список импортов account plane, `@polymarket/fill` только в нём, из SDK — только `import type` (распознаватель ловит value-import, `export *`, side-effect и динамический `import()` — проверено фикстурами) |

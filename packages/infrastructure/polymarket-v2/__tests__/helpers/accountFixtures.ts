@@ -147,6 +147,8 @@ export interface OpenOrderOverrides {
   readonly sizeMatched?: string;
   readonly status?: string;
   readonly conditionId?: string;
+  /** Кошелёк, выставивший заявку (по умолчанию — наш) */
+  readonly makerAddress?: string;
 }
 
 /**
@@ -161,7 +163,7 @@ export function openOrder(overrides: OpenOrderOverrides = {}): OpenOrder {
     conditionId: sdkString<ConditionId>(overrides.conditionId ?? MARKET_A),
     tokenId: sdkString<TokenId>(overrides.tokenId ?? YES_TOKEN_ID),
     owner: OUR_OWNER,
-    makerAddress: OUR_ADDRESS,
+    makerAddress: overrides.makerAddress ?? OUR_ADDRESS,
     side: overrides.side ?? 'BUY',
     price: sdkString<DecimalString>(overrides.price ?? '0.42'),
     originalSize: sdkString<DecimalString>(overrides.originalSize ?? '10'),

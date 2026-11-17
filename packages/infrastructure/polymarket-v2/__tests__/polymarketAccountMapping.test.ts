@@ -35,6 +35,7 @@ import {
 import { asMarketId, assetIdToString, type AccountId } from '@polymarket/ids';
 import { PolymarketStaticTakerFeeRateResolver } from '@polymarket/polymarket-v2/account';
 import {
+  checkPolymarketOrderMaker,
   mapPolymarketClobTrade,
   mapPolymarketOpenOrder,
   mapPolymarketOrderState,
@@ -180,6 +181,25 @@ describe('заявки: статус CLOB + sizeMatched → canonical', () => {
       expect(mapPolymarketOpenOrder(openOrder({ status, sizeMatched: status === 'MATCHED' ? '10' : '0' })).ok).toBe(false);
     },
   );
+});
+
+describe('заявка принадлежит кошельку аккаунта (maker_address)', () => {
+  it('тот же кошелёк в другом регистре → Ok', () => {
+    expect(checkPolymarketOrderMaker(openOrder({ makerAddress: OUR_ADDRESS.toUpperCase().replace('0X', '0x') }), OUR_ADDRESS.toLowerCase()).ok).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ['другой funder-кошелёк под тем же API-ключом', OTHER_ADDRESS],
+    ['пустой адрес', ''],
+    ['не строка', undefined],
+  ])('%s → Err с обоими адресами', (_label, makerAddress) => {
+    const order = { ...openOrder({ id: '0xforeign' }), makerAddress } as unknown as Parameters<typeof checkPolymarketOrderMaker>[0];
+    const checked = checkPolymarketOrderMaker(order, OUR_ADDRESS.toLowerCase());
+    expect(checked.ok).toBe(false);
+    if (checked.ok) return;
+    expect(checked.error.message).toContain('0xforeign');
+    expect(checked.error.message).toContain(OUR_ADDRESS.toLowerCase());
+  });
 });
 
 describe('статус сделки: явная таблица, без угадывания', () => {

@@ -92,6 +92,7 @@ import type { Money } from '@polymarket/value-objects';
 import type { PolymarketAuthoritativeBalanceReader } from './PolymarketClobRefreshedBalanceReader.js';
 import {
   PolymarketAccountStateError,
+  checkPolymarketOrderMaker,
   mapPolymarketClobTrade,
   mapPolymarketOpenOrder,
   mapPolymarketOrderState,
@@ -154,7 +155,9 @@ export interface PolymarketAccountVenueStateSourceConfig {
    *
    * @remarks
    * По нему — и только по нему — `FillMapper` находит НАШИ maker-заявки в
-   * сделке. Обязан совпасть с `client.account.wallet`; регистр не важен.
+   * сделке, а адаптер проверяет `maker_address` каждой заявки аккаунта
+   * (`listOpenOrders`, `fetchOrder`). Обязан совпасть с
+   * `client.account.wallet`; регистр не важен.
    */
   readonly makerAddress: string;
 }
@@ -284,7 +287,13 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    *    Scope копируется: все этапы работают с одним снимком, даже если
    *    вызывающий меняет свои массивы, пока проход идёт.
    * 2. Collateral и баланс КАЖДОГО актива scope — параллельно, через reader.
-   * 3. Все страницы `listOpenOrders()` без фильтра — весь аккаунт.
+   *    Это ПОЛНОЕ владение кошелька (вместе с тем, что стоит под открытыми
+   *    заявками), а не доступный остаток — см. `docs/guides/polymarket-clob-balance-semantics.md`.
+   * 3. Все страницы `listOpenOrders()` без фильтра по рынку — весь аккаунт.
+   *    Каждая заявка обязана принадлежать кошельку аккаунта (`maker_address`):
+   *    эндпоинт ограничен API-ключом, а не адресом, и заявка другого
+   *    funder-кошелька под тем же ключом — отказ прохода, а не резервация
+   *    этого аккаунта.
    * 4. Для каждого рынка scope — все страницы `listAccountTrades({ market })`,
    *    рынки параллельно, страницы внутри запроса последовательно. Фильтр
    *    `makerAddress` НЕ передаётся: эндпоинт уже ограничен аккаунтом, а
@@ -295,6 +304,18 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    *    резолвера — отказ прохода. Затем слияние повторов, проверка аккаунта,
    *    площадки и рынка каждого исполнения.
    * 6. Проверка `set(assetBalances.asset) == set(scope.assets)`.
+   *
+   * ### Что проход гарантирует и чего — нет
+   *
+   * Запросы — РАЗНЫЕ, и площадка не даёт атомарного снимка. Гарантии:
+   * отказ любого запроса, оборванная пагинация, непонятный баланс или запись —
+   * `Err` всего прохода; ноль только явный; противоречие одной записи
+   * (статус vs `size_matched`, повтор заявки, чужой `maker_address`) — `Err`.
+   * НЕ гарантируется, что наборы описывают один момент: сделка, исполненная
+   * между чтением баланса и чтением заявок, видна в `size_matched` заявки, но
+   * может ещё не отразиться в балансе. Такие расхождения источник не чинит —
+   * их разбирает matcher, а при необходимости координатор назначает свежий
+   * проход.
    *
    * @example
    * ```typescript
@@ -346,7 +367,9 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    * Любой другой отказ (401, 403, 429, 500, транспорт, схема ответа) — `Err`,
    * а не `undefined`: «не знаю» и «не смог спросить» — разные ответы.
    * Заявка с идентификатором, отличным от запрошенного, — противоречие
-   * ответа, тоже `Err`.
+   * ответа, тоже `Err`. Заявка, выставленная не кошельком аккаунта
+   * (`maker_address`), — тоже `Err`: состояние чужой заявки не может решить
+   * судьбу локальной заявки этого аккаунта.
    *
    * @example
    * ```typescript
@@ -372,6 +395,8 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
 
     const mapped = mapPolymarketOrderState(order);
     if (!mapped.ok) return fail(mapped.error);
+    const maker = checkPolymarketOrderMaker(order, this._config.makerAddress);
+    if (!maker.ok) return fail(new PolymarketAccountStateError(`order lookup ${orderId}: ${maker.error.message}`));
     if (mapped.value.orderId !== orderId) {
       return fail(
         new PolymarketAccountStateError(`order lookup ${orderId}: venue returned order ${mapped.value.orderId}`),
@@ -440,9 +465,16 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
   }
 
   /**
-   * Все живые заявки аккаунта — все страницы, без фильтра.
+   * Все живые заявки аккаунта — все страницы, без фильтра по рынку.
    *
    * @returns Заявки либо отказ; уже прочитанные страницы при отказе не отдаются
+   *
+   * @remarks
+   * Каждая заявка проверяется на принадлежность кошельку аккаунта
+   * (`checkPolymarketOrderMaker`): `GET /data/orders` ограничен API-ключом, а
+   * балансы — адресом, и заявка другого funder-кошелька завысила бы резервацию
+   * этого аккаунта. Повтор заявки (в том числе повтор страницы пагинатором) —
+   * отказ, а не вторая резервация.
    */
   private async _readOpenOrders(): Promise<Result<readonly AuthoritativeOpenOrderState[], PolymarketAccountStateError>> {
     const orders: AuthoritativeOpenOrderState[] = [];
@@ -452,6 +484,8 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
         for (const raw of page.items) {
           const mapped = mapPolymarketOpenOrder(raw);
           if (!mapped.ok) return Err(new PolymarketAccountStateError(`open orders: ${mapped.error.message}`, { cause: mapped.error }));
+          const maker = checkPolymarketOrderMaker(raw, this._config.makerAddress);
+          if (!maker.ok) return Err(new PolymarketAccountStateError(`open orders: ${maker.error.message}`, { cause: maker.error }));
           const key = String(mapped.value.orderId);
           if (seen.has(key)) return Err(new PolymarketAccountStateError(`open orders: order ${key} returned twice`));
           seen.add(key);
