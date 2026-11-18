@@ -1,0 +1,45 @@
+packages/infrastructure/polymarket-v2/README.md
+  s_229ddb4e5aa529::t_66604083cd0fda 316-319
+packages/infrastructure/polymarket-v2/src/PolymarketAccountVenueStateSource.ts
+  s_229ddb4e5aa529::t_141cb418606668 159-161,303-309,317-318
+packages/infrastructure/polymarket-v2/__tests__/clobBalanceSemantics.test.ts
+  s_229ddb4e5aa529::t_2056748376301e 9-10,340-373,375-386
+  s_229ddb4e5aa529::t_548935f2061533 51,374
+packages/infrastructure/polymarket-v2/__tests__/helpers/accountFixtures.ts
+  s_229ddb4e5aa529::t_480415622722a0 197-201,230
+packages/infrastructure/polymarket-v2/__tests__/polymarketAccountMapping.test.ts
+  s_229ddb4e5aa529::t_4970ff4988a570 296-300,305,346,390,749-810,812-818
+  s_229ddb4e5aa529::t_2056748376301e 811
+docs/guides/polymarket-clob-balance-semantics.md
+  s_229ddb4e5aa529::t_720ccd30192040 62-64,76,81,172-173,197-237,314-315,354-355,364,375-376,401-402
+packages/infrastructure/polymarket-v2/docs/account-venue-state-source.md
+  s_229ddb4e5aa529::t_2b8e000948dbdb 105-111,235,254-275,439,541,551-552
+packages/infrastructure/polymarket-v2/src/polymarketAccountMapping.ts
+  s_229ddb4e5aa529::t_b068245815d3f1 504,508-514
+  s_229ddb4e5aa529::t_e62f518fc15090 470-473,478
+  s_229ddb4e5aa529::t_59751cbe6be0d9 651-653
+  s_229ddb4e5aa529::t_cc74b99da7e56b 28-30
+  s_229ddb4e5aa529::t_511dda7326f59e 533-536
+  s_229ddb4e5aa529::t_9d0b9d68a797ce 592-593,596,600-605,613-628
+  s_229ddb4e5aa529::t_11cb871187e122 679-680
+  s_229ddb4e5aa529::t_2d58e1d4ea11d3 606-612
+docs/guides/account-venue-state.md
+  s_229ddb4e5aa529::t_66604083cd0fda 614-617
+  s_229ddb4e5aa529::t_28a6fa1a82d63c 344-348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ee02eea2f43c7b4764079cd987950778021cc966",
+  "prompts": {},
+  "sessions": {
+    "s_229ddb4e5aa529": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "953c2e10-8b5e-4c82-8e53-5ebbf8caad72",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Ivan Moroz <menvil.menvil@gmail.com>"
+    }
+  }
+}
