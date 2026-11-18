@@ -242,6 +242,8 @@ Production-реализация порта — `PolymarketAccountVenueStateSourc
               (match_time → legacy matchtime), ставка комиссии TAKER
               (общий резолвер)
 сделано       canonical collateral Polymarket — pUSD, отдельная валюта
+сделано       семантика балансов CLOB: balance — полное владение (с тем,
+              что под открытыми заявками); заявки привязаны к кошельку
 следующий MR  state matcher + atomic correction planner;
               уход от transitional-модели authoritative-Portfolio
 затем         runtime wiring: STARTUP / PERIODIC / RECONNECT
@@ -254,9 +256,15 @@ CLOSED  ✓ REST/WS FillId
         ✓ REST/WS execution timestamp
         ✓ REST/WS taker fee source policy
         ✓ pUSD vs canonical collateral representation (pUSD — своя валюта)
-OPEN    - CLOB refreshed balance vs physical/on-chain truth
-        - live vendor status/API verification
+        ✓ CLOB balance semantics: total, не available; без двойного учёта
+DECIDED   CLOB API — authoritative-источник; on-chain проверки нет
+OPEN    - live vendor status/API verification
+        - окно «сделок в полёте» (MATCHED → MINED) — правило matcher-а
 ```
+
+Решение «CLOB API — первичный источник» снимает прежний пункт «CLOB refreshed
+balance vs physical/on-chain truth»: независимого on-chain reader-а не будет,
+а семантика ответа CLOB проверена — `docs/guides/polymarket-clob-balance-semantics.md`.
 
 `AuthoritativeAccountState.collateralBalance` — `Money` в валюте collateral
 площадки, как её отдал источник (у Polymarket — `pUSD`). Контракт валюту не
@@ -317,12 +325,24 @@ export interface IAccountVenueStateSource {
 баланс каждого известного токена спрашивается адресно, поэтому отдельный
 метод «баланс одного актива» не нужен — это и есть `assetBalances`.
 
-`assetBalances` — **фактическое** владение, а не кэш торгового слоя площадки
-«что можно продать сейчас». Такой кэш бывает отстающим (известен случай с
-токенами завершившегося MINT, которых CLOB-баланс не показывал), и свести по
-нему настоящие токены к нулю нельзя: адаптер, который не может подтвердить
-фактическое владение, возвращает `Err`. Как именно его подтвердить — в
-`docs/guides/account-venue-state.md`.
+`assetBalances` и `collateralBalance` — **полное** владение по данным
+площадки, вместе с тем, что стоит под открытыми заявками, а не «что можно
+продать или потратить сейчас». Сравниваются они с `available + reserved`
+локального учёта; резервацию выводит matcher из `openOrders` и к балансу её
+не прибавляет:
+
+```text
+collateralBalance 100 pUSD; открыты BUY A (30 pUSD) и BUY B (20 pUSD)
+→ reserved 50, available 50, total 100   (не available 100 + reserved 50)
+```
+
+Authoritative-источник — API площадки (архитектурное решение; независимой
+on-chain проверки нет). Для Polymarket это баланс CLOB, принудительно
+обновлённый из блокчейна перед чтением, а не необновлённый кэш (известен
+случай с токенами завершившегося MINT, которых такой кэш не показывал).
+Адаптер, который не может получить надёжное значение, возвращает `Err`, а не
+ноль. Подробно, с доказательствами и окном «сделок в полёте», —
+`docs/guides/polymarket-clob-balance-semantics.md`.
 
 **Scope задаёт вызывающий**, а не источник: какие рынки сейчас важны
 стратегии, источник не решает. Для Polymarket `MarketId` — это `conditionId`,

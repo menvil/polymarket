@@ -35,6 +35,7 @@ import {
 import { asMarketId, assetIdToString, type AccountId } from '@polymarket/ids';
 import { PolymarketStaticTakerFeeRateResolver } from '@polymarket/polymarket-v2/account';
 import {
+  checkPolymarketOrderMaker,
   mapPolymarketClobTrade,
   mapPolymarketOpenOrder,
   mapPolymarketOrderState,
@@ -182,6 +183,25 @@ describe('заявки: статус CLOB + sizeMatched → canonical', () => {
   );
 });
 
+describe('заявка принадлежит кошельку аккаунта (maker_address)', () => {
+  it('тот же кошелёк в другом регистре → Ok', () => {
+    expect(checkPolymarketOrderMaker(openOrder({ makerAddress: OUR_ADDRESS.toUpperCase().replace('0X', '0x') }), OUR_ADDRESS.toLowerCase()).ok).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ['другой funder-кошелёк под тем же API-ключом', OTHER_ADDRESS],
+    ['пустой адрес', ''],
+    ['не строка', undefined],
+  ])('%s → Err с обоими адресами', (_label, makerAddress) => {
+    const order = { ...openOrder({ id: '0xforeign' }), makerAddress } as unknown as Parameters<typeof checkPolymarketOrderMaker>[0];
+    const checked = checkPolymarketOrderMaker(order, OUR_ADDRESS.toLowerCase());
+    expect(checked.ok).toBe(false);
+    if (checked.ok) return;
+    expect(checked.error.message).toContain('0xforeign');
+    expect(checked.error.message).toContain(OUR_ADDRESS.toLowerCase());
+  });
+});
+
 describe('статус сделки: явная таблица, без угадывания', () => {
   it.each<[string, TradeStatus]>([
     [TRADE_STATUS.Matched, 'MATCHED'],
@@ -273,11 +293,16 @@ const TAKER: Execution = {
   },
 };
 
-/** Наша единственная maker-заявка BUY 5 YES @ 0.43 в прямой сделке. */
+/**
+ * Наша единственная maker-заявка BUY 5 YES @ 0.43 в прямой сделке. Верхний
+ * уровень REST-записи — тейкерский, и его `makerAddress` — адрес тейкера
+ * (как у всех MAKER-фикстур ниже).
+ */
 const SINGLE_MAKER: Execution = {
   rest: {
     id: 'trade-maker',
     traderSide: 'MAKER',
+    makerAddress: OTHER_ADDRESS,
     takerOrderId: '0xother-taker',
     tokenId: YES_TOKEN_ID,
     side: 'SELL',
@@ -318,6 +343,7 @@ const MULTI_MAKER: Execution = {
   rest: {
     id: 'trade-multi',
     traderSide: 'MAKER',
+    makerAddress: OTHER_ADDRESS,
     takerOrderId: '0xother-taker',
     tokenId: YES_TOKEN_ID,
     side: 'SELL',
@@ -361,6 +387,7 @@ const CROSS_OUTCOME_MAKER: Execution = {
   rest: {
     id: 'trade-cross',
     traderSide: 'MAKER',
+    makerAddress: OTHER_ADDRESS,
     owner: OTHER_OWNER,
     takerOrderId: '0xother-taker',
     tokenId: YES_TOKEN_ID,
@@ -716,6 +743,79 @@ describe('владение сделкой: только наш адрес, бе�
     if (!fills.ok) return;
     expect(String(fills.value[0]!.fill.venueId)).toBe('POLYMARKET');
     expect(fills.value[0]!.fill.accountId).toEqual(ACCOUNT);
+  });
+});
+
+describe('TAKER-сделка принадлежит кошельку аккаунта (maker_address заявки тейкера)', () => {
+  /** Наша TAKER-сделка, но заявку тейкера выставил кошелёк с адресом `makerAddress`. */
+  function takerFrom(makerAddress: unknown) {
+    return { ...clobTrade({ ...TAKER.rest, id: 'trade-foreign' }), makerAddress } as unknown as Parameters<typeof mapPolymarketClobTrade>[0];
+  }
+
+  it('TAKER-сделка другого кошелька под тем же API-ключом → Err, а не исполнение аккаунта', () => {
+    // Ни одна maker-запись не наша, self-match нет: раньше такая сделка
+    // становилась TAKER-исполнением этого аккаунта.
+    const fills = mapPolymarketClobTrade(takerFrom(OTHER_ADDRESS), CONTEXT);
+    expect(fills.ok).toBe(false);
+    if (fills.ok) return;
+    expect(fills.error.message).toContain('trade "trade-foreign"');
+    expect(fills.error.message).toContain(`taker order maker "${OTHER_ADDRESS}" is not the account wallet ${OUR_ADDRESS.toLowerCase()}`);
+  });
+
+  it('отказ — ещё до FillMapper: REST-форма для чужой TAKER-сделки не строится', () => {
+    const raw = polymarketClobTradeToFillMapperInput(takerFrom(OTHER_ADDRESS), { makerAddress: OUR_ADDRESS.toLowerCase() });
+    expect(raw.ok).toBe(false);
+  });
+
+  it.each<[string, unknown]>([
+    ['пустой адрес', ''],
+    ['адреса нет', undefined],
+    ['адрес не строка', 42],
+  ])('%s у TAKER-сделки → Err, а не наш кошелёк по умолчанию', (_label, makerAddress) => {
+    const fills = mapPolymarketClobTrade(takerFrom(makerAddress), CONTEXT);
+    expect(fills.ok).toBe(false);
+    if (!fills.ok) expect(fills.error.message).toContain('is not the account wallet');
+  });
+
+  it.each<[string, string, string]>([
+    ['ответ в верхнем регистре, конфигурация в нижнем', OUR_ADDRESS.toUpperCase().replace('0X', '0x'), OUR_ADDRESS.toLowerCase()],
+    ['ответ в нижнем регистре, конфигурация смешанная', OUR_ADDRESS.toLowerCase(), OUR_ADDRESS],
+  ])('наш кошелёк в другом регистре (%s) → одно TAKER-исполнение', (_label, responseAddress, configured) => {
+    const fills = mapPolymarketClobTrade(clobTrade({ ...TAKER.rest, makerAddress: responseAddress }), { ...CONTEXT, makerAddress: configured });
+    if (!fills.ok) throw fills.error;
+    expect(fills.value.map(({ fill, metadata }) => [String(fill.id), String(fill.orderId), metadata.liquidity])).toEqual([
+      ['trade-taker', '0xour-taker-order', 'TAKER'],
+    ]);
+  });
+
+  it('MAKER-сделка: верхний maker_address — тейкерский (чужой), исполнения — по нашей записи в maker_orders', () => {
+    // Проверка кошелька тейкера к MAKER не применяется: верхний уровень
+    // MAKER-записи описывает чужую заявку тейкера.
+    expect(clobTrade(SINGLE_MAKER.rest).makerAddress).toBe(OTHER_ADDRESS);
+    const fills = mapPolymarketClobTrade(clobTrade(SINGLE_MAKER.rest), CONTEXT);
+    if (!fills.ok) throw fills.error;
+    expect(fills.value.map(({ fill, metadata }) => [String(fill.id), String(fill.orderId), metadata.liquidity])).toEqual([
+      ['trade-maker', '0xour-maker', 'MAKER'],
+    ]);
+  });
+
+  it('MAKER-сделка: FillMapper получает адрес аккаунта, а не тейкерский адрес из ответа', () => {
+    // Для FillMapper верхний maker_address — «наш адрес»: по нему ищутся наши
+    // записи в maker_orders. Тейкерский адрес из ответа их бы не нашёл.
+    const raw = polymarketClobTradeToFillMapperInput(clobTrade(SINGLE_MAKER.rest), { makerAddress: OUR_ADDRESS.toLowerCase() });
+    if (!raw.ok) throw raw.error;
+    expect(raw.value['maker_address']).toBe(OUR_ADDRESS.toLowerCase());
+  });
+
+  it('MAKER-сделка другого кошелька (ни одной нашей записи в maker_orders) → Err', () => {
+    // owner записи — тот же API-ключ: владение решает адрес, а не ключ.
+    const trade = clobTrade({
+      ...SINGLE_MAKER.rest,
+      makerOrders: [
+        { orderId: '0xb-maker', tokenId: YES_TOKEN_ID, side: 'BUY', price: '0.43', matchedAmount: '5', makerAddress: OTHER_ADDRESS, owner: OUR_OWNER },
+      ],
+    });
+    expect(mapPolymarketClobTrade(trade, CONTEXT).ok).toBe(false);
   });
 });
 

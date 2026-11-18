@@ -147,6 +147,8 @@ export interface OpenOrderOverrides {
   readonly sizeMatched?: string;
   readonly status?: string;
   readonly conditionId?: string;
+  /** Кошелёк, выставивший заявку (по умолчанию — наш) */
+  readonly makerAddress?: string;
 }
 
 /**
@@ -161,7 +163,7 @@ export function openOrder(overrides: OpenOrderOverrides = {}): OpenOrder {
     conditionId: sdkString<ConditionId>(overrides.conditionId ?? MARKET_A),
     tokenId: sdkString<TokenId>(overrides.tokenId ?? YES_TOKEN_ID),
     owner: OUR_OWNER,
-    makerAddress: OUR_ADDRESS,
+    makerAddress: overrides.makerAddress ?? OUR_ADDRESS,
     side: overrides.side ?? 'BUY',
     price: sdkString<DecimalString>(overrides.price ?? '0.42'),
     originalSize: sdkString<DecimalString>(overrides.originalSize ?? '10'),
@@ -192,6 +194,11 @@ export interface ClobTradeOverrides {
   readonly conditionId?: string;
   readonly tokenId?: string;
   readonly owner?: string;
+  /**
+   * `maker_address` верхнего уровня — кошелёк заявки тейкера. У нашей
+   * TAKER-сделки это наш кошелёк (по умолчанию), у MAKER-сделки — тейкера.
+   */
+  readonly makerAddress?: string;
   readonly takerOrderId?: string;
   readonly side?: string;
   readonly traderSide?: 'TAKER' | 'MAKER';
@@ -220,7 +227,7 @@ export function clobTrade(overrides: ClobTradeOverrides = {}): ClobTrade {
     conditionId: sdkString<ConditionId>(overrides.conditionId ?? MARKET_A),
     tokenId: sdkString<TokenId>(overrides.tokenId ?? YES_TOKEN_ID),
     owner: overrides.owner ?? OUR_OWNER,
-    makerAddress: OUR_ADDRESS,
+    makerAddress: overrides.makerAddress ?? OUR_ADDRESS,
     takerOrderId: overrides.takerOrderId ?? '0xtaker-order',
     side: overrides.side ?? 'BUY',
     traderSide: overrides.traderSide ?? 'TAKER',

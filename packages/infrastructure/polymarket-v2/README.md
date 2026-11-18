@@ -308,7 +308,16 @@ const source = PolymarketAccountVenueStateSource.create(
   it MUST NOT be treated as independently verified on-chain truth.
   Authoritative-гарантию даёт внедрённый reader: композиция, которой нужна
   физическая истина инвентаря, может заменить или обернуть его on-chain
-  верификатором без изменений `PolymarketAccountVenueStateSource`;
+  верификатором без изменений `PolymarketAccountVenueStateSource`
+  (на этом этапе решено: первичный источник — CLOB API, on-chain проверки нет);
+- ✅ `balance` — ПОЛНОЕ владение адреса (с тем, что под открытыми заявками),
+  не доступный остаток; `allowances` — разрешения, не владение. Каждая
+  открытая заявка обязана принадлежать кошельку аккаунта (`maker_address`):
+  `/data/orders` ограничен API-ключом, а не адресом. То же для сделок
+  (`/data/trades` — тоже по API-ключу): у TAKER-сделки `maker_address` заявки
+  тейкера обязан быть кошельком аккаунта, у MAKER — наша запись в
+  `maker_orders[]`; чужая сделка — `Err`
+  (`docs/guides/polymarket-clob-balance-semantics.md`);
 - ✅ сделки рынков scope разбираются ТЕМ ЖЕ `FillMapper`, что и приватный WS:
   **одно исполнение площадки даёт один canonical `Fill` обоими путями**
   (`findFillFactDifference(wsFill, restFill) === undefined`);

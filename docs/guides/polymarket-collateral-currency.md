@@ -246,7 +246,10 @@ Polymarket-аккаунта; там была неверная валюта, те
 
 ## Открытые вопросы для on-chain balance verification
 
-On-chain reader в этот MR не входит. Что обязан решить он:
+On-chain reader в этот MR не входит. Позже (MR #113) решено: первичный
+источник состояния аккаунта — CLOB API, независимой on-chain проверки на этом
+этапе нет; семантика ответа CLOB — `docs/guides/polymarket-clob-balance-semantics.md`.
+Вопросы ниже остаются для on-chain reader-а, если он когда-нибудь понадобится:
 
 | вопрос | почему важен |
 | --- | --- |
