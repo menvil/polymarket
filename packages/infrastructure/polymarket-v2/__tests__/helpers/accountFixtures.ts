@@ -194,6 +194,11 @@ export interface ClobTradeOverrides {
   readonly conditionId?: string;
   readonly tokenId?: string;
   readonly owner?: string;
+  /**
+   * `maker_address` верхнего уровня — кошелёк заявки тейкера. У нашей
+   * TAKER-сделки это наш кошелёк (по умолчанию), у MAKER-сделки — тейкера.
+   */
+  readonly makerAddress?: string;
   readonly takerOrderId?: string;
   readonly side?: string;
   readonly traderSide?: 'TAKER' | 'MAKER';
@@ -222,7 +227,7 @@ export function clobTrade(overrides: ClobTradeOverrides = {}): ClobTrade {
     conditionId: sdkString<ConditionId>(overrides.conditionId ?? MARKET_A),
     tokenId: sdkString<TokenId>(overrides.tokenId ?? YES_TOKEN_ID),
     owner: overrides.owner ?? OUR_OWNER,
-    makerAddress: OUR_ADDRESS,
+    makerAddress: overrides.makerAddress ?? OUR_ADDRESS,
     takerOrderId: overrides.takerOrderId ?? '0xtaker-order',
     side: overrides.side ?? 'BUY',
     traderSide: overrides.traderSide ?? 'TAKER',

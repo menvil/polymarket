@@ -59,7 +59,9 @@ SDK `@polymarket/client` 0.6.0 возвращает `BalanceAllowanceResponse`:
 
 Источники: OpenAPI CLOB (`docs.polymarket.com/api-spec/clob-openapi.yaml`:
 `GET /balance-allowance`, `GET /balance-allowance/update`, `PUT /balance-allowance`,
-`BalanceAllowanceResponse`, `GET /data/orders`, `OpenOrder`), Order Lifecycle
+`BalanceAllowanceResponse`, `GET /data/orders`, `OpenOrder`, `GET /data/trades`,
+`Trade`), Real-Time Order Updates (`docs.polymarket.com/trading/realtime-order-updates.md`),
+Order Lifecycle
 (`docs.polymarket.com/concepts/order-lifecycle.md`), Trading Overview,
 Fees (`docs.polymarket.com/trading/fees.md`), код SDK `@polymarket/client`
 0.6.0 и `@polymarket/bindings` 0.6.0 в `node_modules`.
@@ -71,12 +73,12 @@ flowchart LR
     subgraph CLOB["CLOB API (первичный источник)"]
         BA["balance-allowance<br/>(обновлён из блокчейна)"]
         OO["GET /data/orders<br/>все живые заявки API-ключа"]
-        TR["GET /data/trades<br/>сделки рынков scope"]
+        TR["GET /data/trades<br/>сделки API-ключа на рынках scope"]
     end
     BA -->|"полное владение pUSD"| C["collateralBalance<br/>(весь аккаунт)"]
     BA -->|"полное владение токена"| A["assetBalances<br/>(активы scope)"]
     OO -->|"maker_address = кошелёк аккаунта"| O["openOrders<br/>(весь аккаунт)"]
-    TR --> F["recentFills<br/>(рынки scope)"]
+    TR -->|"TAKER: maker_address = кошелёк аккаунта<br/>MAKER: наша запись в maker_orders"| F["recentFills<br/>(рынки scope)"]
     C & A & O & F --> M["matcher (следующий MR):<br/>available / reserved, коррекция"]
 ```
 
@@ -167,7 +169,8 @@ SELL вне scope       резервирует токены актива, чье
 
 ### Заявка обязана принадлежать кошельку аккаунта
 
-Это единственное изменение кода в этом MR.
+Это первое из двух изменений кода в этом MR; второе — та же привязка для
+сделок (см. «Сделка обязана принадлежать кошельку аккаунта»).
 
 `GET /data/orders` — «Retrieves live orders for the authenticated user», то есть
 владельца API-ключа (`owner` — UUID ключа). Builder-клиент видит ещё и
@@ -190,6 +193,47 @@ SELL вне scope       резервирует токены актива, чье
 `listOpenOrders`, и в `getOrderState`. Молча выбросить чужую заявку значило бы
 скрыть, что ключ обслуживает больше одного кошелька, поэтому это отказ, а не
 фильтр.
+
+### Сделка обязана принадлежать кошельку аккаунта
+
+`GET /data/trades` тоже отдаёт сделки «authenticated user» — владельца
+API-ключа, а не одного адреса. Проверка открытых заявок сделки не закрывает:
+у кошелька B к моменту чтения может не остаться ни одной живой заявки, а его
+исполненная заявка в `/data/trades` есть.
+
+Кому принадлежит запись, решает её сторона:
+
+| запись | кто описан верхним уровнем | чем доказывается, что сделка наша |
+| --- | --- | --- |
+| `trader_side = TAKER` | наша заявка тейкера (`taker_order_id`, `side`, `asset_id`, `size`) | `maker_address` верхнего уровня = кошелёк аккаунта (регистр не важен) |
+| `trader_side = MAKER` | чужая заявка тейкера; её `maker_address` — адрес тейкера | наша запись в `maker_orders[]` с `maker_address` = кошелёк аккаунта |
+
+OpenAPI описывает `maker_address` сделки лишь как «Maker address». По
+аналогии с `OpenOrder.maker_address` это `maker` заявки тейкера, то есть её
+funder-кошелёк. Для НАШЕЙ TAKER-записи и это прочтение, и прочтение «адрес
+владельца записи» дают кошелёк аккаунта — проверка от выбора между ними не
+зависит. MAKER-запись по верхнему уровню не проверяется: там он тейкерский.
+
+```text
+кошелёк A (аккаунт), кошелёк B (тот же API-ключ), заявок у B нет
+/data/trades: trade-a  TAKER  maker_address = A   → исполнение аккаунта
+              trade-b  TAKER  maker_address = B   → раньше: тоже исполнение A
+                                                     теперь: Err прохода
+              trade-c  MAKER  maker_address = T (тейкер),
+                              maker_orders: [{ maker_address: A, … }]
+                                                   → исполнение A по своей записи
+              trade-d  MAKER  maker_orders только B → Err (FillMapper не находит нашу запись)
+```
+
+Адаптер по-прежнему передаёт `FillMapper` НАШ адрес, а не адрес из ответа:
+для `FillMapper` верхний `maker_address` означает «наш адрес», и по нему
+MAKER-ветка ищет наши записи в `maker_orders[]`. Тейкерский адрес из
+MAKER-ответа их бы не нашёл. У TAKER-записи адрес из ответа сначала сверяется
+с кошельком аккаунта (`checkOwnExecutionFields`), поэтому подстановка ничего
+не скрывает.
+
+Как и с заявками, чужая сделка — `Err`, а не фильтр: молча выбросить её
+значило бы скрыть, что ключ обслуживает больше одного кошелька.
 
 ## Сделки в полёте: окно MATCHED → MINED
 
@@ -267,6 +311,8 @@ T3 все страницы сделок каждого рынка scope
 - повтор заявки — `Err`, в том числе если пагинатор повторил страницу (SDK
   считает концом курсор `"LTE="`, OpenAPI — пустой курсор);
 - заявка другого кошелька — `Err`;
+- TAKER-сделка другого кошелька (`maker_address` заявки тейкера) и
+  MAKER-сделка без нашей записи в `maker_orders[]` — `Err`;
 - **НЕ гарантируется**, что балансы, заявки и сделки описывают один момент.
 
 ### Чего источник не делает и почему
@@ -305,6 +351,8 @@ T3 все страницы сделок каждого рынка scope
 | 6 знаков базовых единиц для `COLLATERAL` и `CONDITIONAL` | **проверено** по документации; on-chain — только для pUSD |
 | `updateBalanceAllowance` = обновление из блокчейна, затем чтение | **проверено** (SDK, OpenAPI) |
 | заявки `/data/orders` ограничены API-ключом, а не адресом | **проверено** (OpenAPI: «authenticated user», `owner` — UUID ключа) |
+| сделки `/data/trades` ограничены API-ключом, а не адресом | **проверено** (OpenAPI: «Retrieves trades for the authenticated user»); фильтр `maker_address` запроса адаптер не передаёт — его смысл для TAKER-сделок не проверен |
+| `maker_address` верхнего уровня TAKER-записи = funder заявки тейкера | **вывод**, не документирован (OpenAPI: «Maker address»); для нашей TAKER-записи оба прочтения дают кошелёк аккаунта; live — подтвердить на proxy-кошельке |
 | резервация открытой заявки без комиссии | **проверено** для стоящих заявок (Fees: мейкеры не платят) |
 | гарантия read-after-write и свежести после обновления | **не решено** |
 | баланс меняется при MINED или при CONFIRMED; учитывает ли кэш CLOB сделки в полёте | **не решено** |
@@ -313,7 +361,7 @@ T3 все страницы сделок каждого рынка scope
 | отменяет ли CLOB заявки, когда баланс упал ниже резерва | **не решено** |
 | конец пагинации: `"LTE="` (SDK) или пустой курсор (OpenAPI) | **не решено**; повтор страницы даёт `Err`, а не двойной учёт |
 | закрывает ли обновление legacy-случай «фантомного MINT» | **не решено**, live |
-| TAKER-сделки приписываются по API-ключу без проверки адреса тейкера | **не решено**; тот же корень, что у заявок, но затрагивает только `recentFills` (свидетельство), отдельный MR |
+| TAKER-сделка другого кошелька под тем же API-ключом | **закрыто**: `maker_address` заявки тейкера сверяется с кошельком аккаунта, чужая — `Err` |
 
 ## Готов ли контракт к matcher-у
 
@@ -324,7 +372,8 @@ T3 все страницы сделок каждого рынка scope
 - `openOrders` несут всё для резерваций (`price`, `size`, `filledSize`,
   `side`, `asset`) точно и только по кошельку аккаунта;
 - `recentFills` со статусом площадки объясняют окно сделок в полёте на рынках
-  scope.
+  scope и тоже только по кошельку аккаунта: TAKER — по `maker_address` заявки
+  тейкера, MAKER — по нашей записи в `maker_orders[]`.
 
 Известного двойного учёта нет: баланс не содержит вычтенной резервации, а
 резервация не прибавляется к балансу, который её уже содержит.
@@ -349,6 +398,6 @@ if (!state.ok) return state; // проход целиком не удался
 
 | файл | что покрывает |
 | --- | --- |
-| `polymarket-v2/__tests__/clobBalanceSemantics.test.ts` | **1. источник проверяет**: collateral pUSD точно, ноль, невалидный (`1.5`, `-1`, `abc`, без `balance`), отказ обновления, чужая валюта; активы точно и по своему token id, явный ноль, ответ без `balance` → `Err`, невалидное количество, актив без CLOB token id; несколько BUY/SELL, частичные, вне scope — как есть; точность цены и объёмов; заявка чужого кошелька → `Err` (список и `getOrderState`); сбой пагинации; повтор страницы; противоречие инварианту. **2. выводит только matcher**: 100 / BUY 30 + 20 → reserved 50, available 50; частичное → 18; SELL scope → 11, SELL вне scope не трогает токены; BUY вне scope резервирует collateral. **3. требует свежего прохода**: сделка между чтениями (баланс до, заявка после, `MATCHED` в `recentFills`); заявка отменена между чтениями; резерв SELL больше баланса — не `Err`; отказ на середине прохода |
-| `polymarket-v2/__tests__/polymarketAccountMapping.test.ts` | `checkPolymarketOrderMaker`: тот же кошелёк в другом регистре, чужой, пустой, не строка |
+| `polymarket-v2/__tests__/clobBalanceSemantics.test.ts` | **1. источник проверяет**: collateral pUSD точно, ноль, невалидный (`1.5`, `-1`, `abc`, без `balance`), отказ обновления, чужая валюта; активы точно и по своему token id, явный ноль, ответ без `balance` → `Err`, невалидное количество, актив без CLOB token id; несколько BUY/SELL, частичные, вне scope — как есть; точность цены и объёмов; заявка чужого кошелька → `Err` (список и `getOrderState`); TAKER-сделка чужого кошелька при пустом списке заявок → `Err`; наша TAKER (адрес в другом регистре) и наша MAKER (верхний уровень тейкерский) → `recentFills`; сбой пагинации; повтор страницы; противоречие инварианту. **2. выводит только matcher**: 100 / BUY 30 + 20 → reserved 50, available 50; частичное → 18; SELL scope → 11, SELL вне scope не трогает токены; BUY вне scope резервирует collateral. **3. требует свежего прохода**: сделка между чтениями (баланс до, заявка после, `MATCHED` в `recentFills`); заявка отменена между чтениями; резерв SELL больше баланса — не `Err`; отказ на середине прохода |
+| `polymarket-v2/__tests__/polymarketAccountMapping.test.ts` | `checkPolymarketOrderMaker`: тот же кошелёк в другом регистре, чужой, пустой, не строка. TAKER-сделка: чужой кошелёк → `Err` (и REST-форма не строится), пустой / нет / не строка → `Err`, наш кошелёк в другом регистре (в обе стороны) → одно TAKER-исполнение. MAKER-сделка: верхний `maker_address` тейкерский → исполнение по нашей записи; `FillMapper` получает адрес аккаунта; без нашей записи (тот же `owner`-ключ) → `Err`. MAKER-фикстуры паритета WS/REST несут тейкерский верхний адрес |
 | `polymarket-v2/__tests__/PolymarketClobRefreshedBalanceReader.test.ts` | `allowances` не влияют на результат: огромное разрешение не создаёт владения, нулевое не обнуляет |

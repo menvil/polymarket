@@ -25,8 +25,9 @@
  * REST `ClobTrade` переводится в ту же snake_case-форму, что и WS-событие, и
  * разбирается ТЕМ ЖЕ `FillMapper.allFromPolymarketTradeEvent`. Отдельной
  * политики `FillId`, владения maker-заявкой и cross-outcome здесь нет — только
- * переименование полей, явный перевод статуса и запрет подстановок
- * `FillMapper` для полей нашей стороны сделки (токен, сторона).
+ * переименование полей, явный перевод статуса, проверка кошелька заявки
+ * тейкера у TAKER-сделки и запрет подстановок `FillMapper` для полей нашей
+ * стороны сделки (токен, сторона).
  *
  * Время и комиссия исполнения — тоже общие с приватным WS:
  *
@@ -466,14 +467,15 @@ function parseOrderFacts(order: OpenOrder): Result<OrderFacts, PolymarketAccount
  * Контекст разбора сделок одного аккаунта.
  *
  * @remarks
- * `makerAddress` — НАШ адрес из конфигурации адаптера, а не из ответа: по нему
- * `FillMapper` находит наши maker-заявки в сделке. `takerFeeRates` — источник
- * ставки комиссии тейкера: REST `feeRateBps` для этого непригоден.
+ * `makerAddress` — кошелёк аккаунта из конфигурации адаптера, а не из
+ * ответа: по нему `FillMapper` находит наши maker-заявки в сделке, а адаптер
+ * сверяет с ним кошелёк заявки тейкера у TAKER-сделки. `takerFeeRates` —
+ * источник ставки комиссии тейкера: REST `feeRateBps` для этого непригоден.
  */
 export interface PolymarketTradeContext {
   /** Аккаунт, которому принадлежат исполнения */
   readonly accountId: AccountId;
-  /** Наш адрес maker-заявок, в нижнем регистре */
+  /** Кошелёк аккаунта (наш адрес заявок), в нижнем регистре */
   readonly makerAddress: string;
   /** Ставка taker-комиссии по рынку сделки */
   readonly takerFeeRates: PolymarketTakerFeeRateResolver;
@@ -499,9 +501,17 @@ export interface PolymarketTradeContext {
  * matchedAt (ISO) → match_time (мс): время исполнения; timestamp НЕ передаётся
  * makerOrders[] → maker_orders[] (order_id, matched_amount, price, asset_id,
  *                                 side, owner, maker_address, outcome)
- * maker_address → НАШ адрес из конфигурации
+ * maker_address → НАШ адрес из конфигурации (у TAKER — после сверки с ответом)
  * owner         → НЕ передаётся
  * ```
+ *
+ * `maker_address` верхнего уровня для `FillMapper` означает «наш адрес»: по
+ * нему MAKER-ветка ищет наши записи в `maker_orders[]`. Ответ площадки здесь
+ * не подходит: у MAKER-записи верхний уровень тейкерский, и его
+ * `maker_address` — адрес тейкера. Поэтому передаётся адрес аккаунта. У
+ * TAKER-записи верхний уровень — наша заявка, и её `maker_address` из ответа
+ * обязан совпасть с кошельком аккаунта, иначе отказ: это сделка другого
+ * кошелька под тем же API-ключом (см. `checkOwnExecutionFields`).
  *
  * `owner` верхнего уровня намеренно не передаётся: `FillMapper` признаёт
  * maker-заявку нашей и по совпадению `owner`, а в cross-outcome сделке
@@ -520,9 +530,10 @@ export interface PolymarketTradeContext {
  * откатился бы на него, только если бы не было ни `match_time`, ни
  * `matchtime`.
  *
- * Перед переименованием проверяются поля, которые `FillMapper` при пропуске
- * восстановил бы сам (сторона и токен тейкера; токен и сторона НАШИХ
- * maker-записей), — неоднозначное значение даёт отказ, а не подстановку.
+ * Перед переименованием проверяются кошелёк заявки тейкера у TAKER-записи
+ * и поля, которые `FillMapper` при пропуске восстановил бы сам (сторона и
+ * токен тейкера; токен и сторона НАШИХ maker-записей), — чужой кошелёк или
+ * неоднозначное значение даёт отказ, а не подстановку.
  *
  * @example
  * ```typescript
@@ -578,14 +589,43 @@ export function polymarketClobTradeToFillMapperInput(
 }
 
 /**
- * Проверяет поля НАШЕЙ стороны сделки, которые `FillMapper` иначе молча
- * восстановил бы сам.
+ * Проверяет, что НАША сторона сделки — действительно наша, и её поля, которые
+ * `FillMapper` иначе молча восстановил бы сам.
  *
  * @param trade - Сделка с уже проверенными `traderSide` и `makerOrders`
- * @param makerAddress - Наш адрес maker-заявок
+ * @param makerAddress - Кошелёк аккаунта (регистр не важен)
  * @returns Описание проблемы либо `undefined`
  *
  * @remarks
+ * ### TAKER: заявка тейкера выставлена кошельком аккаунта
+ *
+ * `GET /data/trades` отдаёт сделки «аутентифицированного пользователя» —
+ * владельца API-ключа, как и `/data/orders`, а не одного адреса. Под одним
+ * ключом могут торговать несколько funder-кошельков (EOA и proxy/Safe). У
+ * TAKER-записи верхний уровень описывает заявку тейкера (`taker_order_id`,
+ * `side`, `asset_id`, `size`). OpenAPI называет `maker_address` верхнего
+ * уровня лишь «Maker address»; по аналогии с `OpenOrder.maker_address` это
+ * `maker` заявки тейкера — её funder-кошелёк. Для НАШЕЙ TAKER-записи и это
+ * прочтение, и прочтение «адрес владельца записи» дают кошелёк аккаунта, так
+ * что проверка не зависит от выбора между ними. `FillMapper` в TAKER-ветке
+ * адрес не смотрит вовсе, а адаптер передаёт ему НАШ адрес. Без этой
+ * проверки TAKER-сделка другого кошелька стала бы исполнением этого аккаунта:
+ *
+ * ```text
+ * TAKER, maker_address == кошелёк аккаунта (без учёта регистра)  → дальше
+ * TAKER, другой адрес, пусто, не строка                            → отказ
+ * ```
+ *
+ * Открытые заявки здесь не помогают: у кошелька B к моменту чтения может
+ * не остаться ни одной живой заявки, а его исполненная TAKER-заявка в
+ * `/data/trades` всё равно есть.
+ *
+ * MAKER-запись так не проверяется: её верхний уровень — тоже тейкерский, то
+ * есть чужой адрес. Принадлежность MAKER-сделки решает наша запись в
+ * `maker_orders[]` (по адресу), а сделка без неё — отказ `FillMapper`.
+ *
+ * ### Поля нашей стороны: без подстановок
+ *
  * `FillMapper` терпим к неполным WS-событиям и подставляет пропуски сам:
  *
  * ```text
@@ -608,6 +648,9 @@ export function polymarketClobTradeToFillMapperInput(
  */
 function checkOwnExecutionFields(trade: ClobTrade, makerAddress: string): string | undefined {
   if (trade.traderSide === 'TAKER') {
+    if (!sameAddress(trade.makerAddress, makerAddress)) {
+      return `taker order maker ${describe(trade.makerAddress)} is not the account wallet ${makerAddress}`;
+    }
     const asset = outcomeAssetFrom(trade.tokenId);
     if (!asset.ok) return `taker ${asset.error.message}`;
     const side = sideFrom(trade.side);
@@ -633,6 +676,8 @@ function checkOwnExecutionFields(trade: ClobTrade, makerAddress: string): string
  *
  * @remarks
  * 1. Статус → canonical (неизвестный — отказ, сделка не выбрасывается).
+ *    TAKER-запись: `maker_address` заявки тейкера — кошелёк аккаунта, иначе
+ *    отказ (сделка другого кошелька под тем же API-ключом).
  *    Сторона и токен нашей стороны сделки — строго `BUY`/`SELL` и outcome-
  *    токен: подстановки `FillMapper` (токен тейкера, инверсия стороны) здесь
  *    запрещены.

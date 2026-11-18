@@ -6,8 +6,8 @@
  *
  * 1. **Источник проверяет** — то, что верно в любой момент и не зависит от
  *    порядка запросов: формат и валюта баланса, ноль явно, полнота scope,
- *    привязка заявки к кошельку, внутренняя согласованность заявки, полнота
- *    пагинации. Нарушение — `Err` всего прохода.
+ *    привязка заявки и TAKER-сделки к кошельку, внутренняя согласованность
+ *    заявки, полнота пагинации. Нарушение — `Err` всего прохода.
  * 2. **Выводит только matcher** — резервации и `available` из полного баланса
  *    и открытых заявок. Источник лишь сохраняет нужные факты точно;
  *    тестовая функция `deriveReservations` показывает, что их достаточно, и
@@ -48,6 +48,7 @@ import {
   NO_TOKEN_ID,
   OTHER_ADDRESS,
   OUR_ADDRESS,
+  OUR_OWNER,
   TRADE_STATUS,
   VENUE,
   YES,
@@ -333,6 +334,56 @@ describe('1. источник проверяет: открытые заявки'
     const page = [openOrder({ id: '0xa' }), openOrder({ id: '0xb' })];
     client.openOrders = new FakePages([page, page]);
     expect(failure(await source.getAccountState(VENUE, ACCOUNT, SCOPE)).message).toContain('returned twice');
+  });
+});
+
+describe('1. источник проверяет: сделки аккаунта привязаны к кошельку', () => {
+  it('TAKER-сделка другого кошелька под тем же API-ключом → Err, даже когда у того кошелька нет открытых заявок', async () => {
+    // Проверка открытых заявок такую сделку не ловит: заявка B уже исполнена
+    // и в /data/orders её нет, а в /data/trades сделка B есть.
+    const { source, client } = buildSource();
+    client.openOrders = new FakePages([[]]);
+    client.trades.set(
+      MARKET_A,
+      new FakePages([[clobTrade({ id: 'trade-ours' }), clobTrade({ id: 'trade-b', takerOrderId: '0xb-taker', makerAddress: OTHER_ADDRESS })]]),
+    );
+
+    const error = failure(await source.getAccountState(VENUE, ACCOUNT, SCOPE));
+
+    expect(error.message).toContain(`trades market ${MARKET_A}`);
+    expect(error.message).toContain('trade "trade-b": taker order maker');
+    expect(error.message).toContain('is not the account wallet');
+  });
+
+  it('наша TAKER-сделка (адрес в другом регистре) и наша MAKER-сделка (верхний уровень тейкерский) → recentFills', async () => {
+    const { source, client } = buildSource();
+    client.trades.set(
+      MARKET_A,
+      new FakePages([
+        [
+          clobTrade({ id: 'trade-taker', takerOrderId: '0xour-taker', makerAddress: OUR_ADDRESS.toUpperCase().replace('0X', '0x') }),
+          clobTrade({
+            id: 'trade-maker',
+            traderSide: 'MAKER',
+            makerAddress: OTHER_ADDRESS,
+            takerOrderId: '0xother-taker',
+            side: 'SELL',
+            price: '0.43',
+            size: '5',
+            makerOrders: [
+              { orderId: '0xour-maker', tokenId: YES_TOKEN_ID, side: 'BUY', price: '0.43', matchedAmount: '5', makerAddress: OUR_ADDRESS, owner: OUR_OWNER },
+            ],
+          }),
+        ],
+      ]),
+    );
+
+    const state = unwrap(await source.getAccountState(VENUE, ACCOUNT, SCOPE));
+
+    expect(state.recentFills.map(({ fill, metadata }) => [String(fill.id), String(fill.orderId), metadata.liquidity])).toEqual([
+      ['trade-taker', '0xour-taker', 'TAKER'],
+      ['trade-maker', '0xour-maker', 'MAKER'],
+    ]);
   });
 });
 

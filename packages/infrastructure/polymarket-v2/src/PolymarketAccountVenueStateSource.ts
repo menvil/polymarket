@@ -156,8 +156,9 @@ export interface PolymarketAccountVenueStateSourceConfig {
    * @remarks
    * По нему — и только по нему — `FillMapper` находит НАШИ maker-заявки в
    * сделке, а адаптер проверяет `maker_address` каждой заявки аккаунта
-   * (`listOpenOrders`, `fetchOrder`). Обязан совпасть с
-   * `client.account.wallet`; регистр не важен.
+   * (`listOpenOrders`, `fetchOrder`) и заявки тейкера у каждой TAKER-сделки
+   * (`listAccountTrades`). Обязан совпасть с `client.account.wallet`;
+   * регистр не важен.
    */
   readonly makerAddress: string;
 }
@@ -299,10 +300,13 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    *    `makerAddress` НЕ передаётся: эндпоинт уже ограничен аккаунтом, а
    *    фильтр по maker-адресу, по наблюдению legacy, может скрыть
    *    taker-сделки.
-   * 5. Сделки → canonical-исполнения (`FillMapper`); комиссия TAKER — по
-   *    ставке `takerFeeRates` рынка сделки, не по `feeRateBps` ответа; отказ
-   *    резолвера — отказ прохода. Затем слияние повторов, проверка аккаунта,
-   *    площадки и рынка каждого исполнения.
+   * 5. Сделки → canonical-исполнения (`FillMapper`). Эндпоинт сделок тоже
+   *    ограничен API-ключом: TAKER-сделка, чья заявка тейкера выставлена
+   *    другим кошельком (`maker_address` верхнего уровня), — отказ прохода;
+   *    MAKER-сделка без нашей записи в `maker_orders[]` — тоже. Комиссия
+   *    TAKER — по ставке `takerFeeRates` рынка сделки, не по `feeRateBps`
+   *    ответа; отказ резолвера — отказ прохода. Затем слияние повторов,
+   *    проверка аккаунта, площадки и рынка каждого исполнения.
    * 6. Проверка `set(assetBalances.asset) == set(scope.assets)`.
    *
    * ### Что проход гарантирует и чего — нет
@@ -310,7 +314,8 @@ export class PolymarketAccountVenueStateSource implements IAccountVenueStateSour
    * Запросы — РАЗНЫЕ, и площадка не даёт атомарного снимка. Гарантии:
    * отказ любого запроса, оборванная пагинация, непонятный баланс или запись —
    * `Err` всего прохода; ноль только явный; противоречие одной записи
-   * (статус vs `size_matched`, повтор заявки, чужой `maker_address`) — `Err`.
+   * (статус vs `size_matched`, повтор заявки, заявка или TAKER-сделка
+   * чужого кошелька) — `Err`.
    * НЕ гарантируется, что наборы описывают один момент: сделка, исполненная
    * между чтением баланса и чтением заявок, видна в `size_matched` заявки, но
    * может ещё не отразиться в балансе. Такие расхождения источник не чинит —
